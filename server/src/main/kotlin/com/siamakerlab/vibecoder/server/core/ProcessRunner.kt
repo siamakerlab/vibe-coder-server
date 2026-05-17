@@ -1,0 +1,113 @@
+package com.siamakerlab.vibecoder.server.core
+
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import java.io.BufferedReader
+import java.io.InputStream
+import java.io.InputStreamReader
+import java.nio.file.Path
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.toJavaDuration
+
+data class ProcessResult(
+    val exitCode: Int,
+    val durationMs: Long,
+    val cancelled: Boolean,
+    val timedOut: Boolean,
+)
+
+/**
+ * Executes an external OS command with:
+ *   - a hard wall-clock [timeout]
+ *   - on cancellation OR timeout, [Process.destroyForcibly]
+ *   - line-streamed stdout/stderr via [onLine]
+ *
+ * Caller may signal asynchronous cancellation by emitting [Unit] on [cancellation].
+ */
+class ProcessRunner(
+    private val workdir: Path,
+    private val env: Map<String, String> = emptyMap(),
+) {
+
+    suspend fun run(
+        command: List<String>,
+        timeout: Duration = 30.minutes,
+        cancellation: Flow<Unit> = emptyFlow(),
+        onLine: suspend (level: String, line: String) -> Unit = { _, _ -> },
+    ): ProcessResult = coroutineScope {
+        val started = System.currentTimeMillis()
+        val pb = ProcessBuilder(command)
+            .directory(workdir.toFile())
+            .redirectErrorStream(false)
+        pb.environment().putAll(env)
+
+        val process: Process = withContext(Dispatchers.IO) { pb.start() }
+
+        // Stream stdout / stderr line-by-line.
+        val stdoutJob = launch(Dispatchers.IO) { streamLines(process.inputStream, "STDOUT", onLine) }
+        val stderrJob = launch(Dispatchers.IO) { streamLines(process.errorStream, "STDERR", onLine) }
+
+        // External cancellation watcher.
+        val cancelJob = launch {
+            val signaled = cancellation.firstOrNull()
+            if (signaled != null && process.isAlive) {
+                process.destroyForcibly()
+            }
+        }
+
+        val (exit, timedOut, cancelled) = try {
+            val exitCode = withTimeout(timeout.toJavaDuration().toMillis()) {
+                withContext(Dispatchers.IO) { process.waitFor() }
+            }
+            Triple(exitCode, false, false)
+        } catch (e: TimeoutCancellationException) {
+            if (process.isAlive) process.destroyForcibly().waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
+            Triple(-1, true, false)
+        } finally {
+            stdoutJob.join()
+            stderrJob.join()
+            cancelJob.cancel()
+        }
+
+        val effectiveCancelled = !isActive
+        ProcessResult(
+            exitCode = exit,
+            durationMs = System.currentTimeMillis() - started,
+            cancelled = cancelled || effectiveCancelled,
+            timedOut = timedOut,
+        )
+    }
+
+    private suspend fun streamLines(
+        stream: InputStream,
+        level: String,
+        onLine: suspend (level: String, line: String) -> Unit,
+    ) {
+        BufferedReader(InputStreamReader(stream, Charsets.UTF_8)).use { reader ->
+            while (true) {
+                val line = try {
+                    reader.readLine()
+                } catch (e: Throwable) {
+                    null
+                } ?: return
+                onLine(level, line)
+            }
+        }
+    }
+
+    companion object {
+        val DEFAULT_AUTH_TIMEOUT: Duration = 5.seconds
+    }
+}

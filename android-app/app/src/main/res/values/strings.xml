@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Vibe Coder</string>
+
+    <!-- Connect -->
+    <string name="connect_title">Connect to server</string>
+    <string name="connect_server_url">Server URL</string>
+    <string name="connect_server_url_hint">http://192.168.0.10:17880</string>
+    <string name="connect_pairing_code">Pairing code (6 digits)</string>
+    <string name="connect_device_name">Device name</string>
+    <string name="connect_button">Pair</string>
+    <string name="connect_test_button">Test connection</string>
+
+    <!-- Dashboard -->
+    <string name="dashboard_title">Dashboard</string>
+    <string name="dashboard_server">Server</string>
+    <string name="dashboard_os">OS</string>
+    <string name="dashboard_java">Java</string>
+    <string name="dashboard_workspace">Workspace</string>
+    <string name="dashboard_projects">Registered projects</string>
+    <string name="dashboard_running_tasks">Running tasks</string>
+    <string name="dashboard_free_disk">Free disk</string>
+    <string name="dashboard_claude_ok">Claude Code ✓</string>
+    <string name="dashboard_claude_missing">Claude Code MISSING</string>
+    <string name="dashboard_sdk_ok">Android SDK ✓</string>
+    <string name="dashboard_sdk_missing">Android SDK MISSING</string>
+    <string name="dashboard_git_ok">Git ✓</string>
+    <string name="dashboard_git_missing">Git MISSING</string>
+    <string name="dashboard_open_env">Environment diagnostics</string>
+    <string name="dashboard_open_projects">Projects</string>
+    <string name="dashboard_logout">Disconnect</string>
+
+    <!-- Environment -->
+    <string name="env_title">Environment diagnostics</string>
+    <string name="env_refresh">Refresh</string>
+
+    <!-- Projects -->
+    <string name="projects_title">Projects</string>
+    <string name="projects_register">Register existing project</string>
+    <string name="projects_refresh">Refresh</string>
+    <string name="projects_empty">No projects yet. Register your first one.</string>
+
+    <!-- Register -->
+    <string name="register_title">Register project</string>
+    <string name="register_id">Project ID</string>
+    <string name="register_name">Project name</string>
+    <string name="register_package">Package name</string>
+    <string name="register_source_path">Source path on server</string>
+    <string name="register_module">Module name</string>
+    <string name="register_debug_task">Debug task</string>
+    <string name="register_button">Register</string>
+
+    <!-- Detail -->
+    <string name="detail_claude">Send Claude prompt</string>
+    <string name="detail_build">Run debug build</string>
+    <string name="detail_artifacts">APKs</string>
+    <string name="detail_git">Git</string>
+    <string name="detail_files">File transfer</string>
+
+    <!-- Claude -->
+    <string name="claude_title">Claude prompt</string>
+    <string name="claude_prompt_hint">Describe the change you want…</string>
+    <string name="claude_auto_build">Auto-run debug build after Claude</string>
+    <string name="claude_submit">Send</string>
+
+    <!-- Log -->
+    <string name="log_title">Live log</string>
+    <string name="log_cancel">Cancel task</string>
+    <string name="log_copy">Copy log</string>
+
+    <!-- Build -->
+    <string name="build_title">Builds</string>
+    <string name="build_run_debug">Run debug build</string>
+
+    <!-- Artifact -->
+    <string name="artifact_title">APKs</string>
+    <string name="artifact_download">Download</string>
+    <string name="artifact_install">Install</string>
+    <string name="artifact_verify_fail">SHA-256 mismatch. APK rejected.</string>
+    <string name="artifact_unknown_sources">Allow installs from Vibe Coder in Settings, then retry.</string>
+
+    <!-- Git -->
+    <string name="git_title">Git</string>
+    <string name="git_status">Status</string>
+    <string name="git_diff">Diff</string>
+    <string name="git_log">Log</string>
+
+    <!-- Files -->
+    <string name="files_title">File transfer</string>
+    <string name="files_pick">Pick a file to upload</string>
+    <string name="files_empty">No uploads yet.</string>
+
+    <string name="common_loading">Loading…</string>
+    <string name="common_error">Error</string>
+    <string name="common_ok">OK</string>
+    <string name="common_cancel">Cancel</string>
+    <string name="common_retry">Retry</string>
+</resources>

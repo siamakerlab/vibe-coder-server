@@ -1,0 +1,36 @@
+# bkit (local tool state — never commit, per global CLAUDE.md §11)
+.bkit/
+
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+local.properties
+
+# IntelliJ / Android Studio
+.idea/
+*.iml
+.kotlin/
+captures/
+.cxx/
+
+# Server runtime data (workspace, db, logs)
+vibe-coder-server-data/
+
+# DB
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# APK / artifacts
+*.apk
+*.aab
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db

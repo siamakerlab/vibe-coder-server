@@ -1,0 +1,36 @@
+server:
+  name: Vibe Coder Server
+  host: 0.0.0.0
+  port: 17880
+  version: 0.1.0
+
+workspace:
+  root: ./vibe-coder-server-data/workspace
+  maxUploadSizeMb: 100
+  artifactKeepCount: 20
+  uploadDeniedExtensions:
+    - exe
+    - bat
+    - cmd
+    - ps1
+    - sh
+
+security:
+  pairingEnabled: true
+  pairingCodeExpireMinutes: 10
+  restrictToWorkspace: true
+  allowRawShell: false
+
+claude:
+  enabled: true
+  path: auto
+  timeoutMinutes: 60
+  autoBuildAfterTask: false
+
+build:
+  timeoutMinutes: 30
+  defaultDebugTask: assembleDebug
+
+git:
+  enabled: true
+  path: auto
