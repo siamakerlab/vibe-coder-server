@@ -1,15 +1,15 @@
 package com.siamakerlab.vibecoder.server.env
 
 import com.siamakerlab.vibecoder.server.config.ServerConfig
+import com.siamakerlab.vibecoder.server.repo.BuildRepository
 import com.siamakerlab.vibecoder.server.repo.ProjectRepository
-import com.siamakerlab.vibecoder.server.repo.TaskRepository
 import com.siamakerlab.vibecoder.shared.dto.ServerStatusDto
 import java.nio.file.Path
 
 class StatusService(
     private val config: ServerConfig,
     private val projectRepo: ProjectRepository,
-    private val taskRepo: TaskRepository,
+    private val buildRepo: BuildRepository,
     private val env: EnvDiagnostics,
 ) {
     fun snapshot(): ServerStatusDto {
@@ -23,7 +23,7 @@ class StatusService(
             javaVersion = System.getProperty("java.version"),
             workspaceRoot = workspaceRoot.toString(),
             projectCount = projectRepo.count(),
-            runningTaskCount = taskRepo.countRunning(),
+            runningTaskCount = buildRepo.countRunning(),
             claudeAvailable = envSnap.claude.status == com.siamakerlab.vibecoder.shared.dto.CheckStatus.OK,
             androidSdkAvailable = envSnap.androidSdk.status == com.siamakerlab.vibecoder.shared.dto.CheckStatus.OK,
             gitAvailable = envSnap.git.status == com.siamakerlab.vibecoder.shared.dto.CheckStatus.OK,

@@ -8,6 +8,50 @@ Version codes follow the global convention `yymmddrrr` (date + run counter).
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-05-21
+
+> v0.2.0의 deferred 항목 중 deprecated 엔드포인트 제거. one-shot Claude task
+> 파이프라인 잔재를 모두 정리하고 콘솔 단일 경로로 통합.
+
+### Removed
+- **Server**: `POST /api/projects/{id}/claude/tasks` (deprecated 핸들러),
+  `GET /api/projects/{id}/claude/tasks`, `GET .../claude/tasks/{taskId}`,
+  `POST .../claude/tasks/{taskId}/cancel` 4개 엔드포인트.
+- **Server**: WebSocket `/ws/projects/{id}/tasks/{taskId}/logs` 엔드포인트
+  (콘솔 WS 및 빌드 WS만 남김).
+- **Server 파일**: `claude/ClaudeRoutes.kt`, `claude/ClaudeRunner.kt`,
+  `claude/ClaudePromptBuilder.kt`, `tasks/TaskRoutes.kt`,
+  `repo/TaskRepository.kt`.
+- **DB**: `Tasks` 테이블 정의 삭제 (`db/Schemas.kt`). 신규 서버는 이 테이블을
+  더 이상 생성하지 않음. 기존 DB 파일은 그대로 두면 됨 (테이블만 unused
+  상태로 남음).
+- **Shared**: `ClaudeTaskRequestDto`, `TaskDto`, `TaskType` 제거. `TaskStatus`
+  enum은 BuildRow가 사용하므로 보존하되 KDoc에 build 전용임을 명시.
+- **Shared**: `ApiPath.claudeTasks/claudeTask/claudeTaskCancel/wsTaskLogs`
+  4개 path 상수 제거.
+- **Android**: `ApiService.submitClaudeTask/listClaudeTasks/cancelTask` 함수
+  제거. `Repositories.kt` `TaskRepository` 클래스 통째로 제거.
+  `WsClient.streamTaskLogs` 제거.
+- **Android Nav**: `Routes.LOG` (`projects/{id}/logs/{kind}/{taskId}`)
+  → `Routes.BUILD_LOG` (`projects/{id}/builds/{buildId}/logs`)로 단순화.
+  `ARG_KIND`/`ARG_TASK_ID` 제거, `ARG_BUILD_ID` 신설.
+  `Routes.log(id, kind, taskId)` → `Routes.buildLog(id, buildId)`.
+
+### Changed
+- **Android `LogScreen`**: build-only로 단순화. ViewModel은 `WsClient` +
+  `BuildRepository`만 주입받고 `kind` 분기 제거.
+- **Server `StatusService`**: `taskRepo` → `buildRepo` 의존성으로 교체.
+  `runningTaskCount`는 이제 `Builds` 테이블의 RUNNING+PENDING 개수.
+  `BuildRepository.countRunning()` 메서드 신설.
+- **Server `ServerContext`**: `taskRepo`, `claude: ClaudeRunner` 필드 제거.
+- **Server `tasks/LogWriter.kt`**: KDoc에서 ClaudeRunner 언급 제거.
+
+### Versions
+- `versionName` `0.2.0` → `0.2.1` (PATCH: deprecated 코드 정리, 동작 변경
+  없음).
+- `versionCode` `260521001` → `260521002`.
+- `server.yml` `server.version` `0.2.0` → `0.2.1`.
+
 ## [0.2.0] - 2026-05-21
 
 > project-claude-console — 채팅형 Claude Console + 영속 세션 + 액션 레지스트리.

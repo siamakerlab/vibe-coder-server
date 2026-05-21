@@ -15,7 +15,7 @@ import java.nio.file.StandardOpenOption
  * Writes log lines to disk and broadcasts them on WebSocket simultaneously.
  *
  * Each Logger instance owns one open file handle and one topic key — pass it
- * to ClaudeRunner / GradleBuilder as the line sink.
+ * to GradleBuilder (build pipeline) as the line sink.
  */
 class TaskLogger(
     private val taskId: String,

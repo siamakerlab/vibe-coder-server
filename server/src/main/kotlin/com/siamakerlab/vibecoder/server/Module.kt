@@ -13,10 +13,8 @@ import com.siamakerlab.vibecoder.server.auth.installAuth
 import com.siamakerlab.vibecoder.server.build.BuildService
 import com.siamakerlab.vibecoder.server.build.GradleBuilder
 import com.siamakerlab.vibecoder.server.build.buildRoutes
-import com.siamakerlab.vibecoder.server.claude.ClaudeRunner
 import com.siamakerlab.vibecoder.server.claude.ClaudeSessionManager
 import com.siamakerlab.vibecoder.server.claude.ClaudeStatusService
-import com.siamakerlab.vibecoder.server.claude.claudeRoutes
 import com.siamakerlab.vibecoder.server.claude.consoleRoutes
 import com.siamakerlab.vibecoder.server.config.ServerConfig
 import com.siamakerlab.vibecoder.server.core.Clock
@@ -35,10 +33,8 @@ import com.siamakerlab.vibecoder.server.repo.ArtifactRepository
 import com.siamakerlab.vibecoder.server.repo.BuildRepository
 import com.siamakerlab.vibecoder.server.repo.DeviceRepository
 import com.siamakerlab.vibecoder.server.repo.ProjectRepository
-import com.siamakerlab.vibecoder.server.repo.TaskRepository
 import com.siamakerlab.vibecoder.server.repo.UploadedFileRepository
 import com.siamakerlab.vibecoder.server.tasks.TaskQueue
-import com.siamakerlab.vibecoder.server.tasks.taskRoutes
 import com.siamakerlab.vibecoder.server.ws.LogHub
 import com.siamakerlab.vibecoder.server.ws.wsRoutes
 import io.ktor.serialization.kotlinx.KotlinxWebsocketSerializationConverter
@@ -59,7 +55,6 @@ data class ServerContext(
     val workspace: WorkspacePath,
     val deviceRepo: DeviceRepository,
     val projectRepo: ProjectRepository,
-    val taskRepo: TaskRepository,
     val buildRepo: BuildRepository,
     val artifactRepo: ArtifactRepository,
     val uploadedFileRepo: UploadedFileRepository,
@@ -69,7 +64,6 @@ data class ServerContext(
     val queue: TaskQueue,
     val hub: LogHub,
     val projects: ProjectService,
-    val claude: ClaudeRunner,
     val sessionManager: ClaudeSessionManager,
     val gradle: GradleBuilder,
     val artifacts: ArtifactService,
@@ -118,12 +112,6 @@ fun Application.module(ctx: ServerContext) {
         authRoutes(ctx.config.server.name, ctx.pairing, ctx.tokens, ctx.deviceRepo)
         envRoutes(ctx.status, ctx.env)
         projectRoutes(ctx.projects)
-        taskRoutes(ctx.taskRepo, ctx.queue)
-        claudeRoutes(
-            config = ctx.config, workspace = ctx.workspace, projects = ctx.projects,
-            taskRepo = ctx.taskRepo, queue = ctx.queue, hub = ctx.hub, clock = ctx.clock,
-            claudeRunner = ctx.claude, buildService = ctx.build,
-        )
         consoleRoutes(ctx.projects, ctx.sessionManager, ctx.hub, ctx.claudeStatusService)
         projectActionRoutes(ctx.projects, ctx.actionRegistry, ctx.actionHandler)
         buildRoutes(ctx.build, ctx.hub)

@@ -131,17 +131,15 @@ fun AppNavHost(prefs: AppPreferences) {
             )
         }
         composable(
-            Routes.LOG,
+            Routes.BUILD_LOG,
             arguments = listOf(
                 navArgument(Routes.ARG_PROJECT_ID) { type = NavType.StringType },
-                navArgument(Routes.ARG_KIND) { type = NavType.StringType },
-                navArgument(Routes.ARG_TASK_ID) { type = NavType.StringType },
+                navArgument(Routes.ARG_BUILD_ID) { type = NavType.StringType },
             ),
         ) { entry ->
             val projectId = entry.arguments?.getString(Routes.ARG_PROJECT_ID) ?: return@composable
-            val kind = entry.arguments?.getString(Routes.ARG_KIND) ?: return@composable
-            val taskId = entry.arguments?.getString(Routes.ARG_TASK_ID) ?: return@composable
-            LogScreen(projectId = projectId, kind = kind, taskId = taskId,
+            val buildId = entry.arguments?.getString(Routes.ARG_BUILD_ID) ?: return@composable
+            LogScreen(projectId = projectId, buildId = buildId,
                 onBack = { nav.popBackStack() }, vm = hiltViewModel())
         }
         composable(
@@ -150,7 +148,7 @@ fun AppNavHost(prefs: AppPreferences) {
         ) { entry ->
             val projectId = entry.arguments?.getString(Routes.ARG_PROJECT_ID) ?: return@composable
             BuildScreen(projectId = projectId,
-                onOpenLog = { buildId -> nav.navigate(Routes.log(projectId, "build", buildId)) },
+                onOpenLog = { buildId -> nav.navigate(Routes.buildLog(projectId, buildId)) },
                 onOpenArtifacts = { nav.navigate(Routes.artifacts(projectId)) },
                 onBack = { nav.popBackStack() },
                 vm = hiltViewModel())

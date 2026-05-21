@@ -36,7 +36,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.siamakerlab.vibecoder.console.R
 import com.siamakerlab.vibecoder.console.data.remote.WsClient
 import com.siamakerlab.vibecoder.console.data.repository.BuildRepository
-import com.siamakerlab.vibecoder.console.data.repository.TaskRepository
 import com.siamakerlab.vibecoder.shared.ws.WsFrame
 import com.siamakerlab.vibecoder.shared.ws.WsLevel
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -53,19 +52,22 @@ data class LogUi(
     val error: String? = null,
 )
 
+/**
+ * Live log viewer for build jobs. As of v0.2.1 the one-shot Claude task pipeline
+ * was retired, so this screen is build-only — the Claude console handles its own
+ * streaming in `ui/console/`.
+ */
 @HiltViewModel
 class LogViewModel @Inject constructor(
     private val ws: WsClient,
-    private val taskRepo: TaskRepository,
     private val buildRepo: BuildRepository,
 ) : ViewModel() {
     val state = MutableStateFlow(LogUi())
 
-    fun connect(projectId: String, kind: String, taskId: String) {
+    fun connect(projectId: String, buildId: String) {
         viewModelScope.launch {
             try {
-                val flow = if (kind == "build") ws.streamBuildLogs(projectId, taskId) else ws.streamTaskLogs(projectId, taskId)
-                flow.collect { frame ->
+                ws.streamBuildLogs(projectId, buildId).collect { frame ->
                     when (frame) {
                         is WsFrame.Log -> state.update {
                             it.copy(lines = it.lines + LogLine(frame.level, frame.message, frame.ts))
@@ -81,12 +83,9 @@ class LogViewModel @Inject constructor(
         }
     }
 
-    fun cancel(projectId: String, kind: String, taskId: String) {
+    fun cancel(projectId: String, buildId: String) {
         viewModelScope.launch {
-            runCatching {
-                if (kind == "build") buildRepo.cancel(projectId, taskId)
-                else taskRepo.cancel(projectId, taskId)
-            }
+            runCatching { buildRepo.cancel(projectId, buildId) }
         }
     }
 }
@@ -95,8 +94,7 @@ class LogViewModel @Inject constructor(
 @Composable
 fun LogScreen(
     projectId: String,
-    kind: String,
-    taskId: String,
+    buildId: String,
     onBack: () -> Unit,
     vm: LogViewModel,
 ) {
@@ -104,21 +102,21 @@ fun LogScreen(
     val ctx = LocalContext.current
     val listState = rememberLazyListState()
 
-    LaunchedEffect(projectId, kind, taskId) { vm.connect(projectId, kind, taskId) }
+    LaunchedEffect(projectId, buildId) { vm.connect(projectId, buildId) }
     LaunchedEffect(state.lines.size) {
         if (state.lines.isNotEmpty()) listState.animateScrollToItem(state.lines.lastIndex)
     }
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("${stringResource(R.string.log_title)} ($kind)") },
+            TopAppBar(title = { Text(stringResource(R.string.log_title)) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null) } })
         }
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
             Row(Modifier.padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
-                    onClick = { vm.cancel(projectId, kind, taskId) },
+                    onClick = { vm.cancel(projectId, buildId) },
                     enabled = !state.done,
                 ) { Text(stringResource(R.string.log_cancel)) }
                 OutlinedButton(onClick = { copyAll(ctx, state.lines) }) {

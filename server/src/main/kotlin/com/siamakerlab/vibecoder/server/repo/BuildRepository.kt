@@ -6,6 +6,7 @@ import com.siamakerlab.vibecoder.shared.dto.TaskStatus
 import org.jetbrains.exposed.sql.ResultRow
 import org.jetbrains.exposed.sql.SortOrder
 import org.jetbrains.exposed.sql.insert
+import org.jetbrains.exposed.sql.or
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.update
@@ -69,6 +70,14 @@ class BuildRepository(private val clock: Clock) {
     }
 
     fun lastForProject(projectId: String): BuildRow? = listForProject(projectId, 1).firstOrNull()
+
+    /** Number of builds currently in PENDING or RUNNING state across the whole server. */
+    fun countRunning(): Int = transaction {
+        Builds.selectAll()
+            .where { (Builds.status eq TaskStatus.RUNNING.name) or (Builds.status eq TaskStatus.PENDING.name) }
+            .count()
+            .toInt()
+    }
 
     private fun ResultRow.toRow() = BuildRow(
         id = this[Builds.id],

@@ -47,9 +47,6 @@ fun Routing.wsRoutes(
     actionRegistry: ProjectActionRegistry,
     actionHandler: ServerActionHandler,
 ) {
-    webSocket("/ws/projects/{projectId}/tasks/{taskId}/logs") {
-        handleLegacyLogStream(hub, deviceRepo, tokens, topic = call.parameters["taskId"]!!)
-    }
     webSocket("/ws/projects/{projectId}/builds/{buildId}/logs") {
         handleLegacyLogStream(hub, deviceRepo, tokens, topic = call.parameters["buildId"]!!)
     }

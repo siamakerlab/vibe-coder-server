@@ -4,7 +4,6 @@ import com.siamakerlab.vibecoder.console.data.local.AppPreferences
 import com.siamakerlab.vibecoder.console.data.remote.ApiService
 import com.siamakerlab.vibecoder.shared.dto.ArtifactDto
 import com.siamakerlab.vibecoder.shared.dto.BuildDto
-import com.siamakerlab.vibecoder.shared.dto.ClaudeTaskRequestDto
 import com.siamakerlab.vibecoder.shared.dto.EnvironmentCheckDto
 import com.siamakerlab.vibecoder.shared.dto.FileEntryDto
 import com.siamakerlab.vibecoder.shared.dto.GitDiffDto
@@ -13,7 +12,6 @@ import com.siamakerlab.vibecoder.shared.dto.GitStatusDto
 import com.siamakerlab.vibecoder.shared.dto.ProjectDto
 import com.siamakerlab.vibecoder.shared.dto.RegisterProjectRequestDto
 import com.siamakerlab.vibecoder.shared.dto.ServerStatusDto
-import com.siamakerlab.vibecoder.shared.dto.TaskDto
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -41,14 +39,6 @@ class ProjectRepository @Inject constructor(private val api: ApiService) {
     suspend fun list(): List<ProjectDto> = api.projects()
     suspend fun get(id: String): ProjectDto = api.project(id)
     suspend fun register(req: RegisterProjectRequestDto): ProjectDto = api.registerProject(req)
-}
-
-@Singleton
-class TaskRepository @Inject constructor(private val api: ApiService) {
-    suspend fun submitClaudeTask(projectId: String, prompt: String, autoBuild: Boolean): TaskDto =
-        api.submitClaudeTask(projectId, ClaudeTaskRequestDto(prompt, autoBuild))
-    suspend fun listClaudeTasks(projectId: String): List<TaskDto> = api.listClaudeTasks(projectId)
-    suspend fun cancel(projectId: String, taskId: String) = api.cancelTask(projectId, taskId)
 }
 
 @Singleton

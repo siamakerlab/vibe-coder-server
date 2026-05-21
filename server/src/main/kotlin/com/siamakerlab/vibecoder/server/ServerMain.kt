@@ -7,7 +7,6 @@ import com.siamakerlab.vibecoder.server.auth.PairingCodeStore
 import com.siamakerlab.vibecoder.server.auth.TokenService
 import com.siamakerlab.vibecoder.server.build.BuildService
 import com.siamakerlab.vibecoder.server.build.GradleBuilder
-import com.siamakerlab.vibecoder.server.claude.ClaudeRunner
 import com.siamakerlab.vibecoder.server.claude.ClaudeSessionManager
 import com.siamakerlab.vibecoder.server.claude.ClaudeStatusService
 import com.siamakerlab.vibecoder.server.config.ConfigLoader
@@ -25,7 +24,6 @@ import com.siamakerlab.vibecoder.server.repo.ArtifactRepository
 import com.siamakerlab.vibecoder.server.repo.BuildRepository
 import com.siamakerlab.vibecoder.server.repo.DeviceRepository
 import com.siamakerlab.vibecoder.server.repo.ProjectRepository
-import com.siamakerlab.vibecoder.server.repo.TaskRepository
 import com.siamakerlab.vibecoder.server.repo.UploadedFileRepository
 import com.siamakerlab.vibecoder.server.tasks.TaskQueue
 import com.siamakerlab.vibecoder.server.ws.LogHub
@@ -109,7 +107,6 @@ fun main(args: Array<String>) {
     val clock = SystemClock()
     val deviceRepo = DeviceRepository(clock)
     val projectRepo = ProjectRepository(clock)
-    val taskRepo = TaskRepository(clock)
     val buildRepo = BuildRepository(clock)
     val artifactRepo = ArtifactRepository(clock)
     val uploadedRepo = UploadedFileRepository(clock)
@@ -125,7 +122,6 @@ fun main(args: Array<String>) {
     val hub = LogHub()
     val keystoreGen = KeystoreGenerator(workspace)
     val projects = ProjectService(workspace, projectRepo, buildRepo, keystoreGen)
-    val claudeRunner = ClaudeRunner(config, workspace)
     val sessionManager = ClaudeSessionManager(config, workspace, hub)
     val gradle = GradleBuilder(config)
     val artifacts = ArtifactService(workspace, artifactRepo, clock)
@@ -133,14 +129,14 @@ fun main(args: Array<String>) {
     val git = GitReader()
     val uploads = UploadService(config, workspace, uploadedRepo, clock)
     val env = EnvDiagnostics(config)
-    val status = StatusService(config, projectRepo, taskRepo, env)
+    val status = StatusService(config, projectRepo, buildRepo, env)
     val actionRegistry = ProjectActionRegistry(workspace)
     val actionHandler = ServerActionHandler(projects, build, git, hub, sessionManager)
     val claudeStatusService = ClaudeStatusService(config, workspace, sessionManager)
 
     val ctx = ServerContext(
-        config, workspace, deviceRepo, projectRepo, taskRepo, buildRepo, artifactRepo,
-        uploadedRepo, clock, tokens, pairing, queue, hub, projects, claudeRunner,
+        config, workspace, deviceRepo, projectRepo, buildRepo, artifactRepo,
+        uploadedRepo, clock, tokens, pairing, queue, hub, projects,
         sessionManager, gradle,
         artifacts, build, git, uploads, status, env,
         actionRegistry, actionHandler, claudeStatusService,

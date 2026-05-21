@@ -23,21 +23,6 @@ object Projects : Table("projects") {
     override val primaryKey = PrimaryKey(id)
 }
 
-object Tasks : Table("tasks") {
-    val id = varchar("id", 64)
-    val projectId = varchar("project_id", 64).references(Projects.id)
-    val type = varchar("type", 32)
-    val status = varchar("status", 32)
-    val title = text("title")
-    val prompt = text("prompt").nullable()
-    val logPath = text("log_path").nullable()
-    val errorMessage = text("error_message").nullable()
-    val startedAt = varchar("started_at", 64).nullable()
-    val finishedAt = varchar("finished_at", 64).nullable()
-    val createdAt = varchar("created_at", 64)
-    override val primaryKey = PrimaryKey(id)
-}
-
 object Builds : Table("builds") {
     val id = varchar("id", 64)
     val projectId = varchar("project_id", 64).references(Projects.id)
@@ -76,4 +61,4 @@ object UploadedFiles : Table("uploaded_files") {
     override val primaryKey = PrimaryKey(id)
 }
 
-val AllTables = arrayOf(Devices, Projects, Tasks, Builds, Artifacts, UploadedFiles)
+val AllTables = arrayOf(Devices, Projects, Builds, Artifacts, UploadedFiles)

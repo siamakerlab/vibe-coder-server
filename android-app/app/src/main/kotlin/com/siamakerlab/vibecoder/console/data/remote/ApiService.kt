@@ -7,7 +7,6 @@ import com.siamakerlab.vibecoder.shared.dto.BuildDto
 import com.siamakerlab.vibecoder.shared.dto.ActionInvokeRequestDto
 import com.siamakerlab.vibecoder.shared.dto.ActionTreeDto
 import com.siamakerlab.vibecoder.shared.dto.ClaudeStatusDto
-import com.siamakerlab.vibecoder.shared.dto.ClaudeTaskRequestDto
 import com.siamakerlab.vibecoder.shared.dto.EnvironmentCheckDto
 import com.siamakerlab.vibecoder.shared.dto.FileListDto
 import com.siamakerlab.vibecoder.shared.dto.GitDiffDto
@@ -20,7 +19,6 @@ import com.siamakerlab.vibecoder.shared.dto.PairResponseDto
 import com.siamakerlab.vibecoder.shared.dto.ProjectDto
 import com.siamakerlab.vibecoder.shared.dto.RegisterProjectRequestDto
 import com.siamakerlab.vibecoder.shared.dto.ServerStatusDto
-import com.siamakerlab.vibecoder.shared.dto.TaskDto
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.delete
@@ -66,16 +64,6 @@ class ApiService @Inject constructor(
     suspend fun deleteProject(id: String) {
         client.delete(u(ApiPath.project(id), base()))
     }
-
-    suspend fun submitClaudeTask(projectId: String, body: ClaudeTaskRequestDto): TaskDto =
-        client.post(u(ApiPath.claudeTasks(projectId), base())) {
-            contentType(ContentType.Application.Json); setBody(body)
-        }.body()
-    suspend fun cancelTask(projectId: String, taskId: String) {
-        client.post(u(ApiPath.claudeTaskCancel(projectId, taskId), base()))
-    }
-    suspend fun listClaudeTasks(projectId: String): List<TaskDto> =
-        client.get(u(ApiPath.claudeTasks(projectId), base())).body()
 
     // Console (persistent Claude session)
     suspend fun consolePrompt(projectId: String, text: String): PromptAcceptedDto =

@@ -105,31 +105,15 @@ data class KeystoreRequestDto(
 
 // endregion
 
-// region Tasks
+// region Build status
 
+/**
+ * Lifecycle states for a Build job. Named `TaskStatus` for historical reasons —
+ * the deprecated Claude task pipeline shared this enum, but as of v0.2.1 it is
+ * used exclusively by the build subsystem.
+ */
 @Serializable
 enum class TaskStatus { PENDING, RUNNING, SUCCESS, FAILED, CANCELED, TIMEOUT }
-
-@Serializable
-enum class TaskType { CLAUDE_PROMPT, BUILD_DEBUG, GIT_STATUS, GIT_DIFF, GIT_LOG, FILE_UPLOAD }
-
-@Serializable
-data class TaskDto(
-    val id: String,
-    val projectId: String,
-    val type: TaskType,
-    val status: TaskStatus,
-    val title: String,
-    val startedAt: String? = null,
-    val finishedAt: String? = null,
-    val errorMessage: String? = null,
-)
-
-@Serializable
-data class ClaudeTaskRequestDto(
-    val prompt: String,
-    val autoBuild: Boolean = false,
-)
 
 // endregion
 

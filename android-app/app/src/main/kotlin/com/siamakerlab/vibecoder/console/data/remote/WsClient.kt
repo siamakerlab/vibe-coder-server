@@ -26,9 +26,6 @@ class WsClient @Inject constructor(
 ) {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true; classDiscriminator = "type" }
 
-    fun streamTaskLogs(projectId: String, taskId: String): Flow<WsFrame> =
-        streamPath(ApiPath.wsTaskLogs(projectId, taskId))
-
     fun streamBuildLogs(projectId: String, buildId: String): Flow<WsFrame> =
         streamPath(ApiPath.wsBuildLogs(projectId, buildId))
 
