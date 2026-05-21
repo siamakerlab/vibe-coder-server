@@ -21,6 +21,40 @@ data class PairResponseDto(
 data class MeDto(
     val deviceId: String,
     val deviceName: String,
+    val username: String? = null,
+)
+
+@Serializable
+data class LoginRequestDto(
+    val username: String,
+    val password: String,
+    val deviceName: String? = null,   // 클라이언트가 자신을 식별할 라벨. 미지정 시 "unknown"
+)
+
+@Serializable
+data class LoginResponseDto(
+    val token: String,
+    val deviceId: String,
+    val serverName: String,
+    val username: String,
+)
+
+@Serializable
+data class SetupRequestDto(
+    val username: String,
+    val password: String,
+    val deviceName: String? = null,
+)
+
+@Serializable
+data class ChangePasswordRequestDto(
+    val currentPassword: String,
+    val newPassword: String,
+)
+
+@Serializable
+data class SetupStatusDto(
+    val adminExists: Boolean,
 )
 
 // endregion

@@ -36,3 +36,8 @@ logs/
 # OS
 .DS_Store
 Thumbs.db
+
+# Docker PoC artifacts (개인 환경설정/빌드 컨텍스트 산출물)
+docker/.env
+docker/*.local.yml
+docker/build-context/

@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# vibe-doctor — 컨테이너 부팅 후 빌드 환경/인증을 순차적으로 설치/검증한다.
+#
+# 사용:
+#   vibe-doctor              인터랙티브 모드 (기본)
+#   vibe-doctor check        진단만 (설치 안 함)
+#   vibe-doctor install      모두 자동 설치 (Y 가정, 비대화형)
+#   vibe-doctor android      Android SDK만
+#   vibe-doctor claude       Claude 인증만
+#   vibe-doctor mcp          MCP만
+#   vibe-doctor --help       도움말
+
+set -uo pipefail
+
+DOCTOR_HOME="/opt/vibe-doctor"
+# shellcheck source=lib/common.sh
+source "$DOCTOR_HOME/lib/common.sh"
+# shellcheck source=lib/check.sh
+source "$DOCTOR_HOME/lib/check.sh"
+# shellcheck source=lib/android-sdk.sh
+source "$DOCTOR_HOME/lib/android-sdk.sh"
+# shellcheck source=lib/claude-auth.sh
+source "$DOCTOR_HOME/lib/claude-auth.sh"
+# shellcheck source=lib/mcp.sh
+source "$DOCTOR_HOME/lib/mcp.sh"
+
+print_banner() {
+    cat <<'EOF'
+ _   _ _ _              ____           _
+| | | (_) |__   ___    / ___|___   __| | ___ _ __
+| | | | | '_ \ / _ \  | |   / _ \ / _` |/ _ \ '__|
+| |_| | | |_) |  __/  | |__| (_) | (_| |  __/ |
+ \___/|_|_.__/ \___|   \____\___/ \__,_|\___|_|
+
+  vibe-coder Doctor — 빌드 환경 셋업 도우미
+EOF
+}
+
+usage() {
+    cat <<EOF
+사용: vibe-doctor [명령]
+
+명령:
+  check       환경 진단만 수행 (변경 없음)
+  install     모든 컴포넌트 자동 설치 (비대화형, Y 가정)
+  android     Android SDK 설치/업데이트
+  claude      Claude CLI 인증 셋업
+  mcp         선택적 MCP 패키지 설치
+  --help, -h  이 도움말
+
+기본 (인자 없음): 인터랙티브 모드 — 각 단계를 묻고 진행.
+
+볼륨/경로:
+  ANDROID_HOME          = ${ANDROID_HOME:-/opt/android-sdk}
+  VIBECODER_WORKSPACE   = ${VIBECODER_WORKSPACE_ROOT:-/workspace}
+  CLAUDE_CONFIG_DIR     = ${CLAUDE_CONFIG_DIR:-/home/vibe/.claude}
+EOF
+}
+
+# ─── 메인 ─────────────────────────────────────────────────────────────────
+
+cmd="${1:-interactive}"
+
+case "$cmd" in
+    -h|--help|help)
+        usage
+        exit 0
+        ;;
+    check)
+        print_banner
+        check_all
+        exit $?
+        ;;
+    android)
+        install_android_sdk_all
+        ;;
+    claude)
+        setup_claude_auth
+        ;;
+    mcp)
+        install_optional_mcp
+        ;;
+    install)
+        # 비대화형 자동 설치
+        print_banner
+        log_step "자동 설치 모드 (비대화형)"
+        install_android_sdk_all || log_err "Android SDK 설치 부분 실패"
+        # claude/mcp는 인증/네트워크 필요 → 자동 모드에서는 안내만
+        log_info "Claude 인증 / MCP는 인터랙티브 실행을 권장합니다."
+        log_dim "  docker exec -it vibe-coder vibe-doctor claude"
+        log_dim "  docker exec -it vibe-coder vibe-doctor mcp"
+        ;;
+    interactive)
+        print_banner
+        check_all
+        printf '\n'
+        if prompt_yn "Android SDK를 설치/업데이트하시겠어요?" Y; then
+            install_android_sdk_all || log_err "Android SDK 설치 중 오류"
+        fi
+        printf '\n'
+        if prompt_yn "Claude CLI 인증을 셋업하시겠어요?" Y; then
+            setup_claude_auth
+        fi
+        printf '\n'
+        if prompt_yn "선택적 MCP를 설치하시겠어요?" N; then
+            install_optional_mcp
+        fi
+        printf '\n'
+        log_step "최종 점검"
+        check_all || true
+        log_ok "doctor 종료. 'docker logs vibe-coder' 로 서버 상태 확인 가능."
+        ;;
+    *)
+        log_err "알 수 없는 명령: $cmd"
+        usage
+        exit 2
+        ;;
+esac

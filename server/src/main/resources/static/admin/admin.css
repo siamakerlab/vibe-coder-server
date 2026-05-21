@@ -1,0 +1,277 @@
+/* Vibe Coder Admin — 미니멀 다크 테마. CDN 의존 없음. */
+
+* { box-sizing: border-box; }
+:root {
+    --bg: #0f1419;
+    --bg-elev: #1a1f29;
+    --bg-card: #1e2532;
+    --border: #2a3142;
+    --text: #e4e8ef;
+    --text-dim: #8b94a8;
+    --primary: #5e9eff;
+    --primary-hover: #7eb4ff;
+    --danger: #ff6b6b;
+    --warn: #ffa94d;
+    --ok: #69db7c;
+    --radius: 6px;
+    --shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Apple SD Gothic Neo", sans-serif;
+}
+
+a { color: var(--primary); text-decoration: none; }
+a:hover { color: var(--primary-hover); text-decoration: underline; }
+
+/* ── Layout ──────────────────────────────────────────────────────── */
+
+.layout {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    min-height: 100vh;
+}
+
+.sidebar {
+    background: var(--bg-elev);
+    border-right: 1px solid var(--border);
+    padding: 24px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.brand {
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    color: var(--text);
+}
+
+.nav-links {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+}
+.nav-links a {
+    padding: 8px 12px;
+    border-radius: var(--radius);
+    color: var(--text-dim);
+}
+.nav-links a:hover { background: var(--bg-card); color: var(--text); text-decoration: none; }
+.nav-links a.active { background: var(--bg-card); color: var(--text); font-weight: 600; }
+
+.user-box {
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+}
+.user-box .user { font-size: 12px; color: var(--text-dim); margin-bottom: 8px; }
+.logout {
+    width: 100%;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 8px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font: inherit;
+}
+.logout:hover { background: var(--bg-card); color: var(--text); }
+
+.content {
+    padding: 32px;
+    max-width: 1200px;
+}
+
+header h1 {
+    margin: 0 0 24px;
+    font-size: 24px;
+    font-weight: 700;
+}
+
+/* ── Cards ───────────────────────────────────────────────────────── */
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+}
+
+.card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    box-shadow: var(--shadow);
+}
+
+.card h2 {
+    margin: 0 0 12px;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-dim);
+    font-weight: 600;
+}
+
+.card dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; }
+.card dt { color: var(--text-dim); }
+.card dd { margin: 0; }
+
+/* ── Auth card (login/setup/password) ────────────────────────────── */
+
+.auth-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 32px;
+    max-width: 420px;
+    margin: 80px auto;
+    box-shadow: var(--shadow);
+}
+.auth-card.narrow { margin: 0; }
+.auth-card h1 { margin: 0 0 16px; font-size: 20px; }
+.auth-card p.dim { color: var(--text-dim); margin: 0 0 24px; font-size: 13px; }
+
+label {
+    display: block;
+    margin-bottom: 16px;
+    font-size: 13px;
+    color: var(--text-dim);
+}
+label input[type=text],
+label input[type=password],
+label input[type=number],
+label input:not([type=checkbox]) {
+    display: block;
+    width: 100%;
+    margin-top: 6px;
+    padding: 10px 12px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font: inherit;
+}
+label input:focus { outline: none; border-color: var(--primary); }
+label input[type=checkbox] { margin-right: 6px; vertical-align: middle; }
+
+button {
+    cursor: pointer;
+    font: inherit;
+}
+button.primary, .primary-link {
+    background: var(--primary);
+    color: white;
+    border: none;
+    padding: 10px 16px;
+    border-radius: var(--radius);
+    font-weight: 600;
+    width: 100%;
+    margin-top: 8px;
+}
+button.primary:hover, .primary-link:hover { background: var(--primary-hover); text-decoration: none; color: white; }
+
+button.danger {
+    background: transparent;
+    color: var(--danger);
+    border: 1px solid var(--danger);
+    padding: 4px 10px;
+    border-radius: var(--radius);
+}
+button.danger:hover { background: var(--danger); color: white; }
+
+/* ── Banners ─────────────────────────────────────────────────────── */
+
+.error {
+    background: rgba(255, 107, 107, 0.1);
+    border: 1px solid var(--danger);
+    color: var(--danger);
+    padding: 10px 14px;
+    border-radius: var(--radius);
+    margin-bottom: 16px;
+    font-size: 13px;
+}
+.ok-banner {
+    background: rgba(105, 219, 124, 0.1);
+    border: 1px solid var(--ok);
+    color: var(--ok);
+    padding: 10px 14px;
+    border-radius: var(--radius);
+    margin-bottom: 16px;
+    font-size: 13px;
+}
+
+.hint { color: var(--text-dim); font-size: 12px; margin-top: 8px; }
+.dim  { color: var(--text-dim); }
+.ok   { color: var(--ok); }
+.warn { color: var(--warn); }
+code  { background: var(--bg); padding: 2px 6px; border-radius: 3px; font-size: 12px; }
+
+/* ── Settings form ───────────────────────────────────────────────── */
+
+.settings-form fieldset {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    margin-bottom: 16px;
+    background: var(--bg-card);
+}
+.settings-form legend {
+    padding: 0 8px;
+    font-weight: 600;
+    color: var(--text-dim);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.settings-form button.primary { width: auto; padding: 10px 24px; }
+
+/* ── Devices table ───────────────────────────────────────────────── */
+
+table.devices {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+}
+table.devices th,
+table.devices td {
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+}
+table.devices th {
+    background: var(--bg-elev);
+    color: var(--text-dim);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-size: 11px;
+}
+table.devices tr:last-child td { border-bottom: none; }
+
+/* ── Responsive ──────────────────────────────────────────────────── */
+
+@media (max-width: 720px) {
+    .layout { grid-template-columns: 1fr; }
+    .sidebar {
+        flex-direction: row;
+        align-items: center;
+        padding: 12px 16px;
+        gap: 16px;
+    }
+    .nav-links { flex-direction: row; flex-wrap: wrap; }
+    .user-box { padding: 0; border: none; }
+    .content { padding: 16px; }
+    .auth-card { margin: 24px auto; }
+}

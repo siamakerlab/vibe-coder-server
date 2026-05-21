@@ -7,10 +7,19 @@ package com.siamakerlab.vibecoder.shared
  */
 object ApiPath {
 
-    // Auth
+    // Auth — 신규 통합 인증 (v0.4.0+)
+    const val AUTH_LOGIN = "/api/auth/login"
+    const val AUTH_SETUP = "/api/auth/setup"
+    const val AUTH_SETUP_STATUS = "/api/auth/setup/status"
+    const val AUTH_PASSWORD = "/api/auth/password"
+
+    // Auth — 레거시 페어링 (v0.4.0에서 deprecated, v0.5.0에서 제거 예정)
     const val AUTH_PAIR = "/api/auth/pair"
     const val AUTH_ME = "/api/auth/me"
     const val AUTH_LOGOUT = "/api/auth/logout"
+
+    // Public health probe (no auth — Docker HEALTHCHECK / 모니터링용)
+    const val HEALTH = "/health"
 
     // Server
     const val SERVER_STATUS = "/api/server/status"

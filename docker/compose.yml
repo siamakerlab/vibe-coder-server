@@ -1,0 +1,64 @@
+name: vibe-coder
+
+services:
+  vibe-coder:
+    # 로컬 빌드 (개발자용)
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+
+    # Docker Hub 배포 사용자는 위 build: 블록 대신 image: 만 사용
+    image: ${VIBECODER_IMAGE:-siamakerlab/vibe-coder:0.3.0}
+
+    container_name: vibe-coder
+    restart: unless-stopped
+
+    # 호스트 UID/GID 매칭 → 마운트된 볼륨의 파일 소유권 충돌 방지
+    environment:
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      TZ: ${TZ:-Asia/Seoul}
+
+      # JVM 힙 (호스트 RAM 보고 조정)
+      JAVA_OPTS: ${JAVA_OPTS:--Xmx2g -XX:+UseG1GC -Dfile.encoding=UTF-8}
+
+      # 첫 실행 시 admin 자동 생성 (선택). 미지정 시 /admin/setup 화면.
+      VIBECODER_ADMIN_USERNAME: ${VIBECODER_ADMIN_USERNAME:-}
+      VIBECODER_ADMIN_PASSWORD: ${VIBECODER_ADMIN_PASSWORD:-}
+
+    # LAN 페어링 / admin 웹 / API 모두 같은 포트
+    ports:
+      - "${VIBE_PORT:-17880}:17880"
+
+    # 볼륨: 슬림 이미지 + 무거운 컴포넌트는 볼륨에 둔다.
+    volumes:
+      # 빌드 결과물 / 프로젝트 소스 (호스트와 공유 권장)
+      - ${VIBE_WORKSPACE:-./workspace}:/workspace
+
+      # 서버 영속 데이터 (SQLite, 로그, 빌드 메타)
+      - ${VIBE_DATA:-./vibe-data}:/data
+
+      # 무거운 빌드환경 (doctor가 채움) — named volume으로 재사용
+      - vibe-android-sdk:/opt/android-sdk
+      - vibe-gradle-cache:/home/vibe/.gradle
+
+      # Claude 인증: 호스트 ~/.claude를 그대로 마운트하면 호스트와 동일 인증.
+      # 비활성화하려면 .env에서 VIBE_CLAUDE_DIR=vibe-claude-data 등으로 변경.
+      - ${VIBE_CLAUDE_DIR:-~/.claude}:/home/vibe/.claude
+
+    # 헬스체크: /health 엔드포인트 (Module.kt:114)
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:17880/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+    # 컨테이너 안에서 빌드된 APK를 호스트 폰에 설치하려면 adb-over-network 사용 권장.
+    # USB 사용 시 아래 활성화:
+    # devices:
+    #   - /dev/bus/usb:/dev/bus/usb
+
+volumes:
+  vibe-android-sdk:
+  vibe-gradle-cache:

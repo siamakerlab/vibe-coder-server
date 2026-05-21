@@ -55,16 +55,20 @@ class KtorClientFactory @Inject constructor(
                         val token = prefs.session.first().token ?: return@loadTokens null
                         BearerTokens(accessToken = token, refreshToken = token)
                     }
-                    // The pair flow re-issues a token; refresh just re-reads it.
+                    // Login으로 새 토큰을 받아 prefs에 저장 → refresh는 그걸 다시 읽어옴.
                     refreshTokens {
                         val token = prefs.session.first().token ?: return@refreshTokens null
                         BearerTokens(accessToken = token, refreshToken = token)
                     }
                     sendWithoutRequest { request ->
-                        // Pairing endpoint is open — never attach Authorization there.
-                        // Use full URL string to dodge Ktor 3.x URLBuilder property renames.
+                        // 인증 없이 호출되는 엔드포인트: login / setup / setup-status / 레거시 pair / health
+                        // 이들엔 Authorization 헤더를 붙이지 않음.
                         val path = request.url.pathSegments.joinToString("/", prefix = "/")
-                        !path.endsWith("/api/auth/pair")
+                        path != "/api/auth/login" &&
+                            path != "/api/auth/setup" &&
+                            path != "/api/auth/setup/status" &&
+                            !path.endsWith("/api/auth/pair") &&
+                            path != "/health"
                     }
                 }
             }

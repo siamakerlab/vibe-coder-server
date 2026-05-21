@@ -8,6 +8,87 @@ Version codes follow the global convention `yymmddrrr` (date + run counter).
 
 ## [Unreleased]
 
+### Added — Docker 이미지 + Admin 웹 + 통합 인증 (v0.4.0 후보)
+
+> 서버를 도커 이미지로 패키징하고, Android 앱 외에 브라우저 admin 웹을
+> 통해 초기 셋업 / 비밀번호 변경 / 디바이스 관리가 가능하도록 인증
+> 모델을 통합. 설계 문서: `docs/01-plan/admin-web.md`.
+
+**Docker PoC (`docker/`)**
+- **슬림 멀티스테이지 Dockerfile**: JDK17 builder + JRE runtime, 약 600MB.
+  Android SDK / Gradle 캐시 / Claude 인증은 이미지에 박지 않고 컨테이너
+  부팅 후 doctor가 볼륨에 다운로드.
+- **vibe-doctor** (`docker/doctor/`): 인터랙티브 셋업 도우미.
+  `check` / `install` / `android` / `claude` / `mcp` 서브커맨드.
+  Android SDK cmdline-tools 자동 다운로드 + sdkmanager 라이선스 자동
+  수락 + manifest.yml 기반 패키지 설치.
+- **entrypoint.sh**: 호스트 UID/GID 매칭(`PUID`/`PGID`), 볼륨 소유권 정리,
+  `VIBECODER_ADMIN_USERNAME`/`PASSWORD` env 패스스루, Android SDK 누락
+  안내. `tini` PID 1 + `gosu` 권한 강등.
+- **compose.yml**: 5개 볼륨(workspace/data/android-sdk/gradle-cache/claude),
+  헬스체크(`/health`), `.env` 통한 모든 옵션 외부화.
+- **docker/.env.example**: 한국어 주석. UID/포트/경로/JVM/admin 부트스트랩.
+- **docker/README.md**: pull → compose up → admin → doctor → 앱 로그인까지
+  한국어 가이드.
+
+**Shared (`shared/`)**
+- `ApiPath`: `AUTH_LOGIN`, `AUTH_SETUP`, `AUTH_SETUP_STATUS`, `AUTH_PASSWORD`,
+  `HEALTH` 추가. 기존 `AUTH_PAIR` 등은 deprecated 표기로 유지.
+- DTO 추가: `LoginRequestDto`, `LoginResponseDto`, `SetupRequestDto`,
+  `ChangePasswordRequestDto`, `SetupStatusDto`. `MeDto`에 `username` 필드.
+
+**Server (`server/`)**
+- **`/health`**: 인증 없는 헬스 프로브. Docker HEALTHCHECK / 모니터링용.
+- **AdminUsers 테이블 + DeviceRow 확장**: `user_id`/`channel` 컬럼 추가
+  (nullable + default, 자동 마이그레이션).
+- **`AdminUserRepository`**: 단일 admin 행 CRUD. `count()` / `findById*` /
+  `insert` / `touchLogin` / `updatePassword`.
+- **`PasswordHasher`**: BCrypt cost 12. `PasswordPolicy`(영문+숫자 8자
+  이상), `UsernamePolicy`(3~32자 `[A-Za-z0-9._-]`).
+- **`AuthService`**: `setup` / `login` / `changePassword`. 같은 username
+  10회 실패 시 15분 잠금. `dummy verify`로 timing-attack 방어.
+- **`AuthRoutes`**: `/api/auth/login`, `/api/auth/setup`,
+  `/api/auth/setup/status`, `/api/auth/password` 신규. `/api/auth/pair`는
+  admin 존재 시 410(`pairing_deprecated`) 반환.
+- **`AuthPlugin`**: `Authorization` 헤더 외에 `vibe_session` 쿠키도 토큰
+  운반 경로로 인정. 같은 토큰이 두 경로 어느 쪽으로 와도 인증됨.
+- **Admin 웹 (`admin/`)**: 서버 사이드 렌더 HTML. `/admin/setup` /
+  `/admin/login` / `/admin` (대시보드) / `/admin/settings` /
+  `/admin/password` / `/admin/devices` / `/admin/logout`. 외부 CDN 의존
+  없는 다크 테마 CSS (`resources/static/admin/admin.css`).
+- **`ServerMain.bootstrapAdminFromEnv()`**: 부팅 시 `VIBECODER_ADMIN_*` env
+  가 있고 DB에 admin이 없으면 자동 생성. Docker compose 자동화용.
+- **부팅 배너**: Admin URL 표시 추가, admin 미존재 시 경고 출력.
+  레거시 페어링 코드는 admin 부재 시에만 호환용으로 노출.
+
+**Android (`android-app/app/`)**
+- **`ApiService.pair()` → `login()`**: username/password 입력으로 토큰
+  발급. `LoginRequestDto`/`LoginResponseDto` 사용.
+- **`AuthRepository.login()`**: 시그니처 `(serverUrl, username, password,
+  deviceName)`. 기존 `pair()` 제거.
+- **`KtorClient.sendWithoutRequest`**: `/api/auth/login`,
+  `/api/auth/setup`, `/api/auth/setup/status`, `/health`도 인증 헤더 제외
+  대상에 추가.
+- **`ConnectScreen`**: 페어링 코드 입력 필드를 username + password 필드로
+  교체. 비밀번호는 `PasswordVisualTransformation`. admin 셋업 안내 문구
+  추가.
+- **`strings.xml`**: `connect_pairing_code` → `connect_username` /
+  `connect_password` / `connect_setup_hint`. `connect_button` "Pair" →
+  "Sign in".
+
+**빌드 인프라**
+- **`settings.gradle.kts`**: `-PskipAndroidModule=true` 옵션 신설.
+  Docker 이미지 빌드 시 :android-app:app을 제외하여 AGP/Android SDK 의존성
+  없이 `:server`만 빌드.
+
+**검증 (PoC manual)**
+- `./gradlew :server:installDist` 통과, BCrypt jar 정상 포함
+- 서버 실제 부팅 → `/health` `/api/auth/setup/status` `/admin` 302 →
+  setup → login(wrong/correct) → bearer `/me` → cookie `/admin` 대시보드
+  → `/api/auth/password` (wrong/correct) → 새 비번 로그인 → 레거시
+  `/api/auth/pair` 410 모든 흐름 정상
+- `./gradlew :android-app:app:compileDebugKotlin` 통과
+
 ## [0.3.0] - 2026-05-21
 
 > v0.2.0의 마지막 deferred 2건 처리: 액션 권한 게이트(FR-11-b) + MCP

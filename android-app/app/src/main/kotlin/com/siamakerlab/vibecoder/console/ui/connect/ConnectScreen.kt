@@ -19,8 +19,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -49,16 +51,16 @@ class ConnectViewModel @Inject constructor(
     private val _state = MutableStateFlow(ConnectUiState())
     val state: StateFlow<ConnectUiState> = _state.asStateFlow()
 
-    fun pair(serverUrl: String, deviceName: String, code: String) {
-        if (serverUrl.isBlank() || deviceName.isBlank() || code.length != 6) {
-            _state.update { it.copy(error = "Fill all fields. Code must be 6 digits.") }
+    fun login(serverUrl: String, username: String, password: String, deviceName: String) {
+        if (serverUrl.isBlank() || username.isBlank() || password.isBlank() || deviceName.isBlank()) {
+            _state.update { it.copy(error = "Fill all fields.") }
             return
         }
         _state.update { it.copy(loading = true, error = null) }
         viewModelScope.launch {
-            runCatching { auth.pair(serverUrl, deviceName, code) }
+            runCatching { auth.login(serverUrl, username, password, deviceName) }
                 .onSuccess { _state.update { it.copy(loading = false, success = true) } }
-                .onFailure { e -> _state.update { it.copy(loading = false, error = e.message ?: "pair_failed") } }
+                .onFailure { e -> _state.update { it.copy(loading = false, error = e.message ?: "login_failed") } }
         }
     }
 }
@@ -71,7 +73,8 @@ fun ConnectScreen(
     val state by vm.state.collectAsStateWithLifecycle()
     var url by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
-    var code by remember { mutableStateOf("") }
+    var username by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
 
     LaunchedEffect(state.success) { if (state.success) onSuccess() }
 
@@ -79,8 +82,10 @@ fun ConnectScreen(
         modifier = Modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.Center,
     ) {
-        Text(stringResource(R.string.connect_title),
-            style = MaterialTheme.typography.headlineSmall)
+        Text(
+            stringResource(R.string.connect_title),
+            style = MaterialTheme.typography.headlineSmall,
+        )
         Spacer(Modifier.height(16.dp))
 
         OutlinedTextField(
@@ -88,6 +93,21 @@ fun ConnectScreen(
             label = { Text(stringResource(R.string.connect_server_url)) },
             placeholder = { Text(stringResource(R.string.connect_server_url_hint)) },
             singleLine = true, modifier = Modifier.fillMaxWidth(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = username, onValueChange = { username = it.trim() },
+            label = { Text(stringResource(R.string.connect_username)) },
+            singleLine = true, modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = password, onValueChange = { password = it },
+            label = { Text(stringResource(R.string.connect_password)) },
+            singleLine = true, modifier = Modifier.fillMaxWidth(),
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
         )
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
@@ -95,18 +115,20 @@ fun ConnectScreen(
             label = { Text(stringResource(R.string.connect_device_name)) },
             singleLine = true, modifier = Modifier.fillMaxWidth(),
         )
-        Spacer(Modifier.height(8.dp))
-        OutlinedTextField(
-            value = code, onValueChange = { code = it.filter(Char::isDigit).take(6) },
-            label = { Text(stringResource(R.string.connect_pairing_code)) },
-            singleLine = true, modifier = Modifier.fillMaxWidth(),
-        )
         Spacer(Modifier.height(16.dp))
         Button(
-            onClick = { vm.pair(url, name, code) },
+            onClick = { vm.login(url, username, password, name) },
             enabled = !state.loading,
             modifier = Modifier.fillMaxWidth(),
         ) { Text(stringResource(R.string.connect_button)) }
+
         state.error?.let { ErrorText(it) }
+
+        Spacer(Modifier.height(24.dp))
+        Text(
+            stringResource(R.string.connect_setup_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }

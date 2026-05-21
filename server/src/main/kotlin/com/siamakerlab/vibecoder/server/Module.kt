@@ -4,13 +4,17 @@ import com.siamakerlab.vibecoder.server.actions.CapabilityService
 import com.siamakerlab.vibecoder.server.actions.ProjectActionRegistry
 import com.siamakerlab.vibecoder.server.actions.ServerActionHandler
 import com.siamakerlab.vibecoder.server.actions.projectActionRoutes
+import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
+import com.siamakerlab.vibecoder.server.admin.adminRoutes
 import com.siamakerlab.vibecoder.server.artifacts.ArtifactService
 import com.siamakerlab.vibecoder.server.artifacts.artifactRoutes
 import com.siamakerlab.vibecoder.server.auth.AUTH_BEARER
+import com.siamakerlab.vibecoder.server.auth.AuthService
 import com.siamakerlab.vibecoder.server.auth.PairingCodeStore
 import com.siamakerlab.vibecoder.server.auth.TokenService
 import com.siamakerlab.vibecoder.server.auth.authRoutes
 import com.siamakerlab.vibecoder.server.auth.installAuth
+import com.siamakerlab.vibecoder.server.repo.AdminUserRepository
 import com.siamakerlab.vibecoder.server.build.BuildService
 import com.siamakerlab.vibecoder.server.build.GradleBuilder
 import com.siamakerlab.vibecoder.server.build.buildRoutes
@@ -38,6 +42,7 @@ import com.siamakerlab.vibecoder.server.repo.UploadedFileRepository
 import com.siamakerlab.vibecoder.server.tasks.TaskQueue
 import com.siamakerlab.vibecoder.server.ws.LogHub
 import com.siamakerlab.vibecoder.server.ws.wsRoutes
+import com.siamakerlab.vibecoder.shared.ApiPath
 import io.ktor.serialization.kotlinx.KotlinxWebsocketSerializationConverter
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
@@ -46,15 +51,20 @@ import io.ktor.server.plugins.calllogging.CallLogging
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.cors.routing.CORS
 import io.ktor.server.plugins.defaultheaders.DefaultHeaders
+import io.ktor.server.response.respond
 import io.ktor.server.routing.IgnoreTrailingSlash
+import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 data class ServerContext(
     val config: ServerConfig,
     val workspace: WorkspacePath,
     val deviceRepo: DeviceRepository,
+    val adminUserRepo: AdminUserRepository,
     val projectRepo: ProjectRepository,
     val buildRepo: BuildRepository,
     val artifactRepo: ArtifactRepository,
@@ -62,6 +72,7 @@ data class ServerContext(
     val clock: Clock,
     val tokens: TokenService,
     val pairing: PairingCodeStore,
+    val authService: AuthService,
     val queue: TaskQueue,
     val hub: LogHub,
     val projects: ProjectService,
@@ -111,7 +122,38 @@ fun Application.module(ctx: ServerContext) {
     installAuth(ctx.deviceRepo, ctx.tokens)
 
     routing {
-        authRoutes(ctx.config.server.name, ctx.pairing, ctx.tokens, ctx.deviceRepo)
+        // 인증 없이 노출되는 헬스 프로브 (Docker HEALTHCHECK / 외부 모니터링용)
+        get(ApiPath.HEALTH) {
+            call.respond(
+                JsonObject(
+                    mapOf(
+                        "status" to JsonPrimitive("ok"),
+                        "version" to JsonPrimitive(ctx.config.server.version),
+                    )
+                )
+            )
+        }
+        authRoutes(
+            serverName = ctx.config.server.name,
+            pairing = ctx.pairing,
+            tokens = ctx.tokens,
+            deviceRepo = ctx.deviceRepo,
+            userRepo = ctx.adminUserRepo,
+            authService = ctx.authService,
+        )
+        adminRoutes(
+            AdminRoutesDeps(
+                config = ctx.config,
+                serverName = ctx.config.server.name,
+                serverVersion = ctx.config.server.version,
+                workspaceRoot = ctx.workspace.root.toString(),
+                authService = ctx.authService,
+                userRepo = ctx.adminUserRepo,
+                deviceRepo = ctx.deviceRepo,
+                statusService = ctx.status,
+                envDiagnostics = ctx.env,
+            )
+        )
         envRoutes(ctx.status, ctx.env)
         projectRoutes(ctx.projects)
         consoleRoutes(ctx.projects, ctx.sessionManager, ctx.hub, ctx.claudeStatusService)

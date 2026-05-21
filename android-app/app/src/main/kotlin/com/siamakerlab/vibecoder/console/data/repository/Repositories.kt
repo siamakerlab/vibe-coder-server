@@ -20,8 +20,12 @@ class AuthRepository @Inject constructor(
     private val api: ApiService,
     private val prefs: AppPreferences,
 ) {
-    suspend fun pair(serverUrl: String, deviceName: String, code: String) {
-        val resp = api.pair(serverUrl, deviceName, code)
+    /**
+     * Username/password 로그인. 성공 시 토큰을 prefs에 저장.
+     * v0.4.0부터 페어링 코드 방식은 deprecated.
+     */
+    suspend fun login(serverUrl: String, username: String, password: String, deviceName: String) {
+        val resp = api.login(serverUrl, username, password, deviceName)
         prefs.saveSession(serverUrl, resp.token, deviceName, resp.deviceId)
     }
     suspend fun logout() = prefs.clear()

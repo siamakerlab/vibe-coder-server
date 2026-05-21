@@ -5,6 +5,8 @@ import com.siamakerlab.vibecoder.server.actions.ProjectActionRegistry
 import com.siamakerlab.vibecoder.server.actions.ServerActionHandler
 import com.siamakerlab.vibecoder.server.artifacts.ArtifactService
 import com.siamakerlab.vibecoder.server.auth.PairingCodeStore
+import com.siamakerlab.vibecoder.server.auth.AuthService
+import com.siamakerlab.vibecoder.server.auth.PasswordHasher
 import com.siamakerlab.vibecoder.server.auth.TokenService
 import com.siamakerlab.vibecoder.server.build.BuildService
 import com.siamakerlab.vibecoder.server.build.GradleBuilder
@@ -23,6 +25,7 @@ import com.siamakerlab.vibecoder.server.projects.KeystoreGenerator
 import com.siamakerlab.vibecoder.server.projects.ProjectService
 import com.siamakerlab.vibecoder.server.repo.ArtifactRepository
 import com.siamakerlab.vibecoder.server.repo.BuildRepository
+import com.siamakerlab.vibecoder.server.repo.AdminUserRepository
 import com.siamakerlab.vibecoder.server.repo.DeviceRepository
 import com.siamakerlab.vibecoder.server.repo.ProjectRepository
 import com.siamakerlab.vibecoder.server.repo.UploadedFileRepository
@@ -107,12 +110,19 @@ fun main(args: Array<String>) {
 
     val clock = SystemClock()
     val deviceRepo = DeviceRepository(clock)
+    val adminUserRepo = AdminUserRepository(clock)
     val projectRepo = ProjectRepository(clock)
     val buildRepo = BuildRepository(clock)
     val artifactRepo = ArtifactRepository(clock)
     val uploadedRepo = UploadedFileRepository(clock)
 
     val tokens = TokenService()
+    val passwordHasher = PasswordHasher()
+    val authService = AuthService(adminUserRepo, deviceRepo, tokens, passwordHasher, clock)
+
+    // 첫 부팅 시 환경변수로 admin 자동 부트스트랩 (Docker 운영 편의)
+    bootstrapAdminFromEnv(authService)
+
     val pairing = PairingCodeStore(
         clock = clock,
         ttl = Duration.ofMinutes(config.security.pairingCodeExpireMinutes.toLong()),
@@ -137,36 +147,91 @@ fun main(args: Array<String>) {
     val claudeStatusService = ClaudeStatusService(config, workspace, sessionManager)
 
     val ctx = ServerContext(
-        config, workspace, deviceRepo, projectRepo, buildRepo, artifactRepo,
-        uploadedRepo, clock, tokens, pairing, queue, hub, projects,
-        sessionManager, gradle,
-        artifacts, build, git, uploads, status, env,
-        actionRegistry, actionHandler, capabilityService, claudeStatusService,
+        config = config,
+        workspace = workspace,
+        deviceRepo = deviceRepo,
+        adminUserRepo = adminUserRepo,
+        projectRepo = projectRepo,
+        buildRepo = buildRepo,
+        artifactRepo = artifactRepo,
+        uploadedFileRepo = uploadedRepo,
+        clock = clock,
+        tokens = tokens,
+        pairing = pairing,
+        authService = authService,
+        queue = queue,
+        hub = hub,
+        projects = projects,
+        sessionManager = sessionManager,
+        gradle = gradle,
+        artifacts = artifacts,
+        build = build,
+        git = git,
+        uploads = uploads,
+        status = status,
+        env = env,
+        actionRegistry = actionRegistry,
+        actionHandler = actionHandler,
+        capabilityService = capabilityService,
+        claudeStatusService = claudeStatusService,
     )
 
     Runtime.getRuntime().addShutdownHook(Thread {
         kotlinx.coroutines.runBlocking { sessionManager.shutdown() }
     })
 
-    printBanner(config, workspaceRoot, pairing)
+    printBanner(config, workspaceRoot, pairing, authService.adminExists())
 
     embeddedServer(Netty, port = config.server.port, host = config.server.host) {
         module(ctx)
     }.start(wait = true)
 }
 
-private fun printBanner(config: ServerConfig, workspaceRoot: Path, pairing: PairingCodeStore) {
-    val rec = pairing.peek() ?: return
-    val fmt = DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault())
+/**
+ * VIBECODER_ADMIN_USERNAME / VIBECODER_ADMIN_PASSWORD 환경변수가 둘 다 설정되어
+ * 있고 DB에 admin이 없으면 자동으로 생성한다. Docker compose 환경에서 수동 셋업
+ * 단계 없이 부팅하기 위함.
+ *
+ * 부트 후엔 `.env` 의 plain text 비밀번호를 변경(`/admin/password`)할 것을 권장.
+ */
+private fun bootstrapAdminFromEnv(auth: AuthService) {
+    val u = System.getenv("VIBECODER_ADMIN_USERNAME")?.trim().orEmpty()
+    val p = System.getenv("VIBECODER_ADMIN_PASSWORD")?.trim().orEmpty()
+    if (u.isEmpty() || p.isEmpty()) return
+    if (auth.adminExists()) {
+        log.info { "Admin 부트스트랩 env 감지됐으나 admin이 이미 존재 → 무시" }
+        return
+    }
+    runCatching {
+        auth.setup(username = u, password = p, deviceName = "bootstrap-env", channel = "bootstrap")
+        log.info { "환경변수로 admin 자동 생성: $u" }
+    }.onFailure {
+        log.warn(it) { "admin 부트스트랩 실패: ${it.message}" }
+    }
+}
+
+private fun printBanner(
+    config: ServerConfig,
+    workspaceRoot: Path,
+    pairing: PairingCodeStore,
+    adminExists: Boolean,
+) {
     val host = if (config.server.host == "0.0.0.0")
         runCatching { InetAddress.getLocalHost().hostAddress }.getOrDefault("localhost")
     else config.server.host
     val url = "http://$host:${config.server.port}"
+
     println(">>> Vibe Coder Server started")
-    println(">>> Pairing code: ${rec.code}   (expires at ${fmt.format(rec.expiresAt)})")
     println(">>> Server URL  : $url")
+    println(">>> Admin URL   : $url/admin")
     println(">>> Workspace   : $workspaceRoot")
-    log.info {
-        "server listening on $url, workspace=$workspaceRoot, pairing rotated (expires ${rec.expiresAt})"
+    if (!adminExists) {
+        println(">>> ⚠ Admin 계정이 없습니다. 브라우저로 $url/admin 접속하여 초기 설정을 진행하세요.")
+        // 백워드 호환을 위해 페어링 코드도 표시 (admin 미설정 시에만 의미 있음)
+        pairing.peek()?.let { rec ->
+            val fmt = DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault())
+            println(">>> (레거시) Pairing code: ${rec.code}   (expires at ${fmt.format(rec.expiresAt)})")
+        }
     }
+    log.info { "server listening on $url, workspace=$workspaceRoot, adminExists=$adminExists" }
 }

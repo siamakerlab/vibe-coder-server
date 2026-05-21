@@ -1,0 +1,37 @@
+# vibe-doctor 가 다운로드/설치 대상으로 삼는 컴포넌트 매니페스트.
+# 컨테이너 이미지는 슬림 유지 → 무거운 빌드 환경은 이 매니페스트를 따라
+# 볼륨(`/opt/android-sdk`, `/home/vibe/.gradle`, `/home/vibe/.claude`)에 채운다.
+#
+# 버전 핀(version pin)은 vibe-coder의 :android-app:app 모듈 build.gradle.kts와
+# 동기되어야 한다 (CLAUDE.md §4 동기 규칙).
+
+# Android SDK 컴포넌트 (sdkmanager 패키지 이름 그대로)
+android:
+  cmdline_tools_version: "11076708"   # commandlinetools-linux-<id>_latest.zip
+  packages:
+    - "platform-tools"
+    - "platforms;android-35"
+    - "build-tools;35.0.0"
+    - "platforms;android-34"           # 호환성 (라이브러리 일부)
+    - "build-tools;34.0.0"
+
+# 선택적 MCP (npm). doctor가 사용자에게 individually 묻고 설치.
+mcp_optional:
+  - name: "filesystem"
+    package: "@modelcontextprotocol/server-filesystem"
+    description: "로컬 파일시스템 액세스"
+  - name: "sqlite"
+    package: "@modelcontextprotocol/server-sqlite"
+    description: "SQLite 쿼리"
+  - name: "fetch"
+    package: "@modelcontextprotocol/server-fetch"
+    description: "HTTP fetch"
+  - name: "playwright"
+    package: "@playwright/mcp"
+    description: "브라우저 자동화 (Chromium ~500MB 추가)"
+
+# Claude 인증 확인 대상
+claude:
+  config_dir: "/home/vibe/.claude"
+  required_files:
+    - "config.json"      # claude login 실행 시 생성

@@ -2,14 +2,16 @@
 <resources>
     <string name="app_name">Vibe Coder</string>
 
-    <!-- Connect -->
-    <string name="connect_title">Connect to server</string>
+    <!-- Connect (login) -->
+    <string name="connect_title">Sign in to server</string>
     <string name="connect_server_url">Server URL</string>
     <string name="connect_server_url_hint">http://192.168.0.10:17880</string>
-    <string name="connect_pairing_code">Pairing code (6 digits)</string>
+    <string name="connect_username">Username</string>
+    <string name="connect_password">Password</string>
     <string name="connect_device_name">Device name</string>
-    <string name="connect_button">Pair</string>
+    <string name="connect_button">Sign in</string>
     <string name="connect_test_button">Test connection</string>
+    <string name="connect_setup_hint">First time? Open the server admin page (http://&lt;PC IP&gt;:17880/admin) in a browser to create an account.</string>
 
     <!-- Dashboard -->
     <string name="dashboard_title">Dashboard</string>

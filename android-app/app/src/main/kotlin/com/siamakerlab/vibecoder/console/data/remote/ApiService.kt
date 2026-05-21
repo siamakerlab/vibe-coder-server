@@ -12,10 +12,10 @@ import com.siamakerlab.vibecoder.shared.dto.FileListDto
 import com.siamakerlab.vibecoder.shared.dto.GitDiffDto
 import com.siamakerlab.vibecoder.shared.dto.GitLogDto
 import com.siamakerlab.vibecoder.shared.dto.GitStatusDto
-import com.siamakerlab.vibecoder.shared.dto.PairRequestDto
+import com.siamakerlab.vibecoder.shared.dto.LoginRequestDto
+import com.siamakerlab.vibecoder.shared.dto.LoginResponseDto
 import com.siamakerlab.vibecoder.shared.dto.PromptAcceptedDto
 import com.siamakerlab.vibecoder.shared.dto.PromptRequestDto
-import com.siamakerlab.vibecoder.shared.dto.PairResponseDto
 import com.siamakerlab.vibecoder.shared.dto.ProjectDto
 import com.siamakerlab.vibecoder.shared.dto.RegisterProjectRequestDto
 import com.siamakerlab.vibecoder.shared.dto.ServerStatusDto
@@ -40,13 +40,18 @@ class ApiService @Inject constructor(
     private val client: HttpClient,
     private val prefs: AppPreferences,
 ) {
-    private suspend fun base(): String = (prefs.session.first().serverUrl ?: error("server not paired")).trimEnd('/')
+    private suspend fun base(): String = (prefs.session.first().serverUrl ?: error("server not logged in")).trimEnd('/')
     private fun u(path: String, base: String) = "$base$path"
 
-    suspend fun pair(serverUrl: String, deviceName: String, code: String): PairResponseDto {
-        val resp = client.post(u(ApiPath.AUTH_PAIR, serverUrl.trimEnd('/'))) {
+    suspend fun login(
+        serverUrl: String,
+        username: String,
+        password: String,
+        deviceName: String,
+    ): LoginResponseDto {
+        val resp = client.post(u(ApiPath.AUTH_LOGIN, serverUrl.trimEnd('/'))) {
             contentType(ContentType.Application.Json)
-            setBody(PairRequestDto(deviceName = deviceName, pairingCode = code))
+            setBody(LoginRequestDto(username = username, password = password, deviceName = deviceName))
         }
         return resp.body()
     }

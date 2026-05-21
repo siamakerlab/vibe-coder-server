@@ -8,6 +8,19 @@ object Devices : Table("devices") {
     val tokenHash = varchar("token_hash", 128)
     val createdAt = varchar("created_at", 64)
     val lastSeenAt = varchar("last_seen_at", 64).nullable()
+    // v0.4.0+: admin 사용자와 채널 연결 (마이그레이션 시 nullable / default 로 추가)
+    val userId = varchar("user_id", 64).nullable()
+    val channel = varchar("channel", 16).default("app")  // "app" | "web"
+    override val primaryKey = PrimaryKey(id)
+}
+
+object AdminUsers : Table("admin_users") {
+    val id = varchar("id", 64)
+    val username = varchar("username", 32).uniqueIndex()
+    val passwordHash = varchar("password_hash", 96)
+    val createdAt = varchar("created_at", 64)
+    val lastLoginAt = varchar("last_login_at", 64).nullable()
+    val passwordChangedAt = varchar("password_changed_at", 64)
     override val primaryKey = PrimaryKey(id)
 }
 
@@ -61,4 +74,4 @@ object UploadedFiles : Table("uploaded_files") {
     override val primaryKey = PrimaryKey(id)
 }
 
-val AllTables = arrayOf(Devices, Projects, Builds, Artifacts, UploadedFiles)
+val AllTables = arrayOf(AdminUsers, Devices, Projects, Builds, Artifacts, UploadedFiles)
