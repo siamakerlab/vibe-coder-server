@@ -8,7 +8,7 @@ import kotlin.time.Duration.Companion.milliseconds
 
 class ProcessRunnerTimeoutTest {
 
-    @Test fun `command exceeding timeout is killed`() = runBlocking {
+    @Test fun `command exceeding timeout is killed`(): Unit = runBlocking {
         // sleep 5 seconds, but cap at 300ms — must be killed.
         val cmd = if (OsType.detect() == OsType.WINDOWS)
             listOf("cmd.exe", "/c", "ping", "127.0.0.1", "-n", "10")
@@ -19,7 +19,7 @@ class ProcessRunnerTimeoutTest {
         result.timedOut shouldBe true
     }
 
-    @Test fun `successful command returns exit 0`() = runBlocking {
+    @Test fun `successful command returns exit 0`(): Unit = runBlocking {
         val cmd = if (OsType.detect() == OsType.WINDOWS)
             listOf("cmd.exe", "/c", "echo hi")
         else
