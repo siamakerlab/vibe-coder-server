@@ -145,6 +145,102 @@ class McpService(
     }
 
     /**
+     * v0.11.0 — Secret 파일 업로드. Service Account JSON / OAuth client.json
+     * / Apple .p8 같은 isFile=true configField 가 호출.
+     *
+     * 저장 위치: `${CLAUDE_CONFIG_DIR}/mcp-secrets/<mcpId>-<key><ext>` (0600).
+     * 같은 (mcpId, key) 로 재업로드 시 덮어쓰기 (이전 파일 atomic replace).
+     *
+     * @return 저장된 절대 경로. 호출자는 이 경로를 install request 의
+     *   configValues[key] 로 전달해 `.mcp.json` 의 env 에 박힘.
+     * @throws ApiException 카탈로그에 없는 mcpId/key, isFile=false 인 key,
+     *   비정상 크기, IO 실패.
+     */
+    fun uploadConfigFile(
+        mcpId: String,
+        key: String,
+        bytes: ByteArray,
+        originalFileName: String?,
+    ): String {
+        val entry = McpCatalog.get(mcpId)
+            ?: throw ApiException(404, "unknown_mcp", "알 수 없는 MCP id: $mcpId")
+        val field = entry.configFields.firstOrNull { it.key == key }
+            ?: throw ApiException(404, "unknown_field", "${entry.displayName} 에 '$key' 필드 없음")
+        if (!field.isFile) {
+            throw ApiException(400, "not_file_field",
+                "${field.label} 은 파일 업로드 필드가 아닙니다 (텍스트로 전송하세요).")
+        }
+        if (bytes.isEmpty()) {
+            throw ApiException(400, "empty", "빈 파일입니다.")
+        }
+        if (bytes.size > MAX_SECRET_FILE_BYTES) {
+            throw ApiException(413, "too_large",
+                "파일이 ${MAX_SECRET_FILE_BYTES / 1024}KB 를 초과합니다 (실제 ${bytes.size} bytes). " +
+                    "Secret 파일이 이렇게 크지 않습니다 — 올바른 파일인지 확인하세요.")
+        }
+
+        val secretsDir = claudeConfigDir().resolve("mcp-secrets")
+        try {
+            Files.createDirectories(secretsDir)
+            // 디렉토리 자체도 0700
+            runCatching {
+                Files.setPosixFilePermissions(secretsDir, setOf(
+                    java.nio.file.attribute.PosixFilePermission.OWNER_READ,
+                    java.nio.file.attribute.PosixFilePermission.OWNER_WRITE,
+                    java.nio.file.attribute.PosixFilePermission.OWNER_EXECUTE,
+                ))
+            }
+        } catch (e: Throwable) {
+            throw ApiException(500, "io", "mcp-secrets 디렉토리 생성 실패: ${e.message}")
+        }
+
+        // 안전한 파일명 — id/key 는 catalog 에서 온 값이라 검증된 ASCII 이지만,
+        // 그래도 path traversal 방지 차원에서 영숫자/하이픈만 허용.
+        val safeId = sanitizeName(mcpId)
+        val safeKey = sanitizeName(key)
+        val ext = guessExtension(originalFileName, field.acceptMime).ifEmpty { ".bin" }
+        val target = secretsDir.resolve("$safeId-$safeKey$ext")
+
+        val tmp = target.resolveSibling("${target.fileName}.tmp")
+        try {
+            Files.write(tmp, bytes,
+                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)
+            Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING)
+        } catch (e: Throwable) {
+            runCatching { Files.deleteIfExists(tmp) }
+            throw ApiException(500, "io", "파일 쓰기 실패: ${e.message}")
+        }
+        runCatching {
+            Files.setPosixFilePermissions(target, setOf(
+                java.nio.file.attribute.PosixFilePermission.OWNER_READ,
+                java.nio.file.attribute.PosixFilePermission.OWNER_WRITE,
+            ))
+        }
+        log.info { "mcp secret uploaded: ${entry.displayName}.$key → $target (${bytes.size} bytes)" }
+        return target.toString()
+    }
+
+    private fun sanitizeName(s: String): String =
+        s.replace(Regex("[^A-Za-z0-9._-]"), "_")
+
+    private fun guessExtension(originalName: String?, acceptMime: String?): String {
+        // 1) 원본 파일명 확장자 — 가장 신뢰 가능
+        if (!originalName.isNullOrBlank()) {
+            val dot = originalName.lastIndexOf('.')
+            if (dot in 0..originalName.length - 2) {
+                val ext = originalName.substring(dot)
+                if (ext.length <= 8 && ext.matches(Regex("\\.[A-Za-z0-9]+"))) return ext.lowercase()
+            }
+        }
+        // 2) acceptMime 첫 항목 — 예: ".json,application/json" → .json
+        if (!acceptMime.isNullOrBlank()) {
+            val first = acceptMime.split(',').map { it.trim() }.firstOrNull { it.startsWith(".") }
+            if (first != null) return first.lowercase()
+        }
+        return ""
+    }
+
+    /**
      * .mcp.json 의 entry 만 제거 (npm 패키지는 남김).
      * 완전 삭제하려면 docker exec 로 `npm uninstall -g <pkg>` 직접 실행 안내.
      */
@@ -336,6 +432,11 @@ class McpService(
     }
 
     private fun mcpJsonPath(): Path = claudeConfigDir().resolve(".mcp.json")
+
+    private companion object {
+        /** Secret 파일 최대 크기 — 일반적인 JSON/.p8 키는 수 KB 이내. */
+        private const val MAX_SECRET_FILE_BYTES = 128 * 1024
+    }
 
     private fun claudeConfigDir(): Path {
         val explicit = System.getenv("CLAUDE_CONFIG_DIR")?.trim()

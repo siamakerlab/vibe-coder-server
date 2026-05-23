@@ -20,6 +20,7 @@ import com.siamakerlab.vibecoder.shared.dto.GitTokenViewDto
 import com.siamakerlab.vibecoder.shared.dto.McpCatalogResponseDto
 import com.siamakerlab.vibecoder.shared.dto.McpConfigFieldDto
 import com.siamakerlab.vibecoder.shared.dto.McpEntryDto
+import com.siamakerlab.vibecoder.shared.dto.McpFileUploadResponseDto
 import com.siamakerlab.vibecoder.shared.dto.McpInstallRequestDto
 import com.siamakerlab.vibecoder.shared.dto.McpUnregisterRequestDto
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -158,7 +159,11 @@ fun Routing.envSetupApiRoutes(
                     recommended = e.recommended,
                     homepage = e.homepage,
                     configFields = e.configFields.map { f ->
-                        McpConfigFieldDto(f.key, f.label, f.placeholder, f.isSecret, f.required, f.help)
+                        McpConfigFieldDto(
+                            key = f.key, label = f.label, placeholder = f.placeholder,
+                            isSecret = f.isSecret, required = f.required, help = f.help,
+                            isFile = f.isFile, acceptMime = f.acceptMime,
+                        )
                     },
                     status = st?.status?.name ?: "UNKNOWN",
                     configValues = st?.configValues.orEmpty(),
@@ -175,6 +180,34 @@ fun Routing.envSetupApiRoutes(
             val req = call.receive<McpUnregisterRequestDto>()
             mcp.unregister(req.ids)
             call.respond(HttpStatusCode.NoContent)
+        }
+
+        // v0.11.0 — MCP secret 파일 업로드 (Android wire)
+        post(ApiPath.mcpUploadFile("{mcpId}", "{fieldKey}")) {
+            val mcpId = call.parameters["mcpId"]!!
+            val fieldKey = call.parameters["fieldKey"]!!
+            val multipart = call.receiveMultipart()
+            var bytes: ByteArray? = null
+            var fileName: String? = null
+            try {
+                while (true) {
+                    val part = multipart.readPart() ?: break
+                    try {
+                        if (part is PartData.FileItem && bytes == null) {
+                            fileName = part.originalFileName
+                            bytes = part.provider().toInputStream().use { it.readBytes() }
+                        }
+                    } finally {
+                        part.dispose()
+                    }
+                }
+            } catch (e: Throwable) {
+                throw ApiException(400, "multipart", "multipart 파싱 실패: ${e.message}")
+            }
+            val data = bytes ?: throw ApiException(400, "empty",
+                "파일 part 가 비어 있습니다.")
+            val path = mcp.uploadConfigFile(mcpId, fieldKey, data, fileName)
+            call.respond(McpFileUploadResponseDto(path))
         }
 
         // ── Git 통합 ────────────────────────────────────────────

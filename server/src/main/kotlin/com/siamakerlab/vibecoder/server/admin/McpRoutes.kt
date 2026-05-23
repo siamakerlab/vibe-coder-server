@@ -3,16 +3,21 @@ package com.siamakerlab.vibecoder.server.admin
 import com.siamakerlab.vibecoder.server.env.McpCatalog
 import com.siamakerlab.vibecoder.server.env.McpService
 import com.siamakerlab.vibecoder.server.error.ApiException
+import com.siamakerlab.vibecoder.shared.dto.McpFileUploadResponseDto
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.content.PartData
 import io.ktor.server.application.call
+import io.ktor.server.request.receiveMultipart
 import io.ktor.server.request.receiveParameters
+import io.ktor.server.response.respond
 import io.ktor.server.response.respondRedirect
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Routing
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
+import io.ktor.utils.io.jvm.javaio.toInputStream
 
 private val log = KotlinLogging.logger {}
 
@@ -78,5 +83,40 @@ fun Routing.mcpRoutes(
         mcp.unregister(ids)
         log.info { "MCP unregister by ${sess.username}: ${ids.joinToString(",")}" }
         call.respondRedirect("/env-setup/mcp?flash=unregistered")
+    }
+
+    /**
+     * v0.11.0 — Secret 파일 업로드 (Service Account JSON / .p8 등).
+     * UI 의 file input onChange 가 즉시 ajax 로 호출 → 응답의 path 를
+     * hidden input 에 채워서 일반 install POST 에 포함.
+     */
+    post("/env-setup/mcp/{mcpId}/file/{fieldKey}") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        val mcpId = call.parameters["mcpId"]!!
+        val fieldKey = call.parameters["fieldKey"]!!
+        val multipart = call.receiveMultipart()
+        var bytes: ByteArray? = null
+        var fileName: String? = null
+        try {
+            while (true) {
+                val part = multipart.readPart() ?: break
+                try {
+                    if (part is PartData.FileItem && bytes == null) {
+                        fileName = part.originalFileName
+                        bytes = part.provider().toInputStream().use { it.readBytes() }
+                    }
+                } finally {
+                    part.dispose()
+                }
+            }
+        } catch (e: Throwable) {
+            throw ApiException(400, "multipart", "multipart 파싱 실패: ${e.message}")
+        }
+        val data = bytes ?: throw ApiException(400, "empty",
+            "파일 part 가 비어 있습니다 (input name 무엇이든 허용).")
+        val path = mcp.uploadConfigFile(mcpId, fieldKey, data, fileName)
+        log.info { "MCP secret file by ${sess.username}: $mcpId/$fieldKey → $path" }
+        // ajax 호출이므로 JSON 응답.
+        call.respond(McpFileUploadResponseDto(path))
     }
 }

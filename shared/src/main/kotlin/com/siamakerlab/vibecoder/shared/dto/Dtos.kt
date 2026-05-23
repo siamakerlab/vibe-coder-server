@@ -303,7 +303,15 @@ data class McpConfigFieldDto(
     val isSecret: Boolean = false,
     val required: Boolean = true,
     val help: String? = null,
+    /** v0.11.0 — true 면 파일 업로드 UI 필요. POST {mcpUploadFile} multipart 호출. */
+    val isFile: Boolean = false,
+    /** UI 의 accept 속성 (예: ".json,application/json"). */
+    val acceptMime: String? = null,
 )
+
+/** v0.11.0 — MCP secret 파일 업로드 응답. 응답의 path 를 install request 의 configValues 값으로 사용. */
+@Serializable
+data class McpFileUploadResponseDto(val path: String)
 
 @Serializable
 data class McpEntryDto(

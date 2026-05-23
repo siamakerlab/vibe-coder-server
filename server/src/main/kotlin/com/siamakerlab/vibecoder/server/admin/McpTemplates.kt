@@ -159,8 +159,57 @@ JSON</pre>
       alert('설치할 MCP 를 하나 이상 선택하세요.');
       return false;
     }
+    // 파일 입력이 있는데 path hidden 이 비어있으면 차단 — 사용자가 file 선택만 하고
+    // 업로드 응답을 기다리지 않은 경우 또는 업로드 실패한 경우.
+    var pendingFile = null;
+    form.querySelectorAll('.mcp-file-field').forEach(function(el) {
+      var cb = el.closest('.mcp-entry').querySelector('input[name="select"]');
+      if (!cb || !cb.checked) return;
+      var fileInput = el.querySelector('.mcp-file-input');
+      var pathInput = el.querySelector('.mcp-file-path');
+      var required = fileInput && fileInput.hasAttribute('required');
+      if (required && !(pathInput && pathInput.value)) {
+        pendingFile = el.dataset.mcpId + '.' + el.dataset.fieldKey;
+      }
+    });
+    if (pendingFile) {
+      alert('파일 업로드 대기 중: ' + pendingFile + '. 업로드 완료 후 다시 시도하세요.');
+      return false;
+    }
     return confirm(n + '개 MCP 를 설치합니다 (예상 1~5분 / 항목). 진행 페이지로 이동합니다. 계속할까요?');
   };
+
+  // v0.11.0 — file input onChange 시 즉시 ajax 업로드 → 응답 path 를 hidden 에 채움.
+  form.querySelectorAll('.mcp-file-field').forEach(function(el) {
+    var mcpId = el.dataset.mcpId;
+    var fieldKey = el.dataset.fieldKey;
+    var fileInput = el.querySelector('.mcp-file-input');
+    var pathInput = el.querySelector('.mcp-file-path');
+    var statusEl = el.querySelector('.mcp-file-status');
+    if (!fileInput || !pathInput) return;
+    fileInput.addEventListener('change', function() {
+      var f = fileInput.files && fileInput.files[0];
+      if (!f) { pathInput.value = ''; statusEl.textContent = ''; return; }
+      statusEl.className = 'mcp-file-status dim';
+      statusEl.textContent = '⏳ 업로드 중... (' + (f.size / 1024).toFixed(1) + ' KB)';
+      var fd = new FormData();
+      fd.append('file', f);
+      fetch('/env-setup/mcp/' + encodeURIComponent(mcpId) + '/file/' + encodeURIComponent(fieldKey), {
+        method: 'POST', body: fd, credentials: 'same-origin',
+      }).then(function(r) {
+        if (!r.ok) return r.text().then(function(t) { throw new Error('HTTP ' + r.status + ': ' + t.slice(0, 200)); });
+        return r.json();
+      }).then(function(resp) {
+        pathInput.value = resp.path || '';
+        statusEl.className = 'mcp-file-status ok';
+        statusEl.textContent = '✓ 업로드 완료 → ' + resp.path;
+      }).catch(function(err) {
+        pathInput.value = '';
+        statusEl.className = 'mcp-file-status warn';
+        statusEl.textContent = '✗ ' + (err.message || '업로드 실패');
+      });
+    });
+  });
 
   // toggle 추천만 / 전체 보기
   var btnRecommended = document.getElementById('filter-recommended');
@@ -257,14 +306,61 @@ JSON</pre>
     ): String {
         if (entry.configFields.isEmpty()) return ""
         val fields = entry.configFields.joinToString("\n") { f ->
-            val type = if (f.isSecret) "password" else "text"
-            val value = existing[f.key].orEmpty()
-            val placeholder = f.placeholder.orEmpty()
-            val req = if (f.required) "required" else ""
-            val helpHtml = f.help?.let {
-                """<small class="dim" style="font-size:10px">${esc(it)}</small>"""
-            }.orEmpty()
-            """
+            if (f.isFile) renderFileField(entry, f, existing)
+            else renderTextField(entry, f, existing)
+        }
+        return """
+<div class="config-block" style="margin-top:8px;padding-top:8px;border-top:1px dashed #333;display:none">
+  <p class="dim" style="font-size:11px;margin:0 0 4px">설정 필요:</p>
+  $fields
+</div>"""
+    }
+
+    private fun renderFileField(
+        entry: McpCatalog.McpEntry,
+        f: McpCatalog.ConfigField,
+        existing: Map<String, String>,
+    ): String {
+        // 기존 업로드된 path 가 있으면 표시 + "교체" 버튼.
+        // 새 파일 선택 시 즉시 ajax POST → 응답 path 를 hidden input 에 채움.
+        val existingPath = existing[f.key].orEmpty()
+        val accept = f.acceptMime.orEmpty()
+        val req = if (f.required && existingPath.isEmpty()) "required" else ""
+        val helpHtml = f.help?.let {
+            """<small class="dim" style="font-size:10px">${esc(it)}</small>"""
+        }.orEmpty()
+        val pathDisplay = if (existingPath.isNotEmpty()) {
+            """<p class="dim" style="font-size:11px;margin:2px 0 0;font-family:ui-monospace,Menlo,monospace">📎 ${esc(existingPath)}</p>"""
+        } else ""
+        return """
+<div class="mcp-file-field" style="margin-top:6px"
+     data-mcp-id="${esc(entry.id)}" data-field-key="${esc(f.key)}">
+  <label style="display:block;font-size:11px;color:var(--text-dim);margin-bottom:2px">
+    ${esc(f.label)} <span class="dim" style="font-size:10px">(파일)</span>${if (f.required) " <span class=\"warn\">*</span>" else ""}
+  </label>
+  <input type="file" class="mcp-file-input" accept="${esc(accept)}" $req
+         style="font-size:11px">
+  <input type="hidden" name="cfg.${esc(entry.id)}.${esc(f.key)}" value="${esc(existingPath)}"
+         class="mcp-file-path">
+  <p class="mcp-file-status dim" style="font-size:10px;margin:2px 0 0"></p>
+  $pathDisplay
+  $helpHtml
+</div>"""
+    }
+
+    private fun renderTextField(
+        entry: McpCatalog.McpEntry,
+        f: McpCatalog.ConfigField,
+        existing: Map<String, String>,
+    ): String {
+        val type = if (f.isSecret) "password" else "text"
+        val value = existing[f.key].orEmpty()
+        val placeholder = f.placeholder.orEmpty()
+        val req = if (f.required) "required" else ""
+        val helpHtml = f.help?.let {
+            """<small class="dim" style="font-size:10px">${esc(it)}</small>"""
+        }.orEmpty()
+        return """
 <div style="margin-top:6px">
   <label style="display:block;font-size:11px;color:var(--text-dim);margin-bottom:2px">
     ${esc(f.label)}${if (f.required) " <span class=\"warn\">*</span>" else ""}
@@ -274,12 +370,6 @@ JSON</pre>
          autocomplete="off" spellcheck="false"
          style="width:100%;font-size:12px;padding:4px 6px;font-family:ui-monospace,Menlo,monospace">
   $helpHtml
-</div>"""
-        }
-        return """
-<div class="config-block" style="margin-top:8px;padding-top:8px;border-top:1px dashed #333;display:none">
-  <p class="dim" style="font-size:11px;margin:0 0 4px">설정 필요:</p>
-  $fields
 </div>"""
     }
 }

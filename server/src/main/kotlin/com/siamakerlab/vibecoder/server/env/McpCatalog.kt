@@ -46,6 +46,15 @@ object McpCatalog {
         val isSecret: Boolean = false,
         val required: Boolean = true,
         val help: String? = null,
+        /**
+         * v0.11.0 — true 면 텍스트 입력 대신 파일 업로드 UI 렌더링.
+         * 업로드된 파일은 /home/vibe/.config/mcp-secrets/<mcp-id>-<key>.<ext>
+         * (0600) 에 저장되고, 그 절대 경로가 .mcp.json 의 env/args 값으로 주입됨.
+         * Service Account JSON / OAuth client.json / Apple .p8 같은 secret 파일 대응.
+         */
+        val isFile: Boolean = false,
+        /** isFile=true 일 때 UI 의 accept 속성 (예: ".json,application/json"). */
+        val acceptMime: String? = null,
     )
 
     data class McpEntry(
@@ -287,9 +296,9 @@ object McpCatalog {
             description = "Firestore + RTDB + Auth read/write.",
             category = Category.DATABASE, trust = Trust.EXPERIMENTAL,
             configFields = listOf(
-                ConfigField("GOOGLE_APPLICATION_CREDENTIALS", "Service account JSON 경로",
-                    "/home/vibe/.config/gcp-key.json",
-                    help = "GCP service account 키 파일을 컨테이너에 복사 후 절대 경로."),
+                ConfigField("GOOGLE_APPLICATION_CREDENTIALS", "Service Account JSON 파일",
+                    isFile = true, acceptMime = ".json,application/json",
+                    help = "GCP Console > IAM > Service Accounts > Keys 에서 JSON 다운로드."),
             ),
         ))
 
@@ -503,9 +512,9 @@ object McpCatalog {
             description = "Google Drive 파일 검색/read. OAuth 흐름 필요.",
             category = Category.PRODUCTIVITY, trust = Trust.VERIFIED,
             configFields = listOf(
-                ConfigField("GDRIVE_CREDENTIALS_PATH", "OAuth credentials.json 경로",
-                    "/home/vibe/.config/gdrive-credentials.json", isSecret = false,
-                    help = "Google Cloud Console 에서 OAuth client ID 다운로드."),
+                ConfigField("GDRIVE_CREDENTIALS_PATH", "OAuth credentials.json 파일",
+                    isFile = true, acceptMime = ".json,application/json",
+                    help = "GCP Console > APIs & Services > Credentials > OAuth client ID > Download JSON."),
             ),
         ))
         add(McpEntry(
@@ -648,10 +657,9 @@ object McpCatalog {
             description = "Google Play Console — track 업로드 / release / metadata 갱신. service account 인증.",
             category = Category.APP_PUBLISH, trust = Trust.EXPERIMENTAL,
             configFields = listOf(
-                ConfigField("GOOGLE_PLAY_SERVICE_ACCOUNT_JSON",
-                    "Service Account JSON 경로",
-                    "/home/vibe/.config/play-service-account.json",
-                    help = "Google Play Console > Setup > API access > Service accounts."),
+                ConfigField("GOOGLE_PLAY_SERVICE_ACCOUNT_JSON", "Service Account JSON 파일",
+                    isFile = true, acceptMime = ".json,application/json",
+                    help = "Google Play Console > Setup > API access > Service accounts > Create key (JSON)."),
                 ConfigField("GOOGLE_PLAY_PACKAGE_NAME", "패키지명",
                     "com.siamakerlab.myapp"),
             ),
@@ -665,8 +673,9 @@ object McpCatalog {
             configFields = listOf(
                 ConfigField("ASC_KEY_ID", "Key ID", "AB12..."),
                 ConfigField("ASC_ISSUER_ID", "Issuer ID", "abc-..."),
-                ConfigField("ASC_PRIVATE_KEY_PATH", "Private Key 경로 (.p8)",
-                    "/home/vibe/.config/AuthKey_AB12.p8", isSecret = true),
+                ConfigField("ASC_PRIVATE_KEY_FILE", "Private Key 파일 (.p8)",
+                    isFile = true, acceptMime = ".p8",
+                    help = "App Store Connect > Users and Access > Keys > Generate API Key > Download."),
             ),
         ))
         add(McpEntry(

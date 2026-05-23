@@ -102,6 +102,10 @@ object ApiPath {
     const val MCP_INSTALL = "/api/env-setup/mcp/install"
     const val MCP_UNREGISTER = "/api/env-setup/mcp/unregister"
 
+    // v0.11.0 — MCP secret 파일 업로드 (Play Service Account JSON, App Store .p8 등)
+    fun mcpUploadFile(mcpId: String, fieldKey: String) =
+        "/api/env-setup/mcp/$mcpId/file/$fieldKey"
+
     // v0.10.0 — Git 통합 (PAT + SSH 키)
     const val GIT_INTEGRATIONS = "/api/settings/git-integrations"
     const val GIT_INTEGRATIONS_DELETE = "/api/settings/git-integrations/delete"
