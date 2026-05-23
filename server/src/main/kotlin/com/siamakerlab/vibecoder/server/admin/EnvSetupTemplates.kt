@@ -147,6 +147,20 @@ docker compose up -d --force-recreate</pre>
             SetupComponent.MCP_DEFAULTS ->
                 """<a href="/env-setup/mcp" class="primary chip" style="display:inline-block;padding:8px 16px;margin-top:10px">MCP 카탈로그 열기 (50+) →</a>
                 <p class="hint" style="margin-top:8px;font-size:12px">체크박스 다중 선택 + 토큰 입력 + 추천 별표. 카탈로그에 없는 MCP 도 컨테이너 직접 설치 시 영구 보존.</p>"""
+
+            // Gradle — wrapper bootstrap 용. 최신 stable 자동 다운로드.
+            SetupComponent.GRADLE -> {
+                val label = when (status) {
+                    ComponentStatus.INSTALLED -> "재설치"
+                    ComponentStatus.PARTIAL -> "최신 버전으로 업데이트"
+                    else -> "설치 (최신 stable)"
+                }
+                """<form method="post" action="/env-setup/${esc(c.id)}/install" style="margin-top:10px"
+                       onsubmit="return confirm('Gradle 최신 stable 을 다운로드해 /home/vibe/.local/gradle 에 설치합니다 (~130MB). 신규 프로젝트의 wrapper bootstrap 에 사용됩니다. 계속할까요?')">
+                  <button type="submit" class="primary" style="width:auto;padding:8px 16px">${esc(label)}</button>
+                </form>
+                <p class="hint" style="margin-top:8px;font-size:12px">Wrapper bootstrap 도구. 한 번 설치 후엔 사용자 build.gradle.kts 의 wrapper 버전이 실제 빌드에 사용됨. 영구 보존 (bind mount).</p>"""
+            }
         }
     }
 

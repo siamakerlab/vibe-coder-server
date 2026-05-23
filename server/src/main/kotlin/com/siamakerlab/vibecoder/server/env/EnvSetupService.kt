@@ -94,6 +94,13 @@ enum class SetupComponent(
         description = "filesystem / sqlite / fetch / playwright 등 자주 쓰는 MCP 서버. 각 서버는 사용자 동의 후 개별 설치.",
         sizeHint = "선택적",
     ),
+    GRADLE(
+        id = "gradle",
+        displayName = "Gradle",
+        doctorCmd = "gradle",
+        description = "Android 빌드 wrapper bootstrap 용. 신규 프로젝트에 gradle wrapper 가 없을 때 BuildService 가 자동 사용. 설치 후 사용자 build.gradle.kts 의 wrapper 버전이 실제 빌드를 좌우 (이건 부트스트랩 도구).",
+        sizeHint = "약 130 MB",
+    ),
     ;
 
     companion object {
@@ -152,6 +159,7 @@ class EnvSetupService(
         SetupComponent.ANDROID_SDK -> probeAndroidSdk(c)
         SetupComponent.PLATFORM_TOOLS -> probePlatformTools(c)
         SetupComponent.MCP_DEFAULTS -> probeMcpDefaults(c)
+        SetupComponent.GRADLE -> probeGradle(c)
     }
 
     // ── 개별 probe ────────────────────────────────────────────────────
@@ -245,6 +253,63 @@ class EnvSetupService(
     private fun probeMcpDefaults(c: SetupComponent): ComponentState {
         // MCP 는 사용자별 설정 파일 (예: ~/.claude/mcp.json) 에 의존. PoC 에선 단순히 UNKNOWN.
         return ComponentState(c, ComponentStatus.UNKNOWN, "선택 설치 — 진행 페이지에서 개별 토글")
+    }
+
+    /**
+     * Gradle 진단 — 설치 버전 + services.gradle.org 의 latest stable 비교.
+     * UI 는 status + message 로 "최신" / "업데이트 가능 (현재 X.Y → A.B)" / "미설치" 표시.
+     *
+     * latest 조회 실패는 fatal 아님 — 현재 설치 버전 정보만 반환.
+     */
+    private fun probeGradle(c: SetupComponent): ComponentState {
+        val installed = runtimeCommand(listOf("gradle", "--version"), timeoutSec = 5)
+        val currentVer = if (installed.exitCode == 0) {
+            // 출력 line 중 `^Gradle X.Y(.Z)?` 매칭
+            Regex("^Gradle\\s+([0-9.]+)\\b", RegexOption.MULTILINE)
+                .find(installed.combined)?.groupValues?.getOrNull(1)
+        } else null
+
+        if (currentVer == null) {
+            // 미설치 — latest 만 조회해 UI 에 표시
+            val latest = fetchGradleLatest()
+            val msg = if (latest != null) "미설치 — 최신 stable: $latest 설치 가능"
+                      else "미설치"
+            return ComponentState(c, ComponentStatus.MISSING, msg)
+        }
+
+        val latest = fetchGradleLatest()
+        if (latest == null) {
+            return ComponentState(c, ComponentStatus.INSTALLED, "$currentVer (최신 조회 실패)")
+        }
+        return if (compareGradleVersion(currentVer, latest) < 0) {
+            ComponentState(c, ComponentStatus.PARTIAL, "현재 $currentVer → 최신 $latest 사용가능")
+        } else {
+            ComponentState(c, ComponentStatus.INSTALLED, "$currentVer (최신)")
+        }
+    }
+
+    /** services.gradle.org/versions/current 의 .version 추출. 실패 시 null. */
+    private fun fetchGradleLatest(): String? = try {
+        val conn = java.net.URI("https://services.gradle.org/versions/current").toURL().openConnection()
+        conn.connectTimeout = 5_000
+        conn.readTimeout = 5_000
+        val body = conn.getInputStream().bufferedReader(Charsets.UTF_8).use { it.readText() }
+        Regex("\"version\"\\s*:\\s*\"([^\"]+)\"").find(body)?.groupValues?.getOrNull(1)
+    } catch (_: Throwable) {
+        null
+    }
+
+    /** SemVer-ish 비교 — `8.7` vs `8.10.2` 등. 같으면 0, current < latest 면 음수. */
+    private fun compareGradleVersion(a: String, b: String): Int {
+        val pa = a.split('.').mapNotNull { it.toIntOrNull() }
+        val pb = b.split('.').mapNotNull { it.toIntOrNull() }
+        val n = maxOf(pa.size, pb.size)
+        for (i in 0 until n) {
+            val da = pa.getOrNull(i) ?: 0
+            val db = pb.getOrNull(i) ?: 0
+            if (da != db) return da - db
+        }
+        return 0
     }
 
     // ── 보조 ──────────────────────────────────────────────────────────
