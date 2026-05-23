@@ -24,6 +24,8 @@ import com.siamakerlab.vibecoder.server.env.EnvSetupService
 import com.siamakerlab.vibecoder.server.env.McpService
 import com.siamakerlab.vibecoder.server.env.StatusService
 import com.siamakerlab.vibecoder.server.files.UploadService
+import com.siamakerlab.vibecoder.server.git.GitCloneService
+import com.siamakerlab.vibecoder.server.git.GitCredentialStore
 import com.siamakerlab.vibecoder.server.git.GitReader
 import com.siamakerlab.vibecoder.server.projects.KeystoreGenerator
 import com.siamakerlab.vibecoder.server.projects.ProjectService
@@ -136,7 +138,9 @@ fun main(args: Array<String>) {
     val queue = TaskQueue()
     val hub = LogHub()
     val keystoreGen = KeystoreGenerator(workspace)
-    val projects = ProjectService(workspace, projectRepo, buildRepo, keystoreGen)
+    val gitCredentials = GitCredentialStore()
+    val gitClone = GitCloneService(gitCredentials)
+    val projects = ProjectService(workspace, projectRepo, buildRepo, keystoreGen, gitClone)
     val sessionManager = ClaudeSessionManager(config, workspace, hub)
     val gradle = GradleBuilder(config)
     val artifacts = ArtifactService(config, workspace, artifactRepo, buildRepo, clock)
@@ -182,6 +186,8 @@ fun main(args: Array<String>) {
         claudeAuth = claudeAuth,
         claudeLogin = claudeLogin,
         mcp = mcp,
+        gitCredentials = gitCredentials,
+        gitClone = gitClone,
         actionRegistry = actionRegistry,
         actionHandler = actionHandler,
         capabilityService = capabilityService,

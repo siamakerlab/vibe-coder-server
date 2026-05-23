@@ -2,6 +2,7 @@ package com.siamakerlab.vibecoder.server.projects
 
 import com.siamakerlab.vibecoder.server.core.WorkspacePath
 import com.siamakerlab.vibecoder.server.error.ApiException
+import com.siamakerlab.vibecoder.server.git.GitCloneService
 import com.siamakerlab.vibecoder.server.repo.BuildRepository
 import com.siamakerlab.vibecoder.server.repo.ProjectRepository
 import com.siamakerlab.vibecoder.server.repo.ProjectRow
@@ -22,6 +23,8 @@ class ProjectService(
     private val repo: ProjectRepository,
     private val buildRepo: BuildRepository,
     private val keystoreGen: KeystoreGenerator,
+    /** v0.9.0 — null 이면 clone 기능 비활성 (테스트 등). 운영에선 항상 주입. */
+    private val gitClone: GitCloneService? = null,
 ) {
 
     /**
@@ -53,11 +56,32 @@ class ProjectService(
         }
 
         val srcRoot = workspace.projectRoot(body.projectId)
-        if (srcRoot.notExists()) {
+
+        // v0.9.0 — sourceType 분기. 'clone' 이면 git clone 먼저 실행 후 템플릿 보강.
+        val isClone = body.sourceType.equals("clone", ignoreCase = true)
+        if (isClone) {
+            val url = body.cloneUrl?.trim().orEmpty()
+            if (url.isEmpty()) {
+                throw ApiException(400, "missing_clone_url",
+                    "sourceType=clone 일 때 cloneUrl 이 필수입니다.")
+            }
+            val svc = gitClone ?: throw ApiException(500, "clone_unavailable",
+                "GitCloneService 가 주입되지 않았습니다.")
+            // clone 은 빈 디렉토리에만 — 이미 존재하면 거부.
+            if (srcRoot.exists() && Files.list(srcRoot).use { it.findFirst().isPresent }) {
+                throw ApiException(409, "target_not_empty",
+                    "$srcRoot 가 이미 비어 있지 않습니다.")
+            }
+            log.info { "cloning $url → $srcRoot (branch=${body.cloneBranch ?: "(default)"})" }
+            svc.clone(url, srcRoot, body.cloneBranch) { line ->
+                log.debug { "[clone:${body.projectId}] $line" }
+            }
+        } else if (srcRoot.notExists()) {
             srcRoot.createDirectories()
             log.info { "created empty project folder $srcRoot" }
         }
 
+        // CLAUDE.md / .claude/settings.json 은 clone 후에도 동일하게 보강 — 기존 파일 보존.
         val claudeMd = srcRoot.resolve("CLAUDE.md")
         if (claudeMd.notExists()) {
             Files.writeString(claudeMd, ClaudeMdTemplate.CONTENT)

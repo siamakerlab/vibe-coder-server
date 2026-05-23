@@ -79,6 +79,33 @@ object ApiPath {
         "/ws/projects/$projectId/builds/$buildId/logs"
     fun wsConsoleLogs(projectId: String) =
         "/ws/projects/$projectId/console/logs"
+
+    // v0.10.0 — Env setup (빌드환경 컴포넌트 진단/설치)
+    const val ENV_SETUP_COMPONENTS = "/api/env-setup/components"
+    const val ENV_SETUP_INSTALL_ALL = "/api/env-setup/install-all"
+    fun envSetupInstall(componentId: String) = "/api/env-setup/$componentId/install"
+    fun wsEnvSetupLogs(taskId: String) = "/ws/env-setup/$taskId/logs"
+
+    // v0.10.0 — Claude 자격증명 관리 (옵션 B, C)
+    const val CLAUDE_AUTH_UPLOAD = "/api/env-setup/claude-auth/upload"
+    const val CLAUDE_AUTH_API_KEY = "/api/env-setup/claude-auth/api-key"
+    const val CLAUDE_AUTH_API_KEY_DELETE = "/api/env-setup/claude-auth/api-key/delete"
+
+    // v0.10.0 — Claude 반자동 웹 OAuth (옵션 A)
+    const val CLAUDE_LOGIN_START = "/api/env-setup/claude-login/start"
+    const val CLAUDE_LOGIN_SUBMIT = "/api/env-setup/claude-login/submit"
+    const val CLAUDE_LOGIN_STATUS = "/api/env-setup/claude-login/status"
+    const val CLAUDE_LOGIN_CANCEL = "/api/env-setup/claude-login/cancel"
+
+    // v0.10.0 — MCP 카탈로그
+    const val MCP_CATALOG = "/api/env-setup/mcp"
+    const val MCP_INSTALL = "/api/env-setup/mcp/install"
+    const val MCP_UNREGISTER = "/api/env-setup/mcp/unregister"
+
+    // v0.10.0 — Git 통합 (PAT + SSH 키)
+    const val GIT_INTEGRATIONS = "/api/settings/git-integrations"
+    const val GIT_INTEGRATIONS_DELETE = "/api/settings/git-integrations/delete"
+    const val GIT_INTEGRATIONS_SSH_KEYGEN = "/api/settings/git-integrations/ssh-keygen"
 }
 
 object ApiHeader {

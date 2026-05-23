@@ -129,6 +129,17 @@ data class RegisterProjectRequestDto(
     val packageName: String,
     /** Optional keystore generation request. If null, no keystore is created. */
     val keystore: KeystoreRequestDto? = null,
+    /**
+     * v0.9.0 — 프로젝트 소스 유형.
+     *  - `empty` (default): 빈 폴더 + CLAUDE.md 템플릿 (기존 동작, 호환).
+     *  - `clone`: [cloneUrl] 로 git clone. private 인증은 환경설정의
+     *    git provider 토큰 또는 vibe 사용자 SSH 키 사용.
+     */
+    val sourceType: String = "empty",
+    /** sourceType=="clone" 일 때 필수. https:// 또는 git@ 형식. */
+    val cloneUrl: String? = null,
+    /** Optional — 비우면 repo 의 default branch. */
+    val cloneBranch: String? = null,
 )
 
 @Serializable
@@ -226,6 +237,136 @@ data class FileEntryDto(
 
 @Serializable
 data class FileListDto(val entries: List<FileEntryDto>)
+
+// endregion
+
+// region v0.10.0 — Env setup (빌드환경 컴포넌트)
+
+@Serializable
+data class ComponentStateDto(
+    val id: String,
+    val displayName: String,
+    val description: String,
+    val sizeHint: String,
+    /** INSTALLED / MISSING / PARTIAL / UNKNOWN */
+    val status: String,
+    val message: String,
+    /** 자동 설치 가능 여부 (CLAUDE_AUTH 처럼 인터랙티브한 항목은 false). */
+    val installable: Boolean,
+)
+
+@Serializable
+data class EnvSetupComponentsResponseDto(val components: List<ComponentStateDto>)
+
+/** install / install-all 응답 — taskId 로 WS 로그 구독. */
+@Serializable
+data class EnvSetupTaskDto(val taskId: String)
+
+// endregion
+
+// region v0.10.0 — Claude 자격증명 / 로그인
+
+@Serializable
+data class ClaudeApiKeyRequestDto(val apiKey: String)
+
+@Serializable
+data class ClaudeCredentialsUploadResponseDto(
+    val targetPath: String,
+    val backup: String?,
+    val expiresAt: Long,
+)
+
+@Serializable
+data class ClaudeLoginStateDto(
+    val id: String,
+    /** IDLE / STARTING / AWAITING_CODE / VERIFYING / DONE / FAILED / CANCELED */
+    val state: String,
+    val url: String?,
+    val startedAt: String,
+    val updatedAt: String,
+    val errorMessage: String?,
+    val lastLines: List<String>,
+)
+
+@Serializable
+data class ClaudeLoginSubmitRequestDto(val code: String)
+
+// endregion
+
+// region v0.10.0 — MCP 카탈로그
+
+@Serializable
+data class McpConfigFieldDto(
+    val key: String,
+    val label: String,
+    val placeholder: String? = null,
+    val isSecret: Boolean = false,
+    val required: Boolean = true,
+    val help: String? = null,
+)
+
+@Serializable
+data class McpEntryDto(
+    val id: String,
+    val displayName: String,
+    val pkg: String,
+    val description: String,
+    /** Category enum 의 label (한국어). 클라이언트 그룹 표시용. */
+    val category: String,
+    /** VERIFIED / COMMUNITY / EXPERIMENTAL */
+    val trust: String,
+    val recommended: Boolean,
+    val homepage: String? = null,
+    val configFields: List<McpConfigFieldDto> = emptyList(),
+    /** INSTALLED / REGISTERED_ONLY / NOT_INSTALLED / UNKNOWN */
+    val status: String,
+    /** 현재 등록된 config 값 (보안: secret 도 마스킹 없이 그대로 — 운영자가 자기 토큰 확인용). */
+    val configValues: Map<String, String> = emptyMap(),
+)
+
+@Serializable
+data class McpCatalogResponseDto(val entries: List<McpEntryDto>)
+
+@Serializable
+data class McpInstallRequestDto(
+    /** id → (configKey → value) 맵. 예: {"github": {"GITHUB_PERSONAL_ACCESS_TOKEN":"ghp_..."}} */
+    val selections: Map<String, Map<String, String>>,
+)
+
+@Serializable
+data class McpUnregisterRequestDto(val ids: List<String>)
+
+// endregion
+
+// region v0.10.0 — Git 통합 (PAT + SSH)
+
+@Serializable
+data class GitTokenViewDto(
+    val provider: String,
+    val host: String,
+    val username: String,
+    val tokenMasked: String,
+    val createdAt: String,
+    val note: String? = null,
+)
+
+@Serializable
+data class GitIntegrationsResponseDto(
+    val tokens: List<GitTokenViewDto>,
+    val sshPublicKey: String?,
+)
+
+@Serializable
+data class GitTokenRegisterRequestDto(
+    val provider: String,
+    val host: String,
+    val username: String? = null,
+    val token: String,
+    val note: String? = null,
+)
+
+@Serializable
+data class GitTokenDeleteRequestDto(val host: String)
 
 // endregion
 

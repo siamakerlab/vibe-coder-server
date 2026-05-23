@@ -152,7 +152,7 @@ $errHtml
 
   <div class="card">
     <h2>새 프로젝트</h2>
-    <form method="post" action="/projects">
+    <form method="post" action="/projects" id="new-project-form">
       <label>프로젝트 ID (kebab-case)
         <input name="projectId" required pattern="[a-z0-9][a-z0-9._-]*" maxlength="64"
                placeholder="my-android-app">
@@ -164,9 +164,38 @@ $errHtml
         <input name="packageName" required pattern="[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+"
                placeholder="com.example.myapp">
       </label>
-      <button type="submit" class="primary">생성</button>
-      <p class="hint">서버가 워크스페이스에 빈 폴더 + <code>CLAUDE.md</code> 템플릿을 생성합니다.
-      이후 콘솔에서 Claude 에게 "Android 앱을 만들어줘" 같은 프롬프트를 주면 됩니다.</p>
+
+      <fieldset style="margin-top:10px;border:1px solid #333;padding:10px;border-radius:6px">
+        <legend style="padding:0 6px;font-size:13px">소스 (v0.9.0+)</legend>
+        <label style="display:flex;gap:8px;align-items:center;cursor:pointer">
+          <input type="radio" name="sourceType" value="empty" checked
+                 onclick="document.getElementById('clone-fields').style.display='none'">
+          <span><strong>빈 프로젝트</strong> — 빈 폴더 + CLAUDE.md 템플릿 (Claude 가 처음부터 scaffold)</span>
+        </label>
+        <label style="display:flex;gap:8px;align-items:center;cursor:pointer;margin-top:6px">
+          <input type="radio" name="sourceType" value="clone"
+                 onclick="document.getElementById('clone-fields').style.display='block'">
+          <span><strong>기존 레포 clone</strong> — git URL 에서 가져옴</span>
+        </label>
+
+        <div id="clone-fields" style="display:none;margin-top:10px;padding-left:24px">
+          <label>Clone URL
+            <input name="cloneUrl" type="text"
+                   placeholder="https://github.com/owner/repo.git  또는  git@github.com:owner/repo.git">
+          </label>
+          <label>Branch (선택)
+            <input name="cloneBranch" type="text" placeholder="비우면 default (main 등)">
+          </label>
+          <p class="hint" style="font-size:12px">
+            <strong>Public 레포</strong>: https URL 그대로 입력.<br>
+            <strong>Private 레포 (HTTPS)</strong>: <a href="/settings/git-integrations">환경설정 → Git 통합</a> 에서 토큰 등록 후 시도.<br>
+            <strong>Private 레포 (SSH)</strong>: <code>git@host:owner/repo</code> 형식 + 위 환경설정에서 공개키 등록.
+          </p>
+        </div>
+      </fieldset>
+
+      <button type="submit" class="primary" style="margin-top:10px">생성</button>
+      <p class="hint">빈 프로젝트의 경우 콘솔에서 Claude 에게 "Android 앱을 만들어줘" 같은 프롬프트로 시작합니다.</p>
     </form>
   </div>
 </section>

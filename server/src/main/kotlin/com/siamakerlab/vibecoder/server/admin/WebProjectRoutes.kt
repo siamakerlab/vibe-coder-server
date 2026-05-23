@@ -71,11 +71,17 @@ fun Routing.webProjectRoutes(
         val projectId = params["projectId"]?.trim().orEmpty()
         val appName = params["appName"]?.trim().orEmpty()
         val packageName = params["packageName"]?.trim().orEmpty()
+        // v0.9.0 — sourceType ('empty' | 'clone') + optional cloneUrl/branch
+        val sourceType = params["sourceType"]?.trim()?.ifBlank { null } ?: "empty"
+        val cloneUrl = params["cloneUrl"]?.trim()?.ifBlank { null }
+        val cloneBranch = params["cloneBranch"]?.trim()?.ifBlank { null }
 
         val basicErr = when {
             projectId.isBlank() -> "프로젝트 ID 를 입력하세요."
             appName.isBlank() -> "앱 이름을 입력하세요."
             packageName.isBlank() -> "패키지명을 입력하세요."
+            sourceType == "clone" && cloneUrl.isNullOrBlank() ->
+                "Clone URL 을 입력하세요 (https:// 또는 git@host:owner/repo)."
             else -> null
         }
         if (basicErr != null) {
@@ -95,6 +101,9 @@ fun Routing.webProjectRoutes(
                     appName = appName,
                     packageName = packageName,
                     keystore = null,
+                    sourceType = sourceType,
+                    cloneUrl = cloneUrl,
+                    cloneBranch = cloneBranch,
                 )
             )
         }

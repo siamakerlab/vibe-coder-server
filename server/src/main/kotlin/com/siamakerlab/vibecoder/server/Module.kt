@@ -7,6 +7,7 @@ import com.siamakerlab.vibecoder.server.actions.projectActionRoutes
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.adminRoutes
 import com.siamakerlab.vibecoder.server.admin.envSetupRoutes
+import com.siamakerlab.vibecoder.server.admin.gitIntegrationsRoutes
 import com.siamakerlab.vibecoder.server.admin.mcpRoutes
 import com.siamakerlab.vibecoder.server.admin.webProjectRoutes
 import com.siamakerlab.vibecoder.server.artifacts.ArtifactService
@@ -34,9 +35,12 @@ import com.siamakerlab.vibecoder.server.env.EnvSetupService
 import com.siamakerlab.vibecoder.server.env.McpService
 import com.siamakerlab.vibecoder.server.env.StatusService
 import com.siamakerlab.vibecoder.server.env.envRoutes
+import com.siamakerlab.vibecoder.server.env.envSetupApiRoutes
 import com.siamakerlab.vibecoder.server.error.installStatusPages
 import com.siamakerlab.vibecoder.server.files.UploadService
 import com.siamakerlab.vibecoder.server.files.fileRoutes
+import com.siamakerlab.vibecoder.server.git.GitCloneService
+import com.siamakerlab.vibecoder.server.git.GitCredentialStore
 import com.siamakerlab.vibecoder.server.git.GitReader
 import com.siamakerlab.vibecoder.server.git.gitRoutes
 import com.siamakerlab.vibecoder.server.projects.ProjectService
@@ -95,6 +99,8 @@ data class ServerContext(
     val claudeAuth: ClaudeAuthService,
     val claudeLogin: ClaudeLoginService,
     val mcp: McpService,
+    val gitCredentials: GitCredentialStore,
+    val gitClone: GitCloneService,
     val actionRegistry: ProjectActionRegistry,
     val actionHandler: ServerActionHandler,
     val capabilityService: CapabilityService,
@@ -166,6 +172,17 @@ fun Application.module(ctx: ServerContext) {
         adminRoutes(adminDeps)
         envSetupRoutes(adminDeps, ctx.envSetup, ctx.claudeAuth, ctx.claudeLogin)
         mcpRoutes(adminDeps, ctx.mcp)
+        gitIntegrationsRoutes(adminDeps, ctx.gitCredentials, ctx.gitClone, ctx.clock)
+        // v0.10.0 — admin SSR 라우트들의 JSON API 이중 노출 (vibe-coder-android wire)
+        envSetupApiRoutes(
+            envSetup = ctx.envSetup,
+            claudeAuth = ctx.claudeAuth,
+            claudeLogin = ctx.claudeLogin,
+            mcp = ctx.mcp,
+            credentials = ctx.gitCredentials,
+            cloneSvc = ctx.gitClone,
+            clock = ctx.clock,
+        )
         webProjectRoutes(
             authDeps = adminDeps,
             projects = ctx.projects,
