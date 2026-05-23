@@ -6,6 +6,7 @@ import com.siamakerlab.vibecoder.server.actions.ServerActionHandler
 import com.siamakerlab.vibecoder.server.actions.projectActionRoutes
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.adminRoutes
+import com.siamakerlab.vibecoder.server.admin.envSetupRoutes
 import com.siamakerlab.vibecoder.server.admin.webProjectRoutes
 import com.siamakerlab.vibecoder.server.artifacts.ArtifactService
 import com.siamakerlab.vibecoder.server.artifacts.artifactRoutes
@@ -26,6 +27,7 @@ import com.siamakerlab.vibecoder.server.config.ServerConfig
 import com.siamakerlab.vibecoder.server.core.Clock
 import com.siamakerlab.vibecoder.server.core.WorkspacePath
 import com.siamakerlab.vibecoder.server.env.EnvDiagnostics
+import com.siamakerlab.vibecoder.server.env.EnvSetupService
 import com.siamakerlab.vibecoder.server.env.StatusService
 import com.siamakerlab.vibecoder.server.env.envRoutes
 import com.siamakerlab.vibecoder.server.error.installStatusPages
@@ -85,6 +87,7 @@ data class ServerContext(
     val uploads: UploadService,
     val status: StatusService,
     val env: EnvDiagnostics,
+    val envSetup: EnvSetupService,
     val actionRegistry: ProjectActionRegistry,
     val actionHandler: ServerActionHandler,
     val capabilityService: CapabilityService,
@@ -154,6 +157,7 @@ fun Application.module(ctx: ServerContext) {
             envDiagnostics = ctx.env,
         )
         adminRoutes(adminDeps)
+        envSetupRoutes(adminDeps, ctx.envSetup)
         webProjectRoutes(
             authDeps = adminDeps,
             projects = ctx.projects,

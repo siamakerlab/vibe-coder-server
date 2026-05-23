@@ -60,7 +60,7 @@ vibe-coder-server/
 화면(이미 설정됨) 이 뜬다. 안드로이드 앱(`vibe-coder-android`) 도
 같은 URL + username/password 로 로그인할 수 있지만 필수는 아니다.
 
-### 웹만으로 끝낼 수 있는 작업 (v0.5.5+)
+### 웹만으로 끝낼 수 있는 작업 (v0.6.0+)
 
 | 경로 | 용도 |
 |---|---|
@@ -72,6 +72,7 @@ vibe-coder-server/
 | `/projects/{id}/builds/{buildId}` | 빌드 상세 + 실시간 로그 (WebSocket) + 취소 |
 | `/projects/{id}/files` | 파일 업로드 / 다운로드 / 삭제 |
 | `/projects/{id}/git` | git status / diff / log (읽기 전용) |
+| `/env-setup` | 빌드환경 (JDK / SDK / Claude 로그인) 상태 + 설치 안내 |
 | `/settings` · `/devices` · `/password` | 운영 설정 / 디바이스 / 비밀번호 |
 | `/login` · `/setup` · `/logout` | 인증 |
 
@@ -81,15 +82,74 @@ v0.4.2 부터 별도 `/admin/*` prefix 없이 모두 루트 바로 아래에 평
 
 ### Docker 실행
 
+#### compose.yml 한 줄 quick-start
+
 ```bash
-docker pull siamakerlab/vibe-coder-server:0.5.5
-cd ~/vibe-coder && cp docker/compose.yml . && cp docker/.env.example .env
-# .env 편집 후
+mkdir -p ~/vibe-coder && cd ~/vibe-coder
+
+curl -fsSL https://raw.githubusercontent.com/siamakerlab/vibe-coder/main/docker/compose.yml -o compose.yml
+curl -fsSL https://raw.githubusercontent.com/siamakerlab/vibe-coder/main/docker/.env.example -o .env
+
+# .env 에서 PUID/PGID (id -u; id -g) / 포트 / 볼륨 경로 조정 후
 docker compose up -d
-docker exec -it vibe-coder vibe-doctor   # Android SDK + Claude 설치
+
+# 첫 부팅 후 admin 셋업: 브라우저 → http://<PC IP>:17880/setup
+# 그 다음 좌측 nav → 빌드환경 → 안내대로 Android SDK / Claude 로그인.
+```
+
+#### 최소 compose 예시 (직접 작성하고 싶다면)
+
+```yaml
+name: vibe-coder
+services:
+  vibe-coder:
+    image: siamakerlab/vibe-coder-server:0.6.0
+    container_name: vibe-coder
+    restart: unless-stopped
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      JAVA_OPTS: "-Xmx2g -XX:+UseG1GC"
+    ports:
+      - "17880:17880"
+    volumes:
+      - ./workspace:/workspace                # 프로젝트 소스 + APK 산출물
+      - ./vibe-data:/data                     # SQLite DB / 서버 로그
+      - vibe-android-sdk:/opt/android-sdk     # Android SDK (named volume)
+      - vibe-gradle-cache:/home/vibe/.gradle  # Gradle 캐시 (named volume)
+      - ~/.claude:/home/vibe/.claude          # Claude 인증 (호스트 공유)
+volumes:
+  vibe-android-sdk:
+  vibe-gradle-cache:
 ```
 
 자세한 가이드는 `docker/README.md` 를 참고하세요.
+
+### 빌드환경은 이미지를 갈아끼워도 보존됩니다 ✅
+
+브라우저의 **빌드환경 페이지** (`/env-setup`) 또는 `vibe-doctor` 로 설치하는
+**Android SDK / Gradle 캐시 / Claude 인증** 은 모두 **Docker named volume 또는
+호스트 bind mount** 에 저장됩니다.
+
+| 데이터 | 마운트 위치 | 이미지 pull / 컨테이너 recreate 시 |
+|---|---|---|
+| Android SDK (3~4 GB) | `vibe-android-sdk` (named) | ✅ 보존 |
+| Gradle 의존성 캐시 | `vibe-gradle-cache` (named) | ✅ 보존 |
+| Claude 인증 (`.credentials.json`) | `~/.claude` (호스트 bind) | ✅ 보존 |
+| 프로젝트 소스 + APK | `./workspace` (호스트 bind) | ✅ 보존 |
+| SQLite DB + 빌드 로그 | `./vibe-data` (호스트 bind) | ✅ 보존 |
+| **서버 본체** (Ktor 앱 + Claude CLI + JDK) | 이미지 내장 | 🔄 새 이미지로 교체 |
+
+데이터를 잃지 않고 서버만 업그레이드:
+
+```bash
+docker pull siamakerlab/vibe-coder-server:<새 버전>
+docker compose up -d --force-recreate
+```
+
+⚠️ **`docker compose down -v` 는 named volume 까지 삭제** 합니다 (SDK 3~4GB
+다시 다운로드). 일반 업그레이드 시에는 `down -v` 를 쓰지 말고 위의
+`up -d --force-recreate` 만 사용하세요.
 
 ## 인증 (v0.4.0+)
 

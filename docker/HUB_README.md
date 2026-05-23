@@ -9,7 +9,7 @@
 - **Source repository**: <https://github.com/siamakerlab/vibe-coder>
 - **Issue tracker**: <https://github.com/siamakerlab/vibe-coder/issues>
 - **Supported architectures**: `linux/amd64`, `linux/arm64`
-- **Supported tags**: `0.5.5`, `latest`
+- **Supported tags**: `0.6.0`, `latest`
 - **Image size**: ~600MB (Android SDK and Gradle cache are downloaded into volumes separately)
 - **License**: see LICENSE in the source repository
 
@@ -17,7 +17,7 @@
 
 ```bash
 # 1) Pull the image
-docker pull siamakerlab/vibe-coder-server:0.5.5
+docker pull siamakerlab/vibe-coder-server:0.6.0
 
 # 2) Grab the compose file and .env template
 mkdir -p ~/vibe-coder && cd ~/vibe-coder
@@ -65,7 +65,7 @@ Copy `.env.example` to `.env`. Key variables:
 
 | Variable | Default | Description |
 |---|---|---|
-| `VIBECODER_IMAGE` | `siamakerlab/vibe-coder-server:0.5.5` | Image tag to pull |
+| `VIBECODER_IMAGE` | `siamakerlab/vibe-coder-server:0.6.0` | Image tag to pull |
 | `PUID` / `PGID` | `1000` / `1000` | Match the host UID/GID. Use `id -u` / `id -g` to find them |
 | `VIBE_PORT` | `17880` | Host port to expose |
 | `VIBE_WORKSPACE` | `./workspace` | Source / build-artifact directory |

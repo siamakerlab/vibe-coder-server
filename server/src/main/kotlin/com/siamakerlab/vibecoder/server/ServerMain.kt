@@ -18,6 +18,7 @@ import com.siamakerlab.vibecoder.server.core.SystemClock
 import com.siamakerlab.vibecoder.server.core.WorkspacePath
 import com.siamakerlab.vibecoder.server.db.VibeDb
 import com.siamakerlab.vibecoder.server.env.EnvDiagnostics
+import com.siamakerlab.vibecoder.server.env.EnvSetupService
 import com.siamakerlab.vibecoder.server.env.StatusService
 import com.siamakerlab.vibecoder.server.files.UploadService
 import com.siamakerlab.vibecoder.server.git.GitReader
@@ -140,6 +141,7 @@ fun main(args: Array<String>) {
     val git = GitReader()
     val uploads = UploadService(config, workspace, uploadedRepo, clock)
     val env = EnvDiagnostics(config)
+    val envSetup = EnvSetupService(config)
     val status = StatusService(config, projectRepo, buildRepo, env)
     val actionRegistry = ProjectActionRegistry(workspace)
     val actionHandler = ServerActionHandler(projects, build, git, hub, sessionManager)
@@ -170,6 +172,7 @@ fun main(args: Array<String>) {
         uploads = uploads,
         status = status,
         env = env,
+        envSetup = envSetup,
         actionRegistry = actionRegistry,
         actionHandler = actionHandler,
         capabilityService = capabilityService,

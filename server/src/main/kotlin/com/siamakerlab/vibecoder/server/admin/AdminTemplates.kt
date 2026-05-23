@@ -66,6 +66,7 @@ object AdminTemplates {
   <div class="nav-links">
     ${link("/", "대시보드", "dashboard")}
     ${link("/projects", "프로젝트", "projects")}
+    ${link("/env-setup", "빌드환경", "env-setup")}
     ${link("/settings", "설정", "settings")}
     ${link("/devices", "디바이스", "devices")}
     ${link("/password", "비밀번호", "password")}
