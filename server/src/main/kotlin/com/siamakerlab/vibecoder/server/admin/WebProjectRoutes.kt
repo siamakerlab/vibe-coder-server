@@ -245,9 +245,12 @@ fun Routing.webProjectRoutes(
         val artifacts = artifactRepo.listForProject(id).associateBy { it.buildId }
         val err = call.request.queryParameters["err"]
         val ok = call.request.queryParameters["ok"]
+        // v0.59.0 — Phase 38 통계 카드.
+        val stats = runCatching { builds.statistics(id, artifactRepo) }.getOrNull()
         call.respondText(
             WebProjectTemplates.buildsPage(
                 sess.username, p, buildDtos, artifacts,
+                stats = stats,
                 flashErr = err, flashOk = ok, csrf = sess.csrf,
             ),
             ContentType.Text.Html,

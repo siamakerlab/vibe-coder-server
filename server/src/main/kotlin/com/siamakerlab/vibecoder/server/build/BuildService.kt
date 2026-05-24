@@ -189,6 +189,71 @@ class BuildService(
             current.apkSizeBytes - previous.apkSizeBytes else null
     }
 
+    /**
+     * v0.59.0 — Phase 38 빌드 통계 대시보드. 최근 [recentLimit] 개 row 기반.
+     * 매번 메모리 walk 라 큰 프로젝트에선 cache 가 필요하지만 단일-사용자
+     * 환경에선 N 이 보통 수십~수백 → ms 안에 끝남.
+     */
+    fun statistics(
+        projectId: String,
+        artifactRepo: com.siamakerlab.vibecoder.server.repo.ArtifactRepository,
+        recentLimit: Int = 30,
+    ): BuildStatistics {
+        val rows = buildRepo.listForProject(projectId, limit = 200)
+        val total = rows.size
+        val byStatus = rows.groupingBy { it.status.name }.eachCount()
+        val successDurations = rows
+            .filter { it.status == TaskStatus.SUCCESS && it.startedAt != null && it.finishedAt != null }
+            .mapNotNull {
+                runCatching {
+                    java.time.Duration.between(
+                        java.time.Instant.parse(it.startedAt),
+                        java.time.Instant.parse(it.finishedAt),
+                    ).toMillis()
+                }.getOrNull()
+            }
+        val avgSuccessDurationMs = if (successDurations.isEmpty()) null
+        else successDurations.sum() / successDurations.size
+        val recentStatuses = rows.take(recentLimit).map { it.status.name }
+        // 마지막 10 SUCCESS 의 APK 사이즈 (newest first; UI 에서 reverse).
+        val recentSuccessSizes = rows.asSequence()
+            .filter { it.status == TaskStatus.SUCCESS }
+            .take(10)
+            .map { row ->
+                row.artifactId
+                    ?.let { artifactRepo.get(projectId, it) }
+                    ?.sizeBytes
+            }
+            .toList()
+        return BuildStatistics(
+            total = total,
+            successCount = byStatus["SUCCESS"] ?: 0,
+            failedCount = byStatus["FAILED"] ?: 0,
+            cancelledCount = byStatus["CANCELED"] ?: 0,
+            runningCount = (byStatus["RUNNING"] ?: 0) + (byStatus["PENDING"] ?: 0),
+            avgSuccessDurationMs = avgSuccessDurationMs,
+            recentStatuses = recentStatuses,
+            recentSuccessSizes = recentSuccessSizes,
+        )
+    }
+
+    data class BuildStatistics(
+        val total: Int,
+        val successCount: Int,
+        val failedCount: Int,
+        val cancelledCount: Int,
+        val runningCount: Int,
+        val avgSuccessDurationMs: Long?,
+        /** Most-recent-first status sequence (max recentLimit). */
+        val recentStatuses: List<String>,
+        /** Most-recent-first APK sizes (max 10). null = no artifact / not measured. */
+        val recentSuccessSizes: List<Long?>,
+    ) {
+        /** 0..100 (Int) — total 가 0이면 null. */
+        val successRatePercent: Int? = if (total == 0) null
+            else (successCount.toDouble() / total * 100).toInt()
+    }
+
     private fun BuildRow.toDto() = BuildDto(
         id = id, projectId = projectId, variant = variant, status = status,
         startedAt = startedAt ?: createdAt, finishedAt = finishedAt,

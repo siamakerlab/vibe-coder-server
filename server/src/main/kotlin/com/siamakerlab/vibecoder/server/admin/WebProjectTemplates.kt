@@ -235,6 +235,100 @@ object WebProjectTemplates {
      * v0.28.0 — APK 서명 검사 결과 (apksigner verify).
      */
     /**
+     * v0.59.0 — Phase 38 빌드 통계 카드 (`/projects/{id}/builds` 상단). 성공률 / 평균
+     * 빌드 시간 / 최근 30 status sparkline / 최근 10 APK 사이즈 trend.
+     */
+    private fun renderBuildStatistics(
+        stats: com.siamakerlab.vibecoder.server.build.BuildService.BuildStatistics?,
+    ): String {
+        if (stats == null || stats.total == 0) return ""
+        fun fmtMs(ms: Long?): String = when {
+            ms == null -> "-"
+            ms < 1000 -> "${ms}ms"
+            ms < 60_000 -> "%.1fs".format(ms / 1000.0)
+            else -> "%dm %ds".format(ms / 60_000, (ms / 1000) % 60)
+        }
+        // Sparkline: recentStatuses 가 most-recent-first 라서 SVG 는 reverse 해서 left-old → right-new.
+        val sparkline = run {
+            val seq = stats.recentStatuses.reversed()
+            if (seq.isEmpty()) ""
+            else {
+                val w = 6
+                val totalW = seq.size * w
+                val bars = seq.mapIndexed { i, s ->
+                    val color = when (s) {
+                        "SUCCESS" -> "#22c55e"
+                        "FAILED", "TIMEOUT" -> "#ef4444"
+                        "CANCELED" -> "#9ca3af"
+                        "RUNNING", "PENDING" -> "#facc15"
+                        else -> "#6b7280"
+                    }
+                    """<rect x="${i * w}" y="0" width="${w - 1}" height="20" fill="$color"><title>${esc(s)}</title></rect>"""
+                }.joinToString("")
+                """<svg width="$totalW" height="20" style="vertical-align:middle" aria-label="최근 ${seq.size} 빌드 status">$bars</svg>"""
+            }
+        }
+        // APK size trend: recentSuccessSizes most-recent-first → reverse 후 SVG line.
+        val sizeTrend = run {
+            val sizes = stats.recentSuccessSizes.reversed().filterNotNull()
+            if (sizes.size < 2) ""
+            else {
+                val w = 240; val h = 40; val pad = 4
+                val maxV = sizes.max().toDouble()
+                val minV = sizes.min().toDouble()
+                val range = (maxV - minV).coerceAtLeast(1.0)
+                val step = if (sizes.size > 1) (w - 2 * pad).toDouble() / (sizes.size - 1) else 0.0
+                val pts = sizes.mapIndexed { i, v ->
+                    val x = pad + i * step
+                    val y = h - pad - ((v - minV) / range) * (h - 2 * pad)
+                    "$x,$y"
+                }.joinToString(" ")
+                val deltaKb = (sizes.last() - sizes.first()) / 1024
+                val deltaSign = if (deltaKb >= 0) "+" else ""
+                val deltaCls = if (deltaKb > 0) "warn" else if (deltaKb < 0) "ok" else "dim"
+                """<div style="display:flex;gap:12px;align-items:center">
+                  <svg width="$w" height="$h" style="background:rgba(255,255,255,0.03);border-radius:4px">
+                    <polyline points="$pts" fill="none" stroke="#5eb1ef" stroke-width="2"/>
+                  </svg>
+                  <div class="dim" style="font-size:12px">최근 ${sizes.size} 성공 빌드<br>
+                    Δ <span class="$deltaCls">$deltaSign${deltaKb} KB</span></div>
+                </div>"""
+            }
+        }
+        val rateCls = when {
+            stats.successRatePercent == null -> "dim"
+            stats.successRatePercent >= 90 -> "ok"
+            stats.successRatePercent >= 70 -> "warn"
+            else -> "warn"
+        }
+        return """
+<div class="card" style="margin-bottom:16px">
+  <h2 style="margin-top:0">빌드 통계 (v0.59.0+)</h2>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:12px">
+    <div>
+      <div class="dim" style="font-size:11px">전체 빌드</div>
+      <div style="font-size:20px;font-weight:600">${stats.total}</div>
+    </div>
+    <div>
+      <div class="dim" style="font-size:11px">성공률</div>
+      <div style="font-size:20px;font-weight:600"><span class="$rateCls">${stats.successRatePercent ?: "-"}%</span></div>
+      <div class="dim" style="font-size:11px">✓ ${stats.successCount} · ✗ ${stats.failedCount} · cancel ${stats.cancelledCount}${if (stats.runningCount > 0) " · 진행 ${stats.runningCount}" else ""}</div>
+    </div>
+    <div>
+      <div class="dim" style="font-size:11px">평균 빌드 시간 (성공만)</div>
+      <div style="font-size:20px;font-weight:600">${fmtMs(stats.avgSuccessDurationMs)}</div>
+    </div>
+  </div>
+  ${if (sparkline.isNotEmpty()) """
+  <div style="margin-bottom:10px">
+    <div class="dim" style="font-size:11px;margin-bottom:4px">최근 ${stats.recentStatuses.size} 빌드 status (오래된 → 최근)</div>
+    $sparkline
+  </div>""" else ""}
+  $sizeTrend
+</div>"""
+    }
+
+    /**
      * v0.58.0 — Phase 37 이전 성공 빌드와의 비교 카드. null = 비교 대상 없음 (첫 성공 빌드)
      * 또는 현재 빌드가 SUCCESS 아님.
      */
@@ -1049,6 +1143,8 @@ $authBannerHtml
         p: ProjectDto,
         builds: List<BuildDto>,
         artifactsByBuild: Map<String, ArtifactRow>,
+        /** v0.59.0 — Phase 38 통계 카드 (null = repo / artifact 조회 실패). */
+        stats: com.siamakerlab.vibecoder.server.build.BuildService.BuildStatistics? = null,
         flashErr: String? = null,
         flashOk: String? = null,
         csrf: String? = null,
@@ -1112,6 +1208,8 @@ $errHtml
   </div>
   <p class="hint">큐 등록 후엔 콘솔에서 실시간 로그를 볼 수 있으며, 완료되면 APK 다운로드 링크가 이 표에 나타납니다.</p>
 </div>
+
+${renderBuildStatistics(stats)}
 
 ${renderBuildHistoryChart(builds, artifactsByBuild)}
 
