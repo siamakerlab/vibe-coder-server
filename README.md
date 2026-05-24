@@ -24,7 +24,7 @@ vibe-coder-server/
 └─ docker/              # Slim Docker image + compose + vibe-doctor
 ```
 
-## What's inside (v0.39.0)
+## What's inside (v0.43.0)
 
 ### Core orchestration
 - **Claude Code CLI orchestration** — one persistent child process per project,
@@ -229,11 +229,48 @@ vibe-coder-server/
 - **PWA** — `static/admin/manifest.json` + `sw.js` (cache-first for
   `/static/*`, network-only for `/api/*` and `/ws/*`). Mobile browsers can
   "Add to Home Screen"; desktop can install as a standalone app.
-- **VS Code extension scaffold** (`vscode-extension/`) — single-file TS
-  with 5 commands (`Login`, `Server status`, `List projects`, `Send prompt`,
-  `Trigger debug build`). Zero npm runtime deps; uses Node's built-in
-  `http`/`https`. Login auto-handles `totp_required`. Not yet on the
-  Marketplace; install via `F5` in the Extension Development Host.
+- **VS Code extension** (`vscode-extension/`, v0.2.0 since server v0.43.0)
+  — Projects TreeView on the activity bar (right-click → "Follow console",
+  "Send prompt", "Trigger debug build"); status-bar item with
+  auto-refresh; live console WebSocket subscribe streamed into an Output
+  Channel; 7 palette commands (`Login` auto-handles `totp_required`).
+  Marketplace-ready (`npm run package`); install with
+  `code --install-extension vibe-coder-0.2.0.vsix`.
+
+### Roles & access (extended in v0.40.0)
+- **`viewer` role** — third role added next to `admin` / `member`.
+  Read-only: console prompt, build queue, git commit, file upload, agent
+  CRUD, project create/delete are all blocked at the SSR layer.
+- **`requireWriteAccessOrRedirect(sess)`** chain helper guards every
+  destructive SSR `POST` endpoint listed above; viewers get redirected
+  to dashboard with "viewer 권한으로는 변경할 수 없습니다."
+- **Admin-only guards extended** — `/audit`, `/settings` (GET + POST),
+  `/backup`, `/backup/download` now use `requireAdminOrRedirect` on top
+  of the session check. `/2fa` stays open to all roles (personal
+  security).
+- `/users` form gains a `viewer (read-only)` option; the role-toggle
+  button cycles `admin → member → viewer → admin`.
+
+### Agent dispatch UX (v0.41.0+)
+- Console page gains an **`@ Agent dispatch`** dropdown next to the
+  prompt template picker. Loads from `GET /api/agents` (registered
+  `~/.claude/agents/*.md`) and on selection injects
+  `Use the <agent-name> sub-agent to ` prefix into the prompt input.
+- Already-prefixed prompts swap the agent name in place — no duplicate
+  prefixes.
+- Full sub-agent process pool (each agent → its own `claude` child) is
+  tracked separately; this milestone is the UX wrapper around Claude
+  Code's standard sub-agent dispatch.
+
+### In-browser noVNC reverse proxy (v0.42.0+)
+- New `/emulator/vnc/*` routes proxy `localhost:6080` (HTTP) and
+  `localhost:6080/websockify` (WebSocket) through the same `vibe_session`
+  cookie. Admin-only on both protocols.
+- `/emulator` page embeds the noVNC client in an iframe (`autoconnect=true`,
+  `resize=remote`). No more need to expose port 6080 on the host or set
+  up an SSH tunnel — same-origin admin auth is sufficient.
+- JDK 11+ `java.net.http.HttpClient` + `WebSocket` only; no new
+  dependencies.
 
 ### Git + project scaffolding (v0.18.0+)
 - **Git commit + push** — single `POST /api/projects/{id}/git/commit` (and an
@@ -395,7 +432,7 @@ ssh user@newhost 'cd ~/vibe-coder && tar xzf vibe-coder-data-*.tar.gz && docker 
 mounts only (no named volumes by default), but watch out if you mixed
 in legacy state. For regular upgrades, always `up -d --force-recreate`.
 
-## Web routes (v0.39.0)
+## Web routes (v0.43.0)
 
 All routes below sit at the root (no `/admin/*` prefix). Bearer auth or
 session cookie required except `/setup`, `/login`, `/health`. Every SSR POST
@@ -441,11 +478,12 @@ carries a CSRF `_csrf` token (v0.12.4+).
 | `/projects/{id}/stats` | **v0.35.0** Code statistics (LoC / languages) |
 | `/code-search` | **v0.35.0** Workspace-wide grep |
 | `/multi-console` | **v0.36.0** N-pane multi-project console (iframe grid) |
-| `/users` | **v0.37.0** Multi-user / role management (admin only) |
+| `/users` | **v0.37.0** Multi-user / role management (admin only); **v0.40.0** added `viewer` |
+| `/emulator/vnc/*` | **v0.42.0** noVNC reverse proxy (HTTP + WebSocket; admin only) |
 | `/settings`, `/devices`, `/password` | Operations |
 | `/login`, `/setup`, `/logout` | Auth |
 
-## JSON API (v0.39.0 — for clients like the Android app)
+## JSON API (v0.43.0 — for clients like the Android app)
 
 Every UI feature has a matching `/api/*` endpoint with Bearer authentication.
 Wire definitions: `shared/.../ApiPath.kt` + `shared/.../Dtos.kt`. Highlights:
@@ -517,12 +555,19 @@ requires the code after password. Disable requires a current code.
 client is redirected to `/login?err=session_timeout`. Same policy across
 cookie and `Authorization: Bearer …`.
 
-**Multi-user + role (v0.37.0+, first step)** — `admin_users.role` column
-adds `admin` / `member` distinction. The first admin (from `/setup`) is
+**Multi-user + role (v0.37.0 / v0.40.0)** — `admin_users.role` column
+adds `admin` / `member` / `viewer`. The first admin (from `/setup`) is
 always `admin`; new users created via `/users` default to `member`.
 `/users` itself is admin-only. Last-admin demotion and self-deletion are
 blocked. Project-level ACLs (member who only sees a subset of projects)
-are on the roadmap for v0.38+.
+are on the roadmap for v0.44+.
+
+`requireWriteAccessOrRedirect(sess)` blocks `viewer` sessions from
+destructive SSR `POST` endpoints (project create/delete, console
+new/slash, build enqueue, files upload, edit, git commit, agents
+save/delete). `requireAdminOrRedirect(sess)` guards `/audit`,
+`/settings`, `/backup`, `/users`. JSON API and WebSocket layers do not
+yet enforce role — known scope limit tracked for the next minor.
 
 ## Security boundaries
 
@@ -629,19 +674,29 @@ Token stored at `~/.config/vibe-coder/config` with `chmod 0600`. `jq`
 optional (pretty-prints JSON). Go/Rust port with WebSocket subscribe is on
 the roadmap.
 
-## Bundled VS Code extension (`vscode-extension/`, v0.39.0+)
+## Bundled VS Code extension (`vscode-extension/`, v0.2.0)
 
-Single-file TypeScript MVP. Talks to the same REST API from inside VS
-Code's command palette.
+TypeScript multi-file build (`api.ts`, `ws.ts`, `treeview.ts`,
+`extension.ts`). Adds runtime dep on `ws` for WebSocket subscribe.
 
 ```bash
 cd vscode-extension
-npm install && npm run compile
-# Then in VS Code: press F5 to launch the Extension Development Host.
+npm install && npm run package    # → vibe-coder-0.2.0.vsix
+code --install-extension vibe-coder-0.2.0.vsix
+# or dev mode: npm run watch then F5 in VS Code
 ```
 
-Commands: **Vibe Coder: Login** (handles `totp_required` automatically) /
-**Server status** / **List projects** / **Send prompt to project console**
-/ **Trigger debug build**. Settings: `vibeCoder.serverUrl`,
-`vibeCoder.token` (Global). Not yet published to the Marketplace; install
-via dev mode for now.
+Features:
+
+- **Projects sidebar** (activity bar $(rocket)) — TreeView with the last
+  20 builds per project; right-click → "Follow console", "Send prompt",
+  "Trigger debug build".
+- **Status bar item** — `host (vX.Y.Z)`, refreshed every 60 s; click for
+  full status.
+- **Live console** — `Vibe Coder: Follow project console` opens an
+  Output Channel and streams every Claude frame in real time. Re-run on
+  the same project to toggle off.
+- 7 palette commands; **Login** auto-handles `401 totp_required`.
+
+Marketplace publish is one `vsce publish` away (PAT required) — see
+`vscode-extension/README.md`. Not yet listed there.

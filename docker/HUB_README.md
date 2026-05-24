@@ -13,7 +13,7 @@
   <https://github.com/siamakerlab/vibe-coder-server/wiki>
 - **Issues**: <https://github.com/siamakerlab/vibe-coder-server/issues>
 - **Architectures**: `linux/amd64` (multi-arch builds reserved for milestones).
-- **Latest tags (slim)**: `0.39.0`, `latest`
+- **Latest tags (slim)**: `0.43.0`, `latest`
 - **Latest tags (full / emulator + noVNC)**: `0.38.0-full`, `full`
 - **Base OS**: Ubuntu 26.04 LTS (Resolute Raccoon) since v0.38.0
 - **Image size**: ~600 MB (Android SDK / Gradle / MCP packages live in
@@ -47,7 +47,7 @@ docker compose up -d            # boots postgres + vibe-coder-server
 > [CHANGELOG.md](https://github.com/siamakerlab/vibe-coder-server/blob/main/CHANGELOG.md)
 > for the exact steps.
 
-## What's in the box (v0.39.0)
+## What's in the box (v0.43.0)
 
 **Core**
 - **Claude Code CLI orchestration** — one persistent child per project,
@@ -188,8 +188,24 @@ docker compose up -d            # boots postgres + vibe-coder-server
 **PWA + VS Code extension (v0.39.0+)**
 - `manifest.json` + service worker → mobile/desktop browsers can
   "install" the admin UI.
-- `vscode-extension/` scaffold: 5 commands (login / status / projects /
-  send prompt / build). Zero npm deps.
+- `vscode-extension/` **v0.2.0** (since server v0.43.0): Projects
+  TreeView, status bar, live console (WebSocket → Output Channel), 7
+  palette commands.
+
+**Roles & access (extended in v0.40.0)**
+- `viewer` role added next to `admin` / `member`. Destructive `POST`
+  endpoints (project / build / console / git / agents) are blocked at
+  the SSR layer for viewers.
+- `/audit`, `/settings`, `/backup` now admin-only.
+
+**Agent dispatch UX (v0.41.0+)**
+- Console page picker for registered `~/.claude/agents/*.md` — selecting
+  injects `Use the <agent-name> sub-agent to ` prefix.
+
+**In-browser noVNC reverse proxy (v0.42.0+)**
+- `/emulator/vnc/*` proxies localhost:6080 HTTP + WebSocket through the
+  same `vibe_session` cookie (admin only). No host-side 6080 exposure or
+  SSH tunnel needed.
 
 **Git + project scaffolding (v0.18.0+)**
 - **Git commit + push** wrapped in a single non-interactive endpoint
@@ -296,7 +312,7 @@ container (UID 70 in alpine images). On the host you may need `sudo` to read
 files directly. Either use `tar` with sudo, or do logical `pg_dump` against
 the running container.
 
-## Web UI routes (v0.39.0)
+## Web UI routes (v0.43.0)
 
 All routes sit at the root (no `/admin/*` prefix from v0.4.2+). Bearer
 token or session cookie required except `/setup`, `/login`, `/health`.
@@ -337,10 +353,11 @@ SSR POST forms carry a CSRF token (v0.12.4+).
 | `/projects/{id}/stats` | Code statistics (LoC / languages) (v0.35.0+) |
 | `/code-search` | Workspace-wide grep (v0.35.0+) |
 | `/multi-console` | N-pane multi-project console (v0.36.0+) |
-| `/users` | Multi-user / role management (admin only, v0.37.0+) |
+| `/users` | Multi-user / role management (admin only, v0.37.0+; `viewer` added v0.40.0) |
+| `/emulator/vnc/*` | noVNC reverse proxy (HTTP + WS; admin only, v0.42.0+) |
 | `/settings`, `/devices`, `/password` | Operations |
 
-## JSON API (v0.39.0 — for clients)
+## JSON API (v0.43.0 — for clients)
 
 Full reference + curl examples in the
 [REST API Reference](https://github.com/siamakerlab/vibe-coder-server/wiki/REST-API-Reference)
