@@ -198,6 +198,8 @@ fun main(args: Array<String>) {
     val agentRegistry = com.siamakerlab.vibecoder.server.env.AgentRegistry()
     val conversationExport = com.siamakerlab.vibecoder.server.claude.ConversationExportService(conversationRepo)
     val promptSuggestionService = com.siamakerlab.vibecoder.server.claude.PromptSuggestionService()
+    // v0.32.0 — Gradle 의존성 audit.
+    val dependencyAudit = com.siamakerlab.vibecoder.server.build.DependencyAudit(workspace)
     // v0.29.0 — 프로젝트 zip + 디스크 monitor (Notifiers 와 email warn percent 공유).
     val projectArchiver = com.siamakerlab.vibecoder.server.projects.ProjectArchiver(workspace)
     val diskMonitor = com.siamakerlab.vibecoder.server.disk.DiskMonitor(
@@ -260,6 +262,7 @@ fun main(args: Array<String>) {
         agentRegistry = agentRegistry,
         conversationExport = conversationExport,
         promptSuggestionService = promptSuggestionService,
+        dependencyAudit = dependencyAudit,
     )
 
     Runtime.getRuntime().addShutdownHook(Thread {

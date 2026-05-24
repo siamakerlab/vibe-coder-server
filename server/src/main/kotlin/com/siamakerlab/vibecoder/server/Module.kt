@@ -6,7 +6,10 @@ import com.siamakerlab.vibecoder.server.actions.ServerActionHandler
 import com.siamakerlab.vibecoder.server.actions.projectActionRoutes
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.adminRoutes
+import com.siamakerlab.vibecoder.server.admin.logSearchRoutes
 import com.siamakerlab.vibecoder.server.build.buildCacheRoutes
+import com.siamakerlab.vibecoder.server.build.dependencyAuditRoutes
+import com.siamakerlab.vibecoder.server.projects.envFilesRoutes
 import com.siamakerlab.vibecoder.server.admin.twoFactorRoutes
 import com.siamakerlab.vibecoder.server.admin.corsSettingsRoutes
 import com.siamakerlab.vibecoder.server.admin.envSetupRoutes
@@ -148,6 +151,8 @@ data class ServerContext(
     val conversationExport: com.siamakerlab.vibecoder.server.claude.ConversationExportService,
     /** v0.31.0 — prompt 자동완성. */
     val promptSuggestionService: com.siamakerlab.vibecoder.server.claude.PromptSuggestionService,
+    /** v0.32.0 — Gradle 의존성 audit. */
+    val dependencyAudit: com.siamakerlab.vibecoder.server.build.DependencyAudit,
 )
 
 fun Application.module(ctx: ServerContext) {
@@ -284,6 +289,10 @@ fun Application.module(ctx: ServerContext) {
         globalHistorySearchRoutes(adminDeps)
         // v0.31.0 — `.agents/` 디렉토리 UI.
         agentRoutes(adminDeps, ctx.agentRegistry)
+        // v0.32.0 — Env files + 의존성 audit + 로그 검색.
+        envFilesRoutes(adminDeps, ctx.projects, ctx.workspace)
+        dependencyAuditRoutes(adminDeps, ctx.projects, ctx.dependencyAudit)
+        logSearchRoutes(adminDeps, ctx.workspace)
         emailSettingsRoutes(adminDeps, ctx.emailNotifier)
         webhookSettingsRoutes(adminDeps, ctx.webhookNotifier)
         emulatorRoutes(adminDeps, ctx.emulator)

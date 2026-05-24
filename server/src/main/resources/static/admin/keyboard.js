@@ -27,6 +27,7 @@
     'g d': '/',
     'g a': '/audit',
     'g c': '/chat',
+    'g l': '/logs',
   };
 
   function isTypingTarget(el) {

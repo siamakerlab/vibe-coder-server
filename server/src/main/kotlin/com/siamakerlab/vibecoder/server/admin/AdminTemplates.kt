@@ -95,6 +95,7 @@ object AdminTemplates {
     ${link("/settings/cache", "빌드 캐시", "cache")}
     ${link("/devices", "디바이스", "devices")}
     ${link("/audit", "감사 로그", "audit")}
+    ${link("/logs", "빌드 로그 검색", "logs")}
     ${link("/history", "대화 검색", "history")}
     ${link("/settings/email", "이메일 알림", "email")}
     ${link("/settings/webhook", "Webhook 알림", "webhook")}
