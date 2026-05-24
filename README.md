@@ -24,7 +24,7 @@ vibe-coder-server/
 └─ docker/              # Slim Docker image + compose + vibe-doctor
 ```
 
-## What's inside (v0.54.0)
+## What's inside (v0.63.0)
 
 ### Core orchestration
 - **Claude Code CLI orchestration** — one persistent child process per project,
@@ -496,6 +496,80 @@ vibe-coder-server/
   the regex approach is the better trade. Real LSP integration is
   tracked as a separate future phase.
 
+### Operations: Prometheus metrics + rate limit (v0.55.0+ / v0.56.0+)
+- **`MetricsRegistry`** + **`/metrics`** SSR admin endpoint
+  (Prometheus text exposition v0.0.4, zero external deps).
+  11 gauges (`vibe_jvm_*`, `vibe_projects_total`, `vibe_users_total`,
+  `vibe_console_sessions_active`, `vibe_sub_agent_sessions_active`,
+  `vibe_push_subscriptions_total`, `vibe_rate_limit_buckets_active`)
+  + 5 counters (`vibe_build_total{status}`,
+  `vibe_claude_usage_warn_total`, `vibe_disk_usage_warn_total`,
+  `vibe_rate_limit_429_total{path_bucket}`).
+- **Per-IP rate limiter** (token bucket, `installRateLimit` Ktor
+  plugin) — two buckets:
+  - `api` (capacity 120, refill 2 tok/s) covers `/api/`, `/ws/`
+  - `auth` (capacity 10, refill 0.2 tok/s) covers `/login` and
+    `/api/auth/login` (credential-stuffing defense)
+  - Admin Bearer / cookie sessions bypass both
+  - 429 + `Retry-After: <sec>` header + JSON body
+  - Disable with `security.rateLimit.enabled: false` if a reverse
+    proxy (nginx / Cloudflare) already throttles.
+
+### WebAuthn passwordless-only + Helm `:full` (v0.57.0+)
+- `admin_users.passwordless_only` column. When enabled, `AuthService.
+  login` rejects password / TOTP attempts for users that have at
+  least one passkey — `401 passkey_required` instead. Toggle at
+  `/webauthn`; disabled is always allowed (recovery path). Activating
+  on a user with zero passkeys is refused (lockout protection).
+- Helm chart `fullImage.enabled=true` swaps to the `:full` tag,
+  adds `securityContext.privileged: true`, mounts `/dev/kvm`
+  hostPath, and exposes port 6080 (noVNC). Requires KVM-capable
+  node + PodSecurity allowing privileged.
+
+### Build comparison + statistics (v0.58.0+ / v0.59.0+)
+- **Build comparison card** on `/projects/{id}/builds/{buildId}` —
+  vs. previous SUCCESS build. APK size + duration delta with
+  color-coded badges (red = larger / slower).
+- **Build statistics card** on `/projects/{id}/builds` — total,
+  success rate (color badge), avg duration (success only) +
+  inline SVG sparkline of the last 30 statuses + inline SVG
+  polyline of the last 10 APK sizes. All inline, zero new deps.
+
+### Backup automation (v0.60.0+)
+- **`BackupScheduler`** — cron-driven (same `HH:MM` / `*:MM` /
+  `*:*` syntax as the build scheduler). Disabled by default; opt
+  in via `backup.enabled: true`.
+- **`BackupService`** consolidates the v0.34.0 manual download with
+  the new scheduled flow. Files land in
+  `<workspace>/.vibecoder/backups/`; rotation keeps the most-recent
+  `retentionCount` (default 7).
+- `/backup` page gains "Run now" button + scheduled-file list +
+  per-file download / delete (path traversal-safe).
+- Exclusion list adds `.vibecoder/backups/` so backups don't
+  self-recurse.
+
+### Conversation memo + star + Korean FTS + Cache stats (v0.61.0+ / v0.62.0+ / v0.63.0+)
+- **memo + star** on every turn — schema columns `user_memo` (text
+  nullable) + `starred` (bool). `/history` row gets ☆/★ toggle +
+  inline memo editor; filter `?starred=1` for bookmarked-only view.
+  `POST /api/projects/{id}/history/{turnId}/star?starred=…` +
+  `.../memo` (body `{"memo":…}`).
+- **Korean / non-ASCII search** — `pg_trgm` extension + GIN
+  trigram index on `conversation_turns.content`. `Filter.q`
+  auto-routes: ASCII → tsvector (Phase 32 path); non-ASCII →
+  `content ILIKE %q%` (trigram-indexed). Same SQL injection
+  defenses (parameter binding + `%/_/\` escape).
+- **Prompt cache statistics** — `ClaudeStreamParser` now parses
+  `usage` from `message.usage` (assistant frames) and the top-level
+  `usage` in `result` frames. Emitted as
+  `ClaudeEvent.UsageReport(inputTokens, outputTokens,
+  cacheReadInputTokens, cacheCreationInputTokens)` and persisted
+  as `conversation_turns(role="usage")` rows. The `/usage` page
+  gains a structured card: total + per-project cache-read /
+  cache-create / hit-rate. The raw `/status` section is kept
+  below for forward compatibility with future Anthropic CLI
+  changes.
+
 ### Git + project scaffolding (v0.18.0+)
 - **Git commit + push** — single `POST /api/projects/{id}/git/commit` (and an
   SSR form) wraps `add → commit → push` with non-interactive auth (PAT via
@@ -656,7 +730,7 @@ ssh user@newhost 'cd ~/vibe-coder && tar xzf vibe-coder-data-*.tar.gz && docker 
 mounts only (no named volumes by default), but watch out if you mixed
 in legacy state. For regular upgrades, always `up -d --force-recreate`.
 
-## Web routes (v0.54.0)
+## Web routes (v0.63.0)
 
 All routes below sit at the root (no `/admin/*` prefix). Bearer auth or
 session cookie required except `/setup`, `/login`, `/health`. Every SSR POST
@@ -711,10 +785,12 @@ carries a CSRF `_csrf` token (v0.12.4+).
 | `/webauthn` | **v0.48.0** Passkey (WebAuthn) — register / list / delete; 2FA alternative to TOTP |
 | `/users/{userId}/projects` | **v0.49.0** Project ACL editor (admin only) — opt-in per-user restriction |
 | `/projects/{id}/symbols` | **v0.54.0** Symbol definition lookup (regex; Kotlin/Java) |
+| `/metrics` | **v0.55.0** Prometheus exposition (admin) |
+| `/backup/auto/{name}` | **v0.60.0** Download a scheduled backup file (admin) |
 | `/settings`, `/devices`, `/password` | Operations |
 | `/login`, `/setup`, `/logout` | Auth |
 
-## JSON API (v0.54.0 — for clients like the Android app)
+## JSON API (v0.63.0 — for clients like the Android app)
 
 Every UI feature has a matching `/api/*` endpoint with Bearer authentication.
 Wire definitions: `shared/.../ApiPath.kt` + `shared/.../Dtos.kt`. Highlights:
@@ -754,6 +830,9 @@ Wire definitions: `shared/.../ApiPath.kt` + `shared/.../Dtos.kt`. Highlights:
   mints a fresh `vibe_session` cookie + Bearer token)
 - `GET  /api/projects/{id}/symbols?name=<symbol>` (**v0.54.0+** —
   best-effort Kotlin/Java definition lookup; returns `{hits:[...]}`)
+- `POST /api/projects/{id}/history/{turnId}/star?starred=true|false`,
+  `POST /api/projects/{id}/history/{turnId}/memo` (**v0.61.0+** —
+  per-turn bookmark + memo)
 - `GET  /api/push/vapid-public-key`,
   `POST /api/push/subscribe`, `DELETE /api/push/subscriptions/{id}`
   (**v0.46.0+** — browser Web Push; **v0.50.0+** payload-encrypted per

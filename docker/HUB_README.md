@@ -47,7 +47,7 @@ docker compose up -d            # boots postgres + vibe-coder-server
 > [CHANGELOG.md](https://github.com/siamakerlab/vibe-coder-server/blob/main/CHANGELOG.md)
 > for the exact steps.
 
-## What's in the box (v0.54.0)
+## What's in the box (v0.63.0)
 
 **Core**
 - **Claude Code CLI orchestration** — one persistent child per project,
@@ -300,6 +300,46 @@ docker compose up -d            # boots postgres + vibe-coder-server
   Kotlin LSP (~300 MB image, ~200 MB RAM) intentionally deferred for
   the single-user dev profile.
 
+**Prometheus metrics + per-IP rate limit (v0.55.0+ / v0.56.0+)**
+- `/metrics` admin endpoint (zero-deps text exposition v0.0.4) —
+  11 gauges + 5 counters covering JVM, project / user / device
+  totals, console / sub-agent process pools, push subscriptions,
+  build outcomes, rate-limit rejections.
+- Token-bucket rate limiter: `api` (cap 120, 2 tok/s) for `/api/`
+  + `/ws/`, `auth` (cap 10, 0.2 tok/s) for `/login` paths. Admin
+  bypass, `Retry-After` header on 429. Disable with
+  `security.rateLimit.enabled: false` behind a reverse proxy.
+
+**WebAuthn passwordless + Helm `:full` (v0.57.0+)**
+- `passwordless_only` user flag: when on, password/TOTP login
+  returns `401 passkey_required`. Toggle from `/webauthn`.
+- Helm `fullImage.enabled=true` swaps to the emulator image,
+  mounts `/dev/kvm`, runs privileged, exposes port 6080.
+
+**Build comparison + statistics (v0.58.0+ / v0.59.0+)**
+- Per-build "vs previous SUCCESS" card on the detail page — APK
+  size + duration delta with color badges.
+- Per-project stats card on the builds list — total / success
+  rate / avg duration + status sparkline + APK size trend
+  (inline SVG, zero new deps).
+
+**Backup automation (v0.60.0+)**
+- Cron-driven `BackupScheduler` writes `.vibecoder/backups/<ts>.
+  tar.gz` and rotates to keep the most-recent `retentionCount`.
+  Default off; opt-in via `backup.enabled: true`. `/backup` page
+  now lists scheduled files + "Run now" + per-file download / delete.
+
+**Conversation memo + star + Korean FTS + Cache stats (v0.61.0+ / v0.62.0+ / v0.63.0+)**
+- ☆/★ toggle and inline memo on every history turn; filter
+  `?starred=1` for bookmarked-only view.
+- `pg_trgm` extension + GIN trigram index: non-ASCII queries
+  (Korean / Japanese / Chinese / emoji) auto-route to indexed
+  `ILIKE %q%`. ASCII queries stay on the v0.53.0 tsvector path.
+- `ClaudeStreamParser` reads the Anthropic `usage` object out of
+  assistant + result frames. Persisted as `role="usage"` history
+  rows; `/usage` page shows a structured card with per-project
+  input / output / cache-read / cache-create / hit rate.
+
 **Git + project scaffolding (v0.18.0+)**
 - **Git commit + push** wrapped in a single non-interactive endpoint
   (`POST /api/projects/{id}/git/commit` + SSR form). PAT / SSH auth,
@@ -405,7 +445,7 @@ container (UID 70 in alpine images). On the host you may need `sudo` to read
 files directly. Either use `tar` with sudo, or do logical `pg_dump` against
 the running container.
 
-## Web UI routes (v0.54.0)
+## Web UI routes (v0.63.0)
 
 All routes sit at the root (no `/admin/*` prefix from v0.4.2+). Bearer
 token or session cookie required except `/setup`, `/login`, `/health`.
@@ -455,9 +495,10 @@ SSR POST forms carry a CSRF token (v0.12.4+).
 | `/webauthn` | Passkey (WebAuthn) — register / list / delete (v0.48.0+) |
 | `/users/{userId}/projects` | Project ACL editor — admin only (v0.49.0+) |
 | `/projects/{id}/symbols` | Symbol definition lookup (regex; Kotlin/Java; v0.54.0+) |
+| `/metrics` | Prometheus exposition (admin; v0.55.0+) |
 | `/settings`, `/devices`, `/password` | Operations |
 
-## JSON API (v0.54.0 — for clients)
+## JSON API (v0.63.0 — for clients)
 
 Full reference + curl examples in the
 [REST API Reference](https://github.com/siamakerlab/vibe-coder-server/wiki/REST-API-Reference)
