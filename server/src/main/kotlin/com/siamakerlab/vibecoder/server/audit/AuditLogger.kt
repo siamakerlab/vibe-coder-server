@@ -312,6 +312,51 @@ class AuditLogger(
         )
     }
 
+    // ── Automation (v0.33.0+) ────────────────────────────────────────
+
+    fun scheduleCreate(userId: String?, ip: String?, projectId: String, cronExpr: String) = safe {
+        repo.insert(
+            action = Actions.SCHEDULE_CREATE, result = Results.OK,
+            userId = userId, ip = ip,
+            resourceType = "project", resourceId = projectId,
+            detail = jsonDetail { put("cron", cronExpr) },
+        )
+    }
+
+    fun scheduleDelete(userId: String?, ip: String?, scheduleId: String) = safe {
+        repo.insert(
+            action = Actions.SCHEDULE_DELETE, result = Results.OK,
+            userId = userId, ip = ip,
+            resourceType = "schedule", resourceId = scheduleId,
+        )
+    }
+
+    fun webhookSecretCreate(userId: String?, ip: String?, projectId: String, name: String) = safe {
+        repo.insert(
+            action = Actions.WEBHOOK_SECRET_CREATE, result = Results.OK,
+            userId = userId, ip = ip,
+            resourceType = "project", resourceId = projectId,
+            detail = jsonDetail { put("name", name) },
+        )
+    }
+
+    fun webhookSecretDelete(userId: String?, ip: String?, secretId: String) = safe {
+        repo.insert(
+            action = Actions.WEBHOOK_SECRET_DELETE, result = Results.OK,
+            userId = userId, ip = ip,
+            resourceType = "webhook_secret", resourceId = secretId,
+        )
+    }
+
+    fun webhookBuildTriggered(userId: String?, ip: String?, projectId: String, name: String) = safe {
+        repo.insert(
+            action = Actions.WEBHOOK_BUILD_TRIGGER, result = Results.OK,
+            userId = userId, ip = ip,
+            resourceType = "project", resourceId = projectId,
+            detail = jsonDetail { put("secretName", name) },
+        )
+    }
+
     object Actions {
         const val AUTH_LOGIN = "auth.login"
         const val AUTH_LOGOUT = "auth.logout"
@@ -340,6 +385,11 @@ class AuditLogger(
         const val AUTH_SESSION_TIMEOUT = "auth.session.timeout"
         const val AGENT_SAVE = "agent.save"
         const val AGENT_DELETE = "agent.delete"
+        const val SCHEDULE_CREATE = "schedule.create"
+        const val SCHEDULE_DELETE = "schedule.delete"
+        const val WEBHOOK_SECRET_CREATE = "webhook.secret.create"
+        const val WEBHOOK_SECRET_DELETE = "webhook.secret.delete"
+        const val WEBHOOK_BUILD_TRIGGER = "webhook.build.trigger"
     }
 
     object Results {

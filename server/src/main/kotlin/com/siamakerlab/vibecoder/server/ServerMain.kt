@@ -200,6 +200,13 @@ fun main(args: Array<String>) {
     val promptSuggestionService = com.siamakerlab.vibecoder.server.claude.PromptSuggestionService()
     // v0.32.0 — Gradle 의존성 audit.
     val dependencyAudit = com.siamakerlab.vibecoder.server.build.DependencyAudit(workspace)
+    // v0.33.0 — Cron 빌드 schedule + webhook secret + conversation archive.
+    val buildScheduleRepo = com.siamakerlab.vibecoder.server.repo.BuildScheduleRepository(clock)
+    val buildWebhookSecretRepo = com.siamakerlab.vibecoder.server.repo.BuildWebhookSecretRepository(clock)
+    val buildScheduler = com.siamakerlab.vibecoder.server.build.BuildScheduler(buildScheduleRepo, build, hub)
+    buildScheduler.start()
+    val conversationArchiver = com.siamakerlab.vibecoder.server.claude.ConversationArchiver(workspace)
+    conversationArchiver.start()
     // v0.29.0 — 프로젝트 zip + 디스크 monitor (Notifiers 와 email warn percent 공유).
     val projectArchiver = com.siamakerlab.vibecoder.server.projects.ProjectArchiver(workspace)
     val diskMonitor = com.siamakerlab.vibecoder.server.disk.DiskMonitor(
@@ -263,12 +270,18 @@ fun main(args: Array<String>) {
         conversationExport = conversationExport,
         promptSuggestionService = promptSuggestionService,
         dependencyAudit = dependencyAudit,
+        buildScheduleRepo = buildScheduleRepo,
+        buildScheduler = buildScheduler,
+        buildWebhookSecretRepo = buildWebhookSecretRepo,
+        conversationArchiver = conversationArchiver,
     )
 
     Runtime.getRuntime().addShutdownHook(Thread {
         kotlinx.coroutines.runBlocking { sessionManager.shutdown() }
         runCatching { claudeUsageMonitor.shutdown() }
         runCatching { diskMonitor.shutdown() }
+        runCatching { buildScheduler.shutdown() }
+        runCatching { conversationArchiver.shutdown() }
         runCatching { notifiers.shutdown() }
     })
 

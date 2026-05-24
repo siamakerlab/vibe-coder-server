@@ -163,4 +163,51 @@ object ConversationTurns : Table("conversation_turns") {
     }
 }
 
-val AllTables = arrayOf(AdminUsers, Devices, Projects, Builds, Artifacts, UploadedFiles, AuditLog, ConversationTurns)
+/**
+ * v0.33.0 — Cron 빌드 schedule.
+ *
+ * cronExpr 는 단순 `H:MM` (예: "02:00") 또는 `*:MM` (매시간 MM 분) 형태.
+ * Full vixie-cron expression 은 v0.33.x 후속에서 별도 라이브러리 검토.
+ *
+ *  - enabled 가 false 면 scheduler 가 skip.
+ *  - lastFiredAt 은 중복 발사 방지용 (같은 minute 한 번만).
+ */
+object BuildSchedules : Table("build_schedules") {
+    val id = varchar("id", 64)
+    val projectId = varchar("project_id", 64).references(Projects.id)
+    val cronExpr = varchar("cron_expr", 32)            // "02:00" 또는 "*:30"
+    val variant = varchar("variant", 32).default("debug")
+    val enabled = bool("enabled").default(true)
+    val createdAt = varchar("created_at", 64)
+    val lastFiredAt = varchar("last_fired_at", 64).nullable()
+    val description = varchar("description", 256).nullable()
+    override val primaryKey = PrimaryKey(id)
+
+    init {
+        index(isUnique = false, columns = arrayOf(enabled))
+    }
+}
+
+/**
+ * v0.33.0 — Build webhook secret.
+ *
+ * 외부 시스템 (GitHub Actions / GitLab CI / monitoring) 이
+ * POST /api/webhooks/build/{projectId} 로 빌드 트리거. body 의 HMAC-SHA256
+ * 서명을 `X-Vibe-Signature` 헤더로 보내 검증.
+ *
+ * secretHash 는 BCrypt — plaintext 는 한 번 생성 시점에만 노출.
+ */
+object BuildWebhookSecrets : Table("build_webhook_secrets") {
+    val id = varchar("id", 64)
+    val projectId = varchar("project_id", 64).references(Projects.id)
+    val name = varchar("name", 64)
+    val secretHash = varchar("secret_hash", 96)
+    val createdAt = varchar("created_at", 64)
+    val lastUsedAt = varchar("last_used_at", 64).nullable()
+    override val primaryKey = PrimaryKey(id)
+}
+
+val AllTables = arrayOf(
+    AdminUsers, Devices, Projects, Builds, Artifacts, UploadedFiles, AuditLog, ConversationTurns,
+    BuildSchedules, BuildWebhookSecrets,
+)

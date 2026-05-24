@@ -7,6 +7,7 @@ import com.siamakerlab.vibecoder.server.actions.projectActionRoutes
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.adminRoutes
 import com.siamakerlab.vibecoder.server.admin.logSearchRoutes
+import com.siamakerlab.vibecoder.server.build.buildAutomationRoutes
 import com.siamakerlab.vibecoder.server.build.buildCacheRoutes
 import com.siamakerlab.vibecoder.server.build.dependencyAuditRoutes
 import com.siamakerlab.vibecoder.server.projects.envFilesRoutes
@@ -153,6 +154,13 @@ data class ServerContext(
     val promptSuggestionService: com.siamakerlab.vibecoder.server.claude.PromptSuggestionService,
     /** v0.32.0 — Gradle 의존성 audit. */
     val dependencyAudit: com.siamakerlab.vibecoder.server.build.DependencyAudit,
+    /** v0.33.0 — Cron 빌드 schedule. */
+    val buildScheduleRepo: com.siamakerlab.vibecoder.server.repo.BuildScheduleRepository,
+    val buildScheduler: com.siamakerlab.vibecoder.server.build.BuildScheduler,
+    /** v0.33.0 — Build webhook secret. */
+    val buildWebhookSecretRepo: com.siamakerlab.vibecoder.server.repo.BuildWebhookSecretRepository,
+    /** v0.33.0 — Claude 세션 자동 archive. */
+    val conversationArchiver: com.siamakerlab.vibecoder.server.claude.ConversationArchiver,
 )
 
 fun Application.module(ctx: ServerContext) {
@@ -293,6 +301,11 @@ fun Application.module(ctx: ServerContext) {
         envFilesRoutes(adminDeps, ctx.projects, ctx.workspace)
         dependencyAuditRoutes(adminDeps, ctx.projects, ctx.dependencyAudit)
         logSearchRoutes(adminDeps, ctx.workspace)
+        // v0.33.0 — Cron 빌드 + webhook trigger.
+        buildAutomationRoutes(
+            adminDeps, ctx.projects, ctx.buildScheduleRepo, ctx.buildWebhookSecretRepo,
+            ctx.build, ctx.hub, ctx.clock,
+        )
         emailSettingsRoutes(adminDeps, ctx.emailNotifier)
         webhookSettingsRoutes(adminDeps, ctx.webhookNotifier)
         emulatorRoutes(adminDeps, ctx.emulator)
