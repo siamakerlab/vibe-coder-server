@@ -194,6 +194,21 @@ exit</pre>
 </div>
 
 <div class="card" style="margin-top:14px;background:rgba(80,150,255,0.05)">
+  <h2 style="margin-top:0">🖥 In-browser noVNC (v0.42.0+, :full 이미지 전용)</h2>
+  <p>vibe-coder 인증을 거친 admin 사용자만 접근 가능한 reverse proxy.
+    별도 호스트 노출 / SSH 터널 불필요. <code>:full</code> 이미지 + KVM passthrough 가
+    구성돼 있어야 함.</p>
+  <iframe src="/emulator/vnc/vnc.html?path=emulator/vnc/websockify&autoconnect=true&resize=remote"
+          style="border:1px solid var(--border);border-radius:6px;width:100%;height:600px;background:#000"
+          title="noVNC live emulator screen"></iframe>
+  <p class="hint" style="margin-top:8px;font-size:12px">
+    blank 화면이면 ① <code>:full</code> 이미지 사용 중인지, ② 위에서 emulator 가 launch 됐는지,
+    ③ <code>/dev/kvm</code> passthrough 가 활성화돼 있는지 확인. 직접 URL 열기:
+    <a href="/emulator/vnc/vnc.html" target="_blank">/emulator/vnc/vnc.html ↗</a>
+  </p>
+</div>
+
+<div class="card" style="margin-top:14px;background:rgba(80,150,255,0.05)">
   <h2 style="margin-top:0">:full 변형 — Xvfb + noVNC 사전 설치 (v0.25.0)</h2>
   <p style="font-size:13px;line-height:1.6">
     슬림 이미지엔 Xvfb / x11vnc / websockify / noVNC 가 없습니다. 브라우저에서

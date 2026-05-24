@@ -39,6 +39,7 @@ import com.siamakerlab.vibecoder.server.claude.consoleRoutes
 import com.siamakerlab.vibecoder.server.claude.globalHistorySearchRoutes
 import com.siamakerlab.vibecoder.server.claude.historyRoutes
 import com.siamakerlab.vibecoder.server.emulator.emulatorRoutes
+import com.siamakerlab.vibecoder.server.emulator.vncProxyRoutes
 import com.siamakerlab.vibecoder.server.notify.emailSettingsRoutes
 import com.siamakerlab.vibecoder.server.notify.webhookSettingsRoutes
 import com.siamakerlab.vibecoder.server.config.ServerConfig
@@ -329,6 +330,8 @@ fun Application.module(ctx: ServerContext) {
         emailSettingsRoutes(adminDeps, ctx.emailNotifier)
         webhookSettingsRoutes(adminDeps, ctx.webhookNotifier)
         emulatorRoutes(adminDeps, ctx.emulator)
+        // v0.42.0 — noVNC reverse proxy (admin-only).
+        vncProxyRoutes(adminDeps)
         wsRoutes(ctx.hub, ctx.deviceRepo, ctx.tokens, ctx.sessionManager,
             ctx.actionRegistry, ctx.actionHandler)
     }
