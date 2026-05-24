@@ -146,3 +146,29 @@ fun ApplicationCall.requireApiAdmin(): DevicePrincipal {
     }
     return p
 }
+
+/**
+ * v0.51.0 — Project ACL JSON API guard. Admin bypasses (sees every project).
+ * Non-admin with no ACL rows also passes (default — unrestricted).
+ * Non-admin with 1+ ACL rows must have an explicit grant for [projectId].
+ *
+ * Mirrors the SSR-side `requireProjectAccessOrRedirect` for JSON endpoints.
+ * Throws `403 project_forbidden` on violation.
+ *
+ * Chain after `requireApiWrite()` / `requireApiAdmin()` (or stand alone for GET
+ * endpoints) so role + ACL are both enforced.
+ */
+fun ApplicationCall.requireProjectAcl(
+    projects: com.siamakerlab.vibecoder.server.projects.ProjectService,
+    projectId: String,
+): DevicePrincipal {
+    val p = requireDevice()
+    val uid = p.device.userId
+    if (uid != null && !projects.canUserAccess(uid, p.isAdmin, projectId)) {
+        throw com.siamakerlab.vibecoder.server.error.ApiException(
+            statusCode = 403, code = "project_forbidden",
+            message = "project not in your ACL",
+        )
+    }
+    return p
+}

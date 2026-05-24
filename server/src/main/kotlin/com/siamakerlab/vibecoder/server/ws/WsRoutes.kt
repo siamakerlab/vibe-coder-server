@@ -4,6 +4,7 @@ import com.siamakerlab.vibecoder.server.actions.ProjectActionRegistry
 import com.siamakerlab.vibecoder.server.actions.ServerActionHandler
 import com.siamakerlab.vibecoder.server.auth.SESSION_COOKIE
 import com.siamakerlab.vibecoder.server.auth.TokenService
+import com.siamakerlab.vibecoder.server.projects.ProjectService
 import com.siamakerlab.vibecoder.server.repo.AdminUserRepository
 import com.siamakerlab.vibecoder.server.claude.ClaudeSessionManager
 import com.siamakerlab.vibecoder.server.claude.SubAgentSessionManager
@@ -51,6 +52,8 @@ fun Routing.wsRoutes(
     subAgentManager: SubAgentSessionManager,
     /** v0.45.0 — role lookup for WebSocket mutation guards (UserPrompt / ActionInvoke). */
     userRepo: AdminUserRepository,
+    /** v0.51.0 — Project ACL check on console + sub-agent WebSocket handshake. */
+    projects: ProjectService,
 ) {
     webSocket("/ws/projects/{projectId}/builds/{buildId}/logs") {
         handleLegacyLogStream(hub, deviceRepo, tokens, topic = call.parameters["buildId"]!!)
@@ -66,7 +69,7 @@ fun Routing.wsRoutes(
         val since = call.request.queryParameters["since"]?.toLongOrNull() ?: 0L
         handleConsoleStream(
             hub, deviceRepo, tokens, sessionManager,
-            actionRegistry, actionHandler, projectId, since, userRepo,
+            actionRegistry, actionHandler, projectId, since, userRepo, projects,
         )
     }
     // v0.44.0 — sub-agent 콘솔 (Phase 23). prompt 송신 채널이 main console 과 분리되어 있어
@@ -80,7 +83,7 @@ fun Routing.wsRoutes(
             return@webSocket close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "bad agentName"))
         }
         val since = call.request.queryParameters["since"]?.toLongOrNull() ?: 0L
-        handleSubAgentConsoleStream(hub, deviceRepo, tokens, projectId, agentName, since)
+        handleSubAgentConsoleStream(hub, deviceRepo, tokens, projectId, agentName, since, userRepo, projects)
     }
 }
 
@@ -205,19 +208,29 @@ private suspend fun WebSocketServerSession.handleConsoleStream(
     projectId: String,
     since: Long,
     userRepo: AdminUserRepository,
+    projects: ProjectService,
 ) {
     if (!authenticateFirstFrame(deviceRepo, tokens)) return
 
     // v0.45.0 — once-per-session role lookup for UserPrompt / ActionInvoke guards.
-    // 인증 통과 후 동일 토큰/쿠키로 deviceRow 를 한 번 더 조회해서 user role 캐싱.
-    // 가벼운 비용 (handshake 시점이라 turn-per-second 부담 없음).
-    val viewerOnly = run {
-        val raw = call.request.cookies[SESSION_COOKIE]
-            ?: call.request.headers["Authorization"]?.removePrefix("Bearer ")?.trim()
-        val device = raw?.let { deviceRepo.findByTokenHash(tokens.hashOf(it)) }
-        val role = device?.userId?.let { runCatching { userRepo.findById(it)?.role }.getOrNull() }
-        // 명시적 viewer 일 때만 차단. role unknown / admin / member 는 모두 통과.
-        role == "viewer"
+    // v0.51.0 — same lookup also drives the ACL check below.
+    val raw = call.request.cookies[SESSION_COOKIE]
+        ?: call.request.headers["Authorization"]?.removePrefix("Bearer ")?.trim()
+    val device = raw?.let { deviceRepo.findByTokenHash(tokens.hashOf(it)) }
+    val role = device?.userId?.let { runCatching { userRepo.findById(it)?.role }.getOrNull() }
+    val isAdmin = (role ?: "admin") == "admin"
+    val viewerOnly = role == "viewer"
+
+    // v0.51.0 — Project ACL on console WS handshake. Admin bypasses; non-admin must have
+    // explicit grant or zero ACL rows (default unrestricted). Closing the connection on
+    // violation matches REST 403 semantics.
+    val userId = device?.userId
+    if (userId != null && !projects.canUserAccess(userId, isAdmin, projectId)) {
+        runCatching {
+            sendFrame(WsFrame.Error("project_forbidden", "project not in your ACL"))
+            close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "project_forbidden"))
+        }
+        return
     }
 
     val topic = LogHub.consoleTopic(projectId)
@@ -308,8 +321,25 @@ private suspend fun WebSocketServerSession.handleSubAgentConsoleStream(
     projectId: String,
     agentName: String,
     since: Long,
+    userRepo: AdminUserRepository,
+    projects: ProjectService,
 ) {
     if (!authenticateFirstFrame(deviceRepo, tokens)) return
+
+    // v0.51.0 — Project ACL on sub-agent WS handshake.
+    val raw = call.request.cookies[SESSION_COOKIE]
+        ?: call.request.headers["Authorization"]?.removePrefix("Bearer ")?.trim()
+    val device = raw?.let { deviceRepo.findByTokenHash(tokens.hashOf(it)) }
+    val role = device?.userId?.let { runCatching { userRepo.findById(it)?.role }.getOrNull() }
+    val isAdmin = (role ?: "admin") == "admin"
+    val userId = device?.userId
+    if (userId != null && !projects.canUserAccess(userId, isAdmin, projectId)) {
+        runCatching {
+            sendFrame(WsFrame.Error("project_forbidden", "project not in your ACL"))
+            close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "project_forbidden"))
+        }
+        return
+    }
 
     val topic = LogHub.subAgentConsoleTopic(projectId, agentName)
     val view = hub.subscribeConsole(topic, since)

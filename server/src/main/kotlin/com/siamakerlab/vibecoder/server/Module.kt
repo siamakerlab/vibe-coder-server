@@ -314,10 +314,10 @@ fun Application.module(ctx: ServerContext) {
         projectRoutes(ctx.projects)
         consoleRoutes(ctx.projects, ctx.sessionManager, ctx.hub, ctx.claudeStatusService, ctx.env, ctx.auditLogger, ctx.promptSuggestionService)
         projectActionRoutes(ctx.projects, ctx.actionRegistry, ctx.actionHandler, ctx.capabilityService)
-        buildRoutes(ctx.build, ctx.hub)
+        buildRoutes(ctx.build, ctx.hub, ctx.projects)
         artifactRoutes(ctx.artifactRepo, ctx.workspace, ctx.artifacts)
         gitRoutes(ctx.projects, ctx.git, ctx.gitWriter, ctx.auditLogger)
-        fileRoutes(ctx.uploads)
+        fileRoutes(ctx.uploads, ctx.projects)
         promptRoutes(adminDeps, ctx.promptStore)
         auditRoutes(adminDeps, ctx.auditRepo)
         historyRoutes(adminDeps, ctx.projects, ctx.conversationRepo, ctx.conversationExport)
@@ -360,7 +360,7 @@ fun Application.module(ctx: ServerContext) {
         // v0.49.0 — Phase 28 Project ACL 관리 UI.
         projectAclRoutes(adminDeps, ctx.projects, ctx.adminUserRepo, ctx.projectAclRepo)
         wsRoutes(ctx.hub, ctx.deviceRepo, ctx.tokens, ctx.sessionManager,
-            ctx.actionRegistry, ctx.actionHandler, ctx.subAgentManager, ctx.adminUserRepo)
+            ctx.actionRegistry, ctx.actionHandler, ctx.subAgentManager, ctx.adminUserRepo, ctx.projects)
     }
 }
 

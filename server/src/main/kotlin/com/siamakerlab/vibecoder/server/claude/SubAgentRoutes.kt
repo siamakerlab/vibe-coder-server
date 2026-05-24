@@ -3,8 +3,10 @@ package com.siamakerlab.vibecoder.server.claude
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.AdminTemplates
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens
+import com.siamakerlab.vibecoder.server.admin.requireProjectAccessOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireWriteAccessOrRedirect
+import com.siamakerlab.vibecoder.server.auth.requireProjectAcl
 import com.siamakerlab.vibecoder.server.env.AgentRegistry
 import com.siamakerlab.vibecoder.server.projects.ProjectService
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -51,6 +53,7 @@ fun Routing.subAgentRoutes(
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
         val id = call.parameters["id"] ?: return@get call.respondRedirect("/projects")
         if (id == ProjectService.SCRATCH_ID) return@get call.respondRedirect("/chat")
+        if (!requireProjectAccessOrRedirect(sess, projects, id)) return@get
         val p = projects.get(id) ?: return@get call.respondRedirect("/projects?err=not_found")
 
         val active = manager.activeAgentsFor(id).toSet()
@@ -129,6 +132,7 @@ $rowsHtml
             return@get call.respondRedirect("/projects/$id/agents?err=bad_name")
         }
         if (id == ProjectService.SCRATCH_ID) return@get call.respondRedirect("/chat")
+        if (!requireProjectAccessOrRedirect(sess, projects, id)) return@get
         val p = projects.get(id) ?: return@get call.respondRedirect("/projects?err=not_found")
         // 등록된 agent 인지 확인 (없으면 dispatch 무의미).
         val agentBody = agentRegistry.read(agentName)
@@ -159,6 +163,9 @@ $rowsHtml
         if (!AGENT_NAME_PATTERN.matches(agentName)) {
             return@post call.respond(HttpStatusCode.BadRequest, "invalid agent name")
         }
+        if (!projects.canUserAccess(sess.userId, sess.isAdmin, id)) {
+            return@post call.respond(HttpStatusCode.Forbidden, "project_forbidden")
+        }
         projects.get(id) ?: return@post call.respond(HttpStatusCode.NotFound, "project not found")
         if (agentRegistry.read(agentName) == null) {
             return@post call.respond(HttpStatusCode.NotFound, "agent not registered")
@@ -187,6 +194,9 @@ $rowsHtml
         if (!AGENT_NAME_PATTERN.matches(agentName)) {
             return@post call.respond(HttpStatusCode.BadRequest)
         }
+        if (!projects.canUserAccess(sess.userId, sess.isAdmin, id)) {
+            return@post call.respond(HttpStatusCode.Forbidden, "project_forbidden")
+        }
         manager.cancelTurn(id, agentName)
         call.respondText("""{"ok":true}""", ContentType.Application.Json)
     }
@@ -199,14 +209,18 @@ $rowsHtml
         if (!AGENT_NAME_PATTERN.matches(agentName)) {
             return@post call.respondRedirect("/projects/$id/agents?err=bad_name")
         }
+        if (!requireProjectAccessOrRedirect(sess, projects, id)) return@post
         manager.startNew(id, agentName)
         call.respondRedirect("/projects/$id/agents/$agentName/console")
     }
 
     // ── JSON list of active sub-agents for a project (used by main console badge) ─
     get("/api/projects/{id}/agents/active") {
-        requireSessionOrRedirect(authDeps) ?: return@get
+        val sess = requireSessionOrRedirect(authDeps) ?: return@get
         val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+        if (!projects.canUserAccess(sess.userId, sess.isAdmin, id)) {
+            return@get call.respond(HttpStatusCode.Forbidden, "project_forbidden")
+        }
         val active = manager.activeAgentsFor(id)
         val payload = buildJsonObject {
             put("projectId", JsonPrimitive(id))

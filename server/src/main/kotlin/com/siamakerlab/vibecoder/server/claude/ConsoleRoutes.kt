@@ -4,6 +4,7 @@ import com.siamakerlab.vibecoder.server.audit.AuditLogger
 import com.siamakerlab.vibecoder.server.auth.AUTH_BEARER
 import com.siamakerlab.vibecoder.server.auth.requireApiWrite
 import com.siamakerlab.vibecoder.server.auth.requireDevice
+import com.siamakerlab.vibecoder.server.auth.requireProjectAcl
 import com.siamakerlab.vibecoder.server.env.EnvDiagnostics
 import com.siamakerlab.vibecoder.server.error.ApiException
 import com.siamakerlab.vibecoder.server.projects.ProjectService
@@ -50,6 +51,7 @@ fun Routing.consoleRoutes(
             call.requireApiWrite()
             val projectId = call.parameters["projectId"]
                 ?: throw ApiException(400, "bad_request", "projectId is required")
+            call.requireProjectAcl(projects, projectId)
             // ensure project is registered (404 path matches the rest of the codebase)
             projects.rowOrThrow(projectId)
 
@@ -91,6 +93,7 @@ fun Routing.consoleRoutes(
             call.requireApiWrite()
             val projectId = call.parameters["projectId"]
                 ?: throw ApiException(400, "bad_request", "projectId is required")
+            call.requireProjectAcl(projects, projectId)
             projects.rowOrThrow(projectId)
             sessionManager.startNew(projectId)
             call.respond(HttpStatusCode.Accepted)
@@ -101,6 +104,7 @@ fun Routing.consoleRoutes(
             call.requireApiWrite()
             val projectId = call.parameters["projectId"]
                 ?: throw ApiException(400, "bad_request", "projectId is required")
+            call.requireProjectAcl(projects, projectId)
             projects.rowOrThrow(projectId)
             sessionManager.cancelTurn(projectId)
             val device = call.requireDevice().device
@@ -111,6 +115,7 @@ fun Routing.consoleRoutes(
         get("/api/projects/{projectId}/claude/status") {
             val projectId = call.parameters["projectId"]
                 ?: throw ApiException(400, "bad_request", "projectId is required")
+            call.requireProjectAcl(projects, projectId)
             projects.rowOrThrow(projectId)
             call.respond(statusService.snapshot(projectId))
         }
@@ -119,6 +124,7 @@ fun Routing.consoleRoutes(
         get("/api/projects/{projectId}/claude/prompt-suggestions") {
             val projectId = call.parameters["projectId"]
                 ?: throw ApiException(400, "bad_request", "projectId is required")
+            call.requireProjectAcl(projects, projectId)
             projects.rowOrThrow(projectId)
             val prefix = call.request.queryParameters["prefix"]?.trim().orEmpty()
             val limit = call.request.queryParameters["limit"]?.toIntOrNull()?.coerceIn(1, 20) ?: 8

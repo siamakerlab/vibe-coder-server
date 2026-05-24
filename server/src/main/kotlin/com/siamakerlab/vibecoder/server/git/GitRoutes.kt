@@ -4,6 +4,7 @@ import com.siamakerlab.vibecoder.server.audit.AuditLogger
 import com.siamakerlab.vibecoder.server.auth.AUTH_BEARER
 import com.siamakerlab.vibecoder.server.auth.requireApiWrite
 import com.siamakerlab.vibecoder.server.auth.requireDevice
+import com.siamakerlab.vibecoder.server.auth.requireProjectAcl
 import com.siamakerlab.vibecoder.server.error.ApiException
 import com.siamakerlab.vibecoder.server.projects.ProjectService
 import io.ktor.http.HttpStatusCode
@@ -28,14 +29,17 @@ fun Routing.gitRoutes(
     authenticate(AUTH_BEARER) {
         get("/api/projects/{projectId}/git/status") {
             val projectId = call.parameters["projectId"]!!
+            call.requireProjectAcl(projects, projectId)
             call.respond(reader.status(projects.sourcePathOrThrow(projectId)))
         }
         get("/api/projects/{projectId}/git/diff") {
             val projectId = call.parameters["projectId"]!!
+            call.requireProjectAcl(projects, projectId)
             call.respond(reader.diff(projects.sourcePathOrThrow(projectId)))
         }
         get("/api/projects/{projectId}/git/log") {
             val projectId = call.parameters["projectId"]!!
+            call.requireProjectAcl(projects, projectId)
             call.respond(reader.log(projects.sourcePathOrThrow(projectId)))
         }
 
@@ -43,6 +47,7 @@ fun Routing.gitRoutes(
         post("/api/projects/{projectId}/git/commit") {
             call.requireApiWrite()
             val projectId = call.parameters["projectId"]!!
+            call.requireProjectAcl(projects, projectId)
             val body = call.receive<GitCommitRequestDto>()
             val source = projects.sourcePathOrThrow(projectId)
             val result = try {

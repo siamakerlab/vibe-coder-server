@@ -2,7 +2,9 @@ package com.siamakerlab.vibecoder.server.files
 
 import com.siamakerlab.vibecoder.server.auth.AUTH_BEARER
 import com.siamakerlab.vibecoder.server.auth.requireApiWrite
+import com.siamakerlab.vibecoder.server.auth.requireProjectAcl
 import com.siamakerlab.vibecoder.server.error.ApiException
+import com.siamakerlab.vibecoder.server.projects.ProjectService
 import com.siamakerlab.vibecoder.shared.dto.FileEntryDto
 import com.siamakerlab.vibecoder.shared.dto.FileListDto
 import io.ktor.http.ContentDisposition
@@ -22,11 +24,12 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import java.nio.file.Path
 
-fun Routing.fileRoutes(service: UploadService) {
+fun Routing.fileRoutes(service: UploadService, projects: ProjectService) {
     authenticate(AUTH_BEARER) {
         post("/api/projects/{projectId}/files/upload") {
             call.requireApiWrite()
             val projectId = call.parameters["projectId"]!!
+            call.requireProjectAcl(projects, projectId)
             val multipart = call.receiveMultipart()
             var saved: FileEntryDto? = null
 
@@ -56,10 +59,12 @@ fun Routing.fileRoutes(service: UploadService) {
         }
         get("/api/projects/{projectId}/files") {
             val projectId = call.parameters["projectId"]!!
+            call.requireProjectAcl(projects, projectId)
             call.respond(FileListDto(entries = service.list(projectId)))
         }
         get("/api/projects/{projectId}/files/{fileId}/download") {
             val projectId = call.parameters["projectId"]!!
+            call.requireProjectAcl(projects, projectId)
             val fileId = call.parameters["fileId"]!!
             val row = service.resolveForDownload(projectId, fileId)
             call.response.header(
@@ -73,6 +78,7 @@ fun Routing.fileRoutes(service: UploadService) {
         delete("/api/projects/{projectId}/files/{fileId}") {
             call.requireApiWrite()
             val projectId = call.parameters["projectId"]!!
+            call.requireProjectAcl(projects, projectId)
             val fileId = call.parameters["fileId"]!!
             service.delete(projectId, fileId)
             call.respond(HttpStatusCode.NoContent)
