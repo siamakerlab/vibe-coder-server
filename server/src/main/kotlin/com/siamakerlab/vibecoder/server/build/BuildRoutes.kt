@@ -1,6 +1,7 @@
 package com.siamakerlab.vibecoder.server.build
 
 import com.siamakerlab.vibecoder.server.auth.AUTH_BEARER
+import com.siamakerlab.vibecoder.server.auth.requireApiWrite
 import com.siamakerlab.vibecoder.server.error.ApiException
 import com.siamakerlab.vibecoder.server.ws.LogHub
 import com.siamakerlab.vibecoder.shared.dto.BuildDto
@@ -15,6 +16,7 @@ import io.ktor.server.routing.post
 fun Routing.buildRoutes(service: BuildService, hub: LogHub) {
     authenticate(AUTH_BEARER) {
         post("/api/projects/{projectId}/build/debug") {
+            call.requireApiWrite()
             val projectId = call.parameters["projectId"] ?: throw ApiException(400, "bad_request", "projectId")
             val row = service.enqueueDebug(projectId, hub)
             call.respond(HttpStatusCode.Accepted, BuildDto(
@@ -33,6 +35,7 @@ fun Routing.buildRoutes(service: BuildService, hub: LogHub) {
             call.respond(service.get(projectId, buildId))
         }
         post("/api/projects/{projectId}/builds/{buildId}/cancel") {
+            call.requireApiWrite()
             val buildId = call.parameters["buildId"]!!
             service.cancel(buildId)
             call.respond(HttpStatusCode.Accepted)

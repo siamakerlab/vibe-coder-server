@@ -2,6 +2,7 @@ package com.siamakerlab.vibecoder.server.claude
 
 import com.siamakerlab.vibecoder.server.audit.AuditLogger
 import com.siamakerlab.vibecoder.server.auth.AUTH_BEARER
+import com.siamakerlab.vibecoder.server.auth.requireApiWrite
 import com.siamakerlab.vibecoder.server.auth.requireDevice
 import com.siamakerlab.vibecoder.server.env.EnvDiagnostics
 import com.siamakerlab.vibecoder.server.error.ApiException
@@ -46,6 +47,7 @@ fun Routing.consoleRoutes(
 ) {
     authenticate(AUTH_BEARER) {
         post("/api/projects/{projectId}/claude/console/prompt") {
+            call.requireApiWrite()
             val projectId = call.parameters["projectId"]
                 ?: throw ApiException(400, "bad_request", "projectId is required")
             // ensure project is registered (404 path matches the rest of the codebase)
@@ -86,6 +88,7 @@ fun Routing.consoleRoutes(
         }
 
         post("/api/projects/{projectId}/claude/console/new") {
+            call.requireApiWrite()
             val projectId = call.parameters["projectId"]
                 ?: throw ApiException(400, "bad_request", "projectId is required")
             projects.rowOrThrow(projectId)
@@ -95,6 +98,7 @@ fun Routing.consoleRoutes(
 
         // v0.13.0 — 진행 중인 turn 중단. session-id 는 보존.
         post("/api/projects/{projectId}/claude/console/cancel") {
+            call.requireApiWrite()
             val projectId = call.parameters["projectId"]
                 ?: throw ApiException(400, "bad_request", "projectId is required")
             projects.rowOrThrow(projectId)

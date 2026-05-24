@@ -4,6 +4,7 @@ import com.siamakerlab.vibecoder.server.actions.ProjectActionRegistry
 import com.siamakerlab.vibecoder.server.actions.ServerActionHandler
 import com.siamakerlab.vibecoder.server.auth.SESSION_COOKIE
 import com.siamakerlab.vibecoder.server.auth.TokenService
+import com.siamakerlab.vibecoder.server.repo.AdminUserRepository
 import com.siamakerlab.vibecoder.server.claude.ClaudeSessionManager
 import com.siamakerlab.vibecoder.server.claude.SubAgentSessionManager
 import com.siamakerlab.vibecoder.server.repo.DeviceRepository
@@ -48,6 +49,8 @@ fun Routing.wsRoutes(
     actionRegistry: ProjectActionRegistry,
     actionHandler: ServerActionHandler,
     subAgentManager: SubAgentSessionManager,
+    /** v0.45.0 — role lookup for WebSocket mutation guards (UserPrompt / ActionInvoke). */
+    userRepo: AdminUserRepository,
 ) {
     webSocket("/ws/projects/{projectId}/builds/{buildId}/logs") {
         handleLegacyLogStream(hub, deviceRepo, tokens, topic = call.parameters["buildId"]!!)
@@ -63,7 +66,7 @@ fun Routing.wsRoutes(
         val since = call.request.queryParameters["since"]?.toLongOrNull() ?: 0L
         handleConsoleStream(
             hub, deviceRepo, tokens, sessionManager,
-            actionRegistry, actionHandler, projectId, since,
+            actionRegistry, actionHandler, projectId, since, userRepo,
         )
     }
     // v0.44.0 — sub-agent 콘솔 (Phase 23). prompt 송신 채널이 main console 과 분리되어 있어
@@ -201,8 +204,21 @@ private suspend fun WebSocketServerSession.handleConsoleStream(
     actionHandler: ServerActionHandler,
     projectId: String,
     since: Long,
+    userRepo: AdminUserRepository,
 ) {
     if (!authenticateFirstFrame(deviceRepo, tokens)) return
+
+    // v0.45.0 — once-per-session role lookup for UserPrompt / ActionInvoke guards.
+    // 인증 통과 후 동일 토큰/쿠키로 deviceRow 를 한 번 더 조회해서 user role 캐싱.
+    // 가벼운 비용 (handshake 시점이라 turn-per-second 부담 없음).
+    val viewerOnly = run {
+        val raw = call.request.cookies[SESSION_COOKIE]
+            ?: call.request.headers["Authorization"]?.removePrefix("Bearer ")?.trim()
+        val device = raw?.let { deviceRepo.findByTokenHash(tokens.hashOf(it)) }
+        val role = device?.userId?.let { runCatching { userRepo.findById(it)?.role }.getOrNull() }
+        // 명시적 viewer 일 때만 차단. role unknown / admin / member 는 모두 통과.
+        role == "viewer"
+    }
 
     val topic = LogHub.consoleTopic(projectId)
     val view = hub.subscribeConsole(topic, since)
@@ -240,10 +256,18 @@ private suspend fun WebSocketServerSession.handleConsoleStream(
                     .getOrNull() ?: continue
                 when (parsed) {
                     is WsFrame.UserPrompt -> {
+                        if (viewerOnly) {
+                            runCatching { sendFrame(WsFrame.Error("viewer_readonly", "viewer role cannot send prompts")) }
+                            continue
+                        }
                         runCatching { sessionManager.sendPrompt(projectId, parsed.text) }
                             .onFailure { log.warn(it) { "[$projectId] ws prompt failed" } }
                     }
                     is WsFrame.ActionInvoke -> {
+                        if (viewerOnly) {
+                            runCatching { sendFrame(WsFrame.Error("viewer_readonly", "viewer role cannot invoke actions")) }
+                            continue
+                        }
                         val action = actionRegistry.findAction(projectId, parsed.actionId)
                         if (action == null) {
                             log.warn { "[$projectId] action_invoke unknown id: ${parsed.actionId}" }

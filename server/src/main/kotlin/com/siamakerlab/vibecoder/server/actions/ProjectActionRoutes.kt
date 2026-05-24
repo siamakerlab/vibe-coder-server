@@ -1,6 +1,7 @@
 package com.siamakerlab.vibecoder.server.actions
 
 import com.siamakerlab.vibecoder.server.auth.AUTH_BEARER
+import com.siamakerlab.vibecoder.server.auth.requireApiWrite
 import com.siamakerlab.vibecoder.server.error.ApiException
 import com.siamakerlab.vibecoder.server.projects.ProjectService
 import com.siamakerlab.vibecoder.shared.dto.ActionInvokeRequestDto
@@ -39,6 +40,7 @@ fun Routing.projectActionRoutes(
         }
 
         post("/api/projects/{projectId}/actions/invoke") {
+            call.requireApiWrite()
             val projectId = call.parameters["projectId"]
                 ?: throw ApiException(400, "bad_request", "projectId is required")
             projects.rowOrThrow(projectId)

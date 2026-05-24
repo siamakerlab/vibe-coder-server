@@ -2,6 +2,7 @@ package com.siamakerlab.vibecoder.server.git
 
 import com.siamakerlab.vibecoder.server.audit.AuditLogger
 import com.siamakerlab.vibecoder.server.auth.AUTH_BEARER
+import com.siamakerlab.vibecoder.server.auth.requireApiWrite
 import com.siamakerlab.vibecoder.server.auth.requireDevice
 import com.siamakerlab.vibecoder.server.error.ApiException
 import com.siamakerlab.vibecoder.server.projects.ProjectService
@@ -40,6 +41,7 @@ fun Routing.gitRoutes(
 
         // v0.18.0 — commit (+ optional push)
         post("/api/projects/{projectId}/git/commit") {
+            call.requireApiWrite()
             val projectId = call.parameters["projectId"]!!
             val body = call.receive<GitCommitRequestDto>()
             val source = projects.sourcePathOrThrow(projectId)

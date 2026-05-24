@@ -1,6 +1,7 @@
 package com.siamakerlab.vibecoder.server.projects
 
 import com.siamakerlab.vibecoder.server.auth.AUTH_BEARER
+import com.siamakerlab.vibecoder.server.auth.requireApiWrite
 import com.siamakerlab.vibecoder.shared.ApiPath
 import com.siamakerlab.vibecoder.shared.dto.RegisterProjectRequestDto
 import io.ktor.http.HttpStatusCode
@@ -18,6 +19,7 @@ fun Routing.projectRoutes(service: ProjectService) {
         get(ApiPath.PROJECTS) { call.respond(service.list()) }
 
         post(ApiPath.PROJECTS_REGISTER) {
+            call.requireApiWrite()
             val body = call.receive<RegisterProjectRequestDto>()
             val dto = service.register(body)
             call.respond(HttpStatusCode.Created, dto)
@@ -30,6 +32,7 @@ fun Routing.projectRoutes(service: ProjectService) {
         }
 
         delete("/api/projects/{projectId}") {
+            call.requireApiWrite()
             val id = call.parameters["projectId"]
                 ?: throw com.siamakerlab.vibecoder.server.error.ApiException(400, "bad_request", "projectId")
             val removed = service.delete(id)

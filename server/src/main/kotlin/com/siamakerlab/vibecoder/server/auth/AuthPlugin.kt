@@ -1,5 +1,6 @@
 package com.siamakerlab.vibecoder.server.auth
 
+import com.siamakerlab.vibecoder.server.repo.AdminUserRepository
 import com.siamakerlab.vibecoder.server.repo.DeviceRepository
 import com.siamakerlab.vibecoder.server.repo.DeviceRow
 import io.ktor.server.application.Application
@@ -15,7 +16,30 @@ const val AUTH_BEARER = "bearer"
 /** 웹 세션 쿠키 이름. Bearer 토큰과 동일한 문자열을 담는다. */
 const val SESSION_COOKIE = "vibe_session"
 
-data class DevicePrincipal(val device: DeviceRow)
+/**
+ * Authenticated request principal.
+ *
+ * - [device] is the resolved device row (every Bearer token maps to one device).
+ * - [userRole] (v0.45.0+) is the owning user's role (`admin` / `member` / `viewer`) when the
+ *   device is bound to a user. `null` for legacy / unbound devices — treated as `admin` for
+ *   backward compatibility so existing automation doesn't break on upgrade.
+ */
+data class DevicePrincipal(
+    val device: DeviceRow,
+    val userRole: String? = null,
+) {
+    /** v0.45.0 — `admin` only. Mirrors SSR `WebSession.isAdmin`. */
+    val isAdmin: Boolean get() = (userRole ?: "admin") == "admin"
+
+    /**
+     * v0.45.0 — write capability check. `admin` and `member` may mutate state; `viewer` is
+     * read-only. Used by JSON API + WebSocket role guards.
+     */
+    val canWrite: Boolean get() {
+        val r = userRole ?: "admin"
+        return r == "admin" || r == "member"
+    }
+}
 
 fun Application.installAuth(
     deviceRepo: DeviceRepository,
@@ -24,6 +48,11 @@ fun Application.installAuth(
      * v0.26.0 — idle timeout 분. 0 = 무제한. provider 형태라 런타임에 /settings 로 바뀌어도 즉시 반영.
      */
     idleTimeoutMinutesProvider: () -> Int = { 0 },
+    /**
+     * v0.45.0 — user role lookup. Optional so unit tests can omit it. When provided every
+     * authenticated request resolves to its user's role, exposed via [DevicePrincipal.userRole].
+     */
+    userRepo: AdminUserRepository? = null,
 ) {
     install(Authentication) {
         bearer(AUTH_BEARER) {
@@ -66,7 +95,9 @@ fun Application.installAuth(
                 }
 
                 deviceRepo.touchLastSeen(device.id)
-                DevicePrincipal(device)
+                val role = device.userId
+                    ?.let { uid -> runCatching { userRepo?.findById(uid)?.role }.getOrNull() }
+                DevicePrincipal(device = device, userRole = role)
             }
         }
     }
@@ -84,3 +115,34 @@ fun ApplicationCall.requireDevice(): DevicePrincipal =
     principal<DevicePrincipal>() ?: throw com.siamakerlab.vibecoder.server.error.ApiException(
         statusCode = 401, code = "unauthorized", message = "missing or invalid Bearer token"
     )
+
+/**
+ * v0.45.0 — JSON API write guard. Rejects viewer tokens with `403 viewer_readonly`.
+ * Apply to every state-mutating endpoint (POST/PUT/DELETE) that didn't previously have its
+ * own role check. SSR side keeps using `requireWriteAccessOrRedirect`.
+ */
+fun ApplicationCall.requireApiWrite(): DevicePrincipal {
+    val p = requireDevice()
+    if (!p.canWrite) {
+        throw com.siamakerlab.vibecoder.server.error.ApiException(
+            statusCode = 403, code = "viewer_readonly",
+            message = "viewer role cannot mutate resources",
+        )
+    }
+    return p
+}
+
+/**
+ * v0.45.0 — admin-only JSON API guard. Used for server-wide management endpoints
+ * (users, audit, backup, settings, etc).
+ */
+fun ApplicationCall.requireApiAdmin(): DevicePrincipal {
+    val p = requireDevice()
+    if (!p.isAdmin) {
+        throw com.siamakerlab.vibecoder.server.error.ApiException(
+            statusCode = 403, code = "admin_only",
+            message = "this endpoint requires admin role",
+        )
+    }
+    return p
+}

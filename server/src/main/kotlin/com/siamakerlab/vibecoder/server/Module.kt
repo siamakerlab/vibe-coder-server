@@ -223,6 +223,7 @@ fun Application.module(ctx: ServerContext) {
     installAuth(
         ctx.deviceRepo, ctx.tokens,
         idleTimeoutMinutesProvider = { ctx.config.security.sessionIdleTimeoutMinutes },
+        userRepo = ctx.adminUserRepo,
     )
 
     routing {
@@ -339,7 +340,7 @@ fun Application.module(ctx: ServerContext) {
         // v0.44.0 — Phase 23 sub-agent process pool (real multi-agent).
         subAgentRoutes(adminDeps, ctx.projects, ctx.subAgentManager, ctx.agentRegistry)
         wsRoutes(ctx.hub, ctx.deviceRepo, ctx.tokens, ctx.sessionManager,
-            ctx.actionRegistry, ctx.actionHandler, ctx.subAgentManager)
+            ctx.actionRegistry, ctx.actionHandler, ctx.subAgentManager, ctx.adminUserRepo)
     }
 }
 

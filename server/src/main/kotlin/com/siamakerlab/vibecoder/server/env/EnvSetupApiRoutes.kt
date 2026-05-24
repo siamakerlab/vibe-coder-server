@@ -1,6 +1,7 @@
 package com.siamakerlab.vibecoder.server.env
 
 import com.siamakerlab.vibecoder.server.auth.AUTH_BEARER
+import com.siamakerlab.vibecoder.server.auth.requireApiAdmin
 import com.siamakerlab.vibecoder.server.core.Clock
 import com.siamakerlab.vibecoder.server.error.ApiException
 import com.siamakerlab.vibecoder.server.git.GitCloneService
@@ -67,11 +68,13 @@ fun Routing.envSetupApiRoutes(
         }
 
         post(ApiPath.ENV_SETUP_INSTALL_ALL) {
+            call.requireApiAdmin()
             val taskId = envSetup.spawnInstallAll()
             call.respond(EnvSetupTaskDto(taskId))
         }
 
         post(ApiPath.envSetupInstall("{componentId}")) {
+            call.requireApiAdmin()
             val id = call.parameters["componentId"]!!
             val comp = SetupComponent.byId(id)
                 ?: throw ApiException(404, "unknown_component", "Unknown component: $id")
@@ -81,6 +84,7 @@ fun Routing.envSetupApiRoutes(
 
         // ── Claude 자격증명 (옵션 B, C) ─────────────────────────
         post(ApiPath.CLAUDE_AUTH_UPLOAD) {
+            call.requireApiAdmin()
             val multipart = call.receiveMultipart()
             var bytes: ByteArray? = null
             try {
@@ -108,6 +112,7 @@ fun Routing.envSetupApiRoutes(
         }
 
         post(ApiPath.CLAUDE_AUTH_API_KEY) {
+            call.requireApiAdmin()
             val req = call.receive<ClaudeApiKeyRequestDto>()
             claudeAuth.registerApiKey(req.apiKey)
             call.respond(HttpStatusCode.NoContent)
@@ -115,20 +120,24 @@ fun Routing.envSetupApiRoutes(
 
         // DELETE 메서드 + POST 둘 다 허용 — 모바일 SDK 호환성.
         delete(ApiPath.CLAUDE_AUTH_API_KEY_DELETE) {
+            call.requireApiAdmin()
             claudeAuth.deleteApiKey()
             call.respond(HttpStatusCode.NoContent)
         }
         post(ApiPath.CLAUDE_AUTH_API_KEY_DELETE) {
+            call.requireApiAdmin()
             claudeAuth.deleteApiKey()
             call.respond(HttpStatusCode.NoContent)
         }
 
         // ── Claude 반자동 OAuth (옵션 A) ────────────────────────
         post(ApiPath.CLAUDE_LOGIN_START) {
+            call.requireApiAdmin()
             val s = claudeLogin.start()
             call.respond(s.toApiDto())
         }
         post(ApiPath.CLAUDE_LOGIN_SUBMIT) {
+            call.requireApiAdmin()
             val req = call.receive<ClaudeLoginSubmitRequestDto>()
             val s = claudeLogin.submitCode(req.code)
             call.respond(s.toApiDto())
@@ -139,6 +148,7 @@ fun Routing.envSetupApiRoutes(
             else call.respond(s.toApiDto())
         }
         post(ApiPath.CLAUDE_LOGIN_CANCEL) {
+            call.requireApiAdmin()
             val s = claudeLogin.cancel()
             if (s == null) call.respond(HttpStatusCode.NoContent)
             else call.respond(s.toApiDto())
@@ -173,11 +183,13 @@ fun Routing.envSetupApiRoutes(
             call.respond(McpCatalogResponseDto(entries))
         }
         post(ApiPath.MCP_INSTALL) {
+            call.requireApiAdmin()
             val req = call.receive<McpInstallRequestDto>()
             val taskId = mcp.spawnBatch(req.selections)
             call.respond(EnvSetupTaskDto(taskId))
         }
         post(ApiPath.MCP_UNREGISTER) {
+            call.requireApiAdmin()
             val req = call.receive<McpUnregisterRequestDto>()
             mcp.unregister(req.ids)
             call.respond(HttpStatusCode.NoContent)
@@ -185,6 +197,7 @@ fun Routing.envSetupApiRoutes(
 
         // v0.11.0 — MCP secret 파일 업로드 (Android wire)
         post(ApiPath.mcpUploadFile("{mcpId}", "{fieldKey}")) {
+            call.requireApiAdmin()
             val mcpId = call.parameters["mcpId"]!!
             val fieldKey = call.parameters["fieldKey"]!!
             val multipart = call.receiveMultipart()
@@ -219,6 +232,7 @@ fun Routing.envSetupApiRoutes(
             call.respond(GitIntegrationsResponseDto(tokens, cloneSvc.getPublicKeyOrNull()))
         }
         post(ApiPath.GIT_INTEGRATIONS) {
+            call.requireApiAdmin()
             val req = call.receive<GitTokenRegisterRequestDto>()
             credentials.register(
                 provider = req.provider, host = req.host, username = req.username,
@@ -227,12 +241,14 @@ fun Routing.envSetupApiRoutes(
             call.respond(HttpStatusCode.NoContent)
         }
         post(ApiPath.GIT_INTEGRATIONS_DELETE) {
+            call.requireApiAdmin()
             val req = call.receive<GitTokenDeleteRequestDto>()
             val removed = credentials.delete(req.host)
             if (removed) call.respond(HttpStatusCode.NoContent)
             else call.respond(HttpStatusCode.NotFound)
         }
         post(ApiPath.GIT_INTEGRATIONS_SSH_KEYGEN) {
+            call.requireApiAdmin()
             val pub = cloneSvc.ensureSshKeyExists()
             call.respond(GitIntegrationsResponseDto(
                 tokens = credentials.list().map {
