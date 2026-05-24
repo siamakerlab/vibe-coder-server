@@ -240,6 +240,35 @@ class AuditLogger(
         )
     }
 
+    // ── Emulator (v0.24.0+) ──────────────────────────────────────────
+
+    fun emulatorAvdCreate(userId: String?, ip: String?, ok: Boolean, name: String) = safe {
+        repo.insert(
+            action = Actions.EMULATOR_AVD_CREATE,
+            result = if (ok) Results.OK else Results.FAIL,
+            userId = userId, ip = ip,
+            resourceType = "avd", resourceId = name,
+        )
+    }
+
+    fun emulatorAvdLaunch(userId: String?, ip: String?, ok: Boolean, name: String) = safe {
+        repo.insert(
+            action = Actions.EMULATOR_AVD_LAUNCH,
+            result = if (ok) Results.OK else Results.FAIL,
+            userId = userId, ip = ip,
+            resourceType = "avd", resourceId = name,
+        )
+    }
+
+    fun emulatorAvdStop(userId: String?, ip: String?, ok: Boolean, serial: String) = safe {
+        repo.insert(
+            action = Actions.EMULATOR_AVD_STOP,
+            result = if (ok) Results.OK else Results.FAIL,
+            userId = userId, ip = ip,
+            resourceType = "avd", resourceId = serial,
+        )
+    }
+
     object Actions {
         const val AUTH_LOGIN = "auth.login"
         const val AUTH_LOGOUT = "auth.logout"
@@ -260,6 +289,9 @@ class AuditLogger(
         const val GIT_COMMIT = "git.commit"
         const val PLAY_UPLOAD = "publish.play.upload"
         const val TESTFLIGHT_UPLOAD = "publish.testflight.upload"
+        const val EMULATOR_AVD_CREATE = "emulator.avd.create"
+        const val EMULATOR_AVD_LAUNCH = "emulator.avd.launch"
+        const val EMULATOR_AVD_STOP = "emulator.avd.stop"
     }
 
     object Results {

@@ -3,25 +3,81 @@ package com.siamakerlab.vibecoder.server.emulator
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.AdminTemplates
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
+import com.siamakerlab.vibecoder.server.auth.CsrfTokens.requireCsrf
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentType
 import io.ktor.server.application.call
+import io.ktor.server.request.receiveParameters
+import io.ktor.server.response.respondRedirect
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Routing
 import io.ktor.server.routing.get
+import io.ktor.server.routing.post
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
+
+private val log = KotlinLogging.logger {}
 
 /**
- * v0.19.0 — `/emulator` 진단 페이지.
+ * v0.19.0 — `/emulator` 진단 페이지. v0.24.0 — AVD lifecycle (launch / stop /
+ * create-default) POST endpoints 추가.
  *
- * 본 cycle 은 read-only 진단 + 수동 setup 가이드. AVD launch 자동화 + noVNC
- * 미러는 v0.20+ scope (별도 image variant 검토).
+ * 본 cycle (v0.24.0) 에선 슬림 이미지에서 launch 가 자동으로 software 모드로
+ * 떨어져 매우 느릴 수 있음. KVM passthrough + Xvfb 가상 디스플레이는 `:full`
+ * 이미지 variant 에서만 실용적이며, 본 페이지의 안내가 그 사용을 가이드.
  */
 fun Routing.emulatorRoutes(authDeps: AdminRoutesDeps, svc: EmulatorService) {
     get("/emulator") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
         val d = svc.diagnose()
-        call.respondText(EmulatorTemplates.page(sess.username, d, sess.csrf), ContentType.Text.Html)
+        val ok = call.request.queryParameters["ok"]
+        val err = call.request.queryParameters["err"]
+        call.respondText(EmulatorTemplates.page(sess.username, d, ok, err, sess.csrf), ContentType.Text.Html)
+    }
+
+    /** v0.24.0 — 디폴트 AVD 자동 생성 (vibe-default). 한 번만 호출하면 됨. */
+    post("/emulator/avd/create-default") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        requireCsrf()
+        val r = svc.createDefaultAvd()
+        log.info { "create-default AVD by ${sess.username}: ok=${r.ok} msg=${r.message.take(120)}" }
+        authDeps.audit.emulatorAvdCreate(sess.userId, call.request.local.remoteHost, r.ok, "vibe-default")
+        val q = if (r.ok) "ok=${enc("AVD 'vibe-default' 생성됨")}" else "err=${enc(r.message.take(200))}"
+        call.respondRedirect("/emulator?$q")
+    }
+
+    /** v0.24.0 — AVD 백그라운드 launch. headless (no-window). */
+    post("/emulator/avd/launch") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        requireCsrf()
+        val form = call.receiveParameters()
+        val name = form["name"]?.trim().orEmpty().ifBlank { "vibe-default" }
+        val r = svc.launchAvd(name)
+        log.info { "launch AVD '$name' by ${sess.username}: ok=${r.ok} msg=${r.message.take(120)}" }
+        authDeps.audit.emulatorAvdLaunch(sess.userId, call.request.local.remoteHost, r.ok, name)
+        val q = if (r.ok) "ok=${enc(r.message)}" else "err=${enc(r.message.take(200))}"
+        call.respondRedirect("/emulator?$q")
+    }
+
+    /** v0.24.0 — 실행 중인 emulator 종료. deviceSerial (예: emulator-5554) 인자. */
+    post("/emulator/avd/stop") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        requireCsrf()
+        val form = call.receiveParameters()
+        val serial = form["serial"]?.trim().orEmpty()
+        if (serial.isBlank()) {
+            call.respondRedirect("/emulator?err=${enc("device serial 누락")}")
+            return@post
+        }
+        val r = svc.stopAvd(serial)
+        log.info { "stop AVD '$serial' by ${sess.username}: ok=${r.ok}" }
+        authDeps.audit.emulatorAvdStop(sess.userId, call.request.local.remoteHost, r.ok, serial)
+        val q = if (r.ok) "ok=${enc("emulator '$serial' 종료")}" else "err=${enc(r.message.take(200))}"
+        call.respondRedirect("/emulator?$q")
     }
 }
+
+private fun enc(s: String): String = URLEncoder.encode(s, StandardCharsets.UTF_8)
 
 private object EmulatorTemplates {
 
@@ -30,7 +86,13 @@ private object EmulatorTemplates {
             .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             .replace("\"", "&quot;").replace("'", "&#39;")
 
-    fun page(username: String, d: EmulatorService.Diagnostics, csrf: String?): String {
+    fun page(
+        username: String,
+        d: EmulatorService.Diagnostics,
+        flashOk: String? = null,
+        flashErr: String? = null,
+        csrf: String?,
+    ): String {
         val badge = { ok: Boolean, label: String ->
             if (ok) """<span class="ok">✓ $label</span>"""
             else """<span class="warn">✗ $label</span>"""
@@ -60,6 +122,9 @@ private object EmulatorTemplates {
   </p>
 </header>
 
+${if (flashOk != null) """<div class="ok-banner">${esc(flashOk)}</div>""" else ""}
+${if (flashErr != null) """<div class="error">${esc(flashErr)}</div>""" else ""}
+
 <div class="card" style="margin-bottom:14px">
   <h2 style="margin-top:0">컨테이너 환경 진단</h2>
   <dl style="display:grid;grid-template-columns:max-content 1fr;gap:6px 14px;margin:0">
@@ -74,6 +139,37 @@ private object EmulatorTemplates {
 <div class="card" style="margin-bottom:14px;background:rgba(255,150,80,0.06);border-color:var(--warn)">
   <h2 style="margin-top:0">권장 사항</h2>
   <pre class="diff-block" style="margin:0">${esc(d.recommendation)}</pre>
+</div>
+
+<div class="card" style="margin-bottom:14px">
+  <h2 style="margin-top:0">AVD lifecycle (v0.24.0)</h2>
+  <p class="hint">슬림 이미지에서도 호출 가능하지만 KVM 없으면 software 모드라 매우 느립니다. <code>siamakerlab/vibe-coder-server:full</code> + compose KVM passthrough 권장.</p>
+
+  <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:12px">
+    <form method="post" action="/emulator/avd/create-default" style="display:inline">
+      ${com.siamakerlab.vibecoder.server.auth.CsrfTokens.hiddenInput(csrf)}
+      <button type="submit" class="chip chip-link" title="vibe-default AVD 자동 생성 (system-image 필요)">+ 디폴트 AVD 생성</button>
+    </form>
+
+    <form method="post" action="/emulator/avd/launch" style="display:inline;display:flex;gap:6px;align-items:center">
+      ${com.siamakerlab.vibecoder.server.auth.CsrfTokens.hiddenInput(csrf)}
+      <input name="name" placeholder="AVD 이름 (비우면 vibe-default)" style="padding:6px 10px">
+      <button type="submit" class="primary" style="padding:6px 12px">▶ headless 시작</button>
+    </form>
+  </div>
+
+  ${if (d.runningDevices.isNotEmpty()) """
+  <div style="margin-top:12px">
+    <strong style="font-size:13px">실행 중 → 종료:</strong>
+    ${d.runningDevices.joinToString("") { serial -> """
+      <form method="post" action="/emulator/avd/stop" style="display:inline;margin-left:6px">
+        ${com.siamakerlab.vibecoder.server.auth.CsrfTokens.hiddenInput(csrf)}
+        <input type="hidden" name="serial" value="${esc(serial)}">
+        <button type="submit" class="chip chip-danger" onclick="return confirm('emulator ${esc(serial)} 종료?')">■ ${esc(serial)}</button>
+      </form>
+    """ }}
+  </div>
+  """ else ""}
 </div>
 
 <div class="card">

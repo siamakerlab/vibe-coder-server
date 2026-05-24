@@ -115,12 +115,13 @@ COPY --from=builder --chown=vibe:vibe /src/server/build/install/server /opt/vibe
 # ---- doctor / entrypoint -----------------------------------------------------
 COPY --chown=root:root docker/doctor /opt/vibe-doctor
 COPY --chown=root:root docker/entrypoint.sh /usr/local/bin/entrypoint.sh
-# v0.20+ 에서 추가될 emulator-entrypoint.sh — Xvfb + x11vnc + websockify 부트.
-# 슬림 이미지의 entrypoint 를 그대로 쓰되, /emulator 페이지가 별도 SSE / WS 로
-# AVD 부트 신호를 보내면 사이드 데몬으로 띄우는 패턴 (TODO).
+# v0.24.0 — emulator-entrypoint.sh 가 Xvfb + x11vnc + websockify 데몬을 띄운 뒤
+# 슬림 본 entrypoint.sh 로 위임. ENTRYPOINT 가 emulator-entrypoint 로 변경됨.
+COPY --chown=root:root docker/emulator-entrypoint.sh /usr/local/bin/emulator-entrypoint.sh
 RUN chmod +x /opt/vibe-doctor/vibe-doctor \
     && chmod +x /opt/vibe-doctor/lib/*.sh \
     && chmod +x /usr/local/bin/entrypoint.sh \
+    && chmod +x /usr/local/bin/emulator-entrypoint.sh \
     && ln -s /opt/vibe-doctor/vibe-doctor /usr/local/bin/vibe-doctor \
     && ln -s /opt/vibe-coder/bin/server /usr/local/bin/vibe-coder-server
 
@@ -153,22 +154,15 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 
 # ---- 실행 -------------------------------------------------------------------
 WORKDIR /workspace
-ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/emulator-entrypoint.sh"]
 CMD ["server"]
 
 # ==============================================================================
-# v0.20+ TODO (이 스캐폴드를 끝내기 전 마저 해야 할 일)
+# 진행 상태
 # ==============================================================================
-# 1. emulator-entrypoint.sh 작성
-#    - Xvfb :99 -screen 0 1080x1920x24 백그라운드 부트
-#    - fluxbox & — minimal WM
-#    - x11vnc -display :99 -nopw -listen 127.0.0.1 -xkb &
-#    - websockify --web=$NOVNC_ROOT $WEBSOCKIFY_PORT 127.0.0.1:$VNC_PORT &
-#    - 그 후 /usr/local/bin/entrypoint.sh server 호출
-# 2. SDK 사전 설치 (이미지에 박는 안 vs 첫 부팅 시 doctor 가 잡는 안)
-#    - system-image (~1.2 GB) 는 캐시 효율 위해 이미지 레이어로 들이는 게 빠름
-#    - 단 사용자 API level 선택권을 주려면 doctor 경유가 유연
-# 3. AVD 기본 프로파일 자동 생성 (vibe-doctor avd-default)
-# 4. EmulatorService 확장: launch / stop / wipe API 노출
-# 5. admin SSR /emulator/vnc/ proxy 라우트 (kotlinx-coroutines + websockify)
-# 6. compose.yml 에 :full 변형 옵션 documenting + group_add KVM_GID 가이드
+# 1. ✅ emulator-entrypoint.sh — Xvfb / fluxbox / x11vnc / websockify (v0.24.0)
+# 2. ⏸ SDK system-image 사전 설치 — 사용자 API level 선택권 위해 doctor 경유 유지
+# 3. ✅ AVD 기본 프로파일 자동 생성 — EmulatorService.createDefaultAvd (v0.24.0)
+# 4. ✅ EmulatorService.launchAvd / stopAvd — POST /emulator/avd/* (v0.24.0)
+# 5. ⏳ admin SSR /emulator/vnc/ proxy — v0.25.0 예정
+# 6. ⏳ compose.yml :full 변형 documenting + group_add KVM_GID — v0.25.0 예정

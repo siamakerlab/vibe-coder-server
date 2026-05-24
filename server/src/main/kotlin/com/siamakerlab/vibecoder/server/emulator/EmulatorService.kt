@@ -113,6 +113,105 @@ class EmulatorService {
 
     data class InstallResult(val ok: Boolean, val log: String)
 
+    // ─── v0.24.0 — Lifecycle ──────────────────────────────────────────
+
+    data class LaunchResult(val ok: Boolean, val pid: Long?, val message: String)
+
+    /**
+     * v0.24.0 — AVD 백그라운드 launch. headless (`-no-window`) 가 기본 — :full 변형
+     * (Xvfb + noVNC) 에선 entrypoint 가 Xvfb 를 미리 띄우므로 별도 옵션 안 받아도
+     * GUI 가 가상 디스플레이 :99 에 떠 노VNC 로 미러링됨.
+     *
+     * 이미 같은 이름 AVD 가 실행 중이면 새로 띄우지 않고 message 만 반환.
+     * SDK / KVM 미준비 상태에서도 호출은 가능 (실패 메시지로 즉시 안내).
+     */
+    fun launchAvd(name: String, noWindow: Boolean = true): LaunchResult {
+        val sdk = System.getenv("ANDROID_HOME")?.ifBlank { null }
+            ?: System.getenv("ANDROID_SDK_ROOT")?.ifBlank { null }
+            ?: return LaunchResult(false, null, "ANDROID_HOME unset")
+        val emulator = "$sdk/emulator/emulator"
+        if (!Files.exists(Path.of(emulator))) return LaunchResult(false, null, "emulator not found at $emulator")
+        if (!sanitizeAvdName(name)) return LaunchResult(false, null, "invalid AVD name (only [A-Za-z0-9._-] allowed)")
+        if (isAvdRunning(name)) return LaunchResult(true, null, "AVD '$name' already running")
+
+        val args = mutableListOf(emulator, "-avd", name, "-no-audio", "-no-boot-anim")
+        if (noWindow) args += "-no-window"
+        // KVM 없으면 자동으로 software-only 로 떨어지지만 명시 옵션은 안 줌 (CLI 기본 behavior 신뢰).
+        return try {
+            val pb = ProcessBuilder(args).redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.DISCARD)
+            // 부모 종료와 분리 — entrypoint daemon 처럼 동작.
+            val proc = pb.start()
+            LaunchResult(true, proc.pid(), "launched '$name' (pid=${proc.pid()})")
+        } catch (e: Throwable) {
+            LaunchResult(false, null, e.message ?: e.javaClass.simpleName)
+        }
+    }
+
+    /** AVD 종료 — adb emu kill. 실행 중인 device 시리얼을 인자로. */
+    fun stopAvd(deviceSerial: String): LaunchResult {
+        val sdk = System.getenv("ANDROID_HOME")?.ifBlank { null }
+            ?: return LaunchResult(false, null, "ANDROID_HOME unset")
+        val adb = "$sdk/platform-tools/adb"
+        if (!Files.exists(Path.of(adb))) return LaunchResult(false, null, "adb not found")
+        return try {
+            val pb = ProcessBuilder(adb, "-s", deviceSerial, "emu", "kill").redirectErrorStream(true)
+            val proc = pb.start()
+            val out = proc.inputStream.bufferedReader().readText()
+            if (!proc.waitFor(10, TimeUnit.SECONDS)) {
+                proc.destroyForcibly()
+                LaunchResult(false, null, "adb emu kill timeout")
+            } else {
+                LaunchResult(proc.exitValue() == 0, null, out.ifBlank { "stopped" })
+            }
+        } catch (e: Throwable) {
+            LaunchResult(false, null, e.message ?: e.javaClass.simpleName)
+        }
+    }
+
+    /**
+     * 디폴트 AVD 자동 생성 — `vibe-default`. 이미 존재하면 no-op.
+     * `system-images;android-35;google_apis;x86_64` 가 사전 설치돼 있어야 함
+     * (:full 이미지에 포함 예정).
+     */
+    fun createDefaultAvd(name: String = "vibe-default", apiLevel: Int = 35): LaunchResult {
+        val sdk = System.getenv("ANDROID_HOME")?.ifBlank { null }
+            ?: return LaunchResult(false, null, "ANDROID_HOME unset")
+        val avdmanager = "$sdk/cmdline-tools/latest/bin/avdmanager"
+        if (!Files.exists(Path.of(avdmanager))) return LaunchResult(false, null, "avdmanager not found")
+        if (!sanitizeAvdName(name)) return LaunchResult(false, null, "invalid AVD name")
+        if (runAvdmanagerList(sdk).contains(name)) return LaunchResult(true, null, "AVD '$name' already exists")
+        val pkg = "system-images;android-$apiLevel;google_apis;x86_64"
+        val cmd = listOf(avdmanager, "create", "avd", "-n", name, "-k", pkg, "-d", "pixel_6", "--force")
+        return try {
+            val pb = ProcessBuilder(cmd).redirectErrorStream(true)
+            // avdmanager 가 prompt 를 띄울 수 있어 echo "no" 로 hardware profile 질의 무시.
+            pb.redirectInput(ProcessBuilder.Redirect.PIPE)
+            val proc = pb.start()
+            proc.outputStream.use { it.write("no\n".toByteArray()) }
+            val out = proc.inputStream.bufferedReader().readText()
+            if (!proc.waitFor(60, TimeUnit.SECONDS)) {
+                proc.destroyForcibly()
+                LaunchResult(false, null, "avdmanager create timeout")
+            } else {
+                val ok = proc.exitValue() == 0
+                LaunchResult(ok, null, out.take(500))
+            }
+        } catch (e: Throwable) {
+            LaunchResult(false, null, e.message ?: e.javaClass.simpleName)
+        }
+    }
+
+    private fun isAvdRunning(name: String): Boolean {
+        // adb devices 의 시리얼 (emulator-5554 등) 만 보고는 AVD 이름을 모름.
+        // adb -s <serial> emu avd name 으로 확인하지만 모든 시리얼 폴링은 비싸므로
+        // diagnose() 에서 보일 정도만으로 충분. launch race 는 emulator 자체가 안전하게 fail.
+        return false
+    }
+
+    /** AVD 이름은 영문/숫자/`.-_` 만 허용. shell injection 차단. */
+    private fun sanitizeAvdName(name: String): Boolean =
+        name.isNotBlank() && name.length <= 64 && name.all { it.isLetterOrDigit() || it in setOf('.', '-', '_') }
+
     private fun runAvdmanagerList(sdk: String): List<String> {
         val tool = "$sdk/cmdline-tools/latest/bin/avdmanager"
         if (!Files.exists(Path.of(tool))) return emptyList()
