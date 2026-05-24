@@ -24,7 +24,7 @@ vibe-coder-server/
 └─ docker/              # Slim Docker image + compose + vibe-doctor
 ```
 
-## What's inside (v0.43.0)
+## What's inside (v0.47.0)
 
 ### Core orchestration
 - **Claude Code CLI orchestration** — one persistent child process per project,
@@ -272,6 +272,73 @@ vibe-coder-server/
 - JDK 11+ `java.net.http.HttpClient` + `WebSocket` only; no new
   dependencies.
 
+### Real multi-agent (sub-agent process pool, v0.44.0+)
+- **`SubAgentSessionManager`** spawns a **separate** Claude child process per
+  `(projectId, agentName)` tuple — independent of the main project console.
+  Same workspace, parallel execution: e.g. a `reviewer` agent reading the
+  codebase while a `frontend` agent writes Compose UI.
+- **`/projects/{id}/agents`** lists registered `~/.claude/agents/*.md` with
+  live status (`running` / `idle`) and "Open console" links.
+- **`/projects/{id}/agents/{agent}/console`** — per-agent console SSR.
+  Trimmed view of the main console (no slash chips, no template picker —
+  you're already inside an agent). Each gets its own WebSocket topic and
+  session-id file under `.vibecoder/agent-sessions/<agent>.id`.
+- First prompt in a fresh agent session auto-prefixes
+  `Use the <agent> sub-agent to ...` so Claude Code's standard dispatch
+  kicks in. Subsequent prompts reuse the spawned child directly.
+- Idle 30-minute SIGTERM with resume preservation.
+
+### JSON API + WebSocket role guards (v0.45.0+)
+- `viewer` role enforcement extended from SSR (v0.40.0) to JSON API and
+  WebSocket.
+- **`ApplicationCall.requireApiWrite()`** — viewer tokens get
+  `403 viewer_readonly`. Applied to 11 mutating REST endpoints (projects /
+  builds / files / git commit / console prompt-new-cancel / actions invoke).
+- **`ApplicationCall.requireApiAdmin()`** — `admin_only` 403 on
+  server-level setup endpoints (`env-setup`, Claude auth, MCP install,
+  Git integrations).
+- **WebSocket**: `UserPrompt` and `ActionInvoke` frames check viewer role
+  per session. Blocked frames get `WsFrame.Error("viewer_readonly", ...)`
+  — connection stays open so the viewer can keep reading the live stream.
+
+### Web Push (v0.46.0+ — payload-less, zero external deps)
+- **VAPID P-256 ECDSA keypair** auto-generated and persisted to
+  `<workspace>/.vibecoder/vapid-keys.json` (atomic write, survives restart).
+- **`WebPushNotifier`** builds RFC 8292 VAPID JWT (JOSE ES256 with DER →
+  R||S 64-byte raw conversion) and POSTs to subscription endpoints via
+  `java.net.http.HttpClient`. `410`/`404` → subscription auto-removed
+  from DB.
+- **`/settings/push`** — admin page with "subscribe this browser" /
+  "unsubscribe" buttons, registered-subscription list, and test-send.
+- **Service worker** (`/static/sw.js` v0.46.0) — `push` event →
+  `showNotification`, `notificationclick` → focus dashboard.
+- Integrated with `Notifiers` facade: build result, Claude usage warn,
+  and disk usage warn all broadcast to every registered browser
+  alongside email / webhook.
+- **Known limit**: payload encryption (RFC 8291 AES-128-GCM) deferred —
+  notifications currently show a generic title/body. The plumbing is in
+  place; only the cipher remains.
+
+### Admin guard sweep + `/usage` + Helm chart (v0.47.0+)
+- **Remaining `/settings/*` admin guards** — `/settings/email`,
+  `/settings/webhook`, `/settings/cors`, `/settings/git-integrations`
+  (incl. all 4 POST actions), `/settings/cache` now enforce
+  `requireAdminOrRedirect`. `/2fa` deliberately stays open (personal
+  security).
+- **`/usage` page** — admin-only viewer for Claude `/status` raw output.
+  `ClaudeStatusService` already polls `/status` for threshold alerts;
+  this page re-uses the cached 64 KB raw text per project, with lines
+  containing the word **cache** auto-bolded. When Anthropic ships prompt
+  cache hit/miss stats in `/status`, they appear here with zero server
+  changes.
+- **Helm chart** at `helm/vibe-coder-server/` — minimal viable v1.
+  Single-replica `Deployment` + RWO PVC + optional `postgres` StatefulSet
+  sidecar (or external PG) + optional `Ingress` (WebSocket-friendly
+  nginx annotations). `values.yaml` inline-documented. See
+  `helm/vibe-coder-server/README.md` for quick install.
+  `:full` (emulator + noVNC) image not yet supported — needs KVM
+  passthrough + privileged container.
+
 ### Git + project scaffolding (v0.18.0+)
 - **Git commit + push** — single `POST /api/projects/{id}/git/commit` (and an
   SSR form) wraps `add → commit → push` with non-interactive auth (PAT via
@@ -432,7 +499,7 @@ ssh user@newhost 'cd ~/vibe-coder && tar xzf vibe-coder-data-*.tar.gz && docker 
 mounts only (no named volumes by default), but watch out if you mixed
 in legacy state. For regular upgrades, always `up -d --force-recreate`.
 
-## Web routes (v0.43.0)
+## Web routes (v0.47.0)
 
 All routes below sit at the root (no `/admin/*` prefix). Bearer auth or
 session cookie required except `/setup`, `/login`, `/health`. Every SSR POST
@@ -459,11 +526,11 @@ carries a CSRF `_csrf` token (v0.12.4+).
 | `/env-setup/claude-login` | Semi-automatic web OAuth |
 | `/env-setup/tasks/{taskId}` | Live install progress (WS) |
 | `/emulator` | **v0.19.0** diagnostics + **v0.24.0** AVD lifecycle (create / launch / stop) + **v0.25.0** `:full` setup guide |
-| `/settings/git-integrations` | PAT tokens + SSH public key |
-| `/settings/email` | **v0.17.0** SMTP configuration + trigger matrix |
-| `/settings/webhook` | **v0.27.0** Slack / Discord / Telegram webhook configuration + test |
-| `/settings/cache` | **v0.28.0** Gradle / Android / npm cache size + per-target cleanup |
-| `/settings/cors` | Read-only CORS policy viewer |
+| `/settings/git-integrations` | PAT tokens + SSH public key (**v0.47.0** admin-only) |
+| `/settings/email` | **v0.17.0** SMTP configuration + trigger matrix (**v0.47.0** admin-only) |
+| `/settings/webhook` | **v0.27.0** Slack / Discord / Telegram webhook configuration + test (**v0.47.0** admin-only) |
+| `/settings/cache` | **v0.28.0** Gradle / Android / npm cache size + per-target cleanup (**v0.47.0** admin-only) |
+| `/settings/cors` | Read-only CORS policy viewer (**v0.47.0** admin-only) |
 | `/2fa` | **v0.26.0** Two-factor TOTP enable / disable |
 | `/audit` | **v0.15.0** Operational audit log (filter / paginate) |
 | `/projects/{id}/zip` | **v0.29.0** Streaming source-only zip download |
@@ -480,10 +547,14 @@ carries a CSRF `_csrf` token (v0.12.4+).
 | `/multi-console` | **v0.36.0** N-pane multi-project console (iframe grid) |
 | `/users` | **v0.37.0** Multi-user / role management (admin only); **v0.40.0** added `viewer` |
 | `/emulator/vnc/*` | **v0.42.0** noVNC reverse proxy (HTTP + WebSocket; admin only) |
+| `/projects/{id}/agents` | **v0.44.0** Sub-agent index (per project) — registered agents + live status + open-console |
+| `/projects/{id}/agents/{agent}/console` | **v0.44.0** Per-agent console (independent Claude child) |
+| `/settings/push` | **v0.46.0** Web Push (VAPID) — subscribe / unsubscribe / list / test |
+| `/usage` | **v0.47.0** Claude `/status` raw viewer (cache stats visible when Anthropic ships them) — admin |
 | `/settings`, `/devices`, `/password` | Operations |
 | `/login`, `/setup`, `/logout` | Auth |
 
-## JSON API (v0.43.0 — for clients like the Android app)
+## JSON API (v0.47.0 — for clients like the Android app)
 
 Every UI feature has a matching `/api/*` endpoint with Bearer authentication.
 Wire definitions: `shared/.../ApiPath.kt` + `shared/.../Dtos.kt`. Highlights:
@@ -514,6 +585,12 @@ Wire definitions: `shared/.../ApiPath.kt` + `shared/.../Dtos.kt`. Highlights:
   `X-Vibe-Signature`)
 - `GET  /api/agents` (**v0.36.0+** — list registered Claude sub-agents for
   console UI / Android dispatch dropdown)
+- `POST /api/projects/{id}/agents/{agent}/console/prompt | cancel`,
+  `GET /api/projects/{id}/agents/active` (**v0.44.0+** — real multi-agent
+  process pool; each agent gets its own Claude child + WS topic)
+- `GET  /api/push/vapid-public-key`,
+  `POST /api/push/subscribe`, `DELETE /api/push/subscriptions/{id}`
+  (**v0.46.0+** — browser Web Push registration; VAPID P-256 / payload-less)
 - `GET  /api/env-setup/components`, `POST /api/env-setup/install-all`,
   `POST /api/env-setup/{componentId}/install`
 - `POST /api/env-setup/claude-auth/upload` (multipart)
@@ -523,7 +600,15 @@ Wire definitions: `shared/.../ApiPath.kt` + `shared/.../Dtos.kt`. Highlights:
 - `POST /api/env-setup/mcp/{mcpId}/file/{fieldKey}` (multipart — Service Account JSON / Apple .p8 etc.)
 - `GET  /api/settings/git-integrations`, `POST .../register | delete | ssh-keygen`
 - WebSocket: `/ws/projects/{id}/console/logs`, `/ws/projects/{id}/builds/{buildId}/logs`,
-  `/ws/env-setup/{taskId}/logs`
+  `/ws/env-setup/{taskId}/logs`,
+  `/ws/projects/{id}/agents/{agent}/console/logs` (**v0.44.0+** sub-agent)
+
+**Role guards on JSON API (v0.45.0+)** — mutating endpoints require
+`canWrite` (admin or member); server-level setup endpoints require
+`admin`. Viewer Bearer tokens get `403 viewer_readonly`; non-admin tokens
+on server-level endpoints get `403 admin_only`. WebSocket `UserPrompt` /
+`ActionInvoke` from a viewer session reply with
+`WsFrame.Error("viewer_readonly")` but keep the read stream alive.
 
 ## Auth (v0.4.0+, hardened in v0.26.0)
 

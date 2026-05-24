@@ -47,7 +47,7 @@ docker compose up -d            # boots postgres + vibe-coder-server
 > [CHANGELOG.md](https://github.com/siamakerlab/vibe-coder-server/blob/main/CHANGELOG.md)
 > for the exact steps.
 
-## What's in the box (v0.43.0)
+## What's in the box (v0.47.0)
 
 **Core**
 - **Claude Code CLI orchestration** — one persistent child per project,
@@ -207,6 +207,44 @@ docker compose up -d            # boots postgres + vibe-coder-server
   same `vibe_session` cookie (admin only). No host-side 6080 exposure or
   SSH tunnel needed.
 
+**Real multi-agent sub-agent pool (v0.44.0+)**
+- `SubAgentSessionManager` spawns a separate Claude child per
+  `(projectId, agentName)`. Same workspace, parallel execution —
+  e.g. reviewer + frontend + backend all working at once.
+- `/projects/{id}/agents` lists registered `.agents/*.md` with live
+  status; click to open per-agent console at
+  `/projects/{id}/agents/{agent}/console`. Independent WebSocket
+  topics and session-id files.
+- First prompt auto-injects `Use the <agent> sub-agent to ...` so
+  Claude Code's standard dispatch mechanism activates.
+
+**JSON API + WebSocket role guards (v0.45.0+)**
+- v0.40.0's `viewer` role enforcement extended past SSR. Mutating
+  REST endpoints require `canWrite` (admin/member); server-level
+  setup endpoints require `admin`. WebSocket `UserPrompt` /
+  `ActionInvoke` from a viewer reply with `viewer_readonly` error
+  but keep the read stream alive.
+
+**Web Push (v0.46.0+)**
+- Payload-less Web Push, zero external deps. VAPID P-256 keypair
+  auto-generated and persisted to `vapid-keys.json` in the workspace.
+  Admin page at `/settings/push` to subscribe a browser, list /
+  revoke subscriptions, send a test.
+- Service worker (`/static/sw.js`) shows generic notifications on
+  push events. Integrated with `Notifiers` facade so build / Claude
+  usage / disk usage warnings fan out to email + webhook + browser
+  in one call.
+
+**Admin guard sweep + `/usage` + Helm chart (v0.47.0+)**
+- All `/settings/*` SSR pages now admin-only (email, webhook, cors,
+  git-integrations, cache).
+- `/usage` admin page renders raw Claude `/status` output with
+  `cache`-mentioning lines bolded — surfaces prompt-cache stats the
+  moment Anthropic ships them.
+- `helm/vibe-coder-server/` minimal viable chart. Single-replica
+  Deployment + optional postgres StatefulSet sidecar + optional
+  ingress. See chart README inside the source repo.
+
 **Git + project scaffolding (v0.18.0+)**
 - **Git commit + push** wrapped in a single non-interactive endpoint
   (`POST /api/projects/{id}/git/commit` + SSR form). PAT / SSH auth,
@@ -312,7 +350,7 @@ container (UID 70 in alpine images). On the host you may need `sudo` to read
 files directly. Either use `tar` with sudo, or do logical `pg_dump` against
 the running container.
 
-## Web UI routes (v0.43.0)
+## Web UI routes (v0.47.0)
 
 All routes sit at the root (no `/admin/*` prefix from v0.4.2+). Bearer
 token or session cookie required except `/setup`, `/login`, `/health`.
@@ -335,11 +373,12 @@ SSR POST forms carry a CSRF token (v0.12.4+).
 | `/env-setup/claude-login` | Semi-automatic web OAuth |
 | `/emulator` | Diagnostics + AVD lifecycle (v0.24.0+) + `:full` setup guide (v0.25.0+) |
 | `/2fa` | Two-factor TOTP enable / disable (v0.26.0+) |
-| `/settings/git-integrations` | PAT + SSH key |
-| `/settings/email` | SMTP config + notification triggers (v0.17.0+) |
-| `/settings/webhook` | Slack / Discord / Telegram webhooks (v0.27.0+) |
-| `/settings/cache` | Gradle / Android / npm cache size + cleanup (v0.28.0+) |
-| `/settings/cors` | Read-only CORS policy viewer |
+| `/settings/git-integrations` | PAT + SSH key (admin-only, v0.47.0) |
+| `/settings/email` | SMTP config + notification triggers (v0.17.0+; admin-only, v0.47.0) |
+| `/settings/webhook` | Slack / Discord / Telegram webhooks (v0.27.0+; admin-only, v0.47.0) |
+| `/settings/cache` | Gradle / Android / npm cache size + cleanup (v0.28.0+; admin-only, v0.47.0) |
+| `/settings/cors` | Read-only CORS policy viewer (admin-only, v0.47.0) |
+| `/settings/push` | Web Push subscriptions + VAPID + test (v0.46.0+) |
 | `/audit` | Operational audit log (v0.15.0+) |
 | `/projects/{id}/zip` | Source zip download (v0.29.0+) |
 | `/projects/{id}/env-files` | Whitelist-edit env / build property files (v0.32.0+) |
@@ -355,9 +394,12 @@ SSR POST forms carry a CSRF token (v0.12.4+).
 | `/multi-console` | N-pane multi-project console (v0.36.0+) |
 | `/users` | Multi-user / role management (admin only, v0.37.0+; `viewer` added v0.40.0) |
 | `/emulator/vnc/*` | noVNC reverse proxy (HTTP + WS; admin only, v0.42.0+) |
+| `/projects/{id}/agents` | Sub-agent index (v0.44.0+) — live status + open-console |
+| `/projects/{id}/agents/{agent}/console` | Per-agent console — independent Claude child (v0.44.0+) |
+| `/usage` | Claude `/status` raw viewer (admin-only, v0.47.0+) |
 | `/settings`, `/devices`, `/password` | Operations |
 
-## JSON API (v0.43.0 — for clients)
+## JSON API (v0.47.0 — for clients)
 
 Full reference + curl examples in the
 [REST API Reference](https://github.com/siamakerlab/vibe-coder-server/wiki/REST-API-Reference)
@@ -382,6 +424,16 @@ Highlights:
 - `POST /api/webhooks/build/{projectId}` (v0.33.0+ — external trigger,
   multi-secret auth: `X-Vibe-Secret-Id` + `X-Vibe-Secret` + optional HMAC)
 - `GET  /api/agents` (v0.36.0+ — list `.agents/*.md` for dispatch UI)
+- `POST /api/projects/{id}/agents/{agent}/console/prompt | cancel`,
+  `GET /api/projects/{id}/agents/active` (v0.44.0+ — real multi-agent
+  process pool, one Claude child per agent + WS topic)
+- `GET  /api/push/vapid-public-key`, `POST /api/push/subscribe`,
+  `DELETE /api/push/subscriptions/{id}` (v0.46.0+ — browser Web Push)
+- **Role guards (v0.45.0+)**: mutating REST endpoints require write
+  role (admin/member) — viewers get `403 viewer_readonly`. Server-level
+  setup endpoints require admin — non-admins get `403 admin_only`.
+  WebSocket `UserPrompt`/`ActionInvoke` from a viewer reply with
+  `viewer_readonly` error frame but keep the read stream open.
 - `GET  /api/env-setup/components`, `POST /api/env-setup/install-all`
 - `POST /api/env-setup/claude-auth/upload | api-key`
 - `POST /api/env-setup/claude-login/start | submit | cancel`
