@@ -4,6 +4,7 @@ import com.siamakerlab.vibecoder.server.core.Clock
 import com.siamakerlab.vibecoder.server.core.Ids
 import com.siamakerlab.vibecoder.server.db.ConversationTurns
 import org.jetbrains.exposed.sql.Op
+import org.jetbrains.exposed.sql.QueryBuilder
 import org.jetbrains.exposed.sql.ResultRow
 import org.jetbrains.exposed.sql.SortOrder
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
@@ -11,6 +12,7 @@ import org.jetbrains.exposed.sql.IsNullOp
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.greaterEq
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.lessEq
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.like
+import org.jetbrains.exposed.sql.TextColumnType
 import org.jetbrains.exposed.sql.and
 import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
@@ -45,8 +47,11 @@ data class ConversationTurnRow(
  * 0 부터 다시 시작 (시각 정렬은 ts 로).
  *
  * **성능 메모**: tool_use/tool_result content 가 수십 KB 일 수 있음 (Read tool 의
- * 큰 파일 결과 등). 본문 검색은 v0.16.0 에선 LIKE (성능 비추), 다음 cycle 에서
- * PostgreSQL tsvector + GIN 으로 교체 예정.
+ * 큰 파일 결과 등). v0.16.0–v0.52.0 까지 본문 검색은 LIKE (full scan). v0.53.0
+ * 부터 PostgreSQL tsvector + GIN 인덱스로 마이그 — `content_tsv` generated
+ * column ([Database.init] 에서 `IF NOT EXISTS` 로 첨가) 가 매 row 의
+ * `to_tsvector('simple', content)` 를 저장하고 GIN 이 인덱스. Filter.q 매칭은
+ * `content_tsv @@ plainto_tsquery('simple', ?)` 로 인덱스 사용.
  */
 class ConversationTurnRepository(private val clock: Clock) {
 
@@ -129,7 +134,10 @@ class ConversationTurnRepository(private val clock: Clock) {
         toolName?.let { c = c and (ConversationTurns.toolName eq it) }
         fromTs?.let { c = c and (ConversationTurns.ts greaterEq it) }
         toTs?.let { c = c and (ConversationTurns.ts lessEq it) }
-        q?.let { c = c and (ConversationTurns.content like "%${escapeLike(it)}%") }
+        // v0.53.0 — Phase 32 PG tsvector + GIN 풀텍스트 검색.
+        // content_tsv 생성 컬럼 (Database.init() 의 raw SQL 마이그) + GIN 인덱스로
+        // LIKE 의 O(N) full-scan → 인덱스 사용 O(log N) match.
+        q?.let { c = c and TsvectorMatchOp(it) }
         // v0.52.0 — agent_name 필터링.
         when (agentName) {
             null -> c = c and IsNullOp(ConversationTurns.agentName)
@@ -139,8 +147,23 @@ class ConversationTurnRepository(private val clock: Clock) {
         return c
     }
 
-    private fun escapeLike(s: String): String =
-        s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    /**
+     * v0.53.0 — `content_tsv @@ plainto_tsquery('simple', ?)`.
+     *
+     * `simple` configuration 은 language-agnostic — stemming / lemmatization 없이
+     * 단순 토큰화. 한국어 / 영어 모두 그럭저럭 (정확 매치 best-effort). 다국어 stemming
+     * 이 필요하면 PG 의 `unaccent` extension + custom config 로 교체.
+     *
+     * `plainto_tsquery` 가 input 을 AND 로 토큰화하므로 query 의 따옴표 / 메타문자가
+     * 안전. parameter binding 으로 SQL injection 방어.
+     */
+    private class TsvectorMatchOp(private val q: String) : Op<Boolean>() {
+        override fun toQueryBuilder(queryBuilder: QueryBuilder) {
+            queryBuilder.append("content_tsv @@ plainto_tsquery('simple', ")
+            queryBuilder.registerArgument(TextColumnType(), q)
+            queryBuilder.append(")")
+        }
+    }
 
     fun list(filter: Filter, limit: Int = 200, offset: Long = 0): List<ConversationTurnRow> = transaction {
         ConversationTurns.selectAll().where { filter.toCondition() }

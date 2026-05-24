@@ -65,6 +65,22 @@ object VibeDb {
                 val database = Database.connect(dataSource)
                 transaction(database) {
                     SchemaUtils.createMissingTablesAndColumns(*AllTables)
+                    // v0.53.0 — Phase 32 풀텍스트 검색 (tsvector + GIN).
+                    // Exposed 0.55 의 schema DSL 이 generated column / GIN index 미지원 →
+                    // raw SQL 로 idempotent 마이그. `IF NOT EXISTS` 가 두 번째 부팅 부터 no-op.
+                    exec(
+                        """
+                        ALTER TABLE conversation_turns
+                          ADD COLUMN IF NOT EXISTS content_tsv tsvector
+                          GENERATED ALWAYS AS (to_tsvector('simple', content)) STORED
+                        """.trimIndent(),
+                    )
+                    exec(
+                        """
+                        CREATE INDEX IF NOT EXISTS conversation_turns_content_tsv_idx
+                          ON conversation_turns USING GIN (content_tsv)
+                        """.trimIndent(),
+                    )
                 }
                 log.info {
                     "PostgreSQL connected → ${db.host}:${db.port}/${db.name} (pool=${db.maxPoolSize}, sslmode=${db.sslMode})"

@@ -337,7 +337,7 @@ $errHtml
 
 <p class="hint" style="margin-top:14px;font-size:12px">
   ts 정렬은 ascending (오래된 → 최근). assistant partial chunks 는 영구 적재되지 않음 (turn 단위 final 만).
-  ${if (filter.q != null) "Content 검색은 LIKE 기반 — 다음 cycle 에서 PostgreSQL tsvector 로 교체 예정." else ""}
+  ${if (filter.q != null) "Content 검색은 PostgreSQL tsvector + GIN 인덱스 (v0.53.0+). 'simple' 토크나이저 — 정확 매칭 best-effort." else ""}
 </p>
 """
         )
