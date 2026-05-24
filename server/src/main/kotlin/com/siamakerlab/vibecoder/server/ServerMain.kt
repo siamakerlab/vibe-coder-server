@@ -154,6 +154,10 @@ fun main(args: Array<String>) {
         conversationRepo = conversationRepo,
     )
     val sessionManager = ClaudeSessionManager(config, workspace, hub, history = conversationHistory)
+    // v0.44.0 — Phase 23 sub-agent process pool (real multi-agent). Independent of the main
+    // ClaudeSessionManager so a project can run its primary console plus multiple sub-agents
+    // (reviewer / frontend / backend / ...) concurrently in the same workspace.
+    val subAgentManager = com.siamakerlab.vibecoder.server.claude.SubAgentSessionManager(config, workspace, hub)
     val gradle = GradleBuilder(config)
     val artifacts = ArtifactService(config, workspace, artifactRepo, buildRepo, clock)
     val build = BuildService(config, workspace, projects, buildRepo, queue, gradle, artifacts, clock, notifier = notifiers)
@@ -282,10 +286,12 @@ fun main(args: Array<String>) {
         codeStatsService = codeStatsService,
         codeSearchService = codeSearchService,
         hasher = passwordHasher,
+        subAgentManager = subAgentManager,
     )
 
     Runtime.getRuntime().addShutdownHook(Thread {
         kotlinx.coroutines.runBlocking { sessionManager.shutdown() }
+        kotlinx.coroutines.runBlocking { subAgentManager.shutdown() }
         runCatching { claudeUsageMonitor.shutdown() }
         runCatching { diskMonitor.shutdown() }
         runCatching { buildScheduler.shutdown() }

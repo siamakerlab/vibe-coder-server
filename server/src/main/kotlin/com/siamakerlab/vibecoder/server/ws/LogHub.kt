@@ -131,5 +131,12 @@ class LogHub(
 
         /** Build a console topic key for a given project id. */
         fun consoleTopic(projectId: String): String = "console-$projectId"
+
+        /**
+         * v0.44.0 — sub-agent console topic. Lives parallel to the main project console so
+         * Phase 23's per-agent child processes broadcast on their own ring buffer.
+         */
+        fun subAgentConsoleTopic(projectId: String, agentName: String): String =
+            "console-agent-$projectId-$agentName"
     }
 }

@@ -34,6 +34,8 @@ import com.siamakerlab.vibecoder.server.build.BuildService
 import com.siamakerlab.vibecoder.server.build.GradleBuilder
 import com.siamakerlab.vibecoder.server.build.buildRoutes
 import com.siamakerlab.vibecoder.server.claude.ClaudeSessionManager
+import com.siamakerlab.vibecoder.server.claude.SubAgentSessionManager
+import com.siamakerlab.vibecoder.server.claude.subAgentRoutes
 import com.siamakerlab.vibecoder.server.claude.ClaudeStatusService
 import com.siamakerlab.vibecoder.server.claude.consoleRoutes
 import com.siamakerlab.vibecoder.server.claude.globalHistorySearchRoutes
@@ -172,6 +174,8 @@ data class ServerContext(
     val codeSearchService: com.siamakerlab.vibecoder.server.projects.CodeSearchService,
     /** v0.37.0 — usersRoutes 가 신규 password 해싱에 사용. */
     val hasher: com.siamakerlab.vibecoder.server.auth.PasswordHasher,
+    /** v0.44.0 — Phase 23 sub-agent process pool. */
+    val subAgentManager: SubAgentSessionManager,
 )
 
 fun Application.module(ctx: ServerContext) {
@@ -332,8 +336,10 @@ fun Application.module(ctx: ServerContext) {
         emulatorRoutes(adminDeps, ctx.emulator)
         // v0.42.0 — noVNC reverse proxy (admin-only).
         vncProxyRoutes(adminDeps)
+        // v0.44.0 — Phase 23 sub-agent process pool (real multi-agent).
+        subAgentRoutes(adminDeps, ctx.projects, ctx.subAgentManager, ctx.agentRegistry)
         wsRoutes(ctx.hub, ctx.deviceRepo, ctx.tokens, ctx.sessionManager,
-            ctx.actionRegistry, ctx.actionHandler)
+            ctx.actionRegistry, ctx.actionHandler, ctx.subAgentManager)
     }
 }
 

@@ -565,7 +565,8 @@ $errHtml
       <a href="/projects/${esc(p.id)}/builds" class="chip chip-link">빌드 / APK →</a>
       <a href="/projects/${esc(p.id)}/history" class="chip chip-link">히스토리 →</a>
       <a href="/projects/${esc(p.id)}/files" class="chip chip-link">파일 →</a>
-      <a href="/projects/${esc(p.id)}/git" class="chip chip-link">git →</a>"""
+      <a href="/projects/${esc(p.id)}/git" class="chip chip-link">git →</a>
+      <a href="/projects/${esc(p.id)}/agents" class="chip chip-link" title="v0.44.0+ — 별도 Claude child process 로 sub-agent 병렬 실행">@ sub-agents →</a>"""
 
         return AdminTemplates.shell(
             title = "${esc(p.name)} · $titleSuffix",

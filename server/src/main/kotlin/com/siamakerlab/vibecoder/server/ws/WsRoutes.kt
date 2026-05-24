@@ -5,6 +5,7 @@ import com.siamakerlab.vibecoder.server.actions.ServerActionHandler
 import com.siamakerlab.vibecoder.server.auth.SESSION_COOKIE
 import com.siamakerlab.vibecoder.server.auth.TokenService
 import com.siamakerlab.vibecoder.server.claude.ClaudeSessionManager
+import com.siamakerlab.vibecoder.server.claude.SubAgentSessionManager
 import com.siamakerlab.vibecoder.server.repo.DeviceRepository
 import com.siamakerlab.vibecoder.shared.ws.WsFrame
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -46,6 +47,7 @@ fun Routing.wsRoutes(
     sessionManager: ClaudeSessionManager,
     actionRegistry: ProjectActionRegistry,
     actionHandler: ServerActionHandler,
+    subAgentManager: SubAgentSessionManager,
 ) {
     webSocket("/ws/projects/{projectId}/builds/{buildId}/logs") {
         handleLegacyLogStream(hub, deviceRepo, tokens, topic = call.parameters["buildId"]!!)
@@ -63,6 +65,19 @@ fun Routing.wsRoutes(
             hub, deviceRepo, tokens, sessionManager,
             actionRegistry, actionHandler, projectId, since,
         )
+    }
+    // v0.44.0 — sub-agent 콘솔 (Phase 23). prompt 송신 채널이 main console 과 분리되어 있어
+    // WS 양방향이 아니라 단방향 stream 만 처리하면 됨 (prompt 는 별도 REST 로 보냄).
+    webSocket("/ws/projects/{projectId}/agents/{agentName}/console/logs") {
+        val projectId = call.parameters["projectId"]
+            ?: return@webSocket close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "missing projectId"))
+        val agentName = call.parameters["agentName"]
+            ?: return@webSocket close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "missing agentName"))
+        if (!Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,63}").matches(agentName)) {
+            return@webSocket close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "bad agentName"))
+        }
+        val since = call.request.queryParameters["since"]?.toLongOrNull() ?: 0L
+        handleSubAgentConsoleStream(hub, deviceRepo, tokens, projectId, agentName, since)
     }
 }
 
@@ -254,6 +269,65 @@ private suspend fun WebSocketServerSession.handleConsoleStream(
         }
     } finally {
         incomingJob.cancel()
+    }
+}
+
+/**
+ * v0.44.0 — sub-agent console stream. Same replay + live merge protocol as the main project console
+ * but the prompt-send path is REST (POST /api/projects/{id}/agents/{agent}/console/prompt), so the
+ * incoming-frame handling is a no-op (we still drain `incoming` to keep the WebSocket healthy).
+ */
+private suspend fun WebSocketServerSession.handleSubAgentConsoleStream(
+    hub: LogHub,
+    deviceRepo: DeviceRepository,
+    tokens: TokenService,
+    projectId: String,
+    agentName: String,
+    since: Long,
+) {
+    if (!authenticateFirstFrame(deviceRepo, tokens)) return
+
+    val topic = LogHub.subAgentConsoleTopic(projectId, agentName)
+    val view = hub.subscribeConsole(topic, since)
+
+    if (since > 0L && view.replay.isNotEmpty() && view.ringFloor > since + 1L) {
+        runCatching {
+            sendFrame(WsFrame.ConsoleSystem(
+                code = "replay_partial",
+                message = "Some history was evicted. seq ${since + 1}..${view.ringFloor - 1} permanently lost.",
+                seq = 0L,
+            ))
+        }
+    }
+    if (view.replay.isNotEmpty()) {
+        val from = view.replay.first().seq
+        val to = view.replay.last().seq
+        runCatching { sendFrame(WsFrame.ConsoleReplayBegin(fromSeq = from, toSeq = to)) }
+        for (sf in view.replay) {
+            runCatching { sendFrame(sf.frame) }
+        }
+        runCatching { sendFrame(WsFrame.ConsoleReplayEnd) }
+    }
+
+    val drainJob = launch {
+        runCatching {
+            for (frame in incoming) {
+                if (frame !is Frame.Text) continue
+                // sub-agent 측은 client-to-server frame 처리 안 함 (Ping 만 무시). 단 client 가
+                // 메인 콘솔과 같은 UserPrompt 프레임을 보내도 거절하지 않고 그냥 흘려보낸다.
+            }
+        }
+    }
+
+    try {
+        view.live.collect { sf ->
+            if (sf.seq <= since) return@collect
+            if (view.replay.any { it.seq == sf.seq }) return@collect
+            runCatching { sendFrame(sf.frame) }
+                .onFailure { log.debug { "ws send failed: ${it.message}" } }
+        }
+    } finally {
+        drainJob.cancel()
     }
 }
 
