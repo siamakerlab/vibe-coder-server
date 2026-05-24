@@ -159,13 +159,24 @@ object ApiPath {
     const val SCRATCH_PROJECT_ID = "__scratch__"
 
     /**
-     * v0.29+ — 프로젝트 소스 zip 스트림 다운로드.
+     * v0.29+ — 프로젝트 소스 zip 스트림 다운로드 (SSR variant — cookie 세션 인증).
      * `.git`, `build`, `.gradle`, `node_modules` 제외.
      * **주의: `/api/` prefix 없음** (SSR 라우터와 공유).
      * Content-Disposition: attachment, filename=`<projectId>-source-<yyyyMMdd-HHmm>.zip`.
+     *
+     * **v0.65.0+ Android / Bearer 토큰 client 는 [projectZipJson] 사용 권장.**
+     * 본 path 는 Bearer 토큰을 받지 않아 cookie 가 없는 외부 client 는 redirect.
      */
     fun projectZip(projectId: String) =
         "/projects/${pathSeg(projectId)}/zip"
+
+    /**
+     * v0.65.0 신규 — 프로젝트 소스 zip JSON variant (Bearer 토큰 인증, Project ACL 검증).
+     * 응답 본문은 [projectZip] 과 동일 (application/zip + Content-Disposition).
+     * SSR `/projects/{id}/zip` 은 그대로 유지.
+     */
+    fun projectZipJson(projectId: String) =
+        "/api/projects/${pathSeg(projectId)}/zip"
 
     /**
      * v0.31+ — Claude 입력 자동완성.

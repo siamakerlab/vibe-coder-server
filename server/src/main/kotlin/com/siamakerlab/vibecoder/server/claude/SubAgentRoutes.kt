@@ -6,9 +6,11 @@ import com.siamakerlab.vibecoder.server.auth.CsrfTokens
 import com.siamakerlab.vibecoder.server.admin.requireProjectAccessOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireWriteAccessOrRedirect
+import com.siamakerlab.vibecoder.server.auth.TokenService
 import com.siamakerlab.vibecoder.server.auth.requireProjectAcl
 import com.siamakerlab.vibecoder.server.env.AgentRegistry
 import com.siamakerlab.vibecoder.server.projects.ProjectService
+import com.siamakerlab.vibecoder.server.repo.DeviceRepository
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
@@ -47,6 +49,9 @@ fun Routing.subAgentRoutes(
     projects: ProjectService,
     manager: SubAgentSessionManager,
     agentRegistry: AgentRegistry,
+    /** v0.65.0 — JSON endpoint Bearer 토큰 dual-auth 용. */
+    tokens: TokenService,
+    deviceRepo: DeviceRepository,
 ) {
     // ── /projects/{id}/agents — index: active sessions + spawn form ─────────
     get("/projects/{id}/agents") {
@@ -154,18 +159,17 @@ $rowsHtml
     }
 
     // ── JSON: prompt ────────────────────────────────────────────────────────
+    // v0.65.0 — dual-auth: Bearer 토큰 (Android client) OR cookie 세션 (admin SSR fetch).
     post("/api/projects/{id}/agents/{agent}/console/prompt") {
-        val sess = requireSessionOrRedirect(authDeps) ?: return@post
-        if (!requireWriteAccessOrRedirect(sess)) return@post
-        val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest, "missing id")
+        val id = call.parameters["id"]
+            ?: return@post call.respond(HttpStatusCode.BadRequest, "missing id")
         val agentName = call.parameters["agent"]
             ?: return@post call.respond(HttpStatusCode.BadRequest, "missing agent")
         if (!AGENT_NAME_PATTERN.matches(agentName)) {
             return@post call.respond(HttpStatusCode.BadRequest, "invalid agent name")
         }
-        if (!projects.canUserAccess(sess.userId, sess.isAdmin, id)) {
-            return@post call.respond(HttpStatusCode.Forbidden, "project_forbidden")
-        }
+        authorizeAgentJson(authDeps, tokens, deviceRepo, projects, id, requireWrite = true)
+            ?: return@post
         projects.get(id) ?: return@post call.respond(HttpStatusCode.NotFound, "project not found")
         if (agentRegistry.read(agentName) == null) {
             return@post call.respond(HttpStatusCode.NotFound, "agent not registered")
@@ -187,16 +191,13 @@ $rowsHtml
     }
 
     post("/api/projects/{id}/agents/{agent}/console/cancel") {
-        val sess = requireSessionOrRedirect(authDeps) ?: return@post
-        if (!requireWriteAccessOrRedirect(sess)) return@post
         val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
         val agentName = call.parameters["agent"] ?: return@post call.respond(HttpStatusCode.BadRequest)
         if (!AGENT_NAME_PATTERN.matches(agentName)) {
             return@post call.respond(HttpStatusCode.BadRequest)
         }
-        if (!projects.canUserAccess(sess.userId, sess.isAdmin, id)) {
-            return@post call.respond(HttpStatusCode.Forbidden, "project_forbidden")
-        }
+        authorizeAgentJson(authDeps, tokens, deviceRepo, projects, id, requireWrite = true)
+            ?: return@post
         manager.cancelTurn(id, agentName)
         call.respondText("""{"ok":true}""", ContentType.Application.Json)
     }
@@ -215,12 +216,11 @@ $rowsHtml
     }
 
     // ── JSON list of active sub-agents for a project (used by main console badge) ─
+    // v0.65.0 — dual-auth: Bearer 토큰 (Android) OR cookie 세션 (SSR fetch).
     get("/api/projects/{id}/agents/active") {
-        val sess = requireSessionOrRedirect(authDeps) ?: return@get
         val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
-        if (!projects.canUserAccess(sess.userId, sess.isAdmin, id)) {
-            return@get call.respond(HttpStatusCode.Forbidden, "project_forbidden")
-        }
+        authorizeAgentJson(authDeps, tokens, deviceRepo, projects, id, requireWrite = false)
+            ?: return@get
         val active = manager.activeAgentsFor(id)
         val payload = buildJsonObject {
             put("projectId", JsonPrimitive(id))
@@ -231,6 +231,63 @@ $rowsHtml
         call.respondText(Json.encodeToString(JsonObject.serializer(), payload), ContentType.Application.Json)
     }
 }
+
+/**
+ * v0.65.0 — sub-agent JSON endpoint 의 dual-auth helper.
+ *
+ * 반환 null = 응답 이미 보냄 (호출자는 return). non-null = 인증 통과 + Project ACL OK.
+ *
+ * 흐름:
+ *   1. `Authorization: Bearer <token>` 헤더가 있으면 token hash 로 device 검증 + Project ACL.
+ *      통과 시 (userId, isAdmin) 반환. 토큰 invalid 면 401.
+ *      device.userId 가 null 인 legacy single-user 모드는 admin 으로 간주 (ACL skip).
+ *   2. Bearer 없으면 cookie 세션 fallback (`requireSessionOrRedirect`).
+ *      write 권한 요구 시 viewer 차단, ACL 검증.
+ *
+ * 같은 path 를 Android Bearer client 와 admin SSR fetch 양쪽에서 호출하므로 dual-mode 필요.
+ * [com.siamakerlab.vibecoder.server.claude.HistoryRoutes] 의 `authorizeMemoStar` 와 동일 패턴
+ * (그쪽은 ACL 없음 — memo/star 는 turn 단위 globally accessible).
+ */
+private suspend fun io.ktor.server.routing.RoutingContext.authorizeAgentJson(
+    authDeps: AdminRoutesDeps,
+    tokens: TokenService,
+    deviceRepo: DeviceRepository,
+    projects: ProjectService,
+    projectId: String,
+    requireWrite: Boolean,
+): AgentJsonAuth? {
+    val authHeader = call.request.headers["Authorization"]
+    val bearer = if (authHeader != null && authHeader.startsWith("Bearer ", ignoreCase = true))
+        authHeader.removePrefix("Bearer ").removePrefix("bearer ").trim().ifBlank { null }
+    else null
+
+    if (bearer != null) {
+        val hash = tokens.hashOf(bearer)
+        val device = deviceRepo.findByTokenHash(hash)
+        if (device == null) {
+            call.respond(HttpStatusCode.Unauthorized, "invalid token")
+            return null
+        }
+        val userId = device.userId
+        // Legacy single-user 모드 (device.userId == null) 는 admin 으로 간주 — ACL skip.
+        if (userId != null && !projects.canUserAccess(userId, isAdmin = false, projectId = projectId)) {
+            call.respond(HttpStatusCode.Forbidden, "project_forbidden")
+            return null
+        }
+        return AgentJsonAuth(userId = userId, isAdmin = userId == null)
+    }
+
+    // Cookie 세션 fallback (admin SSR fetch).
+    val sess = requireSessionOrRedirect(authDeps) ?: return null
+    if (requireWrite && !requireWriteAccessOrRedirect(sess)) return null
+    if (!projects.canUserAccess(sess.userId, sess.isAdmin, projectId)) {
+        call.respond(HttpStatusCode.Forbidden, "project_forbidden")
+        return null
+    }
+    return AgentJsonAuth(userId = sess.userId, isAdmin = sess.isAdmin)
+}
+
+private data class AgentJsonAuth(val userId: String?, val isAdmin: Boolean)
 
 /** Small console page. Trimmed version of the main console — no slash chips, no template / agent picker
  *  (you're already inside an agent), and the WS / REST endpoints all point at the sub-agent routes. */
