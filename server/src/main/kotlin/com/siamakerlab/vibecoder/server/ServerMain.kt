@@ -194,6 +194,14 @@ fun main(args: Array<String>) {
     // v0.28.0 — APK 서명 검사 + 빌드 캐시 관리.
     val apkSignerInspector = com.siamakerlab.vibecoder.server.artifacts.ApkSignerInspector()
     val buildCacheService = com.siamakerlab.vibecoder.server.build.BuildCacheService()
+    // v0.29.0 — 프로젝트 zip + 디스크 monitor (Notifiers 와 email warn percent 공유).
+    val projectArchiver = com.siamakerlab.vibecoder.server.projects.ProjectArchiver(workspace)
+    val diskMonitor = com.siamakerlab.vibecoder.server.disk.DiskMonitor(
+        rootProvider = { workspace.root },
+        notifiers = notifiers,
+        warnThresholdPercentProvider = { config.email.diskUsageWarnPercent },
+    )
+    diskMonitor.start()
 
     val ctx = ServerContext(
         config = config,
@@ -243,11 +251,15 @@ fun main(args: Array<String>) {
         testFlightPublishService = testFlightPublishService,
         apkSignerInspector = apkSignerInspector,
         buildCacheService = buildCacheService,
+        projectArchiver = projectArchiver,
+        diskMonitor = diskMonitor,
     )
 
     Runtime.getRuntime().addShutdownHook(Thread {
         kotlinx.coroutines.runBlocking { sessionManager.shutdown() }
         runCatching { claudeUsageMonitor.shutdown() }
+        runCatching { diskMonitor.shutdown() }
+        runCatching { notifiers.shutdown() }
     })
 
     printBanner(config, workspaceRoot, pairing, authService.adminExists())

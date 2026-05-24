@@ -212,6 +212,7 @@ object AdminTemplates {
         runningBuilds: Int,
         claudeAuth: com.siamakerlab.vibecoder.shared.dto.CheckItemDto? = null,
         claudeUsage: com.siamakerlab.vibecoder.shared.dto.ClaudeStatusDto? = null,
+        diskSnapshot: com.siamakerlab.vibecoder.server.disk.DiskMonitor.Snapshot? = null,
         csrf: String? = null,
     ): String {
         val claudeBadge = if (status.claudeAvailable) "<span class=\"ok\">✓ OK</span>" else "<span class=\"warn\">✗ 미설치</span>"
@@ -267,9 +268,43 @@ object AdminTemplates {
   </div>
 
   ${renderClaudeUsageCard(claudeUsage)}
+  ${renderDiskUsageCard(diskSnapshot)}
 </section>
 """
         )
+    }
+
+    /**
+     * v0.29.0 — 대시보드 디스크 사용량 카드.
+     */
+    private fun renderDiskUsageCard(snap: com.siamakerlab.vibecoder.server.disk.DiskMonitor.Snapshot?): String {
+        if (snap == null) {
+            return """
+  <div class="card">
+    <h2>디스크 사용량 (v0.29.0)</h2>
+    <p class="hint">아직 측정 안 됨. 백그라운드 monitor 가 다음 사이클(10분)에 갱신합니다.</p>
+  </div>"""
+        }
+        val pct = snap.usedPercent
+        val color = when {
+            pct >= 95 -> "#dc2626"
+            pct >= 85 -> "#d97706"
+            else -> "#059669"
+        }
+        val totalGb = snap.totalBytes / 1_073_741_824.0
+        return """
+  <div class="card">
+    <h2>디스크 사용량 (v0.29.0)</h2>
+    <dl>
+      <dt>사용량</dt><dd>${pct}%</dd>
+      <dt>총 용량</dt><dd>${"%.1f".format(totalGb)} GB</dd>
+      <dt>가용</dt><dd>${"%.1f".format(snap.freeGb)} GB</dd>
+    </dl>
+    <div style="margin-top:8px; background:#e5e7eb; border-radius:4px; height:8px; overflow:hidden;">
+      <div style="width:${pct}%; background:${color}; height:100%;"></div>
+    </div>
+    <p class="hint">임계치 도달 시 등록된 이메일 / webhook 으로 알림. 캐시 정리: <a href="/settings/cache">/settings/cache</a></p>
+  </div>"""
     }
 
     /**

@@ -136,6 +136,10 @@ data class ServerContext(
     val apkSignerInspector: com.siamakerlab.vibecoder.server.artifacts.ApkSignerInspector,
     /** v0.28.0 — Gradle / Android / npm 캐시 측정 + 정리. */
     val buildCacheService: com.siamakerlab.vibecoder.server.build.BuildCacheService,
+    /** v0.29.0 — 프로젝트 source zip stream. */
+    val projectArchiver: com.siamakerlab.vibecoder.server.projects.ProjectArchiver,
+    /** v0.29.0 — 디스크 사용량 monitor + 임계치 알림. */
+    val diskMonitor: com.siamakerlab.vibecoder.server.disk.DiskMonitor,
 )
 
 fun Application.module(ctx: ServerContext) {
@@ -218,6 +222,7 @@ fun Application.module(ctx: ServerContext) {
             envDiagnostics = ctx.env,
             audit = ctx.auditLogger,
             claudeUsageMonitor = ctx.claudeUsageMonitor,
+            diskMonitor = ctx.diskMonitor,
         )
         adminRoutes(adminDeps)
         // v0.26.0 — 2FA SSR routes.
@@ -252,6 +257,7 @@ fun Application.module(ctx: ServerContext) {
             playPublishService = ctx.playPublishService,
             testFlightPublishService = ctx.testFlightPublishService,
             apkSignerInspector = ctx.apkSignerInspector,
+            projectArchiver = ctx.projectArchiver,
         )
         // v0.28.0 — /settings/cache 라우트.
         buildCacheRoutes(adminDeps, ctx.buildCacheService)

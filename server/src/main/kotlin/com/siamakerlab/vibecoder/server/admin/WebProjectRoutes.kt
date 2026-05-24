@@ -28,6 +28,7 @@ import io.ktor.server.request.receiveMultipart
 import io.ktor.server.request.receiveParameters
 import io.ktor.server.response.header
 import io.ktor.server.response.respondFile
+import io.ktor.server.response.respondOutputStream
 import io.ktor.server.response.respondRedirect
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Routing
@@ -63,6 +64,8 @@ fun Routing.webProjectRoutes(
     testFlightPublishService: com.siamakerlab.vibecoder.server.publish.TestFlightPublishService,
     /** v0.28.0 — APK 서명 검사 (apksigner verify). */
     apkSignerInspector: com.siamakerlab.vibecoder.server.artifacts.ApkSignerInspector,
+    /** v0.29.0 — 프로젝트 source zip stream. */
+    projectArchiver: com.siamakerlab.vibecoder.server.projects.ProjectArchiver,
 ) {
 
     // ── 목록 + 등록 폼 ────────────────────────────────────────────────
@@ -653,6 +656,33 @@ fun Routing.webProjectRoutes(
             ),
             ContentType.Text.Html,
         )
+    }
+
+    // ── v0.29.0 — 프로젝트 source zip 다운로드 ─────────────────────
+    get("/projects/{id}/zip") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@get
+        val id = call.parameters["id"]!!
+        // ProjectService.get 으로 존재 확인 (잘못된 id → 404).
+        val p = runCatching { projects.get(id) }.getOrElse {
+            call.respondRedirect("/projects?err=${"프로젝트 '$id' 를 찾을 수 없습니다.".encodeUrl()}")
+            return@get
+        }
+        log.info { "project zip download: $id by ${sess.username}" }
+        val safeName = id.replace(Regex("[^A-Za-z0-9._-]"), "_")
+        val ts = java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmm")
+            .withZone(java.time.ZoneId.systemDefault())
+            .format(java.time.Instant.now())
+        call.response.header(
+            io.ktor.http.HttpHeaders.ContentDisposition,
+            "attachment; filename=\"${safeName}-source-${ts}.zip\"",
+        )
+        call.respondOutputStream(ContentType.parse("application/zip")) {
+            runCatching { projectArchiver.streamZip(id, this) }
+                .onFailure { log.warn(it) { "zip stream failed for $id: ${it.message}" } }
+            Unit
+            // p 는 nullability 검증/log 용. 더 이상 참조 불요.
+            @Suppress("UNUSED_EXPRESSION") p
+        }
     }
 
     // ── 콘솔: 액션 chip 전송 (form action) ─────────────────────────────

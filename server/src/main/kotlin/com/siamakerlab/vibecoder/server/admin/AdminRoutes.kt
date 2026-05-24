@@ -44,6 +44,8 @@ data class AdminRoutesDeps(
     val audit: AuditLogger,
     /** v0.21.0 — 대시보드 사용량 카드용 최신 snapshot 조회. */
     val claudeUsageMonitor: com.siamakerlab.vibecoder.server.claude.ClaudeUsageMonitor,
+    /** v0.29.0 — 대시보드 디스크 사용량 카드. */
+    val diskMonitor: com.siamakerlab.vibecoder.server.disk.DiskMonitor,
 )
 
 /**
@@ -68,6 +70,8 @@ fun Routing.adminRoutes(deps: AdminRoutesDeps) {
         // v0.21.0 — 백그라운드 모니터의 최신 snapshot. 미수집 시 null → 카드가
         // "아직 정보 없음" 메시지로 graceful degrade.
         val claudeUsage = deps.claudeUsageMonitor.snapshot()
+        // v0.29.0 — 디스크 monitor snapshot. 미측정이면 null → graceful.
+        val diskSnapshot = deps.diskMonitor.snapshot()
         val html = AdminTemplates.dashboardPage(
             username = sess.username,
             status = status,
@@ -75,6 +79,7 @@ fun Routing.adminRoutes(deps: AdminRoutesDeps) {
             runningBuilds = 0,
             claudeAuth = claudeAuth,
             claudeUsage = claudeUsage,
+            diskSnapshot = diskSnapshot,
             csrf = sess.csrf,
         )
         call.respondText(html, ContentType.Text.Html)
