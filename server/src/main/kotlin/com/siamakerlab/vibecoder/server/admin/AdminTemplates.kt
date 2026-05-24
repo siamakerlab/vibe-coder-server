@@ -117,6 +117,7 @@ object AdminTemplates {
     ${link("/settings/push", "Web Push", "push")}
     ${link("/password", "비밀번호", "password")}
     ${link("/2fa", "2단계 인증", "2fa")}
+    ${link("/webauthn", "Passkey (WebAuthn)", "webauthn")}
   </div>
   <div class="user-box">
     ${if (username != null) "<div class=\"user\">${esc(username)}</div>" else ""}
@@ -206,17 +207,99 @@ object AdminTemplates {
 <div class="auth-card">
   <h1>로그인</h1>
   $errHtml
-  <form method="post" action="/login">
+  <form method="post" action="/login" id="login-form">
     $nextField
     <label>사용자명
-      <input name="username" required autofocus>
+      <input name="username" id="login-username" required autofocus>
     </label>
     <label>비밀번호
       <input name="password" type="password" required>
     </label>
     <button type="submit" class="primary">로그인</button>
   </form>
+  <hr style="margin:18px 0;border-color:#222">
+  <div style="text-align:center">
+    <button type="button" id="passkey-login-btn" class="chip chip-link"
+            style="font-size:13px;padding:8px 14px" disabled>
+      🔑 Passkey 로 로그인
+    </button>
+    <p class="hint" id="passkey-status" style="margin:8px 0 0;font-size:11px">사용자명 입력 후 활성화…</p>
+  </div>
 </div>
+<script>
+(function() {
+  if (!window.PublicKeyCredential) return;
+  var usernameInput = document.getElementById('login-username');
+  var btn = document.getElementById('passkey-login-btn');
+  var status = document.getElementById('passkey-status');
+  function refresh() { btn.disabled = !usernameInput.value.trim(); }
+  usernameInput.addEventListener('input', refresh);
+
+  function b64UrlToBuf(b64) {
+    var pad = '='.repeat((4 - b64.length % 4) % 4);
+    var s = (b64 + pad).replace(/-/g, '+').replace(/_/g, '/');
+    var raw = atob(s);
+    var buf = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) buf[i] = raw.charCodeAt(i);
+    return buf.buffer;
+  }
+  function bufToB64Url(buf) {
+    var bytes = new Uint8Array(buf);
+    var s = '';
+    for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+    return btoa(s).replace(/=+${'$'}/, '').replace(/\+/g, '-').replace(/\//g, '_');
+  }
+
+  btn.addEventListener('click', async function() {
+    btn.disabled = true;
+    status.textContent = 'challenge 받는 중…';
+    try {
+      var optsRes = await fetch('/api/webauthn/assert/options', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: usernameInput.value.trim() }),
+      });
+      if (!optsRes.ok) throw new Error('options ' + optsRes.status);
+      var opts = await optsRes.json();
+      if (!opts.allowCredentialIds || opts.allowCredentialIds.length === 0) {
+        status.textContent = '이 사용자에게는 등록된 passkey 가 없습니다.'; btn.disabled = false; return;
+      }
+      status.textContent = '인증기 사용 중…';
+      var cred = await navigator.credentials.get({
+        publicKey: {
+          challenge: b64UrlToBuf(opts.challenge),
+          rpId: opts.rpId,
+          allowCredentials: opts.allowCredentialIds.map(function(id) {
+            return { type: 'public-key', id: b64UrlToBuf(id) };
+          }),
+          userVerification: 'preferred',
+          timeout: 60000,
+        },
+      });
+      var resp = cred.response;
+      var verifyRes = await fetch('/api/webauthn/assert/verify', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          credentialId: bufToB64Url(cred.rawId),
+          authenticatorData: bufToB64Url(resp.authenticatorData),
+          clientDataJSON: bufToB64Url(resp.clientDataJSON),
+          signature: bufToB64Url(resp.signature),
+          userHandle: resp.userHandle ? bufToB64Url(resp.userHandle) : null,
+        }),
+      });
+      if (!verifyRes.ok) {
+        var msg = await verifyRes.text();
+        throw new Error('verify ' + verifyRes.status + ' ' + msg);
+      }
+      // 인증 성공 — vibe_session 쿠키가 설정됨. dashboard 로 이동.
+      var dest = ${if (next != null) "\"${esc(next)}\"" else "'/'"};
+      location.href = dest;
+    } catch (e) {
+      status.textContent = '실패: ' + (e.message || e);
+      btn.disabled = false;
+    }
+  });
+})();
+</script>
 """
         )
     }

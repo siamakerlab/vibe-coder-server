@@ -36,6 +36,7 @@ import com.siamakerlab.vibecoder.server.build.buildRoutes
 import com.siamakerlab.vibecoder.server.claude.ClaudeSessionManager
 import com.siamakerlab.vibecoder.server.claude.SubAgentSessionManager
 import com.siamakerlab.vibecoder.server.claude.subAgentRoutes
+import com.siamakerlab.vibecoder.server.auth.webauthnRoutes
 import com.siamakerlab.vibecoder.server.claude.usageRoutes
 import com.siamakerlab.vibecoder.server.notify.pushRoutes
 import com.siamakerlab.vibecoder.server.claude.ClaudeStatusService
@@ -182,6 +183,8 @@ data class ServerContext(
     val pushSubscriptionRepo: com.siamakerlab.vibecoder.server.repo.PushSubscriptionRepository,
     /** v0.46.0 — Phase 25 Web Push VAPID + sender. */
     val webPushNotifier: com.siamakerlab.vibecoder.server.notify.WebPushNotifier,
+    /** v0.48.0 — Phase 27 WebAuthn (passkey 2FA). */
+    val webauthnService: com.siamakerlab.vibecoder.server.auth.WebauthnService,
 )
 
 fun Application.module(ctx: ServerContext) {
@@ -349,6 +352,8 @@ fun Application.module(ctx: ServerContext) {
         pushRoutes(adminDeps, ctx.webPushNotifier, ctx.pushSubscriptionRepo)
         // v0.47.0 — Phase 26 Claude /status raw 노출 (cache 통계 등 미래 정보 자동 가시화).
         usageRoutes(adminDeps, ctx.projects, ctx.claudeStatusService)
+        // v0.48.0 — Phase 27 WebAuthn (passkey 2FA).
+        webauthnRoutes(adminDeps, ctx.webauthnService, ctx.authService, ctx.tokens)
         wsRoutes(ctx.hub, ctx.deviceRepo, ctx.tokens, ctx.sessionManager,
             ctx.actionRegistry, ctx.actionHandler, ctx.subAgentManager, ctx.adminUserRepo)
     }

@@ -14,6 +14,26 @@ data class ServerConfig(
     val database: DatabaseSection = DatabaseSection(),
     val email: EmailSection = EmailSection(),
     val webhook: WebhookSection = WebhookSection(),
+    val webauthn: WebauthnSection = WebauthnSection(),
+)
+
+/**
+ * v0.48.0 — WebAuthn Relying Party identity. Set [rpId] to the bare hostname users
+ * type in the browser (e.g. `localhost`, `vibe.local`, `vibe.example.com`) — must NOT
+ * include scheme or port. [origin] is the full origin used to validate the
+ * `clientDataJSON.origin` field — must exactly match what the browser sends.
+ *
+ * For LAN access via `http://vibe.local:17880`, set:
+ *   webauthn:
+ *     rpId: "vibe.local"
+ *     rpName: "Vibe Coder"
+ *     origin: "http://vibe.local:17880"
+ */
+@Serializable
+data class WebauthnSection(
+    val rpId: String = "localhost",
+    val rpName: String = "Vibe Coder",
+    val origin: String = "http://localhost:17880",
 )
 
 @Serializable

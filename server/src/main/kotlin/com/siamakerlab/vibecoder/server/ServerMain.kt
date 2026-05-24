@@ -147,6 +147,14 @@ fun main(args: Array<String>) {
     val emailNotifier = com.siamakerlab.vibecoder.server.notify.EmailNotifier { config.email }
     // v0.27.0 — webhook (Slack / Discord / Telegram) provider. enabled=false 시 silent.
     val webhookNotifier = com.siamakerlab.vibecoder.server.notify.WebhookNotifier({ config.webhook })
+    // v0.48.0 — Phase 27 WebAuthn (passkey 2FA). Credential repo + service that wraps webauthn4j.
+    val webauthnCredentialRepo = com.siamakerlab.vibecoder.server.repo.WebauthnCredentialRepository(clock)
+    val webauthnService = com.siamakerlab.vibecoder.server.auth.WebauthnService(
+        credentialRepo = webauthnCredentialRepo,
+        rpIdProvider = { config.webauthn.rpId },
+        rpNameProvider = { config.webauthn.rpName },
+        originProvider = { config.webauthn.origin },
+    )
     // v0.46.0 — Phase 25 Web Push (browser PushManager). subscriptionRepo wired below; the
     // notifier reads it on each broadcast so subscriptions registered after startup are visible.
     val pushSubscriptionRepo = com.siamakerlab.vibecoder.server.repo.PushSubscriptionRepository(clock)
@@ -303,6 +311,7 @@ fun main(args: Array<String>) {
         subAgentManager = subAgentManager,
         pushSubscriptionRepo = pushSubscriptionRepo,
         webPushNotifier = webPushNotifier,
+        webauthnService = webauthnService,
     )
 
     Runtime.getRuntime().addShutdownHook(Thread {

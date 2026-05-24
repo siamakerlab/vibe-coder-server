@@ -87,6 +87,32 @@ class AuditLogger(
         )
     }
 
+    // ── WebAuthn passkey (v0.48.0+) ──────────────────────────────────
+
+    fun passkeyRegister(userId: String, credentialRowId: String, ip: String?) = safe {
+        repo.insert(
+            action = Actions.PASSKEY_REGISTER, result = Results.OK,
+            userId = userId, ip = ip,
+            resourceType = "passkey", resourceId = credentialRowId,
+        )
+    }
+
+    fun passkeyLogin(userId: String, credentialId: String, ip: String?) = safe {
+        repo.insert(
+            action = Actions.PASSKEY_LOGIN, result = Results.OK,
+            userId = userId, ip = ip,
+            resourceType = "passkey", resourceId = credentialId.take(64),
+        )
+    }
+
+    fun passkeyDelete(userId: String, credentialRowId: String, ip: String?) = safe {
+        repo.insert(
+            action = Actions.PASSKEY_DELETE, result = Results.OK,
+            userId = userId, ip = ip,
+            resourceType = "passkey", resourceId = credentialRowId,
+        )
+    }
+
     // ── Project ──────────────────────────────────────────────────────
 
     fun projectCreate(userId: String?, projectId: String, sourceType: String, ip: String?) = safe {
@@ -433,6 +459,9 @@ class AuditLogger(
         const val USER_CREATE = "user.create"
         const val USER_ROLE_CHANGE = "user.role.change"
         const val USER_DELETE = "user.delete"
+        const val PASSKEY_REGISTER = "auth.passkey.register"
+        const val PASSKEY_LOGIN = "auth.passkey.login"
+        const val PASSKEY_DELETE = "auth.passkey.delete"
     }
 
     object Results {

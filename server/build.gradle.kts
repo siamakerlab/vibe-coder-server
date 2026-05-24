@@ -67,6 +67,11 @@ dependencies {
     // v0.34.0 — tar / tar.gz 백업 streaming (Apache Commons Compress).
     implementation("org.apache.commons:commons-compress:1.27.1")
 
+    // v0.48.0 — WebAuthn (passkey 2FA). webauthn4j 는 등록 attestation
+    // 검증, assertion signature 검증, COSE / CBOR / Authenticator data 파싱
+    // 모두 처리. BouncyCastle / Jackson-CBOR 추이.
+    implementation("com.webauthn4j:webauthn4j-core:0.29.1.RELEASE")
+
     // Test
     testImplementation(libs.junit)
     testImplementation(libs.kotest.assertions.core)

@@ -221,6 +221,34 @@ object BuildWebhookSecrets : Table("build_webhook_secrets") {
 }
 
 /**
+ * v0.48.0 — WebAuthn (passkey) credential registry. Phase 27 — one row per
+ * registered authenticator. A single user can have multiple passkeys
+ * (multi-device, multi-platform).
+ *
+ * credentialId is the unique handle the browser passes back during assertion;
+ * publicKeyCose is the CBOR-encoded COSE_Key produced at registration; signCount
+ * is bumped on every successful assertion to detect cloning. attestationType is
+ * informational (e.g. "none", "self", "packed", "fido-u2f").
+ */
+object WebauthnCredentials : Table("webauthn_credentials") {
+    val id = varchar("id", 64)
+    val userId = varchar("user_id", 64).references(AdminUsers.id)
+    val credentialId = text("credential_id")     // base64url encoded; can be long
+    val attestationObject = text("attestation_object")  // base64url CBOR — full attestation object from registration; used to rebuild AttestedCredentialData on assertion
+    val signCount = long("sign_count").default(0)
+    val transports = varchar("transports", 256).nullable() // comma-joined hints
+    val attestationType = varchar("attestation_type", 32).nullable()
+    val name = varchar("name", 64)               // user-friendly label
+    val createdAt = varchar("created_at", 64)
+    val lastUsedAt = varchar("last_used_at", 64).nullable()
+    override val primaryKey = PrimaryKey(id)
+    init {
+        index(isUnique = true, columns = arrayOf(credentialId))
+        index(isUnique = false, columns = arrayOf(userId))
+    }
+}
+
+/**
  * v0.46.0 — Web Push subscription registry. Each row is one browser registration
  * (PushManager.subscribe() result). Keyed by endpoint URL (unique per browser+vendor).
  *
@@ -245,5 +273,5 @@ object PushSubscriptions : Table("push_subscriptions") {
 
 val AllTables = arrayOf(
     AdminUsers, Devices, Projects, Builds, Artifacts, UploadedFiles, AuditLog, ConversationTurns,
-    BuildSchedules, BuildWebhookSecrets, PushSubscriptions,
+    BuildSchedules, BuildWebhookSecrets, PushSubscriptions, WebauthnCredentials,
 )
