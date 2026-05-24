@@ -36,6 +36,7 @@ import com.siamakerlab.vibecoder.server.build.buildRoutes
 import com.siamakerlab.vibecoder.server.claude.ClaudeSessionManager
 import com.siamakerlab.vibecoder.server.claude.SubAgentSessionManager
 import com.siamakerlab.vibecoder.server.claude.subAgentRoutes
+import com.siamakerlab.vibecoder.server.admin.projectAclRoutes
 import com.siamakerlab.vibecoder.server.auth.webauthnRoutes
 import com.siamakerlab.vibecoder.server.claude.usageRoutes
 import com.siamakerlab.vibecoder.server.notify.pushRoutes
@@ -185,6 +186,8 @@ data class ServerContext(
     val webPushNotifier: com.siamakerlab.vibecoder.server.notify.WebPushNotifier,
     /** v0.48.0 — Phase 27 WebAuthn (passkey 2FA). */
     val webauthnService: com.siamakerlab.vibecoder.server.auth.WebauthnService,
+    /** v0.49.0 — Phase 28 Project ACL (member 가 일부 프로젝트만 보기). */
+    val projectAclRepo: com.siamakerlab.vibecoder.server.repo.ProjectAclRepository,
 )
 
 fun Application.module(ctx: ServerContext) {
@@ -354,6 +357,8 @@ fun Application.module(ctx: ServerContext) {
         usageRoutes(adminDeps, ctx.projects, ctx.claudeStatusService)
         // v0.48.0 — Phase 27 WebAuthn (passkey 2FA).
         webauthnRoutes(adminDeps, ctx.webauthnService, ctx.authService, ctx.tokens)
+        // v0.49.0 — Phase 28 Project ACL 관리 UI.
+        projectAclRoutes(adminDeps, ctx.projects, ctx.adminUserRepo, ctx.projectAclRepo)
         wsRoutes(ctx.hub, ctx.deviceRepo, ctx.tokens, ctx.sessionManager,
             ctx.actionRegistry, ctx.actionHandler, ctx.subAgentManager, ctx.adminUserRepo)
     }

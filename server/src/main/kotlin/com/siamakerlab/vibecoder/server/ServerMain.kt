@@ -170,16 +170,21 @@ fun main(args: Array<String>) {
     val notifiers = com.siamakerlab.vibecoder.server.notify.Notifiers(
         email = emailNotifier, webhook = webhookNotifier, webPush = webPushNotifier,
     )
+    // v0.49.0 — Project ACL persistence (member 가 일부 프로젝트만 보기).
+    val projectAclRepo = com.siamakerlab.vibecoder.server.repo.ProjectAclRepository(clock)
     val projects = ProjectService(
         workspace, projectRepo, buildRepo, keystoreGen, gitClone,
         artifactRepo = artifactRepo, uploadedFileRepo = uploadedRepo,
         conversationRepo = conversationRepo,
+        projectAclRepo = projectAclRepo,
     )
     val sessionManager = ClaudeSessionManager(config, workspace, hub, history = conversationHistory)
     // v0.44.0 — Phase 23 sub-agent process pool (real multi-agent). Independent of the main
     // ClaudeSessionManager so a project can run its primary console plus multiple sub-agents
     // (reviewer / frontend / backend / ...) concurrently in the same workspace.
-    val subAgentManager = com.siamakerlab.vibecoder.server.claude.SubAgentSessionManager(config, workspace, hub)
+    val subAgentManager = com.siamakerlab.vibecoder.server.claude.SubAgentSessionManager(
+        config = config, workspace = workspace, hub = hub, history = conversationHistory,
+    )
     val gradle = GradleBuilder(config)
     val artifacts = ArtifactService(config, workspace, artifactRepo, buildRepo, clock)
     val build = BuildService(config, workspace, projects, buildRepo, queue, gradle, artifacts, clock, notifier = notifiers)
@@ -312,6 +317,7 @@ fun main(args: Array<String>) {
         pushSubscriptionRepo = pushSubscriptionRepo,
         webPushNotifier = webPushNotifier,
         webauthnService = webauthnService,
+        projectAclRepo = projectAclRepo,
     )
 
     Runtime.getRuntime().addShutdownHook(Thread {

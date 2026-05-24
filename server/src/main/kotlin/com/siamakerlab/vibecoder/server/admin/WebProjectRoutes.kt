@@ -71,7 +71,7 @@ fun Routing.webProjectRoutes(
     // ── 목록 + 등록 폼 ────────────────────────────────────────────────
     get("/projects") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
-        val list = projects.list()
+        val list = projects.listForUser(sess.userId, sess.isAdmin)
         val err = call.request.queryParameters["err"]
         val ok = call.request.queryParameters["ok"]?.let { "프로젝트가 생성되었습니다." }
         call.respondText(
@@ -104,7 +104,7 @@ fun Routing.webProjectRoutes(
             else -> null
         }
         if (basicErr != null) {
-            val list = projects.list()
+            val list = projects.listForUser(sess.userId, sess.isAdmin)
             call.respondText(
                 WebProjectTemplates.projectsPage(
                     sess.username, list, flashErr = basicErr, csrf = sess.csrf,
@@ -133,7 +133,7 @@ fun Routing.webProjectRoutes(
         val created = result.getOrElse { e ->
             val msg = (e as? ApiException)?.message ?: e.message ?: "프로젝트 생성 실패"
             log.warn(e) { "project register failed: $projectId by ${sess.username}" }
-            val list = projects.list()
+            val list = projects.listForUser(sess.userId, sess.isAdmin)
             call.respondText(
                 WebProjectTemplates.projectsPage(
                     sess.username, list, flashErr = msg, csrf = sess.csrf,

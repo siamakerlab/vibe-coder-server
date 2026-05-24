@@ -201,6 +201,7 @@ private object UsersTemplates {
                   <input type="hidden" name="role" value="$nextRole">
                   <button type="submit" class="chip chip-link" onclick="return confirm('${esc(u.username)} → $nextRole?')">$roleBtnLabel</button>
                 </form>""" else ""}
+                <a href="/users/${esc(u.id)}/projects" class="chip chip-link" title="v0.49.0+ 프로젝트 ACL 편집">권한</a>
                 ${if (canDelete) """
                 <form method="post" action="/users/${esc(u.id)}/delete" style="display:inline">
                   ${CsrfTokens.hiddenInput(csrf)}

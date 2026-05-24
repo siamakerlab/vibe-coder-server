@@ -38,12 +38,13 @@ class ConversationHistoryService(
         }
     }
 
-    fun userPrompt(projectId: String, sessionId: String?, text: String) = safe {
+    fun userPrompt(projectId: String, sessionId: String?, text: String, agentName: String? = null) = safe {
         repo.insert(
             projectId = projectId,
             sessionId = sessionId,
             role = "user",
             content = text,
+            agentName = agentName,
         )
     }
 
@@ -52,13 +53,14 @@ class ConversationHistoryService(
      * 적재. partial assistant chunks 는 skip — 전체 turn 의 final assistant message 만
      * 한 row (스트리밍 중간 token 누적은 LogHub 으로만 흘림).
      */
-    fun event(projectId: String, sessionId: String?, event: ClaudeEvent) = safe {
+    fun event(projectId: String, sessionId: String?, event: ClaudeEvent, agentName: String? = null) = safe {
         when (event) {
             is ClaudeEvent.SessionStarted -> repo.insert(
                 projectId = projectId,
                 sessionId = event.sessionId,
                 role = "system",
                 content = """{"kind":"session_started","model":${jsonStr(event.model)},"cwd":${jsonStr(event.cwd)}}""",
+                agentName = agentName,
             )
             is ClaudeEvent.AssistantMessage -> {
                 // partial chunks 는 적재 안 함 — token-by-token 누적이 row 수 폭발 유발.
@@ -68,6 +70,7 @@ class ConversationHistoryService(
                     sessionId = sessionId,
                     role = "assistant",
                     content = event.text,
+                    agentName = agentName,
                 )
             }
             is ClaudeEvent.ToolUse -> repo.insert(
@@ -77,6 +80,7 @@ class ConversationHistoryService(
                 content = jsonString(event.input),
                 toolName = event.toolName,
                 toolUseId = event.toolUseId,
+                agentName = agentName,
             )
             is ClaudeEvent.ToolResult -> repo.insert(
                 projectId = projectId,
@@ -84,18 +88,21 @@ class ConversationHistoryService(
                 role = if (event.isError) "tool_result_error" else "tool_result",
                 content = jsonString(event.output),
                 toolUseId = event.toolUseId,
+                agentName = agentName,
             )
             is ClaudeEvent.Done -> repo.insert(
                 projectId = projectId,
                 sessionId = sessionId,
                 role = "system",
                 content = """{"kind":"done","reason":${jsonStr(event.reason)}}""",
+                agentName = agentName,
             )
             is ClaudeEvent.ErrorEvent -> repo.insert(
                 projectId = projectId,
                 sessionId = sessionId,
                 role = "error",
                 content = """{"code":${jsonStr(event.code)},"message":${jsonStr(event.message)}}""",
+                agentName = agentName,
             )
             is ClaudeEvent.Unknown -> repo.insert(
                 projectId = projectId,
@@ -103,17 +110,19 @@ class ConversationHistoryService(
                 role = "unknown",
                 content = jsonString(event.raw),
                 raw = jsonString(event.raw),
+                agentName = agentName,
             )
         }
     }
 
     /** Server-emitted system notice (cancel_noop, turn_cancelled, idle_terminated, etc.). */
-    fun systemNotice(projectId: String, sessionId: String?, code: String, message: String) = safe {
+    fun systemNotice(projectId: String, sessionId: String?, code: String, message: String, agentName: String? = null) = safe {
         repo.insert(
             projectId = projectId,
             sessionId = sessionId,
             role = "system",
             content = """{"kind":"system","code":${jsonStr(code)},"message":${jsonStr(message)}}""",
+            agentName = agentName,
         )
     }
 

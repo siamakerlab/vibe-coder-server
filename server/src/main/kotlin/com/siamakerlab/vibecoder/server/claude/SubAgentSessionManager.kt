@@ -59,6 +59,8 @@ class SubAgentSessionManager(
     private val hub: LogHub,
     private val parser: ClaudeStreamParser = ClaudeStreamParser(),
     private val idleTimeout: Duration = Duration.ofMinutes(30),
+    /** v0.49.0 — conversation_turns 영구 적재. null 이면 history persistence 비활성. */
+    private val history: ConversationHistoryService? = null,
 ) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -82,6 +84,8 @@ class SubAgentSessionManager(
         }
         val key = AgentKey(projectId, agentName)
         val session = ensureSession(key)
+        // v0.49.0 — user prompt 영구 적재 (sub-agent name 으로 태깅; sub-agent 인지된 채로 history 페이지에 보임).
+        history?.userPrompt(projectId, session.sessionId, text, agentName)
 
         val actualText = if (!session.firstPromptSent) {
             session.firstPromptSent = true
@@ -264,6 +268,12 @@ class SubAgentSessionManager(
                     .onFailure { log.warn(it) { "[${key.id}] failed to persist sub-agent session-id" } }
             }
             hub.emitConsole(topic(key)) { seq -> toWsFrame(event, seq) }
+            // v0.49.0 — sub-agent turn 영구 적재.
+            val sidForRow = when (event) {
+                is ClaudeEvent.SessionStarted -> event.sessionId
+                else -> sessions[key]?.sessionId
+            }
+            history?.event(key.projectId, sidForRow, event, key.agentName)
         }
     }
 
@@ -338,6 +348,8 @@ class SubAgentSessionManager(
         hub.emitConsole(topic(key)) { seq ->
             WsFrame.ConsoleSystem(code = code, message = message, seq = seq)
         }
+        // v0.49.0 — system notice 도 history 에 적재 (turn_cancelled / idle_terminated 등).
+        history?.systemNotice(key.projectId, sessions[key]?.sessionId, code, message, key.agentName)
     }
 
     private fun topic(key: AgentKey) = LogHub.subAgentConsoleTopic(key.projectId, key.agentName)

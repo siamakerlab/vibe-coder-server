@@ -167,12 +167,18 @@ object ConversationTurns : Table("conversation_turns") {
     val tokensIn = integer("tokens_in").nullable()
     val tokensOut = integer("tokens_out").nullable()
     val raw = text("raw").nullable()
+    /**
+     * v0.49.0 — sub-agent identifier. null = main project console (legacy / default).
+     * Non-null = a `(projectId, agentName)` sub-agent session via [SubAgentSessionManager].
+     */
+    val agentName = varchar("agent_name", 64).nullable()
     override val primaryKey = PrimaryKey(id)
 
     init {
         index(isUnique = false, columns = arrayOf(projectId, ts))
         index(isUnique = false, columns = arrayOf(projectId, sessionId, turnIdx))
         index(isUnique = false, columns = arrayOf(toolUseId))
+        index(isUnique = false, columns = arrayOf(projectId, agentName, ts))
     }
 }
 
@@ -271,7 +277,30 @@ object PushSubscriptions : Table("push_subscriptions") {
     }
 }
 
+/**
+ * v0.49.0 — Project ACL. By default a `member` / `viewer` user sees every project.
+ * When an explicit ACL row exists, the user only sees the listed projects.
+ *
+ * - Empty ACL for a user → user sees ALL projects (legacy behaviour, opt-in restriction model).
+ * - 1+ ACL rows for a user → user sees ONLY those projects.
+ *
+ * `admin` role bypasses ACL entirely.
+ *
+ * `granted_by` keeps the actor for audit / lockout reasoning (admin can't accidentally lock
+ * themselves out — they have no ACL rows so they see everything).
+ */
+object ProjectAcls : Table("project_acls") {
+    val projectId = varchar("project_id", 64).references(Projects.id)
+    val userId = varchar("user_id", 64).references(AdminUsers.id)
+    val grantedBy = varchar("granted_by", 64)
+    val createdAt = varchar("created_at", 64)
+    override val primaryKey = PrimaryKey(projectId, userId)
+    init {
+        index(isUnique = false, columns = arrayOf(userId))
+    }
+}
+
 val AllTables = arrayOf(
     AdminUsers, Devices, Projects, Builds, Artifacts, UploadedFiles, AuditLog, ConversationTurns,
-    BuildSchedules, BuildWebhookSecrets, PushSubscriptions, WebauthnCredentials,
+    BuildSchedules, BuildWebhookSecrets, PushSubscriptions, WebauthnCredentials, ProjectAcls,
 )

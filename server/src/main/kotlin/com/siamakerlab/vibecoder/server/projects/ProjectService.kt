@@ -36,6 +36,11 @@ class ProjectService(
     private val uploadedFileRepo: UploadedFileRepository? = null,
     /** v0.16.0 — conversation_turns cascade. null 이면 history persistence 비활성. */
     private val conversationRepo: com.siamakerlab.vibecoder.server.repo.ConversationTurnRepository? = null,
+    /**
+     * v0.49.0 — Project ACL filter. null 이면 ACL 비활성 (모든 사용자가 모든 프로젝트 보기 — legacy).
+     * 운영 환경에선 항상 주입.
+     */
+    private val projectAclRepo: com.siamakerlab.vibecoder.server.repo.ProjectAclRepository? = null,
 ) {
 
     /**
@@ -161,6 +166,29 @@ class ProjectService(
                 val last = buildRepo.lastForProject(row.id)
                 row.toDto(false, last?.status?.name)
             }
+    }
+
+    /**
+     * v0.49.0 — ACL-aware listing. Admin sees everything (legacy behaviour). Non-admin users
+     * see the full list **unless** they have one or more ACL rows, in which case the list is
+     * narrowed to those projects (opt-in restriction).
+     */
+    fun listForUser(userId: String, isAdmin: Boolean): List<ProjectDto> {
+        val all = list()
+        if (isAdmin || projectAclRepo == null) return all
+        if (!projectAclRepo.hasAnyRowFor(userId)) return all
+        val allowed = projectAclRepo.listForUser(userId).toSet()
+        return all.filter { it.id in allowed }
+    }
+
+    /**
+     * v0.49.0 — Single-project access check. Admin always allowed; non-admin allowed if the
+     * user has no ACL rows OR has an explicit grant for [projectId].
+     */
+    fun canUserAccess(userId: String, isAdmin: Boolean, projectId: String): Boolean {
+        if (isAdmin || projectAclRepo == null) return true
+        if (!projectAclRepo.hasAnyRowFor(userId)) return true
+        return projectAclRepo.isGranted(projectId, userId)
     }
 
     /**

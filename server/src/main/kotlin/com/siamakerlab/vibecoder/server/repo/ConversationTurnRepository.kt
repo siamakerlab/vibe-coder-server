@@ -31,6 +31,8 @@ data class ConversationTurnRow(
     val tokensIn: Int?,
     val tokensOut: Int?,
     val raw: String?,
+    /** v0.49.0 — null = main project console; non-null = sub-agent. */
+    val agentName: String? = null,
 )
 
 /**
@@ -58,6 +60,8 @@ class ConversationTurnRepository(private val clock: Clock) {
         tokensIn: Int? = null,
         tokensOut: Int? = null,
         raw: String? = null,
+        /** v0.49.0 — null = main project console; non-null = sub-agent name. */
+        agentName: String? = null,
     ): ConversationTurnRow = transaction {
         val now = clock.nowIso()
         val id = Ids.taskId()
@@ -75,10 +79,11 @@ class ConversationTurnRepository(private val clock: Clock) {
             it[ConversationTurns.tokensIn] = tokensIn
             it[ConversationTurns.tokensOut] = tokensOut
             it[ConversationTurns.raw] = raw
+            it[ConversationTurns.agentName] = agentName
         }
         ConversationTurnRow(
             id, projectId, sessionId, next, now, role, content,
-            toolName, toolUseId, tokensIn, tokensOut, raw,
+            toolName, toolUseId, tokensIn, tokensOut, raw, agentName,
         )
     }
 
@@ -161,5 +166,6 @@ class ConversationTurnRepository(private val clock: Clock) {
         tokensIn = this[ConversationTurns.tokensIn],
         tokensOut = this[ConversationTurns.tokensOut],
         raw = this[ConversationTurns.raw],
+        agentName = this[ConversationTurns.agentName],
     )
 }

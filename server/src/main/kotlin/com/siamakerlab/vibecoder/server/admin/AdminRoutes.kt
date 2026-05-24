@@ -499,6 +499,21 @@ internal suspend fun io.ktor.server.routing.RoutingContext.requireWriteAccessOrR
     return false
 }
 
+/**
+ * v0.49.0 — Project ACL guard. Admin bypasses. Non-admin must either have no ACL rows OR
+ * an explicit grant for [projectId]. Used by every per-project SSR / mutating endpoint.
+ */
+internal suspend fun io.ktor.server.routing.RoutingContext.requireProjectAccessOrRedirect(
+    sess: WebSession,
+    projects: com.siamakerlab.vibecoder.server.projects.ProjectService,
+    projectId: String,
+): Boolean {
+    if (projects.canUserAccess(sess.userId, sess.isAdmin, projectId)) return true
+    val msg = java.net.URLEncoder.encode("이 프로젝트에 대한 권한이 없습니다.", Charsets.UTF_8)
+    call.respondRedirect("/projects?err=$msg")
+    return false
+}
+
 private fun setSessionCookie(call: ApplicationCall, token: String) {
     // LAN HTTP 환경 가정 → Secure 미지정 (reverse proxy 뒤라면 X-Forwarded-Proto로 감지 가능하나 PoC에서는 생략)
     call.response.cookies.append(
