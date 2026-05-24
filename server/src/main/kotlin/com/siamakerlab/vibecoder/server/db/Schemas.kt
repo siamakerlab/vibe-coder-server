@@ -220,7 +220,30 @@ object BuildWebhookSecrets : Table("build_webhook_secrets") {
     override val primaryKey = PrimaryKey(id)
 }
 
+/**
+ * v0.46.0 — Web Push subscription registry. Each row is one browser registration
+ * (PushManager.subscribe() result). Keyed by endpoint URL (unique per browser+vendor).
+ *
+ * Bound to a userId so admin can revoke a specific user's notifications; null userId
+ * means a pre-login subscription (currently impossible — kept for future relaxation).
+ */
+object PushSubscriptions : Table("push_subscriptions") {
+    val id = varchar("id", 64)
+    val userId = varchar("user_id", 64).references(AdminUsers.id).nullable()
+    val endpoint = text("endpoint")              // e.g. https://fcm.googleapis.com/fcm/send/<token>
+    val p256dh = varchar("p256dh", 128)          // base64url, may be unused for payload-less push
+    val auth = varchar("auth", 64)               // base64url, may be unused for payload-less push
+    val userAgent = varchar("user_agent", 256).nullable()
+    val createdAt = varchar("created_at", 64)
+    val lastUsedAt = varchar("last_used_at", 64).nullable()
+    override val primaryKey = PrimaryKey(id)
+    init {
+        index(isUnique = true, columns = arrayOf(endpoint))
+        index(isUnique = false, columns = arrayOf(userId))
+    }
+}
+
 val AllTables = arrayOf(
     AdminUsers, Devices, Projects, Builds, Artifacts, UploadedFiles, AuditLog, ConversationTurns,
-    BuildSchedules, BuildWebhookSecrets,
+    BuildSchedules, BuildWebhookSecrets, PushSubscriptions,
 )

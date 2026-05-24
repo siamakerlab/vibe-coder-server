@@ -113,6 +113,7 @@ object AdminTemplates {
     ${link("/history", "대화 검색", "history")}
     ${link("/settings/email", "이메일 알림", "email")}
     ${link("/settings/webhook", "Webhook 알림", "webhook")}
+    ${link("/settings/push", "Web Push", "push")}
     ${link("/password", "비밀번호", "password")}
     ${link("/2fa", "2단계 인증", "2fa")}
   </div>

@@ -1,11 +1,12 @@
 // v0.39.0 — vibe-coder-server PWA service worker.
+// v0.46.0 — adds push event handler (Web Push, payload-less).
 //
 // Minimal "cache-first for static assets, network-first for HTML" strategy.
 // Avoid caching anything under /api/* or /ws/* (real-time state) and /admin/*
 // SSR pages (always fresh).
 //
 // Bump CACHE_VERSION on each release to invalidate old SW caches.
-const CACHE_VERSION = 'vibe-coder-v0.39.0';
+const CACHE_VERSION = 'vibe-coder-v0.46.0';
 const STATIC_CACHE = `static-${CACHE_VERSION}`;
 const STATIC_ASSETS = [
   '/static/admin.css',
@@ -66,4 +67,34 @@ self.addEventListener('fetch', (event) => {
   }
 
   // SSR pages — let the browser handle (no cache). Online-first by default.
+});
+
+// v0.46.0 — Web Push handler. The server sends payload-less push frames so we
+// just show a generic notification; click opens the dashboard.
+self.addEventListener('push', (event) => {
+  let title = 'Vibe Coder';
+  let body = '서버에서 알림이 도착했습니다.';
+  try {
+    if (event.data) {
+      const j = event.data.json();
+      title = j.title || title;
+      body = j.body || body;
+    }
+  } catch (_) { /* payload-less or non-JSON — ignore */ }
+  event.waitUntil(self.registration.showNotification(title, {
+    body: body,
+    icon: '/static/icon.png',
+    badge: '/static/icon.png',
+    tag: 'vibe-coder',
+  }));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(self.clients.matchAll({ type: 'window' }).then((wins) => {
+    for (const c of wins) {
+      if ('focus' in c) return c.focus();
+    }
+    return self.clients.openWindow('/');
+  }));
 });

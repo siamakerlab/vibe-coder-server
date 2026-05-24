@@ -36,6 +36,7 @@ import com.siamakerlab.vibecoder.server.build.buildRoutes
 import com.siamakerlab.vibecoder.server.claude.ClaudeSessionManager
 import com.siamakerlab.vibecoder.server.claude.SubAgentSessionManager
 import com.siamakerlab.vibecoder.server.claude.subAgentRoutes
+import com.siamakerlab.vibecoder.server.notify.pushRoutes
 import com.siamakerlab.vibecoder.server.claude.ClaudeStatusService
 import com.siamakerlab.vibecoder.server.claude.consoleRoutes
 import com.siamakerlab.vibecoder.server.claude.globalHistorySearchRoutes
@@ -176,6 +177,10 @@ data class ServerContext(
     val hasher: com.siamakerlab.vibecoder.server.auth.PasswordHasher,
     /** v0.44.0 — Phase 23 sub-agent process pool. */
     val subAgentManager: SubAgentSessionManager,
+    /** v0.46.0 — Phase 25 Web Push subscription store. */
+    val pushSubscriptionRepo: com.siamakerlab.vibecoder.server.repo.PushSubscriptionRepository,
+    /** v0.46.0 — Phase 25 Web Push VAPID + sender. */
+    val webPushNotifier: com.siamakerlab.vibecoder.server.notify.WebPushNotifier,
 )
 
 fun Application.module(ctx: ServerContext) {
@@ -339,6 +344,8 @@ fun Application.module(ctx: ServerContext) {
         vncProxyRoutes(adminDeps)
         // v0.44.0 — Phase 23 sub-agent process pool (real multi-agent).
         subAgentRoutes(adminDeps, ctx.projects, ctx.subAgentManager, ctx.agentRegistry)
+        // v0.46.0 — Phase 25 Web Push (VAPID, payload-less).
+        pushRoutes(adminDeps, ctx.webPushNotifier, ctx.pushSubscriptionRepo)
         wsRoutes(ctx.hub, ctx.deviceRepo, ctx.tokens, ctx.sessionManager,
             ctx.actionRegistry, ctx.actionHandler, ctx.subAgentManager, ctx.adminUserRepo)
     }

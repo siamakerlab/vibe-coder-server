@@ -147,7 +147,21 @@ fun main(args: Array<String>) {
     val emailNotifier = com.siamakerlab.vibecoder.server.notify.EmailNotifier { config.email }
     // v0.27.0 — webhook (Slack / Discord / Telegram) provider. enabled=false 시 silent.
     val webhookNotifier = com.siamakerlab.vibecoder.server.notify.WebhookNotifier({ config.webhook })
-    val notifiers = com.siamakerlab.vibecoder.server.notify.Notifiers(email = emailNotifier, webhook = webhookNotifier)
+    // v0.46.0 — Phase 25 Web Push (browser PushManager). subscriptionRepo wired below; the
+    // notifier reads it on each broadcast so subscriptions registered after startup are visible.
+    val pushSubscriptionRepo = com.siamakerlab.vibecoder.server.repo.PushSubscriptionRepository(clock)
+    val webPushNotifier = com.siamakerlab.vibecoder.server.notify.WebPushNotifier(
+        workspace = workspace,
+        subscriptionListProvider = {
+            pushSubscriptionRepo.list().map {
+                com.siamakerlab.vibecoder.server.notify.WebPushNotifier.PushSubscription(it.id, it.endpoint)
+            }
+        },
+        onGoneSubscription = { id -> runCatching { pushSubscriptionRepo.deleteById(id) } },
+    )
+    val notifiers = com.siamakerlab.vibecoder.server.notify.Notifiers(
+        email = emailNotifier, webhook = webhookNotifier, webPush = webPushNotifier,
+    )
     val projects = ProjectService(
         workspace, projectRepo, buildRepo, keystoreGen, gitClone,
         artifactRepo = artifactRepo, uploadedFileRepo = uploadedRepo,
@@ -287,6 +301,8 @@ fun main(args: Array<String>) {
         codeSearchService = codeSearchService,
         hasher = passwordHasher,
         subAgentManager = subAgentManager,
+        pushSubscriptionRepo = pushSubscriptionRepo,
+        webPushNotifier = webPushNotifier,
     )
 
     Runtime.getRuntime().addShutdownHook(Thread {
