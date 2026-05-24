@@ -115,6 +115,10 @@ object ApiPath {
     const val GIT_INTEGRATIONS = "/api/settings/git-integrations"
     const val GIT_INTEGRATIONS_DELETE = "/api/settings/git-integrations/delete"
     const val GIT_INTEGRATIONS_SSH_KEYGEN = "/api/settings/git-integrations/ssh-keygen"
+
+    // v0.20.0 — Prompt template library (Android client / 외부 CRUD 클라이언트용).
+    // 서버는 v0.13.0 부터 노출했지만 wire 모듈엔 v0.20.0 에 정식 등록.
+    const val PROMPT_TEMPLATES = "/api/prompt-templates"
 }
 
 object ApiHeader {

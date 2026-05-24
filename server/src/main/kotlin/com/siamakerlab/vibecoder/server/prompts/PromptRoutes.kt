@@ -91,14 +91,21 @@ fun Routing.promptRoutes(
     }
 
     // ── JSON API (Bearer 인증) — 콘솔 JS / 안드로이드 양쪽 사용 ─────
+    // v0.13.0 부터 동일 shape 노출. v0.20.0 부터 wire DTO (PromptTemplateListResponseDto) 로
+    // 응답해 안드로이드 client 가 직접 PromptTemplateDto 로 받을 수 있도록 정식화.
     authenticate(AUTH_BEARER) {
-        get("/api/prompt-templates") {
-            call.respond(PromptListDto(templates = store.listAll()))
+        get(com.siamakerlab.vibecoder.shared.ApiPath.PROMPT_TEMPLATES) {
+            val wire = store.listAll().map {
+                com.siamakerlab.vibecoder.shared.dto.PromptTemplateDto(
+                    id = it.id,
+                    title = it.title,
+                    category = it.category,
+                    body = it.body,
+                    createdAt = it.createdAt,
+                    updatedAt = it.updatedAt,
+                )
+            }
+            call.respond(com.siamakerlab.vibecoder.shared.dto.PromptTemplateListResponseDto(templates = wire))
         }
     }
 }
-
-@kotlinx.serialization.Serializable
-data class PromptListDto(
-    val templates: List<PromptTemplateStore.Template>,
-)

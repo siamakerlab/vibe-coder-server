@@ -387,6 +387,25 @@ data class GitTokenDeleteRequestDto(val host: String)
 
 // endregion
 
+// region Prompt templates (v0.20.0 — wire 정식화. 서버는 v0.13.0 부터 동일 shape 노출)
+
+@Serializable
+data class PromptTemplateDto(
+    val id: String,
+    val title: String,
+    val category: String,
+    val body: String,
+    val createdAt: String,
+    val updatedAt: String,
+)
+
+@Serializable
+data class PromptTemplateListResponseDto(
+    val templates: List<PromptTemplateDto>,
+)
+
+// endregion
+
 // region Errors
 
 @Serializable
