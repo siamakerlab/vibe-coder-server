@@ -47,7 +47,7 @@ docker compose up -d            # boots postgres + vibe-coder-server
 > [CHANGELOG.md](https://github.com/siamakerlab/vibe-coder-server/blob/main/CHANGELOG.md)
 > for the exact steps.
 
-## What's in the box (v0.53.0)
+## What's in the box (v0.54.0)
 
 **Core**
 - **Claude Code CLI orchestration** — one persistent child per project,
@@ -291,6 +291,15 @@ docker compose up -d            # boots postgres + vibe-coder-server
   language-agnostic (no Korean stemming; richer extensions are
   optional and a future phase).
 
+**Symbol definition lookup (v0.54.0+)**
+- Regex-based best-effort "jump to definition" for Kotlin / Java —
+  `fun` / `class` / `object` / `interface` / `val` / `var` /
+  `typealias`. Zero new deps, ms response. `/projects/{id}/symbols`
+  SSR + JSON API `/api/projects/{id}/symbols?name=`. File viewer
+  reads `?line=N` to smooth-scroll + flash the target row. Full
+  Kotlin LSP (~300 MB image, ~200 MB RAM) intentionally deferred for
+  the single-user dev profile.
+
 **Git + project scaffolding (v0.18.0+)**
 - **Git commit + push** wrapped in a single non-interactive endpoint
   (`POST /api/projects/{id}/git/commit` + SSR form). PAT / SSH auth,
@@ -396,7 +405,7 @@ container (UID 70 in alpine images). On the host you may need `sudo` to read
 files directly. Either use `tar` with sudo, or do logical `pg_dump` against
 the running container.
 
-## Web UI routes (v0.53.0)
+## Web UI routes (v0.54.0)
 
 All routes sit at the root (no `/admin/*` prefix from v0.4.2+). Bearer
 token or session cookie required except `/setup`, `/login`, `/health`.
@@ -445,9 +454,10 @@ SSR POST forms carry a CSRF token (v0.12.4+).
 | `/usage` | Claude `/status` raw viewer (admin-only, v0.47.0+) |
 | `/webauthn` | Passkey (WebAuthn) — register / list / delete (v0.48.0+) |
 | `/users/{userId}/projects` | Project ACL editor — admin only (v0.49.0+) |
+| `/projects/{id}/symbols` | Symbol definition lookup (regex; Kotlin/Java; v0.54.0+) |
 | `/settings`, `/devices`, `/password` | Operations |
 
-## JSON API (v0.53.0 — for clients)
+## JSON API (v0.54.0 — for clients)
 
 Full reference + curl examples in the
 [REST API Reference](https://github.com/siamakerlab/vibe-coder-server/wiki/REST-API-Reference)
@@ -482,6 +492,8 @@ Highlights:
   `POST /api/webauthn/assert/options | verify`
   (v0.48.0+ — passkey registration + login; assert mints a fresh
   `vibe_session` cookie + Bearer token)
+- `GET  /api/projects/{id}/symbols?name=<symbol>` (v0.54.0+ —
+  best-effort Kotlin/Java definition lookup; returns `{hits:[...]}`)
 - **Role guards (v0.45.0+)**: mutating REST endpoints require write
   role (admin/member) — viewers get `403 viewer_readonly`. Server-level
   setup endpoints require admin — non-admins get `403 admin_only`.

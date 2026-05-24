@@ -24,7 +24,7 @@ vibe-coder-server/
 └─ docker/              # Slim Docker image + compose + vibe-doctor
 ```
 
-## What's inside (v0.53.0)
+## What's inside (v0.54.0)
 
 ### Core orchestration
 - **Claude Code CLI orchestration** — one persistent child process per project,
@@ -472,6 +472,30 @@ vibe-coder-server/
   match (token-boundary only). For richer language support enable
   `mecab-ko` / `unaccent` extensions in a future phase.
 
+### Symbol definition lookup (v0.54.0+)
+- **`SymbolFinder`** — best-effort regex scan that recognizes
+  declaration patterns for Kotlin and Java: `fun`,
+  `(class|interface|object)` with modifiers (`open`, `abstract`,
+  `sealed`, `inner`, `data`, `enum`, `annotation`, `value`),
+  `val` / `var`, `typealias`, plus Java methods/types. ~90% of "jump
+  to definition" cases land in single-digit ms; no separate JVM, no
+  cold start, no new dependency.
+- **`/projects/{id}/symbols`** is an admin SSR page with a single
+  identifier input (validated against `[A-Za-z_][A-Za-z0-9_]{0,79}` —
+  no regex injection). Hits link directly to
+  `/projects/{id}/view?path=<rel>&line=<n>`; the file viewer reads
+  the `line` query parameter, smooth-scrolls the highlighted code to
+  the row, and flashes a yellow outline for 1.5 s.
+- **JSON API** `GET /api/projects/{id}/symbols?name=<symbol>` →
+  `{hits:[{relPath, lineNumber, kind, line}]}`. ACL-guarded.
+- Console sidebar gets a **`⇢ 정의 검색`** chip so the lookup is
+  reachable from every project workflow.
+- Trade-off: full Kotlin LSP (`kotlin-language-server`) — references,
+  rename, hover — adds a separate JVM (~300 MB image, ~200 MB RAM,
+  10–30 s cold start). For a single-user dev profile (CLAUDE.md §1)
+  the regex approach is the better trade. Real LSP integration is
+  tracked as a separate future phase.
+
 ### Git + project scaffolding (v0.18.0+)
 - **Git commit + push** — single `POST /api/projects/{id}/git/commit` (and an
   SSR form) wraps `add → commit → push` with non-interactive auth (PAT via
@@ -632,7 +656,7 @@ ssh user@newhost 'cd ~/vibe-coder && tar xzf vibe-coder-data-*.tar.gz && docker 
 mounts only (no named volumes by default), but watch out if you mixed
 in legacy state. For regular upgrades, always `up -d --force-recreate`.
 
-## Web routes (v0.53.0)
+## Web routes (v0.54.0)
 
 All routes below sit at the root (no `/admin/*` prefix). Bearer auth or
 session cookie required except `/setup`, `/login`, `/health`. Every SSR POST
@@ -686,10 +710,11 @@ carries a CSRF `_csrf` token (v0.12.4+).
 | `/usage` | **v0.47.0** Claude `/status` raw viewer (cache stats visible when Anthropic ships them) — admin |
 | `/webauthn` | **v0.48.0** Passkey (WebAuthn) — register / list / delete; 2FA alternative to TOTP |
 | `/users/{userId}/projects` | **v0.49.0** Project ACL editor (admin only) — opt-in per-user restriction |
+| `/projects/{id}/symbols` | **v0.54.0** Symbol definition lookup (regex; Kotlin/Java) |
 | `/settings`, `/devices`, `/password` | Operations |
 | `/login`, `/setup`, `/logout` | Auth |
 
-## JSON API (v0.53.0 — for clients like the Android app)
+## JSON API (v0.54.0 — for clients like the Android app)
 
 Every UI feature has a matching `/api/*` endpoint with Bearer authentication.
 Wire definitions: `shared/.../ApiPath.kt` + `shared/.../Dtos.kt`. Highlights:
@@ -727,6 +752,8 @@ Wire definitions: `shared/.../ApiPath.kt` + `shared/.../Dtos.kt`. Highlights:
   `POST /api/webauthn/assert/options | verify`
   (**v0.48.0+** — passkey registration + login flows; the `assert` path
   mints a fresh `vibe_session` cookie + Bearer token)
+- `GET  /api/projects/{id}/symbols?name=<symbol>` (**v0.54.0+** —
+  best-effort Kotlin/Java definition lookup; returns `{hits:[...]}`)
 - `GET  /api/push/vapid-public-key`,
   `POST /api/push/subscribe`, `DELETE /api/push/subscriptions/{id}`
   (**v0.46.0+** — browser Web Push; **v0.50.0+** payload-encrypted per
