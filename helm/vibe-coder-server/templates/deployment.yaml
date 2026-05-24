@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "vibe.fullname" . }}
+  labels: {{- include "vibe.labels" . | nindent 4 }}
+spec:
+  # Single-tenant by design (CLAUDE.md §1). Workspace + agent sessions live on
+  # ReadWriteOnce PVC — multiple replicas would corrupt state.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "vibe.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: server
+  template:
+    metadata:
+      labels:
+        {{- include "vibe.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: server
+    spec:
+      serviceAccountName: {{ include "vibe.serviceAccountName" . }}
+      containers:
+        - name: server
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 17880
+              name: http
+          env:
+            - name: VIBECODER_WORKSPACE_ROOT
+              value: "/workspace"
+{{- if .Values.postgres.enabled }}
+            - name: VIBECODER_DB_HOST
+              value: "{{ include "vibe.fullname" . }}-postgres"
+            - name: VIBECODER_DB_PORT
+              value: "5432"
+            - name: VIBECODER_DB_NAME
+              value: {{ .Values.postgres.database | quote }}
+            - name: VIBECODER_DB_USER
+              value: {{ .Values.postgres.user | quote }}
+            - name: VIBECODER_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vibe.fullname" . }}-pg-secret
+                  key: VIBECODER_DB_PASSWORD
+{{- end }}
+{{- range $k, $v := .Values.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+{{- end }}
+{{- if .Values.secretEnv }}
+          envFrom:
+            - secretRef:
+                name: {{ include "vibe.fullname" . }}-env-secret
+{{- end }}
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 17880
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 17880
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: workspace
+          persistentVolumeClaim:
+            claimName: {{ include "vibe.fullname" . }}-workspace

@@ -35,6 +35,20 @@ class ClaudeStatusService(
 
     private val cache = ConcurrentHashMap<String, Cached>()
 
+    /**
+     * v0.47.0 — last raw `/status` output per project. The structured fields above only keep
+     * a handful of best-effort extractions; the raw text contains additional info Anthropic
+     * occasionally ships (prompt cache hit/miss counts, billing context) that we don't want
+     * to lose. `/usage` page renders this verbatim.
+     */
+    private val rawSnapshots = ConcurrentHashMap<String, RawSnapshot>()
+
+    data class RawSnapshot(val text: String, val capturedAt: Instant)
+
+    fun lastRawSnapshot(projectId: String): RawSnapshot? = rawSnapshots[projectId]
+
+    fun allRawSnapshots(): Map<String, RawSnapshot> = rawSnapshots.toMap()
+
     suspend fun snapshot(projectId: String): ClaudeStatusDto {
         val cached = cache[projectId]
         if (cached != null && cached.expiresAt.isAfter(Instant.now())) return cached.dto
@@ -76,6 +90,8 @@ class ClaudeStatusService(
         if (proc.isAlive) {
             proc.destroyForcibly()
         }
+        // v0.47.0 — keep the full raw output so /usage can render it. 64 KB cap (overflow rare).
+        rawSnapshots[projectId] = RawSnapshot(text = output.take(64 * 1024), capturedAt = Instant.now())
         parseOutput(output)
     }
 

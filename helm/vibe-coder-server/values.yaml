@@ -1,0 +1,72 @@
+# vibe-coder-server Helm chart values.
+#
+# Single-replica, single-tenant assumption (CLAUDE.md §1) — this chart is for
+# convenient k8s deployment of the same standalone server you'd run via docker
+# compose, not a clustered service. workspace + PG data must therefore live on
+# a ReadWriteOnce PVC, and `replicas` is locked at 1.
+
+image:
+  repository: siamakerlab/vibe-coder-server
+  tag: "0.47.0"
+  pullPolicy: IfNotPresent
+
+# Built-in postgres sidecar via bitnami/postgresql Pod (NOT a chart dep — kept inline to
+# keep the chart self-contained and dep-free). For prod, set `postgres.enabled: false`
+# and point `postgres.external.*` at a managed PG.
+postgres:
+  enabled: true
+  image: postgres:17-alpine
+  database: vibecoder
+  user: vibecoder
+  password: ""        # REQUIRED — pass via --set postgres.password=... or values override
+  storage: 5Gi        # PVC size for the postgres sidecar
+  storageClassName: ""
+
+# Workspace volume (PVC, RWO). Holds projects, builds, conversation archives,
+# vapid-keys.json, agent sessions, etc.
+workspace:
+  storage: 50Gi
+  storageClassName: ""
+
+# Container resource hints. Generous on the JDK side — Claude Code + Gradle daemon
+# both want a lot of heap headroom during builds.
+resources:
+  limits:
+    cpu: "4"
+    memory: "8Gi"
+  requests:
+    cpu: "500m"
+    memory: "2Gi"
+
+# Ingress (HTTPS termination at the gateway is recommended). Disabled by default —
+# enable + set host to expose externally. SameSite cookie / CSRF protections assume
+# the same scheme/host throughout, so prefer terminating TLS upstream and forwarding
+# X-Forwarded-Proto.
+ingress:
+  enabled: false
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"  # WebSocket-friendly
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+  host: vibe.example.com
+  tls:
+    enabled: false
+    secretName: ""
+
+service:
+  type: ClusterIP
+  port: 17880
+
+# Server-side env overrides. Same keys as docker/.env — pass-through to the container.
+env: {}
+  # VIBECODER_CORS_ALLOWED_HOSTS: "https://vibe.example.com"
+  # VIBECODER_CORS_ALLOW_CREDENTIALS: "true"
+  # VIBECODER_SECURITY_SESSION_IDLE_TIMEOUT_MINUTES: "30"
+
+# Optional Kubernetes Secret for ANTHROPIC_API_KEY etc. Created if non-empty.
+secretEnv: {}
+  # ANTHROPIC_API_KEY: "sk-ant-..."
+
+serviceAccount:
+  create: true
+  name: ""

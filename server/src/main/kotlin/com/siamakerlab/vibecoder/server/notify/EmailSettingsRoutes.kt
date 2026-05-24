@@ -2,6 +2,7 @@ package com.siamakerlab.vibecoder.server.notify
 
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.AdminTemplates
+import com.siamakerlab.vibecoder.server.admin.requireAdminOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens.requireCsrf
@@ -22,6 +23,7 @@ import io.ktor.server.routing.post
 fun Routing.emailSettingsRoutes(authDeps: AdminRoutesDeps, notifier: EmailNotifier) {
     get("/settings/email") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
+        if (!requireAdminOrRedirect(sess)) return@get
         val cfg = authDeps.config.email
         val ok = call.request.queryParameters["ok"]
         val err = call.request.queryParameters["err"]
@@ -33,6 +35,7 @@ fun Routing.emailSettingsRoutes(authDeps: AdminRoutesDeps, notifier: EmailNotifi
 
     post("/settings/email/test") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireAdminOrRedirect(sess)) return@post
         requireCsrf()
         val sent = notifier.sendNow(
             subject = "Test email from vibe-coder",

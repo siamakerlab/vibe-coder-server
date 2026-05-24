@@ -22,6 +22,7 @@ private val log = KotlinLogging.logger {}
 fun Routing.corsSettingsRoutes(authDeps: AdminRoutesDeps) {
     get("/settings/cors") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
+        if (!requireAdminOrRedirect(sess)) return@get
         call.respondText(
             CorsSettingsTemplates.page(sess.username, authDeps.config.cors, csrf = sess.csrf),
             ContentType.Text.Html,

@@ -34,6 +34,7 @@ fun Routing.gitIntegrationsRoutes(
 ) {
     get("/settings/git-integrations") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
+        if (!requireAdminOrRedirect(sess)) return@get
         val tokens = credentials.list()
         val sshPubKey = cloneSvc.getPublicKeyOrNull()
         val flash = call.request.queryParameters["flash"]
@@ -45,6 +46,7 @@ fun Routing.gitIntegrationsRoutes(
 
     post("/settings/git-integrations") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireAdminOrRedirect(sess)) return@post
         val form = requireCsrf()
         try {
             credentials.register(
@@ -69,6 +71,7 @@ fun Routing.gitIntegrationsRoutes(
 
     post("/settings/git-integrations/delete") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireAdminOrRedirect(sess)) return@post
         val form = requireCsrf()
         val host = form["host"].orEmpty()
         val removed = credentials.delete(host)
@@ -79,6 +82,7 @@ fun Routing.gitIntegrationsRoutes(
 
     post("/settings/git-integrations/ssh-keygen") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireAdminOrRedirect(sess)) return@post
         requireCsrf()
         try {
             cloneSvc.ensureSshKeyExists()

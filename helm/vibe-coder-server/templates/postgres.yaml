@@ -1,0 +1,63 @@
+{{- if .Values.postgres.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "vibe.fullname" . }}-postgres
+  labels: {{- include "vibe.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "vibe.fullname" . }}-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "vibe.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: postgres
+  template:
+    metadata:
+      labels:
+        {{- include "vibe.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: {{ .Values.postgres.image | quote }}
+          env:
+            - name: POSTGRES_DB
+              value: {{ .Values.postgres.database | quote }}
+            - name: POSTGRES_USER
+              value: {{ .Values.postgres.user | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vibe.fullname" . }}-pg-secret
+                  key: POSTGRES_PASSWORD
+          ports:
+            - containerPort: 5432
+              name: postgres
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "{{ .Values.postgres.user }}", "-d", "{{ .Values.postgres.database }}"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: pgdata
+          persistentVolumeClaim:
+            claimName: {{ include "vibe.fullname" . }}-postgres
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "vibe.fullname" . }}-postgres
+  labels: {{- include "vibe.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "vibe.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+      name: postgres
+  type: ClusterIP
+{{- end }}

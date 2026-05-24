@@ -2,6 +2,7 @@ package com.siamakerlab.vibecoder.server.build
 
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.AdminTemplates
+import com.siamakerlab.vibecoder.server.admin.requireAdminOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens.requireCsrf
@@ -28,6 +29,7 @@ private val log = KotlinLogging.logger {}
 fun Routing.buildCacheRoutes(authDeps: AdminRoutesDeps, svc: BuildCacheService) {
     get("/settings/cache") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
+        if (!requireAdminOrRedirect(sess)) return@get
         val sizes = svc.measure()
         val ok = call.request.queryParameters["ok"]
         val err = call.request.queryParameters["err"]
@@ -39,6 +41,7 @@ fun Routing.buildCacheRoutes(authDeps: AdminRoutesDeps, svc: BuildCacheService) 
 
     post("/settings/cache/cleanup") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireAdminOrRedirect(sess)) return@post
         requireCsrf()
         val params = call.receiveParameters()
         val raw = params["target"]?.uppercase()?.replace("-", "_") ?: ""
