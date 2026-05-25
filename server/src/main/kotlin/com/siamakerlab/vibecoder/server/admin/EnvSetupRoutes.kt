@@ -7,6 +7,7 @@ import com.siamakerlab.vibecoder.server.env.ClaudeLoginService
 import com.siamakerlab.vibecoder.server.env.EnvSetupService
 import com.siamakerlab.vibecoder.server.env.SetupComponent
 import com.siamakerlab.vibecoder.server.error.ApiException
+import com.siamakerlab.vibecoder.server.i18n.Messages
 import io.ktor.http.HttpHeaders
 import io.ktor.server.response.respond
 import kotlinx.serialization.encodeToString
@@ -47,7 +48,7 @@ fun Routing.envSetupRoutes(
         val states = setupService.detectAll()
         val claudeFlash = call.request.queryParameters["claude"]
         call.respondText(
-            EnvSetupTemplates.envSetupPage(sess.username, states, claudeFlash, csrf = sess.csrf),
+            EnvSetupTemplates.envSetupPage(sess.username, states, claudeFlash, csrf = sess.csrf, lang = sess.language),
             ContentType.Text.Html,
         )
     }
@@ -67,9 +68,9 @@ fun Routing.envSetupRoutes(
         val comp = SetupComponent.byId(id)
             ?: throw ApiException(404, "unknown_component", "Unknown component: $id")
         val taskId = runCatching { setupService.spawnInstall(comp) }.getOrElse { e ->
-            val msg = (e as? ApiException)?.message ?: e.message ?: "설치 시작 실패"
+            val msg = (e as? ApiException)?.message ?: e.message ?: Messages.t(sess.language, "env.error.installStartFailed")
             call.respondText(
-                EnvSetupTemplates.errorBlurb(msg),
+                EnvSetupTemplates.errorBlurb(msg, sess.language),
                 ContentType.Text.Html,
                 HttpStatusCode.BadRequest,
             )
@@ -83,7 +84,7 @@ fun Routing.envSetupRoutes(
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
         val taskId = call.parameters["taskId"]!!
         call.respondText(
-            EnvSetupTemplates.taskProgressPage(sess.username, taskId),
+            EnvSetupTemplates.taskProgressPage(sess.username, taskId, lang = sess.language),
             ContentType.Text.Html,
         )
     }
@@ -116,14 +117,14 @@ fun Routing.envSetupRoutes(
             }
         } catch (e: Throwable) {
             call.respondText(
-                EnvSetupTemplates.errorBlurb("multipart 파싱 실패: ${e.message}"),
+                EnvSetupTemplates.errorBlurb(Messages.t(sess.language, "env.error.multipartParse", e.message ?: ""), sess.language),
                 ContentType.Text.Html, HttpStatusCode.BadRequest,
             )
             return@post
         }
         if (bytes == null) {
             call.respondText(
-                EnvSetupTemplates.errorBlurb("파일이 선택되지 않았습니다. .credentials.json 을 선택하세요."),
+                EnvSetupTemplates.errorBlurb(Messages.t(sess.language, "env.error.noFile"), sess.language),
                 ContentType.Text.Html, HttpStatusCode.BadRequest,
             )
             return@post
@@ -133,14 +134,14 @@ fun Routing.envSetupRoutes(
         } catch (e: ApiException) {
             log.warn { "credentials upload rejected (${e.code}): ${e.message}" }
             call.respondText(
-                EnvSetupTemplates.errorBlurb(e.message ?: "업로드 거부됨"),
+                EnvSetupTemplates.errorBlurb(e.message ?: Messages.t(sess.language, "env.error.uploadRejected"), sess.language),
                 ContentType.Text.Html, HttpStatusCode.fromValue(e.statusCode),
             )
             return@post
         } catch (e: Throwable) {
             log.error(e) { "credentials upload failed" }
             call.respondText(
-                EnvSetupTemplates.errorBlurb("업로드 실패: ${e.message}"),
+                EnvSetupTemplates.errorBlurb(Messages.t(sess.language, "env.error.uploadFailed", e.message ?: ""), sess.language),
                 ContentType.Text.Html, HttpStatusCode.InternalServerError,
             )
             return@post
@@ -161,14 +162,14 @@ fun Routing.envSetupRoutes(
             claudeAuth.registerApiKey(key)
         } catch (e: ApiException) {
             call.respondText(
-                EnvSetupTemplates.errorBlurb(e.message ?: "키 등록 거부됨"),
+                EnvSetupTemplates.errorBlurb(e.message ?: Messages.t(sess.language, "env.error.keyRejected"), sess.language),
                 ContentType.Text.Html, HttpStatusCode.fromValue(e.statusCode),
             )
             return@post
         } catch (e: Throwable) {
             log.error(e) { "API key register failed" }
             call.respondText(
-                EnvSetupTemplates.errorBlurb("키 등록 실패: ${e.message}"),
+                EnvSetupTemplates.errorBlurb(Messages.t(sess.language, "env.error.keyFailed", e.message ?: ""), sess.language),
                 ContentType.Text.Html, HttpStatusCode.InternalServerError,
             )
             return@post
@@ -198,7 +199,7 @@ fun Routing.envSetupRoutes(
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
         val state = claudeLogin.status()
         call.respondText(
-            EnvSetupTemplates.claudeLoginPage(sess.username, state, csrf = sess.csrf),
+            EnvSetupTemplates.claudeLoginPage(sess.username, state, csrf = sess.csrf, lang = sess.language),
             ContentType.Text.Html,
         )
     }
@@ -211,7 +212,7 @@ fun Routing.envSetupRoutes(
             log.info { "claude login started by ${sess.username}: ${s.id}" }
         } catch (e: ApiException) {
             call.respondText(
-                EnvSetupTemplates.errorBlurb(e.message ?: "시작 실패"),
+                EnvSetupTemplates.errorBlurb(e.message ?: Messages.t(sess.language, "env.error.startFailed"), sess.language),
                 ContentType.Text.Html, HttpStatusCode.fromValue(e.statusCode),
             )
             return@post
@@ -228,7 +229,7 @@ fun Routing.envSetupRoutes(
             log.info { "claude login code submitted by ${sess.username}" }
         } catch (e: ApiException) {
             call.respondText(
-                EnvSetupTemplates.errorBlurb(e.message ?: "코드 제출 거부"),
+                EnvSetupTemplates.errorBlurb(e.message ?: Messages.t(sess.language, "env.error.codeSubmitRejected"), sess.language),
                 ContentType.Text.Html, HttpStatusCode.fromValue(e.statusCode),
             )
             return@post
