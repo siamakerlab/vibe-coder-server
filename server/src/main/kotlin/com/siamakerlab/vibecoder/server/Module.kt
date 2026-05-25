@@ -209,6 +209,10 @@ data class ServerContext(
     val backupService: com.siamakerlab.vibecoder.server.admin.BackupService,
     /** v0.68.0 — Phase 47 polling-based notification (Android Group C). */
     val notificationService: com.siamakerlab.vibecoder.server.notify.NotificationService,
+    /** v0.70.0 — Phase 49 #1 LogSearchService 추출. SSR + JSON 양측 reuse. */
+    val logSearchService: com.siamakerlab.vibecoder.server.admin.LogSearchService,
+    /** v0.70.0 — Phase 49 #14 APK 시그너처 on-demand verify. */
+    val apkVerifier: com.siamakerlab.vibecoder.server.artifacts.ApkVerifier,
 )
 
 fun Application.module(ctx: ServerContext) {
@@ -350,7 +354,7 @@ fun Application.module(ctx: ServerContext) {
         consoleRoutes(ctx.projects, ctx.sessionManager, ctx.hub, ctx.claudeStatusService, ctx.env, ctx.auditLogger, ctx.promptSuggestionService)
         projectActionRoutes(ctx.projects, ctx.actionRegistry, ctx.actionHandler, ctx.capabilityService)
         buildRoutes(ctx.build, ctx.hub, ctx.projects)
-        artifactRoutes(ctx.artifactRepo, ctx.workspace, ctx.artifacts)
+        artifactRoutes(ctx.artifactRepo, ctx.workspace, ctx.artifacts, ctx.apkVerifier)
         gitRoutes(ctx.projects, ctx.git, ctx.gitWriter, ctx.auditLogger)
         fileRoutes(ctx.uploads, ctx.projects)
         promptRoutes(adminDeps, ctx.promptStore)
@@ -369,7 +373,7 @@ fun Application.module(ctx: ServerContext) {
         // v0.32.0 — Env files + 의존성 audit + 로그 검색.
         envFilesRoutes(adminDeps, ctx.projects, ctx.workspace)
         dependencyAuditRoutes(adminDeps, ctx.projects, ctx.dependencyAudit)
-        logSearchRoutes(adminDeps, ctx.workspace)
+        logSearchRoutes(adminDeps, ctx.logSearchService)
         // v0.33.0 — Cron 빌드 + webhook trigger.
         buildAutomationRoutes(
             adminDeps, ctx.projects, ctx.buildScheduleRepo, ctx.buildWebhookSecretRepo,
@@ -415,6 +419,7 @@ fun Application.module(ctx: ServerContext) {
             codeStats = ctx.codeStatsService,
             deps = ctx.dependencyAudit,
             wrapper = ctx.gradleWrapperService,
+            logSearch = ctx.logSearchService,
         )
         // v0.46.0 — Phase 25 Web Push (VAPID, payload-less).
         pushRoutes(adminDeps, ctx.webPushNotifier, ctx.pushSubscriptionRepo)

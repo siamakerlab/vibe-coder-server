@@ -20,6 +20,8 @@ fun Routing.artifactRoutes(
     repo: ArtifactRepository,
     workspace: WorkspacePath,
     service: ArtifactService,
+    /** v0.70.0 — Phase 49 #14 APK 시그너처 verify. */
+    apkVerifier: ApkVerifier,
 ) {
     authenticate(AUTH_BEARER) {
         get("/api/projects/{projectId}/artifacts") {
@@ -32,6 +34,13 @@ fun Routing.artifactRoutes(
             val row = repo.get(projectId, artifactId)
                 ?: throw ApiException(404, "artifact_not_found", artifactId)
             call.respond(service.toDto(row))
+        }
+        // v0.70.0 — Phase 49 #14: APK 시그너처 on-demand verify.
+        // 결과는 DB 영속 안함 — 사용자 클릭 시점에만 apksigner 실행 (1-5초).
+        get("/api/projects/{projectId}/artifacts/{artifactId}/verify") {
+            val projectId = call.parameters["projectId"]!!
+            val artifactId = call.parameters["artifactId"]!!
+            call.respond(apkVerifier.verify(projectId, artifactId))
         }
         get("/api/projects/{projectId}/artifacts/{artifactId}/download") {
             val projectId = call.parameters["projectId"]!!

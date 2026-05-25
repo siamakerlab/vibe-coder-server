@@ -54,6 +54,17 @@ class Notifiers(
             body = "남은 ${remainingPercent}% (리셋 ${resetAt ?: "예정 미상"})",
             url = "/usage",
         )
+        // v0.70.0 — Phase 49 #12: Android polling notification 통합.
+        notifications?.let { svc ->
+            val uids = userIdsProvider?.invoke() ?: emptyList()
+            svc.emit(
+                kind = com.siamakerlab.vibecoder.shared.dto.NotificationKind.USAGE_THRESHOLD,
+                title = "Claude 사용량 ${remainingPercent}% 남음",
+                body = "리셋 ${resetAt ?: "예정 미상"}",
+                deepLink = "usage",
+                userIds = uids,
+            )
+        }
         metrics?.inc("vibe_claude_usage_warn_total", "Claude usage threshold alerts")
     }
 
@@ -65,6 +76,17 @@ class Notifiers(
             body = "${usedPercent}% 사용중 — 여유 ${"%.1f".format(freeGb)} GB",
             url = "/",
         )
+        // v0.70.0 — Phase 49 #12: Android polling notification 통합.
+        notifications?.let { svc ->
+            val uids = userIdsProvider?.invoke() ?: emptyList()
+            svc.emit(
+                kind = com.siamakerlab.vibecoder.shared.dto.NotificationKind.SYSTEM,
+                title = "디스크 사용량 ${usedPercent}%",
+                body = "여유 ${"%.1f".format(freeGb)} GB",
+                deepLink = null,
+                userIds = uids,
+            )
+        }
         metrics?.inc("vibe_disk_usage_warn_total", "Disk usage threshold alerts")
     }
 

@@ -28,12 +28,14 @@ private val log = KotlinLogging.logger {}
  *   - q 빈 문자열 = 빈 결과 (대량 dump 방지).
  *   - matches 200 hard cap.
  */
-fun Routing.logSearchRoutes(authDeps: AdminRoutesDeps, workspace: WorkspacePath) {
+fun Routing.logSearchRoutes(authDeps: AdminRoutesDeps, svc: LogSearchService) {
     get("/logs") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
         val q = call.request.queryParameters["q"]?.trim()?.ifBlank { null }
         val projectFilter = call.request.queryParameters["project"]?.trim()?.ifBlank { null }
-        val matches = if (q == null) emptyList() else search(workspace, q, projectFilter)
+        val matches = if (q == null) emptyList() else svc.search(q, projectFilter).map {
+            LogMatch(it.projectId, it.buildId, it.lineNumber, it.line)
+        }
         call.respondText(
             renderPage(sess.username, sess.csrf, q, projectFilter, matches),
             ContentType.Text.Html,
@@ -41,6 +43,7 @@ fun Routing.logSearchRoutes(authDeps: AdminRoutesDeps, workspace: WorkspacePath)
     }
 }
 
+// v0.70.0 — Phase 49 #1: SSR HTML 렌더링 호환용 wrapper. 실제 검색 로직은 LogSearchService.
 data class LogMatch(
     val projectId: String,
     val buildId: String,
@@ -49,56 +52,6 @@ data class LogMatch(
 )
 
 private const val MAX_MATCHES = 200
-private const val MAX_BYTES_PER_FILE = 2 * 1024 * 1024  // 마지막 2 MB
-
-private fun search(workspace: WorkspacePath, q: String, projectFilter: String?): List<LogMatch> {
-    val sidecar = workspace.root.resolve(".vibecoder")
-    if (!Files.isDirectory(sidecar)) return emptyList()
-    val results = mutableListOf<LogMatch>()
-    val qLower = q.lowercase()
-
-    Files.list(sidecar).use { topStream ->
-        topStream.toList().forEach { projectDir ->
-            if (results.size >= MAX_MATCHES) return@forEach
-            if (!Files.isDirectory(projectDir)) return@forEach
-            val pid = projectDir.name
-            if (projectFilter != null && pid != projectFilter) return@forEach
-            val logsDir = projectDir.resolve("logs")
-            if (!Files.isDirectory(logsDir)) return@forEach
-            Files.list(logsDir).use { logStream ->
-                logStream.toList().forEach inner@{ logFile ->
-                    if (results.size >= MAX_MATCHES) return@inner
-                    if (!logFile.isRegularFile() || !logFile.name.endsWith(".log")) return@inner
-                    val buildId = logFile.name.removeSuffix(".log")
-                    grepFile(logFile, qLower, pid, buildId, results)
-                }
-            }
-        }
-    }
-    return results.take(MAX_MATCHES)
-}
-
-/** 파일 끝에서 MAX_BYTES_PER_FILE 만 읽어 grep (큰 빌드 로그 성능). */
-private fun grepFile(path: Path, qLower: String, pid: String, buildId: String, out: MutableList<LogMatch>) {
-    val size = runCatching { Files.size(path) }.getOrDefault(0L)
-    val skip = (size - MAX_BYTES_PER_FILE).coerceAtLeast(0)
-    runCatching {
-        Files.newBufferedReader(path).use { reader ->
-            if (skip > 0) reader.skip(skip)
-            var lineNo = 0
-            // skip 으로 라인 잘림 첫 줄은 drop
-            if (skip > 0) { reader.readLine(); lineNo++ }
-            while (true) {
-                val line = reader.readLine() ?: break
-                lineNo++
-                if (out.size >= MAX_MATCHES) return@use
-                if (line.lowercase().contains(qLower)) {
-                    out += LogMatch(pid, buildId, lineNo, line.take(400))
-                }
-            }
-        }
-    }.onFailure { log.debug(it) { "grep failed $path" } }
-}
 
 private fun esc(s: String?): String =
     s.orEmpty()

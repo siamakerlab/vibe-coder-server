@@ -90,6 +90,8 @@ fun Routing.jsonAdminRoutes(
     codeStats: CodeStatsService,
     deps: DependencyAudit,
     wrapper: GradleWrapperService,
+    /** v0.70.0 — Phase 49 #1 실제 log search 활성화. */
+    logSearch: LogSearchService,
 ) {
     authenticate(AUTH_BEARER) {
 
@@ -260,13 +262,11 @@ fun Routing.jsonAdminRoutes(
             val q = call.request.queryParameters["q"]?.trim()?.ifBlank { null }
                 ?: return@get call.respond(LogSearchResponseDto(emptyList()))
             val projectFilter = call.request.queryParameters["projectId"]?.ifBlank { null }
-            // LogSearchRoutes 의 private search() 와 같은 로직을 재사용하기엔 visibility 가
-            // 막혀 있어, 일단 SSR 측 결과를 노출하지 않고 빈 list emit (다음 cycle 에서
-            // LogSearchService 추출 + 양쪽 reuse). 사용자가 직접 검색 시 SSR 페이지로 fallback.
-            // - 구현 단순화 (현재 검색 로직이 SSR-html 응답에 결합돼 있어 분리 필요)
-            // 임시 응답 — empty hits. UI 가 "기능 준비 중" 메시지 표시 (v0.7.25 catch-up).
-            log.info { "log search requested (Bearer): q='$q' projectFilter=$projectFilter — TODO extract service" }
-            call.respond(LogSearchResponseDto(emptyList()))
+            // v0.70.0 — Phase 49 #1 실제 활성화. LogSearchService 가 SSR 과 같은 로직 reuse.
+            val hits = logSearch.search(q, projectFilter).map {
+                LogSearchHitDto(it.projectId, it.buildId, it.lineNumber, it.line)
+            }
+            call.respond(LogSearchResponseDto(hits))
         }
         get(ApiPath.CODE_SEARCH) {
             call.requireApiAdmin()

@@ -254,6 +254,10 @@ fun main(args: Array<String>) {
     val gradleWrapperService = com.siamakerlab.vibecoder.server.build.GradleWrapperService(workspace)
     val codeStatsService = com.siamakerlab.vibecoder.server.projects.CodeStatsService(workspace)
     val codeSearchService = com.siamakerlab.vibecoder.server.projects.CodeSearchService(workspace)
+    // v0.70.0 — Phase 49 #1.
+    val logSearchService = com.siamakerlab.vibecoder.server.admin.LogSearchService(workspace)
+    // v0.70.0 — Phase 49 #14.
+    val apkVerifier = com.siamakerlab.vibecoder.server.artifacts.ApkVerifier(workspace, artifactRepo)
     // v0.54.0 — Phase 33 best-effort symbol definition finder.
     val symbolFinder = com.siamakerlab.vibecoder.server.projects.SymbolFinder(workspace)
     // v0.60.0 — Phase 39 Backup service + scheduler.
@@ -408,6 +412,8 @@ fun main(args: Array<String>) {
         rateLimitAuth = rateLimitAuth,
         backupService = backupService,
         notificationService = notificationService,
+        logSearchService = logSearchService,
+        apkVerifier = apkVerifier,
     )
 
     Runtime.getRuntime().addShutdownHook(Thread {

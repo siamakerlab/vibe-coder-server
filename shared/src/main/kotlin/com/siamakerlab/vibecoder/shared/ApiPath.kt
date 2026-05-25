@@ -243,6 +243,13 @@ object ApiPath {
     const val FCM_TOKEN_REGISTER = "/api/notifications/fcm-token"
 
     /**
+     * v0.70.0 — Phase 49 #14. APK 시그너처 on-demand verify.
+     * 응답: ApkVerifier.Result (verified/v1/v2/v3/signers/warnings/errors/durationMs).
+     */
+    fun artifactVerify(projectId: String, artifactId: String) =
+        "/api/projects/${pathSeg(projectId)}/artifacts/${pathSeg(artifactId)}/verify"
+
+    /**
      * v0.31+ — Claude 입력 자동완성.
      * Query: `prefix`, `limit`. 응답: PromptSuggestionsResponseDto.
      */

@@ -46,6 +46,10 @@ class ConversationExportService(
         val tokensIn: Int? = null,
         val tokensOut: Int? = null,
         val raw: String? = null,
+        /** v0.70.0 — Phase 49 #10. user memo (v0.61+). null/blank = 없음. */
+        val userMemo: String? = null,
+        /** v0.70.0 — Phase 49 #10. ★ 표시 (v0.61+). */
+        val starred: Boolean = false,
     )
 
     @Serializable
@@ -125,7 +129,7 @@ class ConversationExportService(
             }
             if (!dryRun) {
                 runCatching {
-                    repo.insert(
+                    val row = repo.insert(
                         projectId = targetProjectId,
                         sessionId = rec.sessionId,
                         role = rec.role,
@@ -136,6 +140,13 @@ class ConversationExportService(
                         tokensOut = rec.tokensOut,
                         raw = rec.raw,
                     )
+                    // v0.70.0 — Phase 49 #10: memo/star 적용 (insert 후 별도 setter).
+                    if (!rec.userMemo.isNullOrBlank()) {
+                        runCatching { repo.setMemo(row.id, rec.userMemo) }
+                    }
+                    if (rec.starred) {
+                        runCatching { repo.setStarred(row.id, true) }
+                    }
                     accepted++
                 }.onFailure { e ->
                     skipped++
@@ -161,5 +172,7 @@ class ConversationExportService(
         tokensIn = tokensIn,
         tokensOut = tokensOut,
         raw = raw,
+        userMemo = userMemo,
+        starred = starred,
     )
 }
