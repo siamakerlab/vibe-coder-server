@@ -76,7 +76,7 @@ fun Routing.webProjectRoutes(
         val ok = call.request.queryParameters["ok"]?.let { "프로젝트가 생성되었습니다." }
         call.respondText(
             WebProjectTemplates.projectsPage(
-                sess.username, list, flashErr = err, flashOk = ok, csrf = sess.csrf,
+                sess.username, list, flashErr = err, flashOk = ok, csrf = sess.csrf, lang = sess.language,
             ),
             ContentType.Text.Html,
         )
@@ -107,7 +107,7 @@ fun Routing.webProjectRoutes(
             val list = projects.listForUser(sess.userId, sess.isAdmin)
             call.respondText(
                 WebProjectTemplates.projectsPage(
-                    sess.username, list, flashErr = basicErr, csrf = sess.csrf,
+                    sess.username, list, flashErr = basicErr, csrf = sess.csrf, lang = sess.language,
                 ),
                 ContentType.Text.Html,
                 HttpStatusCode.BadRequest,
@@ -136,7 +136,7 @@ fun Routing.webProjectRoutes(
             val list = projects.listForUser(sess.userId, sess.isAdmin)
             call.respondText(
                 WebProjectTemplates.projectsPage(
-                    sess.username, list, flashErr = msg, csrf = sess.csrf,
+                    sess.username, list, flashErr = msg, csrf = sess.csrf, lang = sess.language,
                 ),
                 ContentType.Text.Html,
                 HttpStatusCode.BadRequest,

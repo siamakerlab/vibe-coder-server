@@ -469,12 +469,14 @@ object WebProjectTemplates {
         flashErr: String? = null,
         flashOk: String? = null,
         csrf: String? = null,
+        lang: String = "en",
     ): String {
+        val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
         val errHtml = if (flashErr != null) """<div class="error">${esc(flashErr)}</div>""" else ""
         val okHtml = if (flashOk != null) """<div class="ok-banner">${esc(flashOk)}</div>""" else ""
 
         val rowsHtml = if (projects.isEmpty()) {
-            """<tr><td colspan="4" class="dim">등록된 프로젝트가 없습니다. 오른쪽 폼으로 새로 만드세요.</td></tr>"""
+            """<tr><td colspan="4" class="dim">${esc(t("projects.list.empty"))}</td></tr>"""
         } else {
             projects.joinToString("\n") { p ->
                 val statusBadge = when (p.lastBuildStatus) {
@@ -488,27 +490,28 @@ object WebProjectTemplates {
                     <td><a href="/projects/${esc(p.id)}"><strong>${esc(p.name)}</strong><br><small class="dim">${esc(p.id)}</small></a></td>
                     <td><code>${esc(p.packageName)}</code></td>
                     <td>$statusBadge</td>
-                    <td><a href="/projects/${esc(p.id)}/console" class="primary-link" style="width:auto;display:inline-block;padding:6px 12px">콘솔 열기</a></td>
+                    <td><a href="/projects/${esc(p.id)}/console" class="primary-link" style="width:auto;display:inline-block;padding:6px 12px">${esc(t("projects.list.openConsole"))}</a></td>
                   </tr>"""
             }
         }
 
         return AdminTemplates.shell(
-            title = "프로젝트",
+            title = t("projects.title"),
             username = username,
             currentPath = "/projects",
             csrf = csrf,
+            lang = lang,
             body = """
-<header><h1>프로젝트</h1></header>
+<header><h1>${esc(t("projects.heading"))}</h1></header>
 $okHtml
 $errHtml
 
 <section class="grid" style="grid-template-columns: 2fr 1fr">
   <div class="card">
-    <h2>등록된 프로젝트</h2>
+    <h2>${esc(t("projects.list.title"))}</h2>
     <table class="devices">
       <thead>
-        <tr><th>이름 / ID</th><th>패키지</th><th>최근 빌드</th><th></th></tr>
+        <tr><th>${esc(t("projects.list.col.name"))}</th><th>${esc(t("projects.list.col.package"))}</th><th>${esc(t("projects.list.col.lastBuild"))}</th><th></th></tr>
       </thead>
       <tbody>
         $rowsHtml
@@ -517,59 +520,55 @@ $errHtml
   </div>
 
   <div class="card">
-    <h2>새 프로젝트</h2>
+    <h2>${esc(t("projects.new.title"))}</h2>
     <form method="post" action="/projects" id="new-project-form">
       ${CsrfTokens.hiddenInput(csrf)}
-      <label>템플릿 (v0.18.0+)
+      <label>${esc(t("projects.new.template"))}
         <select name="templateId">
           ${com.siamakerlab.vibecoder.server.projects.ProjectTemplates.all.joinToString("") {
               """<option value="${esc(it.id)}">${esc(it.title)}</option>"""
           }}
         </select>
       </label>
-      <label>프로젝트 ID (kebab-case)
+      <label>${esc(t("projects.new.idLabel"))}
         <input name="projectId" required pattern="[a-z0-9][a-z0-9._-]*" maxlength="64"
                placeholder="my-android-app">
       </label>
-      <label>앱 이름 (사람이 읽는 이름)
+      <label>${esc(t("projects.new.appName"))}
         <input name="appName" required maxlength="80" placeholder="My Android App">
       </label>
-      <label>패키지명 (applicationId)
+      <label>${esc(t("projects.new.packageName"))}
         <input name="packageName" required pattern="[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+"
                placeholder="com.example.myapp">
       </label>
 
       <fieldset style="margin-top:10px;border:1px solid #333;padding:10px;border-radius:6px">
-        <legend style="padding:0 6px;font-size:13px">소스</legend>
+        <legend style="padding:0 6px;font-size:13px">${esc(t("projects.new.source"))}</legend>
         <label style="display:flex;gap:8px;align-items:center;cursor:pointer">
           <input type="radio" name="sourceType" value="empty" checked
                  onclick="document.getElementById('clone-fields').style.display='none'">
-          <span><strong>빈 프로젝트</strong> — 빈 폴더 + CLAUDE.md 템플릿 (Claude 가 처음부터 scaffold)</span>
+          <span><strong>${esc(t("projects.new.empty"))}</strong>${esc(t("projects.new.emptyDesc"))}</span>
         </label>
         <label style="display:flex;gap:8px;align-items:center;cursor:pointer;margin-top:6px">
           <input type="radio" name="sourceType" value="clone"
                  onclick="document.getElementById('clone-fields').style.display='block'">
-          <span><strong>기존 레포 clone</strong> — git URL 에서 가져옴</span>
+          <span><strong>${esc(t("projects.new.clone"))}</strong>${esc(t("projects.new.cloneDesc"))}</span>
         </label>
 
         <div id="clone-fields" style="display:none;margin-top:10px;padding-left:24px">
-          <label>Clone URL
+          <label>${esc(t("projects.new.cloneUrl"))}
             <input name="cloneUrl" type="text"
-                   placeholder="https://github.com/owner/repo.git  또는  git@github.com:owner/repo.git">
+                   placeholder="https://github.com/owner/repo.git  /  git@github.com:owner/repo.git">
           </label>
-          <label>Branch (선택)
-            <input name="cloneBranch" type="text" placeholder="비우면 default (main 등)">
+          <label>${esc(t("projects.new.branch"))}
+            <input name="cloneBranch" type="text" placeholder="${esc(t("projects.new.branchPlaceholder"))}">
           </label>
-          <p class="hint" style="font-size:12px">
-            <strong>Public 레포</strong>: https URL 그대로 입력.<br>
-            <strong>Private 레포 (HTTPS)</strong>: <a href="/settings/git-integrations">환경설정 → Git 통합</a> 에서 토큰 등록 후 시도.<br>
-            <strong>Private 레포 (SSH)</strong>: <code>git@host:owner/repo</code> 형식 + 위 환경설정에서 공개키 등록.
-          </p>
+          <p class="hint" style="font-size:12px">${t("projects.new.cloneHint")}</p>
         </div>
       </fieldset>
 
-      <button type="submit" class="primary" style="margin-top:10px">생성</button>
-      <p class="hint">빈 프로젝트의 경우 콘솔에서 Claude 에게 "Android 앱을 만들어줘" 같은 프롬프트로 시작합니다.</p>
+      <button type="submit" class="primary" style="margin-top:10px">${esc(t("projects.new.submit"))}</button>
+      <p class="hint">${esc(t("projects.new.emptyHint"))}</p>
     </form>
   </div>
 </section>
