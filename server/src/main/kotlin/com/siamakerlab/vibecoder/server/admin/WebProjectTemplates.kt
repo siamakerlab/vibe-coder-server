@@ -587,12 +587,14 @@ $errHtml
         flashErr: String? = null,
         flashOk: String? = null,
         csrf: String? = null,
+        lang: String = "en",
     ): String {
+        val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
         val errHtml = if (flashErr != null) """<div class="error">${esc(flashErr)}</div>""" else ""
         val okHtml = if (flashOk != null) """<div class="ok-banner">${esc(flashOk)}</div>""" else ""
 
         val recentRows = if (recentBuilds.isEmpty()) {
-            """<tr><td colspan="3" class="dim">아직 빌드 이력이 없습니다.</td></tr>"""
+            """<tr><td colspan="3" class="dim">${esc(t("projects.detail.recentEmpty"))}</td></tr>"""
         } else {
             recentBuilds.joinToString("\n") { b ->
                 """<tr>
@@ -608,6 +610,7 @@ $errHtml
             username = username,
             currentPath = "/projects",
             csrf = csrf,
+            lang = lang,
             body = """
 <header>
   <h1>${esc(p.name)} <small class="dim" style="font-size:14px;font-weight:400">${esc(p.id)}</small></h1>
@@ -617,42 +620,42 @@ $errHtml
 
 <section class="grid">
   <div class="card">
-    <h2>요약</h2>
+    <h2>${esc(t("projects.detail.summary"))}</h2>
     <dl>
-      <dt>패키지</dt><dd><code>${esc(p.packageName)}</code></dd>
-      <dt>소스 경로</dt><dd><code>${esc(p.sourcePath)}</code></dd>
-      <dt>모듈</dt><dd>${esc(p.moduleName)}</dd>
-      <dt>Debug task</dt><dd><code>${esc(p.debugTask)}</code></dd>
-      <dt>최근 빌드</dt><dd>${esc(p.lastBuildStatus ?: "-")}</dd>
-      <dt>업데이트</dt><dd>${esc(p.updatedAt)}</dd>
+      <dt>${esc(t("projects.detail.package"))}</dt><dd><code>${esc(p.packageName)}</code></dd>
+      <dt>${esc(t("projects.detail.source"))}</dt><dd><code>${esc(p.sourcePath)}</code></dd>
+      <dt>${esc(t("projects.detail.module"))}</dt><dd>${esc(p.moduleName)}</dd>
+      <dt>${esc(t("projects.detail.debugTask"))}</dt><dd><code>${esc(p.debugTask)}</code></dd>
+      <dt>${esc(t("projects.lastBuild"))}</dt><dd>${esc(p.lastBuildStatus ?: "-")}</dd>
+      <dt>${esc(t("projects.detail.updated"))}</dt><dd>${esc(p.updatedAt)}</dd>
     </dl>
   </div>
 
   <div class="card">
-    <h2>작업</h2>
-    <p><a href="/projects/${esc(p.id)}/console" class="primary-link" style="width:auto;display:inline-block;padding:8px 16px">콘솔 / Claude 프롬프트 →</a></p>
-    <p style="margin-top:12px"><a href="/projects/${esc(p.id)}/builds" class="primary-link" style="width:auto;display:inline-block;padding:8px 16px">빌드 / APK →</a></p>
-    <p style="margin-top:12px"><a href="/projects/${esc(p.id)}/history" class="primary-link" style="width:auto;display:inline-block;padding:8px 16px;background:transparent;border:1px solid var(--border);color:var(--text)">대화 히스토리 →</a></p>
-    <p style="margin-top:12px"><a href="/projects/${esc(p.id)}/tree" class="primary-link" style="width:auto;display:inline-block;padding:8px 16px;background:transparent;border:1px solid var(--border);color:var(--text)">파일 트리 / 편집 →</a></p>
-    <p style="margin-top:12px"><a href="/projects/${esc(p.id)}/files" class="primary-link" style="width:auto;display:inline-block;padding:8px 16px;background:transparent;border:1px solid var(--border);color:var(--text)">파일 업로드 / 다운로드 →</a></p>
-    <p style="margin-top:12px"><a href="/projects/${esc(p.id)}/zip" class="primary-link" style="width:auto;display:inline-block;padding:8px 16px;background:transparent;border:1px solid var(--border);color:var(--text)" title="source zip 백업 (build/, .git/, node_modules/ 제외)">🗜 Source zip 다운로드</a></p>
-    <p style="margin-top:12px"><a href="/projects/${esc(p.id)}/env-files" class="primary-link" style="width:auto;display:inline-block;padding:8px 16px;background:transparent;border:1px solid var(--border);color:var(--text)" title="local.properties / gradle.properties / .env 빠른 편집 (v0.32.0+)">⚙ Env / Build 파일</a></p>
-    <p style="margin-top:12px"><a href="/projects/${esc(p.id)}/deps" class="primary-link" style="width:auto;display:inline-block;padding:8px 16px;background:transparent;border:1px solid var(--border);color:var(--text)" title="Gradle 의존성 트리 (v0.32.0+)">🧩 의존성 audit</a></p>
-    <p style="margin-top:12px"><a href="/projects/${esc(p.id)}/automation" class="primary-link" style="width:auto;display:inline-block;padding:8px 16px;background:transparent;border:1px solid var(--border);color:var(--text)" title="Cron 빌드 + 외부 webhook 트리거 (v0.33.0+)">⏰ Automation (cron + webhook)</a></p>
-    <p style="margin-top:12px"><a href="/projects/${esc(p.id)}/wrapper" class="primary-link" style="width:auto;display:inline-block;padding:8px 16px;background:transparent;border:1px solid var(--border);color:var(--text)" title="Gradle wrapper 버전 표시 + 업그레이드 (v0.35.0+)">📦 Gradle wrapper</a></p>
-    <p style="margin-top:12px"><a href="/projects/${esc(p.id)}/stats" class="primary-link" style="width:auto;display:inline-block;padding:8px 16px;background:transparent;border:1px solid var(--border);color:var(--text)" title="코드 통계 (LoC / 언어별, v0.35.0+)">📊 코드 통계</a></p>
-    <p style="margin-top:12px"><a href="/projects/${esc(p.id)}/git" class="primary-link" style="width:auto;display:inline-block;padding:8px 16px;background:transparent;border:1px solid var(--border);color:var(--text)">git status / diff / log →</a></p>
+    <h2>${esc(t("projects.detail.actions"))}</h2>
+    <p><a href="/projects/${esc(p.id)}/console" class="primary-link" style="width:auto;display:inline-block;padding:8px 16px">${esc(t("projects.detail.console"))}</a></p>
+    <p style="margin-top:12px"><a href="/projects/${esc(p.id)}/builds" class="primary-link" style="width:auto;display:inline-block;padding:8px 16px">${esc(t("projects.detail.builds"))}</a></p>
+    <p style="margin-top:12px"><a href="/projects/${esc(p.id)}/history" class="primary-link" style="width:auto;display:inline-block;padding:8px 16px;background:transparent;border:1px solid var(--border);color:var(--text)">${esc(t("projects.detail.history"))}</a></p>
+    <p style="margin-top:12px"><a href="/projects/${esc(p.id)}/tree" class="primary-link" style="width:auto;display:inline-block;padding:8px 16px;background:transparent;border:1px solid var(--border);color:var(--text)">${esc(t("projects.detail.tree"))}</a></p>
+    <p style="margin-top:12px"><a href="/projects/${esc(p.id)}/files" class="primary-link" style="width:auto;display:inline-block;padding:8px 16px;background:transparent;border:1px solid var(--border);color:var(--text)">${esc(t("projects.detail.files"))}</a></p>
+    <p style="margin-top:12px"><a href="/projects/${esc(p.id)}/zip" class="primary-link" style="width:auto;display:inline-block;padding:8px 16px;background:transparent;border:1px solid var(--border);color:var(--text)" title="${esc(t("projects.detail.zip.title"))}">${esc(t("projects.detail.zip"))}</a></p>
+    <p style="margin-top:12px"><a href="/projects/${esc(p.id)}/env-files" class="primary-link" style="width:auto;display:inline-block;padding:8px 16px;background:transparent;border:1px solid var(--border);color:var(--text)" title="${esc(t("projects.detail.envFiles.title"))}">${esc(t("projects.detail.envFiles"))}</a></p>
+    <p style="margin-top:12px"><a href="/projects/${esc(p.id)}/deps" class="primary-link" style="width:auto;display:inline-block;padding:8px 16px;background:transparent;border:1px solid var(--border);color:var(--text)" title="${esc(t("projects.detail.deps.title"))}">${esc(t("projects.detail.deps"))}</a></p>
+    <p style="margin-top:12px"><a href="/projects/${esc(p.id)}/automation" class="primary-link" style="width:auto;display:inline-block;padding:8px 16px;background:transparent;border:1px solid var(--border);color:var(--text)" title="${esc(t("projects.detail.automation.title"))}">${esc(t("projects.detail.automation"))}</a></p>
+    <p style="margin-top:12px"><a href="/projects/${esc(p.id)}/wrapper" class="primary-link" style="width:auto;display:inline-block;padding:8px 16px;background:transparent;border:1px solid var(--border);color:var(--text)" title="${esc(t("projects.detail.wrapper.title"))}">${esc(t("projects.detail.wrapper"))}</a></p>
+    <p style="margin-top:12px"><a href="/projects/${esc(p.id)}/stats" class="primary-link" style="width:auto;display:inline-block;padding:8px 16px;background:transparent;border:1px solid var(--border);color:var(--text)" title="${esc(t("projects.detail.stats.title"))}">${esc(t("projects.detail.stats"))}</a></p>
+    <p style="margin-top:12px"><a href="/projects/${esc(p.id)}/git" class="primary-link" style="width:auto;display:inline-block;padding:8px 16px;background:transparent;border:1px solid var(--border);color:var(--text)">${esc(t("projects.detail.git"))}</a></p>
     <form method="post" action="/projects/${esc(p.id)}/delete" style="margin-top:24px"
-          onsubmit="return confirm('정말 삭제하시겠습니까? 워크스페이스 폴더는 그대로 남고 DB 항목만 제거됩니다.')">
+          onsubmit="return confirm('${esc(t("projects.detail.deleteConfirm")).replace("'", "&#39;")}')">
       ${CsrfTokens.hiddenInput(csrf)}
-      <button type="submit" class="danger" style="width:100%">프로젝트 삭제 (메타데이터만)</button>
+      <button type="submit" class="danger" style="width:100%">${esc(t("projects.detail.delete"))}</button>
     </form>
   </div>
 
   <div class="card">
-    <h2>최근 빌드 (5건)</h2>
+    <h2>${esc(t("projects.detail.recentBuilds"))}</h2>
     <table class="devices">
-      <thead><tr><th>ID</th><th>상태</th><th>시작</th></tr></thead>
+      <thead><tr><th>${esc(t("projects.detail.col.id"))}</th><th>${esc(t("projects.detail.col.status"))}</th><th>${esc(t("projects.detail.col.startedAt"))}</th></tr></thead>
       <tbody>$recentRows</tbody>
     </table>
   </div>

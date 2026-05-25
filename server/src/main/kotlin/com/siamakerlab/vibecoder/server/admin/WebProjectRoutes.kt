@@ -169,6 +169,7 @@ fun Routing.webProjectRoutes(
         call.respondText(
             WebProjectTemplates.projectDetailPage(
                 sess.username, p, recent, flashErr = err, flashOk = ok, csrf = sess.csrf,
+                lang = sess.language,
             ),
             ContentType.Text.Html,
         )
