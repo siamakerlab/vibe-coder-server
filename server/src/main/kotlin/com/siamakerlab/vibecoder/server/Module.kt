@@ -213,6 +213,8 @@ data class ServerContext(
     val logSearchService: com.siamakerlab.vibecoder.server.admin.LogSearchService,
     /** v0.70.0 — Phase 49 #14 APK 시그너처 on-demand verify. */
     val apkVerifier: com.siamakerlab.vibecoder.server.artifacts.ApkVerifier,
+    /** v0.72.0 — Phase 52 #4 FCM 실 발송 (Firebase 환경 변수 시 활성). */
+    val fcmSender: com.siamakerlab.vibecoder.server.notify.FcmSender,
 )
 
 fun Application.module(ctx: ServerContext) {
@@ -402,7 +404,8 @@ fun Application.module(ctx: ServerContext) {
         // v0.66.0 — Phase 45 신규 프로젝트 starter 템플릿 카탈로그 (Bearer).
         projectTemplateRoutes()
         // v0.68.0 — Phase 47 polling-based notification (Android Group C).
-        notificationRoutes(ctx.notificationService)
+        // v0.72.0 — Phase 52 #4: FCM 실 발송 wiring.
+        notificationRoutes(ctx.notificationService, ctx.fcmSender)
         // v0.69.0 — Phase 48 UI 리뉴얼: /tools hub.
         toolsRoutes(adminDeps)
         // v0.67.0 — Phase 46 Group B: admin / 운영 JSON API (Bearer, admin only).

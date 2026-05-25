@@ -26,7 +26,7 @@ private val log = KotlinLogging.logger {}
  *
  * FCM token 등록은 Firebase 설정 시만 의미 — endpoint 자체는 항상 200 OK 반환.
  */
-fun Routing.notificationRoutes(svc: NotificationService) {
+fun Routing.notificationRoutes(svc: NotificationService, fcm: FcmSender? = null) {
     authenticate(AUTH_BEARER) {
         get(ApiPath.NOTIFICATIONS) {
             val device = call.requireDevice().device
@@ -45,9 +45,10 @@ fun Routing.notificationRoutes(svc: NotificationService) {
         post(ApiPath.FCM_TOKEN_REGISTER) {
             val device = call.requireDevice().device
             val req = call.receive<FcmTokenRegisterRequestDto>()
-            // v0.68.0 stub — Firebase 설정 (FCM_PROJECT_ID + service account) 시 활성화.
-            // 미설정 시엔 token 만 로그 — 외부 push 발송 없음.
-            log.info { "FCM token registered (stub): userId=${device.userId} deviceId=${req.deviceId} tokenLen=${req.token.length}" }
+            // v0.72.0 — Phase 52 #4 실 활성화 (Firebase 환경 변수 설정 시).
+            // FcmSender 가 isEnabled=false 면 register 만 수집 — 향후 활성화 대비.
+            fcm?.registerToken(device.userId, req.token)
+            log.info { "FCM token registered: userId=${device.userId} deviceId=${req.deviceId} enabled=${fcm?.isEnabled ?: false}" }
             call.respond(HttpStatusCode.NoContent)
         }
     }

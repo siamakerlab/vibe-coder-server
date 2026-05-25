@@ -18,6 +18,8 @@ class Notifiers(
     val notifications: NotificationService? = null,
     /** v0.68.0 — fan-out 대상 사용자 목록 provider. null 이면 BUCKET_LEGACY. */
     val userIdsProvider: (() -> List<String?>)? = null,
+    /** v0.72.0 — Phase 52 #4 FCM 실제 발송. Firebase 환경 변수 시 활성. */
+    val fcm: FcmSender? = null,
 ) {
     /**
      * v0.55.0 — Phase 34 Prometheus counters get bumped alongside delivery.
@@ -34,11 +36,18 @@ class Notifiers(
             url = "/projects/$projectId/builds/$buildId",
         )
         // v0.68.0 — Phase 47 Android polling.
+        val uids = userIdsProvider?.invoke() ?: emptyList()
         notifications?.let { svc ->
-            val uids = userIdsProvider?.invoke() ?: emptyList()
             if (status == "SUCCESS") svc.emitBuildSuccess(projectId, buildId, uids)
             else svc.emitBuildFailed(projectId, buildId, errorMessage, uids)
         }
+        // v0.72.0 — Phase 52 #4: FCM instant push (Firebase 환경 변수 설정 시).
+        fcm?.send(
+            userIds = uids,
+            title = if (status == "SUCCESS") "✓ Build succeeded — $projectId" else "✗ Build failed — $projectId",
+            body = if (status == "SUCCESS") "buildId: $buildId" else errorMessage?.take(200).orEmpty(),
+            deepLink = "projects/$projectId/builds/$buildId/logs",
+        )
         metrics?.inc(
             "vibe_build_total",
             "Build outcomes by status",
@@ -93,5 +102,6 @@ class Notifiers(
     fun shutdown() {
         email?.shutdown()
         webhook?.shutdown()
+        fcm?.shutdown()
     }
 }

@@ -174,6 +174,8 @@ fun main(args: Array<String>) {
     )
     // v0.68.0 — Phase 47 polling-based notification (Android Group C).
     val notificationService = com.siamakerlab.vibecoder.server.notify.NotificationService(clock)
+    // v0.72.0 — Phase 52 #4 FCM 실 발송 (Firebase env var 시 활성).
+    val fcmSender = com.siamakerlab.vibecoder.server.notify.FcmSender()
     val notifiers = com.siamakerlab.vibecoder.server.notify.Notifiers(
         email = emailNotifier, webhook = webhookNotifier, webPush = webPushNotifier,
         notifications = notificationService,
@@ -181,6 +183,7 @@ fun main(args: Array<String>) {
             // 모든 admin/member/viewer 사용자에게 fan-out. AdminUserRepository.listAll() 결과의 id 사용.
             runCatching { adminUserRepo.listAll().map { it.id as String? } }.getOrDefault(emptyList())
         },
+        fcm = fcmSender,
     )
     // v0.49.0 — Project ACL persistence (member 가 일부 프로젝트만 보기).
     val projectAclRepo = com.siamakerlab.vibecoder.server.repo.ProjectAclRepository(clock)
@@ -414,6 +417,7 @@ fun main(args: Array<String>) {
         notificationService = notificationService,
         logSearchService = logSearchService,
         apkVerifier = apkVerifier,
+        fcmSender = fcmSender,
     )
 
     Runtime.getRuntime().addShutdownHook(Thread {
