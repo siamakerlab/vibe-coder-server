@@ -101,6 +101,8 @@ class ServerActionHandler(
 
     companion object {
         val WHITELIST = setOf("build.debug", "git.status", "git.diff", "git.log")
-        val SLASH_WHITELIST = setOf("status", "cost", "model", "clear", "memory", "plan", "compact")
+        // v0.76.0 (L5 fix) — SLASH_WHITELIST 는 v0.75.0 이후 사용처 없음 (invokeSlash
+        // 가 항상 410). dead constant 제거. Android wire (`ProjectActionDto.
+        // InvokeClaudeSlashCommand`) 는 그대로 직렬화 가능하나 서버는 거부함.
     }
 }

@@ -244,10 +244,28 @@ object ApiPath {
 
     /**
      * v0.70.0 — Phase 49 #14. APK 시그너처 on-demand verify.
-     * 응답: ApkVerifier.Result (verified/v1/v2/v3/signers/warnings/errors/durationMs).
+     * 응답: [com.siamakerlab.vibecoder.shared.dto.ApkVerifyResultDto] (v0.76.0+
+     * shared SSOT, 이전엔 server-local `ApkVerifier.Result`).
      */
     fun artifactVerify(projectId: String, artifactId: String) =
         "/api/projects/${pathSeg(projectId)}/artifacts/${pathSeg(artifactId)}/verify"
+
+    // v0.76.0 (SSOT 정합) — 기존엔 server 라우터가 hardcoded 사용. wire 호환 영향
+    // 없음 (Android client 가 호출 안 함). SSOT 기록만으로 의미.
+    /** v0.46.0+ — Web Push VAPID public key. */
+    const val PUSH_VAPID_PUBLIC_KEY = "/api/push/vapid-public-key"
+    /** v0.46.0+ — Web Push subscription register. */
+    const val PUSH_SUBSCRIBE = "/api/push/subscribe"
+    fun pushSubscription(id: String) = "/api/push/subscriptions/${pathSeg(id)}"
+
+    /** v0.48.0+ — WebAuthn (passkey) — 등록 옵션 / 검증. */
+    const val WEBAUTHN_REGISTER_OPTIONS = "/api/webauthn/register/options"
+    const val WEBAUTHN_REGISTER_VERIFY = "/api/webauthn/register/verify"
+    const val WEBAUTHN_ASSERT_OPTIONS = "/api/webauthn/assert/options"
+    const val WEBAUTHN_ASSERT_VERIFY = "/api/webauthn/assert/verify"
+
+    /** v0.27.0+ — 외부 시스템 빌드 webhook. HMAC 서명 검증. */
+    fun buildWebhook(projectId: String) = "/api/webhooks/build/${pathSeg(projectId)}"
 
     /**
      * v0.31+ — Claude 입력 자동완성.

@@ -138,10 +138,21 @@ class EmulatorService {
         if (noWindow) args += "-no-window"
         // KVM 없으면 자동으로 software-only 로 떨어지지만 명시 옵션은 안 줌 (CLI 기본 behavior 신뢰).
         return try {
-            val pb = ProcessBuilder(args).redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.DISCARD)
-            // 부모 종료와 분리 — entrypoint daemon 처럼 동작.
+            // v0.76.0 (M7 fix) — 즉시 exit 한 경우 (예: 같은 AVD 가 이미 실행 중,
+            // KVM 권한 없음, 잘못된 옵션) 사용자에게 'launched' 라고 거짓 응답하던
+            // 회귀 회복. proc.waitFor(1, SECONDS) 로 짧게 기다려 즉시 exit 했는지
+            // 확인 후 stderr 메시지를 LaunchResult.message 에 포함.
+            val pb = ProcessBuilder(args).redirectErrorStream(true)
             val proc = pb.start()
-            LaunchResult(true, proc.pid(), "launched '$name' (pid=${proc.pid()})")
+            val exitedQuickly = proc.waitFor(1, TimeUnit.SECONDS)
+            if (exitedQuickly) {
+                val out = runCatching { proc.inputStream.bufferedReader().readText() }.getOrElse { "" }
+                LaunchResult(false, null,
+                    "emulator exited (code=${proc.exitValue()}): ${out.trim().take(500).ifBlank { "no output" }}")
+            } else {
+                // 1초 후에도 살아 있으면 정상 launch 진행 중. process 는 background daemon.
+                LaunchResult(true, proc.pid(), "launched '$name' (pid=${proc.pid()})")
+            }
         } catch (e: Throwable) {
             LaunchResult(false, null, e.message ?: e.javaClass.simpleName)
         }

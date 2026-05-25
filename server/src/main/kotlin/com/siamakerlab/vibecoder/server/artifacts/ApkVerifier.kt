@@ -2,11 +2,11 @@ package com.siamakerlab.vibecoder.server.artifacts
 
 import com.siamakerlab.vibecoder.server.core.WorkspacePath
 import com.siamakerlab.vibecoder.server.repo.ArtifactRepository
+import com.siamakerlab.vibecoder.shared.dto.ApkVerifyResultDto
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
-import kotlinx.serialization.Serializable
 
 private val log = KotlinLogging.logger {}
 
@@ -25,28 +25,19 @@ class ApkVerifier(
     private val artifacts: ArtifactRepository,
 ) {
 
-    @Serializable
-    data class Result(
-        val verified: Boolean,
-        val verifiedV1: Boolean = false,
-        val verifiedV2: Boolean = false,
-        val verifiedV3: Boolean = false,
-        val signers: List<String> = emptyList(),
-        val warnings: List<String> = emptyList(),
-        val errors: List<String> = emptyList(),
-        val durationMs: Long = 0,
-    )
+    // v0.76.0 — inner Result class 제거 → shared `ApkVerifyResultDto` 사용.
+    // wire 호환 유지 (필드 동일).
 
-    fun verify(projectId: String, artifactId: String): Result {
+    fun verify(projectId: String, artifactId: String): ApkVerifyResultDto {
         val started = System.currentTimeMillis()
         val row = artifacts.get(projectId, artifactId)
-            ?: return Result(false, errors = listOf("artifact $artifactId not found"))
+            ?: return ApkVerifyResultDto(false, errors = listOf("artifact $artifactId not found"))
         val apkPath = Path.of(row.filePath)
         if (!Files.exists(apkPath))
-            return Result(false, errors = listOf("apk file not found: ${row.filePath}"))
+            return ApkVerifyResultDto(false, errors = listOf("apk file not found: ${row.filePath}"))
 
         val apksigner = findApksigner()
-            ?: return Result(false, errors = listOf(
+            ?: return ApkVerifyResultDto(false, errors = listOf(
                 "apksigner not found in /opt/android-sdk/build-tools/*. " +
                 "Run vibe-doctor android-sdk first."))
 
@@ -61,7 +52,7 @@ class ApkVerifier(
             val finished = proc.waitFor(30, TimeUnit.SECONDS)
             if (!finished) {
                 proc.destroyForcibly()
-                return Result(false, errors = listOf("apksigner timeout (30s)"),
+                return ApkVerifyResultDto(false, errors = listOf("apksigner timeout (30s)"),
                     durationMs = System.currentTimeMillis() - started)
             }
             parseOutput(output, proc.exitValue()).copy(
@@ -69,7 +60,7 @@ class ApkVerifier(
             )
         } catch (e: Throwable) {
             log.warn(e) { "apksigner verify failed for $artifactId" }
-            Result(false, errors = listOf(e.message ?: "verify failed"),
+            ApkVerifyResultDto(false, errors = listOf(e.message ?: "verify failed"),
                 durationMs = System.currentTimeMillis() - started)
         }
     }
@@ -95,7 +86,7 @@ class ApkVerifier(
 
     private fun isWindows() = System.getProperty("os.name").lowercase().contains("windows")
 
-    private fun parseOutput(output: String, exitCode: Int): Result {
+    private fun parseOutput(output: String, exitCode: Int): ApkVerifyResultDto {
         // apksigner verify 출력 형식:
         //   Verified using v1 scheme (JAR signing): true|false
         //   Verified using v2 scheme (APK Signature Scheme v2): true|false
@@ -113,7 +104,7 @@ class ApkVerifier(
         val errors = output.lineSequence().filter { it.startsWith("ERROR:") || it.startsWith("DOES NOT VERIFY") }
             .map { it.trim() }.toList()
         val verified = exitCode == 0 && (v1 || v2 || v3) && errors.isEmpty()
-        return Result(
+        return ApkVerifyResultDto(
             verified = verified,
             verifiedV1 = v1, verifiedV2 = v2, verifiedV3 = v3,
             signers = signers,

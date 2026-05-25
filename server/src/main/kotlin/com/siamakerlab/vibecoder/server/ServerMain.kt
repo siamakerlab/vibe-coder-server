@@ -275,6 +275,13 @@ fun main(args: Array<String>) {
     )
     backupScheduler.start()
 
+    // v0.76.0 (M5 fix) — notification_events retention prune (acked + 30일 이상).
+    // 무한 누적 막아 DB 크기 GB 단위 증가 방지.
+    val notificationRetentionScheduler = com.siamakerlab.vibecoder.server.notify.NotificationRetentionScheduler(
+        service = notificationService,
+    )
+    notificationRetentionScheduler.start()
+
     // v0.55.0 — Phase 34 Prometheus metrics registry.
     val metrics = com.siamakerlab.vibecoder.server.metrics.MetricsRegistry().also { r ->
         // JVM baseline.
@@ -431,8 +438,12 @@ fun main(args: Array<String>) {
         runCatching { kotlinLspService.shutdown() }
         runCatching { buildScheduler.shutdown() }
         runCatching { backupScheduler.shutdown() }
+        runCatching { notificationRetentionScheduler.shutdown() }
         runCatching { conversationArchiver.shutdown() }
         runCatching { notifiers.shutdown() }
+        // v0.76.0 (L2 fix) — FcmSender shutdown hook 등록. 현재는 no-op 본문이지만
+        // 향후 connection pool / scope 정리 코드 추가 시 leak 방지.
+        runCatching { fcmSender.shutdown() }
     })
 
     printBanner(config, workspaceRoot, pairing, authService.adminExists())

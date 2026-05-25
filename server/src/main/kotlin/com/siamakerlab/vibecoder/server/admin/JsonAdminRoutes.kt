@@ -388,12 +388,8 @@ private fun com.siamakerlab.vibecoder.server.repo.BuildScheduleRow.toDto() = Bui
 )
 
 /**
- * v0.67.0 — env files 화이트리스트. 보안상 임의 경로 read/write 금지.
- * 기존 SSR `EnvFilesRoutes.kt` 의 화이트리스트와 동일 (그쪽도 같은 list 사용).
+ * v0.76.0 (M6 fix) — `EnvFilesRoutes.ENV_FILES_WHITELIST` 를 직접 참조하여 SSOT
+ * 정합. 이전엔 자체 4개 list 보유 (gradle 파일 3개 누락) → SSR/JSON 비대칭.
+ * 이제 두 라우터가 같은 상수.
  */
-private val WHITELISTED_ENV_FILES = listOf(
-    "local.properties",
-    "gradle.properties",
-    ".env",
-    ".env.local",
-)
+private val WHITELISTED_ENV_FILES = com.siamakerlab.vibecoder.server.projects.ENV_FILES_WHITELIST

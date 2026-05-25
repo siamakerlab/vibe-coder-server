@@ -7,9 +7,11 @@ import com.siamakerlab.vibecoder.shared.dto.NotificationEventDto
 import com.siamakerlab.vibecoder.shared.dto.NotificationKind
 import org.jetbrains.exposed.sql.SortOrder
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.isNotNull
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.isNull
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.less
 import org.jetbrains.exposed.sql.and
+import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
@@ -129,6 +131,21 @@ class NotificationService(
         val ackTs = clock.nowIso()
         oldest.forEach { eid ->
             NotificationEvents.update({ NotificationEvents.id eq eid }) { it[ackedAt] = ackTs }
+        }
+    }
+
+    /**
+     * v0.76.0 (M5 fix) — 30일 이상 ack 된 row hard delete.
+     *
+     * 호출자: [NotificationRetentionScheduler] (일 1회). NotificationService 는
+     * 단독 호출도 안전 — 다른 사용자 데이터에 영향 없음. createdAt < cutoff 만 삭제.
+     *
+     * 반환: 삭제된 row 수.
+     */
+    fun pruneAckedOlderThan(days: Int): Int = transaction {
+        val cutoff = clock.cutoffIso(days)
+        NotificationEvents.deleteWhere {
+            ackedAt.isNotNull() and (createdAt less cutoff)
         }
     }
 

@@ -88,8 +88,11 @@ internal data class EnvFile(val rel: String, val exists: Boolean, val sizeBytes:
 /**
  * 화이트리스트 — Android 프로젝트 기준 환경/설정 파일.
  * 다른 파일은 기존 file browser (`/projects/{id}/tree`) 에서 편집.
+ *
+ * v0.76.0 (M6 fix) — `internal` 로 노출해서 [JsonAdminRoutes] 와 같은 SSOT.
+ * 이전엔 JSON variant 가 4개만 보유 (gradle 파일 3개 누락) → SSR/JSON 비대칭.
  */
-private val ENV_FILES_WHITELIST = listOf(
+internal val ENV_FILES_WHITELIST = listOf(
     "local.properties",
     "gradle.properties",
     ".env",

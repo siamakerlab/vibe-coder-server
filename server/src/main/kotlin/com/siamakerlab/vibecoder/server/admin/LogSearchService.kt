@@ -59,12 +59,27 @@ class LogSearchService(private val workspace: WorkspacePath) {
 
     private fun grepFile(path: Path, qLower: String, pid: String, buildId: String, out: MutableList<Match>) {
         val size = runCatching { Files.size(path) }.getOrDefault(0L)
-        val skip = (size - MAX_BYTES_PER_FILE).coerceAtLeast(0)
+        val skipBytes = (size - MAX_BYTES_PER_FILE).coerceAtLeast(0)
         runCatching {
-            Files.newBufferedReader(path).use { reader ->
-                if (skip > 0) reader.skip(skip)
+            // v0.76.0 (M8 fix) — `reader.skip(N)` 은 문자 수. byte 한도와 혼동되어
+            // 한글 로그 라인이 섞이면 skip 오프셋 어긋남. byte stream 으로 정확히
+            // skip 후 BufferedReader 로 wrap. line 번호도 skip 후 첫 partial 라인
+            // 제외 처리 (이전 코드와 동일).
+            java.io.BufferedReader(
+                java.io.InputStreamReader(
+                    java.io.BufferedInputStream(Files.newInputStream(path)).apply {
+                        var remaining = skipBytes
+                        while (remaining > 0) {
+                            val skipped = skip(remaining)
+                            if (skipped <= 0) break
+                            remaining -= skipped
+                        }
+                    },
+                    java.nio.charset.StandardCharsets.UTF_8,
+                ),
+            ).use { reader ->
                 var lineNo = 0
-                if (skip > 0) { reader.readLine(); lineNo++ }
+                if (skipBytes > 0) { reader.readLine(); lineNo++ }
                 while (true) {
                     val line = reader.readLine() ?: break
                     lineNo++
