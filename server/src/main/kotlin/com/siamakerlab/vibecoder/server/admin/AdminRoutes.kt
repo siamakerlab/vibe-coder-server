@@ -250,16 +250,37 @@ fun Routing.adminRoutes(deps: AdminRoutesDeps) {
             buildTimeoutMin = cfg.build.timeoutMinutes,
             defaultDebugTask = cfg.build.defaultDebugTask,
         )
-        val ok = call.request.queryParameters["ok"]?.let {
-            "✓ server.yml 에 저장되었습니다. 일부 항목(host/port/name)은 컨테이너 재시작 후 적용됩니다."
-        }
+        val ok = call.request.queryParameters["ok"]
         val err = call.request.queryParameters["err"]
+        // v0.77.0 — Phase 64 i18n. user.language (null = server default) + server default fallback.
+        val user = deps.userRepo.findById(sess.userId)
         call.respondText(
             AdminTemplates.settingsPage(
                 sess.username, view, flashOk = ok, flashErr = err, csrf = sess.csrf,
+                lang = sess.language,
+                userLanguage = user?.language,
+                serverDefaultLanguage = cfg.i18n.defaultLanguage,
             ),
             ContentType.Text.Html,
         )
+    }
+
+    // v0.77.0 — Phase 64 i18n. 사용자 별 language 변경.
+    // 빈 문자열 → null (서버 default 사용).
+    post("/settings/language") {
+        val sess = requireSessionOrRedirect(deps) ?: return@post
+        val params = requireCsrf()
+        val raw = params["language"]?.trim()?.ifBlank { null }
+        if (raw != null && raw !in com.siamakerlab.vibecoder.server.i18n.Messages.SUPPORTED) {
+            call.respondRedirect("/settings?err=invalid_language")
+            return@post
+        }
+        deps.userRepo.setLanguage(sess.userId, raw)
+        val msg = com.siamakerlab.vibecoder.server.i18n.Messages.t(
+            com.siamakerlab.vibecoder.server.i18n.Messages.resolve(raw, deps.config.i18n.defaultLanguage),
+            "settings.general.language.saved",
+        )
+        call.respondRedirect("/settings?ok=${java.net.URLEncoder.encode(msg, "UTF-8")}")
     }
 
     post("/settings") {
@@ -424,6 +445,11 @@ internal data class WebSession(
      * v0.40.0 — "viewer" 추가. read-only.
      */
     val role: String = "admin",
+    /**
+     * v0.77.0 — Phase 64 i18n. 이미 [com.siamakerlab.vibecoder.server.i18n.Messages.resolve]
+     * 로 fallback 처리된 최종 코드 ("en" 또는 "ko"). SSR 렌더 시 `t(key)` 의 1st arg.
+     */
+    val language: String = "en",
 ) {
     val isAdmin: Boolean get() = role == "admin"
     /** v0.40.0 — admin / member 만 write. viewer 는 read-only. */
@@ -473,6 +499,9 @@ internal suspend fun io.ktor.server.routing.RoutingContext.requireSessionOrRedir
         token = token, userId = user.id, username = user.username, deviceId = device.id,
         csrf = com.siamakerlab.vibecoder.server.auth.CsrfTokens.tokenFor(token),
         role = user.role,
+        language = com.siamakerlab.vibecoder.server.i18n.Messages.resolve(
+            user.language, deps.config.i18n.defaultLanguage,
+        ),
     )
 }
 

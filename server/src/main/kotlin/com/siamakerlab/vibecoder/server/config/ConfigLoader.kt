@@ -60,6 +60,12 @@ object ConfigLoader {
         // v0.17.0 — Email/SMTP env override
         current = current.copy(email = applyEmailEnvOverrides(current.email))
 
+        // v0.77.0 — Phase 64 i18n. VIBECODER_DEFAULT_LANGUAGE env override.
+        //   허용 값: "en", "ko". 그 외 값은 무시 (server.yml 값 유지).
+        System.getenv("VIBECODER_DEFAULT_LANGUAGE")?.trim()?.lowercase()
+            ?.takeIf { it in setOf("en", "ko") }
+            ?.let { current = current.copy(i18n = current.i18n.copy(defaultLanguage = it)) }
+
         return current
     }
 

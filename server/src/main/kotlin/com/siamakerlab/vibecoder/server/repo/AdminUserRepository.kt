@@ -28,6 +28,11 @@ data class AdminUserRow(
     val role: String = "admin",
     /** v0.57.0 — passkey 전용 로그인 강제. password/TOTP 차단 (passkey 있는 사용자만 의미). */
     val passwordlessOnly: Boolean = false,
+    /**
+     * v0.77.0 — Phase 64 i18n. 사용자 별 SSR 언어. null = 서버 default 사용.
+     * 허용: "en", "ko". Settings 의 language dropdown 에서 변경.
+     */
+    val language: String? = null,
 ) {
     val totpEnabled: Boolean get() = !totpSecret.isNullOrBlank()
     val isAdmin: Boolean get() = role == "admin"
@@ -135,12 +140,24 @@ class AdminUserRepository(private val clock: Clock) {
         totpEnabledAt = this[AdminUsers.totpEnabledAt],
         role = this[AdminUsers.role],
         passwordlessOnly = this[AdminUsers.passwordlessOnly],
+        language = this[AdminUsers.language],
     )
 
     /** v0.57.0 — passwordless-only toggle (passkey 등록된 사용자만 의미 있음). */
     fun setPasswordlessOnly(userId: String, enabled: Boolean): Boolean = transaction {
         AdminUsers.update({ AdminUsers.id eq userId }) {
             it[AdminUsers.passwordlessOnly] = enabled
+        } > 0
+    }
+
+    /**
+     * v0.77.0 — Phase 64 i18n. 사용자 별 SSR 언어 설정.
+     * null 또는 빈 문자열 → 서버 default fallback. 허용: "en", "ko".
+     */
+    fun setLanguage(userId: String, language: String?): Boolean = transaction {
+        val normalized = language?.trim()?.ifBlank { null }
+        AdminUsers.update({ AdminUsers.id eq userId }) {
+            it[AdminUsers.language] = normalized
         } > 0
     }
 }

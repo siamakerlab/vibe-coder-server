@@ -49,6 +49,13 @@ object AdminUsers : Table("admin_users") {
      * lost authenticator with no recovery flow yet.
      */
     val passwordlessOnly = bool("passwordless_only").default(false)
+    /**
+     * v0.77.0 — Phase 64 i18n. 사용자 별 SSR 언어. null = 서버 default 사용
+     * (`i18n.defaultLanguage` 또는 env `VIBECODER_DEFAULT_LANGUAGE`, fallback "en").
+     * 허용 값: "en", "ko". 새 언어 추가 시 [com.siamakerlab.vibecoder.server.i18n.Messages]
+     * 의 SUPPORTED 와 동기.
+     */
+    val language = varchar("language", 8).nullable()
     override val primaryKey = PrimaryKey(id)
 }
 

@@ -63,19 +63,20 @@ internal object SettingsNav {
     /**
      * 설정 페이지 8개 탭 — 각 sub-page 상단에 inject.
      *
-     * 호출자가 currentPath 를 넘기면 해당 탭이 active.
+     * v0.77.0 — i18n. [lang] 으로 라벨 분기. 호출자가 WebSession.language 전달.
      */
-    fun tabBar(currentPath: String): String {
+    fun tabBar(currentPath: String, lang: String = "en"): String {
         val tab = tabOf(currentPath)
+        val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
         val tabs = listOf(
-            Triple("general", "일반", "/settings"),
-            Triple("security", "보안", "/password"),
-            Triple("notifications", "알림", "/settings/email"),
-            Triple("build-env", "빌드환경", "/env-setup"),
-            Triple("prompts", "프롬프트 & 에이전트", "/prompts"),
-            Triple("backup", "백업", "/backup"),
-            Triple("monitoring", "모니터링", "/usage"),
-            Triple("users", "사용자", "/users"),
+            Triple("general", t("settings.tab.general"), "/settings"),
+            Triple("security", t("settings.tab.security"), "/password"),
+            Triple("notifications", t("settings.tab.notifications"), "/settings/email"),
+            Triple("build-env", t("settings.tab.buildEnv"), "/env-setup"),
+            Triple("prompts", t("settings.tab.prompts"), "/prompts"),
+            Triple("backup", t("settings.tab.backup"), "/backup"),
+            Triple("monitoring", t("settings.tab.monitoring"), "/usage"),
+            Triple("users", t("settings.tab.users"), "/users"),
         )
         val items = tabs.joinToString("\n") { (key, label, href) ->
             val cls = if (key == tab) "tab active" else "tab"

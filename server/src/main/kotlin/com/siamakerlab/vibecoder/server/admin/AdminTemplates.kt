@@ -34,12 +34,14 @@ object AdminTemplates {
         showNav: Boolean = true,
         /** v0.12.4 — 인증된 페이지에서 nav 의 logout 폼 등에 박을 CSRF 토큰. */
         csrf: String? = null,
+        /** v0.77.0 — Phase 64 i18n. WebSession.language ("en"/"ko"). nav/tabBar 라벨 분기. */
+        lang: String = "en",
     ): String {
-        val nav = if (showNav) navHtml(currentPath, username, csrf) else ""
+        val nav = if (showNav) navHtml(currentPath, username, csrf, lang) else ""
         val layoutCls = if (showNav) "layout" else "layout no-nav"
         val maybeTabs =
             if (showNav && SettingsNav.topLevelOf(currentPath) == "settings")
-                SettingsNav.tabBar(currentPath)
+                SettingsNav.tabBar(currentPath, lang)
             else ""
         // v0.12.4 — JS 가 ajax POST 시 CSRF 토큰을 첨부할 수 있도록 meta + global.
         // body 가 아닌 head 에 있어야 inline script 보다 먼저 실행됨.
@@ -48,7 +50,7 @@ object AdminTemplates {
   <script>window.__VIBE_CSRF__ = ${jsLitString(csrf)};</script>"""
         else ""
         return """<!doctype html>
-<html lang="ko">
+<html lang="${esc(lang)}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -81,8 +83,9 @@ object AdminTemplates {
 """
     }
 
-    private fun navHtml(currentPath: String, username: String?, csrf: String?): String {
+    private fun navHtml(currentPath: String, username: String?, csrf: String?, lang: String = "en"): String {
         val activeTop = SettingsNav.topLevelOf(currentPath)
+        val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
         fun link(href: String, label: String, key: String): String {
             val cls = if (activeTop == key) "active" else ""
             return """<a href="${esc(href)}" class="${esc(cls)}" data-key="${esc(key)}">${esc(label)}</a>"""
@@ -100,17 +103,17 @@ object AdminTemplates {
     <span>Vibe Coder</span>
   </div>
   <div class="nav-links">
-    ${link("/", "대시보드", "dashboard")}
-    ${link("/projects", "프로젝트", "projects")}
+    ${link("/", t("nav.home"), "dashboard")}
+    ${link("/projects", t("nav.projects"), "projects")}
     ${link("/chat", "Chat", "chat")}
-    ${link("/tools", "도구", "tools")}
-    ${link("/settings", "설정", "settings")}
+    ${link("/tools", t("nav.tools"), "tools")}
+    ${link("/settings", t("nav.settings"), "settings")}
   </div>
   <div class="user-box">
     $userBoxHtml
     <form method="post" action="/logout">
       $csrfInput
-      <button type="submit" class="logout">로그아웃</button>
+      <button type="submit" class="logout">${esc(t("nav.logout"))}</button>
     </form>
   </div>
 </nav>
@@ -463,49 +466,77 @@ object AdminTemplates {
         flashOk: String? = null,
         flashErr: String? = null,
         csrf: String? = null,
+        /** v0.77.0 — Phase 64 i18n. WebSession.language ("en"/"ko"). 모든 t() 호출에 사용. */
+        lang: String = "en",
+        /** v0.77.0 — 사용자 선택값 (null = 서버 default 사용). dropdown 의 currentValue. */
+        userLanguage: String? = null,
+        /** v0.77.0 — 서버 default ("en"/"ko"). dropdown 의 "Use server default (xx)" 라벨. */
+        serverDefaultLanguage: String = "en",
     ): String {
+        val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
+        val tArgs = { key: String, args: Array<Any?> -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key, *args) }
         val okHtml = if (flashOk != null) """<div class="ok-banner">${esc(flashOk)}</div>""" else ""
         val errHtml = if (flashErr != null) """<div class="error">${esc(flashErr)}</div>""" else ""
+        val sysLabel = tArgs("settings.general.language.option.system", arrayOf<Any?>(serverDefaultLanguage))
+        val sel = { v: String? -> if ((userLanguage ?: "") == (v ?: "")) "selected" else "" }
         return shell(
-            title = "설정",
+            title = t("settings.title"),
             username = username,
             currentPath = "/settings",
             csrf = csrf,
+            lang = lang,
             body = """
-<header><h1>운영 설정</h1></header>
+<header><h1>${esc(t("settings.title"))}</h1></header>
 $okHtml
 $errHtml
+
+<form method="post" action="/settings/language" class="settings-form">
+  ${CsrfTokens.hiddenInput(csrf)}
+  <fieldset>
+    <legend>${esc(t("settings.general.language.title"))}</legend>
+    <p class="hint">${esc(t("settings.general.language.body"))}</p>
+    <label>${esc(t("settings.general.language.title"))}
+      <select name="language">
+        <option value="" ${sel(null)}>${esc(sysLabel)}</option>
+        <option value="en" ${sel("en")}>${esc(t("settings.general.language.option.en"))}</option>
+        <option value="ko" ${sel("ko")}>${esc(t("settings.general.language.option.ko"))}</option>
+      </select>
+    </label>
+    <button type="submit" class="primary">${esc(t("settings.general.language.save"))}</button>
+  </fieldset>
+</form>
+
 <form method="post" action="/settings" class="settings-form">
   ${CsrfTokens.hiddenInput(csrf)}
 
   <fieldset>
-    <legend>서버 (재시작 필요)</legend>
-    <label>이름 <input name="server.name" value="${esc(settings.serverName)}"></label>
-    <label>포트 <input name="server.port" type="number" value="${settings.serverPort}" min="1" max="65535"></label>
-    <label>호스트 <input name="server.host" value="${esc(settings.serverHost)}"></label>
+    <legend>${esc(t("common.name"))} (Server)</legend>
+    <label>${esc(t("common.name"))} <input name="server.name" value="${esc(settings.serverName)}"></label>
+    <label>Port <input name="server.port" type="number" value="${settings.serverPort}" min="1" max="65535"></label>
+    <label>Host <input name="server.host" value="${esc(settings.serverHost)}"></label>
   </fieldset>
 
   <fieldset>
-    <legend>워크스페이스</legend>
-    <label>최대 업로드 (MB) <input name="workspace.maxUploadSizeMb" type="number" value="${settings.maxUploadMb}"></label>
-    <label>아티팩트 보관 개수 <input name="workspace.artifactKeepCount" type="number" value="${settings.artifactKeep}"></label>
+    <legend>Workspace</legend>
+    <label>Max upload (MB) <input name="workspace.maxUploadSizeMb" type="number" value="${settings.maxUploadMb}"></label>
+    <label>Artifact keep count <input name="workspace.artifactKeepCount" type="number" value="${settings.artifactKeep}"></label>
   </fieldset>
 
   <fieldset>
     <legend>Claude</legend>
-    <label><input name="claude.enabled" type="checkbox" ${if (settings.claudeEnabled) "checked" else ""}> 활성화</label>
-    <label>경로 <input name="claude.path" value="${esc(settings.claudePath)}"></label>
-    <label>타임아웃 (분) <input name="claude.timeoutMinutes" type="number" value="${settings.claudeTimeoutMin}"></label>
+    <label><input name="claude.enabled" type="checkbox" ${if (settings.claudeEnabled) "checked" else ""}> ${esc(t("common.enabled"))}</label>
+    <label>Path <input name="claude.path" value="${esc(settings.claudePath)}"></label>
+    <label>Timeout (min) <input name="claude.timeoutMinutes" type="number" value="${settings.claudeTimeoutMin}"></label>
   </fieldset>
 
   <fieldset>
     <legend>Build</legend>
-    <label>타임아웃 (분) <input name="build.timeoutMinutes" type="number" value="${settings.buildTimeoutMin}"></label>
-    <label>기본 debug task <input name="build.defaultDebugTask" value="${esc(settings.defaultDebugTask)}"></label>
+    <label>Timeout (min) <input name="build.timeoutMinutes" type="number" value="${settings.buildTimeoutMin}"></label>
+    <label>Default debug task <input name="build.defaultDebugTask" value="${esc(settings.defaultDebugTask)}"></label>
   </fieldset>
 
-  <button type="submit" class="primary">저장</button>
-  <p class="hint">저장 시 외부 <code>server.yml</code> 이 atomic 갱신되고 이전 파일은 <code>.bak.&lt;ts&gt;</code> 로 백업됩니다 (최근 5개 유지). <strong>일부 항목(host/port/name)은 컨테이너 재시작 후 적용</strong>됩니다. 경로는 <code>${'$'}VIBECODER_CONFIG_DIR/server.yml</code> 또는 <code>./config/server.yml</code>.</p>
+  <button type="submit" class="primary">${esc(t("common.save"))}</button>
+  <p class="hint">Saves to external <code>server.yml</code> atomically (<code>.bak.&lt;ts&gt;</code> rotation, keeps 5). Path: <code>${'$'}VIBECODER_CONFIG_DIR/server.yml</code> or <code>./config/server.yml</code>. <strong>host / port / name require container restart.</strong></p>
 </form>
 """
         )

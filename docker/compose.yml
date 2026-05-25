@@ -88,6 +88,11 @@ services:
       VIBECODER_DB_MAX_POOL: ${VIBECODER_DB_MAX_POOL:-10}
       VIBECODER_DB_SSLMODE: ${VIBECODER_DB_SSLMODE:-disable}
 
+      # v0.77.0 — SSR 기본 언어. 사용자 별 설정 없을 때 fallback.
+      #   허용 값: en, ko. 기본 en (CLAUDE.md §5 공개 문서 영문 표준).
+      #   사용자는 Settings → General → Language 에서 본인 언어 선택.
+      VIBECODER_DEFAULT_LANGUAGE: ${VIBECODER_DEFAULT_LANGUAGE:-en}
+
     # LAN 페어링 / admin 웹 / API 모두 같은 포트
     ports:
       - "${VIBE_PORT:-17880}:17880"

@@ -2,7 +2,7 @@ server:
   name: Vibe Coder Server
   host: 0.0.0.0
   port: 17880
-  version: 0.76.0
+  version: 0.77.0
 
 workspace:
   # Each project lives at <root>/<projectId>/.
@@ -92,3 +92,10 @@ webhook:
   discordUrl: ""
   telegramBotToken: ""
   telegramChatId: ""
+
+# v0.77.0 — Phase 64 i18n. SSR 다국어 fallback.
+# 사용자 별 언어 설정 (Settings → General → Language) 이 없을 때 적용.
+# Docker compose 의 VIBECODER_DEFAULT_LANGUAGE env 로 override 가능.
+#   허용 값: en, ko
+i18n:
+  defaultLanguage: en

@@ -16,6 +16,24 @@ data class ServerConfig(
     val webhook: WebhookSection = WebhookSection(),
     val webauthn: WebauthnSection = WebauthnSection(),
     val backup: BackupSection = BackupSection(),
+    /** v0.77.0 — Phase 64 i18n. SSR 기본 언어 (사용자 별 설정이 없을 때 fallback). */
+    val i18n: I18nSection = I18nSection(),
+)
+
+/**
+ * v0.77.0 — Phase 64. SSR 다국어 설정.
+ *
+ * - [defaultLanguage]: 사용자 별 설정이 없을 때 fallback. 기본 "en" — CLAUDE.md §5
+ *   "공개 문서 영문 표준" 정책 일치. Docker compose 의 `VIBECODER_DEFAULT_LANGUAGE`
+ *   env 로 override 가능 (`server.yml` 수정 없이 환경별 분리).
+ *   허용 값: "en", "ko".
+ *
+ * 신규 언어 추가 시 [com.siamakerlab.vibecoder.server.i18n.Messages] 의 SUPPORTED
+ * 와 동기. 사용자는 Settings → General → Language dropdown 에서 본인 언어 변경.
+ */
+@Serializable
+data class I18nSection(
+    val defaultLanguage: String = "en",
 )
 
 /**
