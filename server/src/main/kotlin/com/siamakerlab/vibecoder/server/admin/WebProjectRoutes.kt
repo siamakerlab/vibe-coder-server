@@ -701,29 +701,22 @@ fun Routing.webProjectRoutes(
         }
     }
 
-    // ── 콘솔: 액션 chip 전송 (form action) ─────────────────────────────
+    // ── 콘솔: 슬래시 커맨드 endpoint (v0.75.0 deprecated, no-op) ──────
+    // v0.75.0: slash chip UI 제거. endpoint 자체는 유지 — 외부 link / 북마크 호환.
+    // 사용자가 직접 POST 해도 무음으로 console 페이지로 redirect (실제 prompt 발송 X).
+    // 이유: claude --print --output-format stream-json non-interactive 모드는
+    // Claude Code 의 slash commands (/status, /cost, /model 등) 미지원 → 그냥
+    // prompt 텍스트로 처리되어 Claude 가 못 알아들음. UI 에서 chip 도 제거.
     post("/projects/{id}/console/slash") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireWriteAccessOrRedirect(sess)) return@post
         val id = call.parameters["id"]!!
-        val params = requireCsrf()
-        val cmd = params["command"]?.trim().orEmpty()
-
-        if (cmd.isBlank() || cmd !in CONSOLE_SLASH_WHITELIST) {
-            call.respondRedirect("/projects/$id/console")
-            return@post
-        }
-        runCatching { sessionManager.sendPrompt(id, "/$cmd") }
-            .onFailure { log.warn(it) { "slash chip failed: $cmd project=$id" } }
-        log.info { "slash chip: /$cmd project=$id by ${sess.username}" }
+        requireCsrf()  // CSRF 검증은 유지 — 외부 트리거 방지.
+        log.info { "slash chip ignored (deprecated v0.75.0): project=$id by ${sess.username}" }
         val target = if (id == ProjectService.SCRATCH_ID) "/chat" else "/projects/$id/console"
         call.respondRedirect(target)
     }
 }
-
-/** 콘솔 액션 chip 으로 노출할 슬래시 커맨드 화이트리스트. ServerActionHandler 와 동일. */
-private val CONSOLE_SLASH_WHITELIST: Set<String> =
-    setOf("status", "cost", "model", "clear", "memory", "plan", "compact")
 
 /**
  * 폼 flash 메시지를 query string 으로 옮길 때 쓰는 단순 URL encoder.

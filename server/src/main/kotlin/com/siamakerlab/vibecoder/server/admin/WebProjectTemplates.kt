@@ -455,14 +455,9 @@ object WebProjectTemplates {
      * 콘솔 슬래시 chip 1개. 동일 form 안에 hidden command + 버튼.
      * `danger=true` 면 빨간색 (예: /clear). v0.12.4 — csrf 토큰 함께 박음.
      */
-    private fun slashChip(projectId: String, command: String, label: String, csrf: String?, danger: Boolean = false): String {
-        val cls = if (danger) "chip chip-danger" else "chip"
-        return """<form method="post" action="/projects/${esc(projectId)}/console/slash" style="display:inline">
-          ${CsrfTokens.hiddenInput(csrf)}
-          <input type="hidden" name="command" value="${esc(command)}">
-          <button type="submit" class="$cls">${esc(label)}</button>
-        </form>"""
-    }
+    // v0.75.0 — slashChip 제거. Claude Code 의 interactive slash commands 가 vibe-coder 의
+    // non-interactive streaming mode 에서 동작 안 함. UI/wire 모두 정리.
+    @Suppress("unused") private fun slashChipRemovedInV075() {}
 
     // ────────────────────────────────────────────────────────────────────
     // /projects — 목록 + 등록 폼
@@ -757,16 +752,14 @@ $authBannerHtml
       </form>
     </div>
   </div>
-  <div class="chip-row" style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-    <small class="dim" style="margin-right:4px">슬래시:</small>
-    ${slashChip(p.id, "status", "/status", csrf)}
-    ${slashChip(p.id, "cost", "/cost", csrf)}
-    ${slashChip(p.id, "model", "/model", csrf)}
-    ${slashChip(p.id, "memory", "/memory", csrf)}
-    ${slashChip(p.id, "plan", "/plan", csrf)}
-    ${slashChip(p.id, "compact", "/compact", csrf)}
-    ${slashChip(p.id, "clear", "/clear", csrf, danger = true)}
-  </div>
+  <!--
+    v0.75.0 — slash chip 제거. vibe-coder 의 콘솔은 `claude --print --output-format
+    stream-json` non-interactive 모드라 Claude Code 의 interactive slash commands
+    (`/status` / `/cost` / `/model` / `/memory` / `/plan` / `/compact` / `/clear`)
+    가 동작하지 않음 — 그냥 prompt 텍스트로 처리되어 Claude 가 못 알아들음.
+    `/status` 의 사용량/모델 정보는 우측 상단 status snapshot (ClaudeStatusService)
+    이 별도로 표시. `/clear` 는 "새 세션" 버튼이 같은 역할.
+  -->
 </div>
 
 <div id="console-log" class="console-log" aria-live="polite"></div>

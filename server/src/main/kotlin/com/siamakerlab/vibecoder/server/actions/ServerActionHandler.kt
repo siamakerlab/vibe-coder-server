@@ -75,11 +75,18 @@ class ServerActionHandler(
     }
 
     private suspend fun invokeSlash(projectId: String, command: String) {
-        if (command !in SLASH_WHITELIST) {
-            throw ApiException(403, "action_not_allowed", "slash command '$command' is not whitelisted")
-        }
-        // Send as a normal user turn — Claude treats `/status`, `/cost`, etc. as control commands.
-        sessionManager.sendPrompt(projectId, "/$command")
+        // v0.75.0 — Claude Code 의 interactive slash commands (/status /cost /model /clear /memory
+        // /plan /compact) 는 `claude --print --output-format stream-json` non-interactive 모드에서
+        // 동작 안 함. 그냥 prompt 로 들어가면 Claude 가 "그게 뭔지 모르겠다" 응답. 모두 차단.
+        //
+        // 대안:
+        //   - 사용량/모델: `/api/projects/{id}/claude/status` (ClaudeStatusService) 가 별도 snapshot.
+        //   - 세션 reset: `/api/projects/{id}/claude/console/new` (서버 측 process 재시작).
+        //
+        // 사용자 정의 prompt-기반 actions (`actions.yml` 의 kind=prompt) 는 영향 없음 — 본 핸들러는 kind=slash 만.
+        throw ApiException(410, "slash_not_supported",
+            "Slash command '/$command' is not supported in non-interactive streaming mode. " +
+                "Use the status panel or 'New session' button instead.")
     }
 
     private suspend fun sendPrompt(projectId: String, prompt: String) {
