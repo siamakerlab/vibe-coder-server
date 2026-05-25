@@ -680,7 +680,9 @@ $errHtml
         isChat: Boolean = false,
         /** v0.18.0 — 프로젝트 등록 직후 첫 console 진입 시 자동 입력될 starter prompt. */
         starterPrompt: String? = null,
+        lang: String = "en",
     ): String {
+        val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
         val statusBadge = when {
             isAlive -> """<span class="ok">running</span>"""
             sessionId != null -> """<span class="dim">idle (will resume)</span>"""
@@ -692,14 +694,14 @@ $errHtml
         val blocking = cliMissing || authMissing
         val authBannerHtml = when {
             cliMissing -> renderClaudeBanner(
-                title = "Claude CLI 가 설치되지 않았습니다",
-                body = "프롬프트를 보내기 전에 컨테이너 안에서 vibe-doctor 로 설치를 마치세요.",
+                title = t("console.banner.cli.title"),
+                body = t("console.banner.cli.body"),
                 cmd = "docker exec -it vibe-coder-server vibe-doctor claude",
                 detail = claudeCli?.detail,
             )
             authMissing -> renderClaudeBanner(
-                title = "Claude CLI 로그인이 필요합니다",
-                body = "Claude Code 자격증명이 없어 새 세션을 시작할 수 없습니다. 도커 컨테이너에서 한 번만 로그인하면 됩니다.",
+                title = t("console.banner.auth.title"),
+                body = t("console.banner.auth.body"),
                 cmd = "docker exec -it --user vibe vibe-coder-server claude login",
                 detail = claudeAuth?.detail,
             )
@@ -711,23 +713,24 @@ $errHtml
         val projectIdJs = jsLit(p.id)
 
         val navPath = if (isChat) "/chat" else "/projects"
-        val titleSuffix = if (isChat) "General Chat" else "콘솔"
+        val titleSuffix = if (isChat) "General Chat" else t("console.title")
         val sideLinks = if (isChat) """
-      <a href="/chat/history" class="chip chip-link">히스토리 →</a>"""
+      <a href="/chat/history" class="chip chip-link">${esc(t("console.nav.history"))}</a>"""
         else """
-      <a href="/projects/${esc(p.id)}" class="chip chip-link">← 프로젝트</a>
-      <a href="/projects/${esc(p.id)}/builds" class="chip chip-link">빌드 / APK →</a>
-      <a href="/projects/${esc(p.id)}/history" class="chip chip-link">히스토리 →</a>
-      <a href="/projects/${esc(p.id)}/files" class="chip chip-link">파일 →</a>
-      <a href="/projects/${esc(p.id)}/git" class="chip chip-link">git →</a>
-      <a href="/projects/${esc(p.id)}/symbols" class="chip chip-link" title="v0.54.0+ — Kotlin/Java 정의 jump (best-effort regex)">⇢ 정의 검색</a>
-      <a href="/projects/${esc(p.id)}/agents" class="chip chip-link" title="v0.44.0+ — 별도 Claude child process 로 sub-agent 병렬 실행">@ sub-agents →</a>"""
+      <a href="/projects/${esc(p.id)}" class="chip chip-link">${esc(t("console.nav.project"))}</a>
+      <a href="/projects/${esc(p.id)}/builds" class="chip chip-link">${esc(t("projects.detail.builds"))}</a>
+      <a href="/projects/${esc(p.id)}/history" class="chip chip-link">${esc(t("console.nav.history"))}</a>
+      <a href="/projects/${esc(p.id)}/files" class="chip chip-link">${esc(t("console.nav.files"))}</a>
+      <a href="/projects/${esc(p.id)}/git" class="chip chip-link">${esc(t("console.nav.git"))}</a>
+      <a href="/projects/${esc(p.id)}/symbols" class="chip chip-link" title="${esc(t("console.nav.symbols.title"))}">${esc(t("console.nav.symbols"))}</a>
+      <a href="/projects/${esc(p.id)}/agents" class="chip chip-link" title="${esc(t("console.nav.agents.title"))}">${esc(t("console.nav.agents"))}</a>"""
 
         return AdminTemplates.shell(
             title = "${esc(p.name)} · $titleSuffix",
             username = username,
             currentPath = navPath,
             csrf = csrf,
+            lang = lang,
             body = """
 <header>
   <h1>$titleSuffix
@@ -740,17 +743,17 @@ $authBannerHtml
 <div class="card" style="margin-bottom:16px">
   <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
     <div>
-      <strong>세션:</strong> $statusBadge
+      <strong>${esc(t("console.session"))}</strong> $statusBadge
       ${if (sessionId != null) """ <span class="dim">${esc(sessionId.take(12))}…</span>""" else ""}
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       $sideLinks
       <button type="button" id="stop-btn" class="chip chip-danger" style="display:none"
-              title="현재 turn 을 즉시 중단 (같은 세션으로 다음 prompt 가능)">■ 중지</button>
+              title="${esc(t("console.stop.title"))}">${esc(t("console.stop"))}</button>
       <form method="post" action="/projects/${esc(p.id)}/console/new" style="display:inline"
-            onsubmit="return confirm('현재 세션을 종료하고 새 대화를 시작할까요?')">
+            onsubmit="return confirm('${esc(t("console.newSession.confirm")).replace("'", "&#39;")}')">
         ${CsrfTokens.hiddenInput(csrf)}
-        <button type="submit" class="chip chip-danger">새 세션</button>
+        <button type="submit" class="chip chip-danger">${esc(t("console.newSession"))}</button>
       </form>
     </div>
   </div>
@@ -767,25 +770,25 @@ $authBannerHtml
 <div id="console-log" class="console-log" aria-live="polite"></div>
 
 <div style="display:flex;justify-content:flex-end;margin-bottom:6px;gap:4px;flex-wrap:wrap">
-  <select id="agent-picker" style="font-size:12px;padding:4px 8px;background:#1a1a1a;color:var(--text);border:1px solid #333" title="v0.41.0+ — 등록된 sub-agent 를 prompt 에 dispatch (Use the @&lt;agent&gt; sub-agent to ...)">
-    <option value="">@ Agent dispatch …</option>
+  <select id="agent-picker" style="font-size:12px;padding:4px 8px;background:#1a1a1a;color:var(--text);border:1px solid #333" title="v0.41.0+ — Dispatch a registered sub-agent into the prompt">
+    <option value="">${esc(t("console.agent.placeholder"))}</option>
   </select>
-  <a href="/agents" class="chip chip-link" style="font-size:11px;margin-left:0">관리</a>
+  <a href="/agents" class="chip chip-link" style="font-size:11px;margin-left:0">${esc(t("console.agent.manage"))}</a>
   <select id="template-picker" style="font-size:12px;padding:4px 8px;background:#1a1a1a;color:var(--text);border:1px solid #333">
-    <option value="">▼ 프롬프트 템플릿 …</option>
+    <option value="">${esc(t("console.template.placeholder"))}</option>
   </select>
-  <a href="/prompts" class="chip chip-link" style="font-size:11px;margin-left:0">관리</a>
+  <a href="/prompts" class="chip chip-link" style="font-size:11px;margin-left:0">${esc(t("console.template.manage"))}</a>
 </div>
 
 <form id="prompt-form" class="prompt-form" autocomplete="off">
   <!-- maxlength 는 char 단위라 ASCII 기준 32K. 한국어 등 multi-byte 입력은
        실제 UTF-8 byte 가 32K 를 넘으면 서버에서 prompt_too_large (400) 로 거절. -->
   <textarea id="prompt-input" rows="${if (starterPrompt != null) 8 else 3}" maxlength="32768"
-            placeholder="${if (blocking) "Claude 인증을 완료한 뒤 사용할 수 있습니다." else "Claude 에게 보낼 프롬프트를 입력하세요. Ctrl+Enter 로 전송.&#10;예) Android 빈 프로젝트를 생성하고 Compose 로 'Hello' 화면을 띄워줘."}"
+            placeholder="${esc(if (blocking) t("console.input.disabled") else t("console.input.placeholder")).replace("\n", "&#10;")}"
             ${if (blocking) "disabled" else "required"}>${esc(starterPrompt)}</textarea>
   <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
-    <small class="dim">${if (blocking) "위쪽 안내의 명령을 실행한 뒤 페이지를 새로고침하세요." else "전송: Ctrl+Enter · 줄바꿈: Enter"}</small>
-    <button type="submit" class="primary" id="send-btn" style="width:auto;padding:8px 16px" ${if (blocking) "disabled" else ""}>전송</button>
+    <small class="dim">${esc(if (blocking) t("console.input.blockedHint") else t("console.input.hint"))}</small>
+    <button type="submit" class="primary" id="send-btn" style="width:auto;padding:8px 16px" ${if (blocking) "disabled" else ""}>${esc(t("console.input.send"))}</button>
   </div>
 </form>
 

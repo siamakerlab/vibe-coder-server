@@ -208,6 +208,7 @@ fun Routing.webProjectRoutes(
                 claudeAuth = env.claudeAuth,
                 csrf = sess.csrf,
                 starterPrompt = starterPrompt,
+                lang = sess.language,
             ),
             ContentType.Text.Html,
         )
@@ -670,6 +671,7 @@ fun Routing.webProjectRoutes(
                 claudeAuth = env.claudeAuth,
                 csrf = sess.csrf,
                 isChat = true,
+                lang = sess.language,
             ),
             ContentType.Text.Html,
         )
