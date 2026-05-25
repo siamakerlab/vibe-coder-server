@@ -14,6 +14,10 @@ class Notifiers(
     val webhook: WebhookNotifier? = null,
     /** v0.46.0 — Phase 25 Web Push (browser PushManager). */
     val webPush: WebPushNotifier? = null,
+    /** v0.68.0 — Phase 47 polling-based notification (Android Group C). */
+    val notifications: NotificationService? = null,
+    /** v0.68.0 — fan-out 대상 사용자 목록 provider. null 이면 BUCKET_LEGACY. */
+    val userIdsProvider: (() -> List<String?>)? = null,
 ) {
     /**
      * v0.55.0 — Phase 34 Prometheus counters get bumped alongside delivery.
@@ -29,6 +33,12 @@ class Notifiers(
             body = "프로젝트 $projectId / 빌드 $buildId — ${errorMessage ?: "성공"}",
             url = "/projects/$projectId/builds/$buildId",
         )
+        // v0.68.0 — Phase 47 Android polling.
+        notifications?.let { svc ->
+            val uids = userIdsProvider?.invoke() ?: emptyList()
+            if (status == "SUCCESS") svc.emitBuildSuccess(projectId, buildId, uids)
+            else svc.emitBuildFailed(projectId, buildId, errorMessage, uids)
+        }
         metrics?.inc(
             "vibe_build_total",
             "Build outcomes by status",

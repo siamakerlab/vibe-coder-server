@@ -232,6 +232,16 @@ object ApiPath {
     fun projectEnvFiles(projectId: String) = "/api/projects/${pathSeg(projectId)}/env-files"
     fun projectWrapper(projectId: String) = "/api/projects/${pathSeg(projectId)}/wrapper"
 
+    // ─────────────────────────────────────────────────────────────────────
+    // v0.68.0 — Phase 47. Polling-based notification system (Group C — FCM 대체).
+    // Android WorkManager 가 15분 periodic 호출, system notification 으로 표시.
+    // 모든 인증 사용자 (admin/member/viewer) 노출 — viewer 도 정보용으로 받음.
+    // ─────────────────────────────────────────────────────────────────────
+    const val NOTIFICATIONS = "/api/notifications"
+    const val NOTIFICATIONS_ACK = "/api/notifications/ack"
+    /** v0.68.0 — Optional FCM token 등록 (Firebase 설정 시만 의미). */
+    const val FCM_TOKEN_REGISTER = "/api/notifications/fcm-token"
+
     /**
      * v0.31+ — Claude 입력 자동완성.
      * Query: `prefix`, `limit`. 응답: PromptSuggestionsResponseDto.

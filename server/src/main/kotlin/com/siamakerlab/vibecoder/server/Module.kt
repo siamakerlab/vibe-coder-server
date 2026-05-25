@@ -52,6 +52,7 @@ import com.siamakerlab.vibecoder.server.claude.jsonUsageRoutes
 import com.siamakerlab.vibecoder.server.projects.jsonProjectZipRoutes
 import com.siamakerlab.vibecoder.server.projects.projectTemplateRoutes
 import com.siamakerlab.vibecoder.server.admin.jsonAdminRoutes
+import com.siamakerlab.vibecoder.server.notify.notificationRoutes
 import com.siamakerlab.vibecoder.server.emulator.emulatorRoutes
 import com.siamakerlab.vibecoder.server.emulator.vncProxyRoutes
 import com.siamakerlab.vibecoder.server.notify.emailSettingsRoutes
@@ -205,6 +206,8 @@ data class ServerContext(
     val rateLimitAuth: com.siamakerlab.vibecoder.server.security.RateLimiter,
     /** v0.60.0 — Phase 39 backup service (manual download + auto-rotation). */
     val backupService: com.siamakerlab.vibecoder.server.admin.BackupService,
+    /** v0.68.0 — Phase 47 polling-based notification (Android Group C). */
+    val notificationService: com.siamakerlab.vibecoder.server.notify.NotificationService,
 )
 
 fun Application.module(ctx: ServerContext) {
@@ -393,6 +396,8 @@ fun Application.module(ctx: ServerContext) {
         jsonProjectZipRoutes(ctx.projects, ctx.projectArchiver)
         // v0.66.0 — Phase 45 신규 프로젝트 starter 템플릿 카탈로그 (Bearer).
         projectTemplateRoutes()
+        // v0.68.0 — Phase 47 polling-based notification (Android Group C).
+        notificationRoutes(ctx.notificationService)
         // v0.67.0 — Phase 46 Group B: admin / 운영 JSON API (Bearer, admin only).
         jsonAdminRoutes(
             users = ctx.adminUserRepo,
