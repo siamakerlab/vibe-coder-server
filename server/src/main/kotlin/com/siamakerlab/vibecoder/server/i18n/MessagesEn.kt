@@ -242,6 +242,10 @@ internal object MessagesEn {
         "probe.gradle.fetchFail" to "%s (latest check failed)",
         "probe.gradle.update" to "Current %s → latest %s available",
         "probe.gradle.latest" to "%s (latest)",
+        // v1.7.17 — Claude Auth help text + workspace probe.
+        "diag.claudeAuth.help" to "Credentials file missing: %s/.credentials.json\n\nDocker — `--user vibe` required (root saves to /root/.claude):\n  docker exec -it --user vibe vibe-coder-server claude login\n\nHost — if compose mounts ~/.claude, you can log in on the host once:\n  claude login\n\nReload this page after login. refresh_token auto-renews access_token, so this is a one-time step.",
+        "diag.workspace.ok" to "read/write OK",
+        "diag.workspace.fail" to "cannot write: %s",
         "env.subsettings.title" to "Build environment settings",
         "env.subsettings.body" to "Sub-pages for keystores / SSH key / cache and more.",
         "env.subsettings.keystores" to "Keystores",

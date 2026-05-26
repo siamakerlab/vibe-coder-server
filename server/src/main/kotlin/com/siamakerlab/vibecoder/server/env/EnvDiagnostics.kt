@@ -30,7 +30,7 @@ class EnvDiagnostics(private val config: ServerConfig) {
             androidSdk = checkAndroidSdk(lang),
             git = checkGit(lang),
             claude = cli,
-            workspace = checkWorkspace(),
+            workspace = checkWorkspace(lang),
             claudeAuth = checkClaudeAuth(cli, lang),
         )
     }
@@ -137,7 +137,7 @@ class EnvDiagnostics(private val config: ServerConfig) {
                 CheckItemDto(
                     CheckStatus.ERROR, "Claude Auth",
                     t(lang, "diag.claudeAuth.loginRequired"),
-                    detail = buildClaudeAuthHelp(cfg),
+                    detail = buildClaudeAuthHelp(cfg, lang),
                 )
             }
         }
@@ -167,7 +167,7 @@ class EnvDiagnostics(private val config: ServerConfig) {
             expiresAt <= nowMs && !hasRefresh -> CheckItemDto(
                 CheckStatus.ERROR, "Claude Auth",
                 t(lang, "diag.claudeAuth.expiredHard", expiryStr),
-                detail = t(lang, "diag.claudeAuth.expiredHardDetail", buildClaudeAuthHelp(cfg), credentials.toString()),
+                detail = t(lang, "diag.claudeAuth.expiredHardDetail", buildClaudeAuthHelp(cfg, lang), credentials.toString()),
             )
             expiresAt <= nowMs -> CheckItemDto(
                 CheckStatus.OK, "Claude Auth",
@@ -238,27 +238,19 @@ class EnvDiagnostics(private val config: ServerConfig) {
             .firstOrNull { it != currentCfg.resolve(".credentials.json") && it.exists() }
     }
 
-    private fun buildClaudeAuthHelp(cfg: Path): String = buildString {
-        appendLine("자격증명 파일이 없습니다: $cfg/.credentials.json")
-        appendLine()
-        appendLine("도커 환경 — `--user vibe` 옵션 필수 (root 로 실행하면 /root/.claude 로 저장됨):")
-        appendLine("  docker exec -it --user vibe vibe-coder-server claude login")
-        appendLine()
-        appendLine("호스트 환경 (compose 가 ~/.claude 를 마운트한 경우 호스트에서 한 번만 해도 됨):")
-        appendLine("  claude login")
-        appendLine()
-        append("로그인 완료 후 이 페이지를 새로고침하세요. refresh token 으로 access token 은 자동 갱신되므로 한 번만 진행하면 됩니다.")
-    }
+    /** v1.7.17 — buildClaudeAuthHelp 도 lang 받음. 호출자가 같은 lang 전달. */
+    private fun buildClaudeAuthHelp(cfg: Path, lang: String = "en"): String =
+        com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "diag.claudeAuth.help", cfg.toString())
 
-    private fun checkWorkspace(): CheckItemDto {
+    private fun checkWorkspace(lang: String = "en"): CheckItemDto {
         val root = Path.of(config.workspace.root)
         return try {
             if (!root.exists()) Files.createDirectories(root)
             val probe = Files.createTempFile(root, "probe-", ".tmp")
             Files.deleteIfExists(probe)
-            CheckItemDto(CheckStatus.OK, "Workspace", "read/write OK", detail = root.toAbsolutePath().toString())
+            CheckItemDto(CheckStatus.OK, "Workspace", t(lang, "diag.workspace.ok"), detail = root.toAbsolutePath().toString())
         } catch (e: Throwable) {
-            CheckItemDto(CheckStatus.ERROR, "Workspace", "cannot write to ${root.toAbsolutePath()}", detail = e.message)
+            CheckItemDto(CheckStatus.ERROR, "Workspace", t(lang, "diag.workspace.fail", root.toAbsolutePath().toString()), detail = e.message)
         }
     }
 

@@ -220,6 +220,10 @@ internal object MessagesKo {
         "probe.gradle.fetchFail" to "%s (최신 조회 실패)",
         "probe.gradle.update" to "현재 %s → 최신 %s 사용가능",
         "probe.gradle.latest" to "%s (최신)",
+        // v1.7.17 — Claude Auth help text + workspace probe.
+        "diag.claudeAuth.help" to "자격증명 파일이 없습니다: %s/.credentials.json\n\n도커 환경 — `--user vibe` 옵션 필수 (root 로 실행하면 /root/.claude 로 저장됨):\n  docker exec -it --user vibe vibe-coder-server claude login\n\n호스트 환경 (compose 가 ~/.claude 를 마운트한 경우 호스트에서 한 번만 해도 됨):\n  claude login\n\n로그인 완료 후 이 페이지를 새로고침하세요. refresh token 으로 access token 은 자동 갱신되므로 한 번만 진행하면 됩니다.",
+        "diag.workspace.ok" to "읽기/쓰기 정상",
+        "diag.workspace.fail" to "쓰기 불가: %s",
         "env.subsettings.title" to "빌드환경 관련 설정",
         "env.subsettings.body" to "키스토어 / SSH 키 / 캐시 등 빌드 관련 sub-page.",
         "env.subsettings.keystores" to "키스토어",
