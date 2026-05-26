@@ -1,6 +1,61 @@
 package com.siamakerlab.vibecoder.server.projects
 
 object ClaudeMdTemplate {
+
+    /**
+     * v0.99.0 — 프로젝트 등록 시 입력 정보를 CLAUDE.md 최상단에 자동 주입.
+     *
+     * 그동안 [CONTENT] 는 const 라 모든 프로젝트가 같은 generic 파일을 받았다.
+     * 사용자가 register 시 입력한 `appName` / `packageName` 등이 CLAUDE.md 에
+     * 반영 안 돼 콘솔에서 Claude 에게 다시 "패키지명을 ... 으로 바꿔줘" 라고
+     * 수동 지시해야 했음. [render] 가 projectInfo 받으면 ## Project Info 섹션
+     * 을 prepend 해 Claude 가 첫 turn 부터 정확한 정보 사용.
+     *
+     * projectInfo null (backfill / scratch) 시 generic 버전 ([CONTENT]) 반환.
+     */
+    data class ProjectInfo(
+        val appName: String,
+        val packageName: String,
+        val projectId: String,
+        val moduleName: String,
+        val debugTask: String,
+        val sourceType: String? = null,  // "empty" | "clone"
+        val cloneUrl: String? = null,
+        val cloneBranch: String? = null,
+    )
+
+    fun render(info: ProjectInfo? = null): String {
+        if (info == null) return CONTENT
+        val cloneLine = when {
+            info.sourceType == "clone" && !info.cloneUrl.isNullOrBlank() -> {
+                val branch = info.cloneBranch?.takeIf { it.isNotBlank() }?.let { " (branch: `$it`)" } ?: ""
+                "- **Source**: cloned from `${info.cloneUrl}`$branch"
+            }
+            else -> "- **Source**: empty scaffold (no upstream)"
+        }
+        val infoBlock = """# CLAUDE.md — ${info.appName}
+
+## Project Info (auto-populated on project creation)
+
+- **App name (display)**: ${info.appName}
+- **Project ID (workspace folder)**: `${info.projectId}`
+- **Android package / applicationId**: `${info.packageName}`
+- **Default Gradle module**: `${info.moduleName}`
+- **Debug build task**: `${info.debugTask}`
+$cloneLine
+
+> When the user asks to "make this an Android app" or to scaffold build files,
+> use the values above instead of inventing new ones. In particular set
+> `android { namespace = "${info.packageName}" }` and `defaultConfig {
+> applicationId = "${info.packageName}" }`. The package name is canonical —
+> do not change it without explicit user request.
+
+"""
+        // CONTENT 의 첫 `# CLAUDE.md` 라인을 위 헤더로 치환. 본문 (Project Rules 이하) 은 그대로.
+        val body = CONTENT.substringAfter("# CLAUDE.md — Vibe Coder Android Project Rules\n\n")
+        return infoBlock + body
+    }
+
     const val CONTENT = """# CLAUDE.md — Vibe Coder Android Project Rules
 
 ## Project Rules

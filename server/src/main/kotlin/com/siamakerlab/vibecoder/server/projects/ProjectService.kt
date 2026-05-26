@@ -113,9 +113,22 @@ class ProjectService(
         }
 
         // CLAUDE.md / .claude/settings.json 은 clone 후에도 동일하게 보강 — 기존 파일 보존.
+        // v0.99.0 — 프로젝트 입력 정보 (appName / packageName / projectId / moduleName /
+        // debugTask / cloneUrl) 를 CLAUDE.md 최상단 ## Project Info 섹션에 자동 주입.
+        // Claude 가 첫 turn 부터 정확한 applicationId / namespace 사용 → 수동 재지시 불요.
         val claudeMd = srcRoot.resolve("CLAUDE.md")
         if (claudeMd.notExists()) {
-            Files.writeString(claudeMd, ClaudeMdTemplate.CONTENT)
+            val info = ClaudeMdTemplate.ProjectInfo(
+                appName = body.appName,
+                packageName = body.packageName,
+                projectId = body.projectId,
+                moduleName = DEFAULT_MODULE,
+                debugTask = DEFAULT_DEBUG_TASK,
+                sourceType = body.sourceType,
+                cloneUrl = body.cloneUrl,
+                cloneBranch = body.cloneBranch,
+            )
+            Files.writeString(claudeMd, ClaudeMdTemplate.render(info))
         }
 
         // v0.7.0 — .claude/settings.json: vibe-coder 비인터랙티브 환경 권장 정책.
