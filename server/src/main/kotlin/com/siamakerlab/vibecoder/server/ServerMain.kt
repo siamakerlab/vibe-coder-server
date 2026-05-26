@@ -197,6 +197,14 @@ fun main(args: Array<String>) {
         projectAclRepo = projectAclRepo,
         isBusyOf = sessionManager::isBusy,
     )
+    // v1.7.2 — SCRATCH 프로젝트 (__scratch__) 를 server startup 시 자동 ensure.
+    // 이전엔 사용자가 /chat 메뉴 한 번 진입해야 lazy bootstrap 되어
+    // (1) ClaudeStatusService 가 cwd 없어 quota 호출 실패 → 사이드바 pill null
+    // (2) 다른 프로젝트의 conversation history 로딩이 SCRATCH 의 ClaudeSession
+    //     초기화 path 에 부분 의존 → 빈 history
+    // 두 회귀 모두 startup eager 로 해결.
+    runCatching { projects.ensureScratchProject() }
+        .onFailure { log.warn(it) { "scratch project bootstrap failed" } }
     // v0.44.0 — Phase 23 sub-agent process pool (real multi-agent). Independent of the main
     // ClaudeSessionManager so a project can run its primary console plus multiple sub-agents
     // (reviewer / frontend / backend / ...) concurrently in the same workspace.

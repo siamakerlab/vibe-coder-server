@@ -166,8 +166,10 @@ object AdminTemplates {
   function bar(label, pct, reset) {
     var safePct = Math.max(0, Math.min(100, pct|0));
     var color = safePct >= 95 ? '#dc2626' : (safePct >= 80 ? '#e08300' : 'var(--accent, #3b82f6)');
+    // v1.7.2 — "초기화" / "resets" prefix 도 제거 (사용자 요구 — 사이드바 좁은 공간 노이즈).
+    // stripTz 가 이미 "Resets" 단어를 제거하므로 cleanReset 만 그대로 표시.
     var cleanReset = stripTz(reset);
-    var resetHtml = cleanReset ? '<div class="qp-reset">' + resetLabel + ' ' + cleanReset + '</div>' : '';
+    var resetHtml = cleanReset ? '<div class="qp-reset">' + cleanReset + '</div>' : '';
     return '<div class="qp-row"><div class="qp-row-head"><span class="qp-label">' + label + '</span><span class="qp-pct" style="color:' + color + '">' + safePct + '%</span></div>'
       + '<div class="qp-track"><div class="qp-fill" style="width:' + safePct + '%;background:' + color + '"></div></div>'
       + resetHtml + '</div>';
