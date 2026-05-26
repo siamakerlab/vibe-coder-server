@@ -148,6 +148,7 @@ internal object MessagesEn {
         "projects.new.branch" to "Branch (optional)",
         "projects.new.branchPlaceholder" to "leave blank for default (main, etc.)",
         "projects.new.cloneHint" to "<strong>Public repo</strong>: paste the https URL as-is.<br><strong>Private repo (HTTPS)</strong>: register a token at <a href=\"/settings/git-integrations\">Settings → Git integrations</a> first.<br><strong>Private repo (SSH)</strong>: use <code>git@host:owner/repo</code> + register the public key in the same settings page.",
+        "projects.new.cloneAutoHint" to "Only the clone URL is required. Project ID, app name, and package name are auto-derived from the URL and (post-clone) the build.gradle.kts inside the repo.",
         "projects.new.submit" to "Create",
         "projects.new.emptyHint" to "For empty projects, start in the console by prompting Claude (e.g. \"Build me an Android app\").",
         "projects.releaseNotes.placeholder.git" to "leave blank — Claude infers from git log",

@@ -149,12 +149,23 @@ data class ProjectDto(
 
 @Serializable
 data class RegisterProjectRequestDto(
-    /** Folder name under workspace (= projectId). Kebab-case recommended. */
-    val projectId: String,
-    /** Human display name shown in lists. */
-    val appName: String,
-    /** Android applicationId, e.g. `com.siamakerlab.myapp`. */
-    val packageName: String,
+    /**
+     * Folder name under workspace (= projectId). Kebab-case recommended.
+     * v1.7.0 — sourceType=clone 일 때 빈 문자열이면 cloneUrl 의 마지막 segment
+     * (`.git` strip + sanitize) 에서 자동 도출.
+     */
+    val projectId: String = "",
+    /**
+     * Human display name shown in lists.
+     * v1.7.0 — clone path 에선 비워두면 자동 (projectId 첫 글자 capitalized).
+     */
+    val appName: String = "",
+    /**
+     * Android applicationId, e.g. `com.siamakerlab.myapp`.
+     * v1.7.0 — clone path 에선 비워두면 자동 (clone 후 build.gradle.kts /
+     * AndroidManifest.xml 에서 추출 시도, 실패 시 `com.example.<projectId>` placeholder).
+     */
+    val packageName: String = "",
     /** Optional keystore generation request. If null, no keystore is created. */
     val keystore: KeystoreRequestDto? = null,
     /**

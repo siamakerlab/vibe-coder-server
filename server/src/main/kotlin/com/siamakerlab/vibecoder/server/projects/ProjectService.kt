@@ -69,7 +69,13 @@ class ProjectService(
 
     fun consumeStarterPrompt(projectId: String): String? = starterPromptByProject.remove(projectId)
 
-    fun register(body: RegisterProjectRequestDto): ProjectDto {
+    fun register(originalBody: RegisterProjectRequestDto): ProjectDto {
+        // v1.7.0 — clone path 자동 채움. cloneUrl 만으로 등록 가능.
+        // empty path (사용자 직접 입력 프로젝트) 는 기존처럼 모든 필드 필수.
+        var body = if (originalBody.sourceType.equals("clone", ignoreCase = true)) {
+            autoFillFromCloneUrl(originalBody)
+        } else originalBody
+
         require(body.projectId.isNotBlank()) { "projectId required" }
         // v0.12.4 — 클라이언트 폼 regex 와 동일한 패턴을 서버에서도 강제.
         // 이전엔 path separator 만 차단해 공백/대문자/특수문자 입력이 통과돼서
@@ -112,6 +118,15 @@ class ProjectService(
             log.info { "cloning $url → $srcRoot (branch=${body.cloneBranch ?: "(default)"})" }
             svc.clone(url, srcRoot, body.cloneBranch) { line ->
                 log.debug { "[clone:${body.projectId}] $line" }
+            }
+            // v1.7.0 — clone 완료 후 build.gradle.kts / AndroidManifest.xml 에서
+            // 진짜 packageName 추출 시도. 성공 시 placeholder (com.example.<projectId>)
+            // 를 덮어씀. 실패 시 placeholder 그대로 (사용자가 후속 콘솔에서 수정 가능).
+            if (body.packageName.startsWith("com.example.")) {
+                detectPackageFromClonedRepo(srcRoot)?.let { detected ->
+                    log.info { "[clone:${body.projectId}] auto-detected packageName: $detected" }
+                    body = body.copy(packageName = detected)
+                }
             }
         } else if (srcRoot.notExists()) {
             srcRoot.createDirectories()
@@ -309,6 +324,91 @@ class ProjectService(
             updatedAt = updatedAt,
             busy = busy,
         )
+
+    /**
+     * v1.7.0 — clone path 에서 cloneUrl 만 받은 경우 빈 필드 자동 채움.
+     *  - projectId: cloneUrl 의 마지막 segment 의 `.git` strip + sanitize.
+     *    예: `git@gitea.wody.kr:wody/vibe-coder-android.git` → `vibe-coder-android`
+     *  - appName: projectId 첫 글자 대문자 (또는 그대로) — 사용자 후속 수정 가능.
+     *  - packageName: clone 전엔 placeholder `com.example.<projectId>`. clone
+     *    완료 후 build.gradle.kts / AndroidManifest.xml 에서 진짜 값 추출 시도 →
+     *    성공 시 [register] 가 body.copy(packageName = ...) 로 덮어씀.
+     */
+    private fun autoFillFromCloneUrl(body: RegisterProjectRequestDto): RegisterProjectRequestDto {
+        val url = body.cloneUrl?.trim().orEmpty()
+        if (url.isEmpty()) return body
+        val derivedId = projectIdFromCloneUrl(url)
+        val pid = body.projectId.ifBlank { derivedId }
+        val name = body.appName.ifBlank { derivedId }
+        val pkg = body.packageName.ifBlank {
+            // sanitize for package name segment — 알파벳/숫자만, 다른 문자 → 제거.
+            val segment = derivedId.lowercase().replace(Regex("[^a-z0-9]"), "")
+                .ifBlank { "app" }
+            "com.example.$segment"
+        }
+        return body.copy(projectId = pid, appName = name, packageName = pkg)
+    }
+
+    /**
+     * v1.7.0 — cloneUrl 의 마지막 segment 에서 projectId 도출.
+     * HTTPS / SSH / git+ssh / gitea 등 다양한 형식 지원.
+     */
+    private fun projectIdFromCloneUrl(url: String): String {
+        var s = url.trim().removeSuffix(".git").removeSuffix("/")
+        val lastSlash = s.lastIndexOf('/')
+        val lastColon = s.lastIndexOf(':')
+        val cut = maxOf(lastSlash, lastColon)
+        if (cut >= 0) s = s.substring(cut + 1)
+        // PROJECT_ID_PATTERN 에 맞게 sanitize.
+        var sanitized = s.lowercase()
+            .replace(Regex("[^a-z0-9._-]"), "-")
+            .replace(Regex("^[._-]+"), "")
+            .replace(Regex("[._-]+$"), "")
+            .take(64)
+        if (sanitized.isEmpty() || !sanitized[0].isLetterOrDigit()) {
+            sanitized = "repo-${System.currentTimeMillis() % 100000}"
+        }
+        return sanitized
+    }
+
+    /**
+     * v1.7.0 — clone 된 repo 에서 Android packageName 추출 시도.
+     *
+     * 검색 순서 (재귀 walk depth ≤ 5):
+     *  1. build.gradle.kts 의 `applicationId = "..."` 또는 `namespace = "..."`
+     *  2. build.gradle (groovy) 의 `applicationId "..."` 또는 `namespace "..."`
+     *  3. AndroidManifest.xml 의 `package="..."` (legacy)
+     *
+     * 첫 매치 반환. 모두 실패 시 null.
+     */
+    private fun detectPackageFromClonedRepo(root: Path): String? {
+        if (!Files.isDirectory(root)) return null
+        val gradleRegex = Regex("""(?:applicationId|namespace)\s*[=]?\s*["']([a-zA-Z][a-zA-Z0-9_.]+)["']""")
+        val manifestRegex = Regex("""package\s*=\s*["']([a-zA-Z][a-zA-Z0-9_.]+)["']""")
+        return runCatching {
+            Files.walk(root, 5).use { stream ->
+                for (path in stream) {
+                    if (Files.isDirectory(path)) continue
+                    val name = path.fileName?.toString() ?: continue
+                    val isGradle = name == "build.gradle.kts" || name == "build.gradle"
+                    val isManifest = name == "AndroidManifest.xml"
+                    if (!isGradle && !isManifest) continue
+                    val text = runCatching { Files.readString(path) }.getOrNull() ?: continue
+                    val match = if (isGradle) {
+                        gradleRegex.find(text)
+                    } else {
+                        manifestRegex.find(text)
+                    }
+                    if (match != null) {
+                        val pkg = match.groupValues[1]
+                        // Android applicationId 규칙: 최소 1개 `.` 필요.
+                        if (pkg.contains('.')) return@use pkg
+                    }
+                }
+                null
+            }
+        }.getOrNull()
+    }
 
     companion object {
         const val DEFAULT_MODULE = "app"

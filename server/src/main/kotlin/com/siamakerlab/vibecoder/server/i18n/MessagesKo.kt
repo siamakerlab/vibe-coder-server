@@ -126,6 +126,7 @@ internal object MessagesKo {
         "projects.new.branch" to "Branch (선택)",
         "projects.new.branchPlaceholder" to "비우면 default (main 등)",
         "projects.new.cloneHint" to "<strong>Public 레포</strong>: https URL 그대로 입력.<br><strong>Private 레포 (HTTPS)</strong>: <a href=\"/settings/git-integrations\">환경설정 → Git 통합</a> 에서 토큰 등록 후 시도.<br><strong>Private 레포 (SSH)</strong>: <code>git@host:owner/repo</code> 형식 + 위 환경설정에서 공개키 등록.",
+        "projects.new.cloneAutoHint" to "Clone URL 만 입력하면 됩니다. 프로젝트 ID / 앱 이름 / 패키지명은 URL + clone 후 build.gradle.kts 에서 자동 도출됩니다.",
         "projects.new.submit" to "생성",
         "projects.new.emptyHint" to "빈 프로젝트의 경우 콘솔에서 Claude 에게 \"Android 앱을 만들어줘\" 같은 프롬프트로 시작합니다.",
         "projects.releaseNotes.placeholder.git" to "비우면 Claude 가 git log 등으로 추론",

@@ -569,53 +569,83 @@ $errHtml
     <h2>${esc(t("projects.new.title"))}</h2>
     <form method="post" action="/projects" id="new-project-form">
       ${CsrfTokens.hiddenInput(csrf)}
-      <label>${esc(t("projects.new.template"))}
-        <select name="templateId">
-          ${com.siamakerlab.vibecoder.server.projects.ProjectTemplates.all.joinToString("") {
-              """<option value="${esc(it.id)}">${esc(it.title)}</option>"""
-          }}
-        </select>
-      </label>
-      <label>${esc(t("projects.new.idLabel"))}
-        <input name="projectId" required pattern="[a-z0-9][a-z0-9._-]*" maxlength="64"
-               placeholder="my-android-app">
-      </label>
-      <label>${esc(t("projects.new.appName"))}
-        <input name="appName" required maxlength="80" placeholder="My Android App">
-      </label>
-      <label>${esc(t("projects.new.packageName"))}
-        <input name="packageName" required pattern="[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+"
-               placeholder="com.example.myapp">
-      </label>
 
-      <fieldset style="margin-top:10px;border:1px solid #333;padding:10px;border-radius:6px">
+      <!-- v1.7.0 — 소스 유형 선택을 가장 먼저. clone 선택 시 다른 fields 자동 hide +
+           required 해제 (cloneUrl 만 입력하면 됨). -->
+      <fieldset style="border:1px solid #333;padding:10px;border-radius:6px">
         <legend style="padding:0 6px;font-size:13px">${esc(t("projects.new.source"))}</legend>
         <label style="display:flex;gap:8px;align-items:center;cursor:pointer">
           <input type="radio" name="sourceType" value="empty" checked
-                 onclick="document.getElementById('clone-fields').style.display='none'">
+                 onclick="toggleSource('empty')">
           <span><strong>${esc(t("projects.new.empty"))}</strong>${esc(t("projects.new.emptyDesc"))}</span>
         </label>
         <label style="display:flex;gap:8px;align-items:center;cursor:pointer;margin-top:6px">
           <input type="radio" name="sourceType" value="clone"
-                 onclick="document.getElementById('clone-fields').style.display='block'">
+                 onclick="toggleSource('clone')">
           <span><strong>${esc(t("projects.new.clone"))}</strong>${esc(t("projects.new.cloneDesc"))}</span>
         </label>
-
-        <div id="clone-fields" style="display:none;margin-top:10px;padding-left:24px">
-          <label>${esc(t("projects.new.cloneUrl"))}
-            <input name="cloneUrl" type="text"
-                   placeholder="https://github.com/owner/repo.git  /  git@github.com:owner/repo.git">
-          </label>
-          <label>${esc(t("projects.new.branch"))}
-            <input name="cloneBranch" type="text" placeholder="${esc(t("projects.new.branchPlaceholder"))}">
-          </label>
-          <p class="hint" style="font-size:12px">${t("projects.new.cloneHint")}</p>
-        </div>
       </fieldset>
+
+      <!-- clone path: cloneUrl 만 필수 + branch optional. 다른 정보는 자동 도출. -->
+      <div id="clone-fields" style="display:none;margin-top:10px">
+        <label>${esc(t("projects.new.cloneUrl"))}
+          <input name="cloneUrl" type="text"
+                 placeholder="https://github.com/owner/repo.git  /  git@github.com:owner/repo.git">
+        </label>
+        <label>${esc(t("projects.new.branch"))}
+          <input name="cloneBranch" type="text" placeholder="${esc(t("projects.new.branchPlaceholder"))}">
+        </label>
+        <p class="hint" style="font-size:12px;margin:6px 0 0">${esc(t("projects.new.cloneAutoHint"))}</p>
+      </div>
+
+      <!-- empty path: 모든 필드 명시 입력. -->
+      <div id="empty-fields" style="margin-top:10px">
+        <label>${esc(t("projects.new.template"))}
+          <select name="templateId">
+            ${com.siamakerlab.vibecoder.server.projects.ProjectTemplates.all.joinToString("") {
+                """<option value="${esc(it.id)}">${esc(it.title)}</option>"""
+            }}
+          </select>
+        </label>
+        <label>${esc(t("projects.new.idLabel"))}
+          <input name="projectId" required pattern="[a-z0-9][a-z0-9._-]*" maxlength="64"
+                 placeholder="my-android-app">
+        </label>
+        <label>${esc(t("projects.new.appName"))}
+          <input name="appName" required maxlength="80" placeholder="My Android App">
+        </label>
+        <label>${esc(t("projects.new.packageName"))}
+          <input name="packageName" required pattern="[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+"
+                 placeholder="com.example.myapp">
+        </label>
+      </div>
 
       <button type="submit" class="primary" style="margin-top:10px">${esc(t("projects.new.submit"))}</button>
       <p class="hint">${esc(t("projects.new.emptyHint"))}</p>
     </form>
+    <script>
+      function toggleSource(kind) {
+        var cloneFields = document.getElementById('clone-fields');
+        var emptyFields = document.getElementById('empty-fields');
+        var emptyInputs = emptyFields.querySelectorAll('input[required], input[pattern]');
+        if (kind === 'clone') {
+          cloneFields.style.display = 'block';
+          emptyFields.style.display = 'none';
+          // 빈 / pattern 필드 의 required + pattern 일시 비활성 — HTML5 validation 통과.
+          emptyInputs.forEach(function(i) {
+            if (i.hasAttribute('required')) { i.dataset._req = '1'; i.removeAttribute('required'); }
+            if (i.hasAttribute('pattern')) { i.dataset._pat = i.getAttribute('pattern'); i.removeAttribute('pattern'); }
+          });
+        } else {
+          cloneFields.style.display = 'none';
+          emptyFields.style.display = 'block';
+          emptyInputs.forEach(function(i) {
+            if (i.dataset._req) { i.setAttribute('required', ''); delete i.dataset._req; }
+            if (i.dataset._pat) { i.setAttribute('pattern', i.dataset._pat); delete i.dataset._pat; }
+          });
+        }
+      }
+    </script>
   </div>
 </section>
 """

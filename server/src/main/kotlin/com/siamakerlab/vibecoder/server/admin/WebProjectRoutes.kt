@@ -96,12 +96,15 @@ fun Routing.webProjectRoutes(
         val cloneBranch = params["cloneBranch"]?.trim()?.ifBlank { null }
         val templateId = params["templateId"]?.trim()?.ifBlank { null }
 
+        // v1.7.0 — clone path 에선 cloneUrl 만 필수. projectId/appName/packageName
+        // 은 ProjectService.register 가 cloneUrl + clone 후 build.gradle.kts 에서 자동 도출.
+        val isClone = sourceType == "clone"
         val basicErr = when {
-            projectId.isBlank() -> Messages.t(sess.language, "flash.form.projectIdRequired")
-            appName.isBlank() -> Messages.t(sess.language, "flash.form.appNameRequired")
-            packageName.isBlank() -> Messages.t(sess.language, "flash.form.packageNameRequired")
-            sourceType == "clone" && cloneUrl.isNullOrBlank() ->
+            isClone && cloneUrl.isNullOrBlank() ->
                 Messages.t(sess.language, "flash.form.cloneUrlRequired")
+            !isClone && projectId.isBlank() -> Messages.t(sess.language, "flash.form.projectIdRequired")
+            !isClone && appName.isBlank() -> Messages.t(sess.language, "flash.form.appNameRequired")
+            !isClone && packageName.isBlank() -> Messages.t(sess.language, "flash.form.packageNameRequired")
             else -> null
         }
         if (basicErr != null) {
