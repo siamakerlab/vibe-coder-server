@@ -22,7 +22,14 @@ class StatusService(
             osName = System.getProperty("os.name"),
             javaVersion = System.getProperty("java.version"),
             workspaceRoot = workspaceRoot.toString(),
-            projectCount = projectRepo.count(),
+            // v1.4.2 — __scratch__ ghost 프로젝트 제외. projectRepo.count() 는 raw
+            // DB row count 라 SCRATCH 포함 → Dashboard 의 "Projects" 메트릭이
+            // 실제 사용자 프로젝트 + 1 로 잘못 표시되던 문제. list().size 도
+            // 옵션이지만 buildRepo.lastForProject 가 N번 호출되어 비효율 → 직접
+            // ProjectRepository.list() 의 raw row 만 필터.
+            projectCount = projectRepo.list().count {
+                it.id != com.siamakerlab.vibecoder.server.projects.ProjectService.SCRATCH_ID
+            },
             runningTaskCount = buildRepo.countRunning(),
             claudeAvailable = envSnap.claude.status == com.siamakerlab.vibecoder.shared.dto.CheckStatus.OK,
             androidSdkAvailable = envSnap.androidSdk.status == com.siamakerlab.vibecoder.shared.dto.CheckStatus.OK,

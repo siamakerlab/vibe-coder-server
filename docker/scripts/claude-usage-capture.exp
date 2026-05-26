@@ -31,50 +31,41 @@ if {[catch {cd $cwd} err]} {
     exit 1
 }
 
-# Claude TUI spawn. --dangerously-skip-permissions 는 첫 부팅 trust 다이얼로그 회피.
+# v1.4.2 — 순수 timing 기반 시퀀스. ANSI cursor positioning 으로 단어가 분리되어
+# expect 패턴 매칭이 불안정한 문제를 우회. spawn 후 정해진 시간만 sleep + 입력.
+# 화면이 아직 안 그려졌어도 다음 입력이 buffer 에 쌓여 순차 처리됨.
 spawn -noecho claude --dangerously-skip-permissions
 
-# init 완료 대기 — TUI 가 prompt-ready 가 되면 보통 다음 패턴 중 하나가 나옴.
-expect {
-    -re "for shortcuts" {}
-    -re "Bypassing Permissions" {}
-    -re "What is the relative path" {}
-    -re "Try one of these" {}
-    timeout {
-        puts stderr "expect: init timeout"
-        send "\x03"
-        catch {close}
-        exit 1
-    }
-}
-sleep 0.8
+# trust dialog ("Yes, I accept") 통과 — 항상 첫 화면.
+sleep 3.5
+send "2\r"
+sleep 5.0
 
-# /status dialog 열기 — /usage 도 같은 dialog 첫 화면 (Settings 탭) 으로 시작.
-# 화살표 3번 우측 이동 → Settings → Status → Config → Usage.
+# /status slash command → 5탭 TUI dialog (Settings 탭 시작).
 send "/status\r"
-sleep 1.5
+sleep 2.5
 
-# → 화살표 3 번 (Settings 가 0번째라 3 번이면 Usage)
-send "\x1b\[C"; sleep 0.35
-send "\x1b\[C"; sleep 0.35
-send "\x1b\[C"; sleep 0.8
+# 화살표 우 3번 → Usage 탭 (Settings → Status → Config → Usage)
+send "\x1b\[C"; sleep 0.5
+send "\x1b\[C"; sleep 0.5
+send "\x1b\[C"; sleep 1.5
 
-# 이제 Usage 탭 화면 render 완료. stdout 으로 log 시작 — 다음 incoming bytes 부터 캡처.
+# Usage 탭 화면 render 완료. log_user 1 로 다음 incoming bytes 부터 stdout 캡처.
 log_user 1
 
-# 작은 nudge 로 화면 redraw 유도 (이미 화면이 그려져있어도 expect 가 늦게 본 buffer 를 다시 flush).
-# 'd' / 'w' 가 Usage 탭의 'day' / 'week' 토글 — 한 번 누르면 화면이 다시 그려지면서
-# 우리 stdout 에 정확한 frame 이 흘러들어옴.
+# 'w' 키 — Current week 토글로 화면 redraw 유발 (이미 그려진 화면도 다시 flush).
 send "w"
-sleep 1.2
+sleep 1.5
+send "d"
+sleep 1.5
 send "w"
-sleep 1.0
+sleep 1.5
 
-# capture 충분. log 중단 후 정리.
+# capture 종료, dialog 닫기 + Claude 종료.
 log_user 0
 send "\x1b"      ;# Esc — dialog 닫기
 sleep 0.4
-send "\x04"      ;# Ctrl-D — Claude TUI 종료
+send "\x04"      ;# Ctrl-D
 expect {
     eof {}
     timeout { catch {close} }
