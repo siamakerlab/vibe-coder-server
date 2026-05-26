@@ -972,7 +972,16 @@ internal object MessagesKo {
         "console.filter.cat.done" to "턴 종료",
         "console.filter.cat.replay" to "Replay 마커",
         "console.filter.cat.ws" to "WebSocket 연결",
+        "console.filter.cat.todo" to "할 일 (TaskCreate / TaskUpdate / TodoWrite)",
         "console.filter.reset" to "모두 표시",
+
+        // ─────────────────────────────────────────────── console todo panel (v1.3.0)
+        "console.todo.title" to "할 일",
+        "console.todo.empty" to "Claude 가 TaskCreate / TaskUpdate / TodoWrite 를 호출하면 여기에 표시됩니다.",
+        "console.todo.summary.done" to "완료",
+        "console.todo.summary.active" to "진행 중",
+        "console.todo.toggle.show" to "할 일 패널 펴기",
+        "console.todo.toggle.hide" to "할 일 패널 접기",
 
         // ─────────────────────────────────────────────── console busy badge (v0.98.0)
         "console.busy.responding" to "● 응답중",

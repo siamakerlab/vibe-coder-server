@@ -854,6 +854,7 @@ $authBannerHtml
         <label style="display:block;padding:2px 0;cursor:pointer"><input type="checkbox" class="filter-cb" data-cat="done" checked> ${esc(t("console.filter.cat.done"))}</label>
         <label style="display:block;padding:2px 0;cursor:pointer"><input type="checkbox" class="filter-cb" data-cat="replay" checked> ${esc(t("console.filter.cat.replay"))}</label>
         <label style="display:block;padding:2px 0;cursor:pointer"><input type="checkbox" class="filter-cb" data-cat="ws" checked> ${esc(t("console.filter.cat.ws"))}</label>
+        <label style="display:block;padding:2px 0;cursor:pointer"><input type="checkbox" class="filter-cb" data-cat="todo" checked> ${esc(t("console.filter.cat.todo"))}</label>
       </div>
     </div>
     <div style="margin-top:6px;display:flex;justify-content:flex-end">
@@ -874,6 +875,23 @@ $authBannerHtml
   </select>
   <a href="/prompts" class="chip chip-link" style="font-size:11px;margin-left:0">${esc(t("console.template.manage"))}</a>
 </div>
+
+<!--
+  v1.3.0 — 입력창 바로 위에 Todo 요약 패널.
+  Claude 가 호출한 TaskCreate / TaskUpdate / TodoWrite 이벤트를 별도 store 로 누적해
+  진행 상황을 한눈에 보여준다. <details> 의 open 상태는 localStorage 영속.
+  콘솔 카드 표시 여부는 필터의 'todo' 카테고리로 별도 토글 가능.
+-->
+<details id="todo-panel" style="margin-bottom:6px;font-size:12px">
+  <summary style="cursor:pointer;color:var(--text-dim);padding:4px 0;user-select:none">
+    📋 <span id="todo-panel-title">${esc(t("console.todo.title"))}</span>
+    <span id="todo-panel-summary" class="dim" style="font-size:11px"></span>
+  </summary>
+  <div style="padding:8px 10px;background:rgba(255,255,255,0.03);border:1px solid #2a2a2a;border-radius:6px;margin-top:4px;max-height:200px;overflow:auto">
+    <div id="todo-panel-empty" class="dim" style="font-size:11px">${esc(t("console.todo.empty"))}</div>
+    <ul id="todo-panel-list" style="list-style:none;margin:0;padding:0;display:none"></ul>
+  </div>
+</details>
 
 <form id="prompt-form" class="prompt-form" autocomplete="off">
   <!-- maxlength 는 char 단위라 ASCII 기준 32K. 한국어 등 multi-byte 입력은
@@ -907,7 +925,7 @@ $authBannerHtml
   // append(cls, label, body, cat) → row.dataset.filterCat = cat, 필터 적용.
   var FILTER_KEY = 'vibe-console-filter-' + projectId;
   var MANDATORY_CATS = ['assistant', 'error', 'system'];
-  var OPTIONAL_CATS = ['tool_use', 'tool_result', 'session', 'done', 'replay', 'ws'];
+  var OPTIONAL_CATS = ['tool_use', 'tool_result', 'session', 'done', 'replay', 'ws', 'todo'];
   var filterState = (function() {
     try {
       var raw = localStorage.getItem(FILTER_KEY);
@@ -1009,6 +1027,120 @@ $authBannerHtml
     if (btn) btn.disabled = true;
   }
 
+  // v1.3.0 — Todo 패널 store.
+  // Claude 가 호출한 TaskCreate / TaskUpdate / TodoWrite 를 누적해
+  // 입력창 위 패널에 진행 상황을 렌더.
+  // 키 우선순위: taskId > subject (재호출 시 동일 항목으로 갱신되도록).
+  // localStorage 영속은 의도적으로 생략 — 세션 단위 휘발 (서버 재시작 / 새 세션 시 초기화).
+  // 콘솔 카드 자체는 별도로 cat='todo' 로 분류돼 필터에서 토글 가능.
+  var TODO_PANEL_OPEN_KEY = 'vibe-todo-panel-open-' + projectId;
+  var todoStore = [];
+
+  function todoStatusIcon(status) {
+    if (status === 'completed' || status === 'done') return { icon: '✓', color: '#5fb95f' };
+    if (status === 'in_progress' || status === 'inprogress' || status === 'active') return { icon: '▸', color: '#f3c14a' };
+    if (status === 'cancelled' || status === 'canceled' || status === 'skipped') return { icon: '✕', color: '#888' };
+    return { icon: '○', color: '#888' };
+  }
+
+  function todoUpsert(key, fields) {
+    for (var i = 0; i < todoStore.length; i++) {
+      if (todoStore[i].key === key) {
+        if (fields.subject) todoStore[i].subject = fields.subject;
+        if (fields.status) todoStore[i].status = fields.status;
+        todoStore[i].ts = Date.now();
+        return;
+      }
+    }
+    todoStore.push({
+      key: key,
+      subject: fields.subject || '(no subject)',
+      status: fields.status || 'pending',
+      ts: Date.now()
+    });
+  }
+
+  function updateTodoStore(name, input) {
+    var i = input || {};
+    if (name === 'TodoWrite') {
+      // 전체 교체. TodoWrite 는 항상 todos 배열로 완전한 현재 상태를 보냄.
+      var arr = Array.isArray(i.todos) ? i.todos : [];
+      todoStore = arr.map(function(t, idx) {
+        return {
+          key: (t.id != null ? String(t.id) : 'tw-' + idx + '-' + (t.content || t.subject || '').slice(0, 24)),
+          subject: t.content || t.subject || t.description || t.activeForm || '(no subject)',
+          status: t.status || 'pending',
+          ts: Date.now()
+        };
+      });
+    } else if (name === 'TaskCreate') {
+      var ckey = (i.taskId != null ? String(i.taskId) : null) ||
+                 (i.subject ? 'sub:' + i.subject : null) ||
+                 ('tc-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8));
+      todoUpsert(ckey, {
+        subject: i.subject || i.description || '(no subject)',
+        status: i.status || 'pending'
+      });
+    } else if (name === 'TaskUpdate') {
+      var ukey = (i.taskId != null ? String(i.taskId) : null) ||
+                 (i.subject ? 'sub:' + i.subject : null);
+      if (!ukey) return;  // 매칭 키가 없으면 무시.
+      todoUpsert(ukey, {
+        subject: i.subject || null,
+        status: i.status || null
+      });
+    }
+    renderTodoPanel();
+  }
+
+  function renderTodoPanel() {
+    var listEl = document.getElementById('todo-panel-list');
+    var emptyEl = document.getElementById('todo-panel-empty');
+    var summaryEl = document.getElementById('todo-panel-summary');
+    if (!listEl || !emptyEl || !summaryEl) return;
+    if (todoStore.length === 0) {
+      listEl.style.display = 'none';
+      emptyEl.style.display = '';
+      summaryEl.textContent = '';
+      return;
+    }
+    emptyEl.style.display = 'none';
+    listEl.style.display = '';
+    var done = 0, active = 0;
+    var html = '';
+    for (var j = 0; j < todoStore.length; j++) {
+      var t = todoStore[j];
+      var si = todoStatusIcon(t.status);
+      if (t.status === 'completed' || t.status === 'done') done++;
+      else if (t.status === 'in_progress' || t.status === 'inprogress' || t.status === 'active') active++;
+      var strike = (t.status === 'completed' || t.status === 'done') ? 'text-decoration:line-through;opacity:0.6;' : '';
+      html += '<li style="padding:3px 0;display:flex;gap:8px;align-items:flex-start;font-size:12px">' +
+              '<span style="color:' + si.color + ';font-family:monospace;min-width:14px;text-align:center">' + si.icon + '</span>' +
+              '<span style="' + strike + 'flex:1;word-break:break-word">' + escHtml(t.subject) + '</span>' +
+              (t.status && t.status !== 'pending' && t.status !== 'completed' && t.status !== 'done'
+                ? '<span class="dim" style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px">' + escHtml(t.status) + '</span>'
+                : '') +
+              '</li>';
+    }
+    listEl.innerHTML = html;
+    var parts = [done + '/' + todoStore.length + ' ' + ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.todo.summary.done"))}];
+    if (active > 0) parts.push(active + ' ' + ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.todo.summary.active"))});
+    summaryEl.textContent = '— ' + parts.join(' · ');
+  }
+
+  // 패널 open/close 상태 영속.
+  (function initTodoPanel() {
+    var panel = document.getElementById('todo-panel');
+    if (!panel) return;
+    var saved;
+    try { saved = localStorage.getItem(TODO_PANEL_OPEN_KEY); } catch (e) { saved = null; }
+    // 기본값: 열림 (저장된 값 없으면 open).
+    panel.open = (saved === null) ? true : (saved === '1');
+    panel.addEventListener('toggle', function() {
+      try { localStorage.setItem(TODO_PANEL_OPEN_KEY, panel.open ? '1' : '0'); } catch (e) {}
+    });
+  })();
+
   // v0.13.0 — tool_use 도구별 친화적 렌더링. raw JSON 대신 읽기 쉬운 한 줄.
   function clip(s, n) {
     s = String(s == null ? '' : s);
@@ -1074,7 +1206,10 @@ $authBannerHtml
       detectAuthFailure(f.text);
     } else if (t === 'console_tool_use') {
       var rendered = renderToolUse(f.toolName, f.input);
-      append('tool', rendered.label, rendered.body, 'tool_use');
+      // v1.3.0 — task 계열 tool 은 별도 'todo' 카테고리로 분류해 콘솔/패널 양쪽에 반영.
+      var isTodoTool = (f.toolName === 'TaskCreate' || f.toolName === 'TaskUpdate' || f.toolName === 'TodoWrite');
+      append('tool', rendered.label, rendered.body, isTodoTool ? 'todo' : 'tool_use');
+      if (isTodoTool) updateTodoStore(f.toolName, f.input);
     } else if (t === 'console_tool_result') {
       var out = typeof f.output === 'string' ? f.output : JSON.stringify(f.output);
       var resultLabel = f.isError ? 'tool-err' : '✓ result';

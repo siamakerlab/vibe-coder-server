@@ -995,7 +995,16 @@ internal object MessagesEn {
         "console.filter.cat.done" to "Turn completion",
         "console.filter.cat.replay" to "Replay markers",
         "console.filter.cat.ws" to "WebSocket connection",
+        "console.filter.cat.todo" to "Todos (TaskCreate / TaskUpdate / TodoWrite)",
         "console.filter.reset" to "Show all",
+
+        // ─────────────────────────────────────────────── console todo panel (v1.3.0)
+        "console.todo.title" to "Todos",
+        "console.todo.empty" to "No todos yet — appears when Claude calls TaskCreate / TaskUpdate / TodoWrite.",
+        "console.todo.summary.done" to "done",
+        "console.todo.summary.active" to "active",
+        "console.todo.toggle.show" to "Show todo panel",
+        "console.todo.toggle.hide" to "Hide todo panel",
 
         // ─────────────────────────────────────────────── console busy badge (v0.98.0)
         "console.busy.responding" to "● Responding",

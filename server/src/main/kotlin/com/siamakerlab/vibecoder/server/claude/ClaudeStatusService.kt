@@ -91,24 +91,58 @@ class ClaudeStatusService(
     }
 
     private suspend fun runStatusCommand(projectId: String): ParsedStatus = withContext(Dispatchers.IO) {
+        // v1.3.2 — Claude Code 2.1.x 의 `/status` 는 5탭 TUI 의 Settings 탭만 출력 →
+        // quota 정보가 raw output 에 들어오지 않음. quota 는 별도 `/usage` slash
+        // command 의 결과에 있음. 두 출력을 모두 캡처해서 합산 파싱.
+        //
+        //   /status  → model / login method (= plan) / cwd / version
+        //   /usage   → Current session N% + Resets <time>,
+        //              Current week (all models) N% + Resets <time>
+        //
+        // TUI escape sequences (`─`, `█`, ANSI color) 가 섞여 들어오므로
+        // [stripAnsiAndBoxChars] 로 정리 후 parsing.
+        val statusRaw = runOneSlashCommand(projectId, "/status")
+        val usageRaw = runOneSlashCommand(projectId, "/usage")
+        val combined = buildString {
+            append(statusRaw)
+            append("\n\n--- /usage ---\n")
+            append(usageRaw)
+        }
+        rawSnapshots[projectId] = RawSnapshot(text = combined.take(64 * 1024), capturedAt = Instant.now())
+        // Two-pass parse — /status 결과로 model/plan, /usage 결과로 session/weekly.
+        val statusParsed = parseOutput(stripAnsiAndBoxChars(statusRaw))
+        val usageParsed = parseUsageOutput(stripAnsiAndBoxChars(usageRaw))
+        statusParsed.merge(usageParsed)
+    }
+
+    /** v1.3.2 — single `claude --print /<slash-command>` 호출 helper. 실패 시 빈 문자열. */
+    private fun runOneSlashCommand(projectId: String, slashCmd: String): String {
         val cmd = resolveClaudeCmd()
         val projectRoot = workspace.projectRoot(projectId)
-        // v0.12.2 — status 호출도 같은 권한 정책 (status 자체는 read-only 이지만
-        // claude CLI 가 init 단계에서 .claude/settings.json 을 평가하므로 일관성 유지).
-        val pb = ProcessBuilder(cmd, "--print", "--dangerously-skip-permissions", "/status")
+        val pb = ProcessBuilder(cmd, "--print", "--dangerously-skip-permissions", slashCmd)
             .directory(projectRoot.toFile())
             .redirectErrorStream(true)
-        // v0.7.0 — API 키 모드면 ANTHROPIC_API_KEY 주입.
         com.siamakerlab.vibecoder.server.env.ClaudeProcessEnv.applyApiKey(pb.environment())
-        val proc = pb.start()
-        val output = proc.inputStream.bufferedReader().readText()
-        proc.waitFor(10, TimeUnit.SECONDS)
-        if (proc.isAlive) {
-            proc.destroyForcibly()
-        }
-        // v0.47.0 — keep the full raw output so /usage can render it. 64 KB cap (overflow rare).
-        rawSnapshots[projectId] = RawSnapshot(text = output.take(64 * 1024), capturedAt = Instant.now())
-        parseOutput(output)
+        return runCatching {
+            val proc = pb.start()
+            val output = proc.inputStream.bufferedReader().readText()
+            proc.waitFor(10, TimeUnit.SECONDS)
+            if (proc.isAlive) proc.destroyForcibly()
+            output
+        }.getOrDefault("")
+    }
+
+    /**
+     * v1.3.2 — ANSI escape sequences (`[...m`) + TUI box-drawing 문자 정리.
+     * Claude Code 2.1.x 의 `--print /<slash>` 가 interactive TUI screen 을 그대로
+     * stdout 으로 보내는 경우가 있어 raw 가 시각 노이즈로 가득.
+     */
+    private fun stripAnsiAndBoxChars(s: String): String {
+        if (s.isEmpty()) return s
+        // ANSI: ESC [ ... m / ESC ] ... BEL 등 일반 패턴.
+        val ansi = Regex("\\[[0-?]*[ -/]*[@-~]|\\][^]*?")
+        val boxChars = Regex("[─━│┃┄┅┆┇┈┉┊┋┌┍┎┏┐┑┒┓└┕┖┗┘┙┚┛├┝┞┟┠┡┢┣┤┥┦┧┨┩┪┫┬┭┮┯┰┱┲┳┴┵┶┷┸┹┺┻┼┽┾┿╀╁╂╃╄╅╆╇╈╉╊╋╌╍╎╏═║╒╓╔╕╖╗╘╙╚╛╜╝╞╟╠╡╢╣╤╥╦╧╨╩╪╫╬█▌▐░▒▓●▁▂▃▄▅▆▇]")
+        return s.replace(ansi, "").replace(boxChars, "")
     }
 
     private data class ParsedStatus(
@@ -159,7 +193,11 @@ class ClaudeStatusService(
         for (line in lines) {
             val lower = line.lowercase()
             if (model == null && lower.contains("model")) model = line.substringAfter(":", "").trim().ifBlank { null }
-            if (plan == null && lower.contains("plan")) plan = line.substringAfter(":", "").trim().ifBlank { null }
+            // v1.3.2 — Claude Code 2.1.x `/status` 는 "Plan:" 대신 "Login method:"
+            // 같은 단어 사용 ("Claude Max account" / "Anthropic API key" 등).
+            if (plan == null && (lower.contains("plan") || lower.contains("login method") || lower.contains("subscription"))) {
+                plan = line.substringAfter(":", "").trim().ifBlank { null }
+            }
 
             val hasQuotaKw = lower.contains("quota") || lower.contains("remaining") || lower.contains("usage")
             val isWeekly = lower.contains("weekly") || lower.contains("week")
@@ -200,6 +238,88 @@ class ClaudeStatusService(
             weeklyResetAt = weeklyReset,
         )
     }
+
+    /**
+     * v1.3.2 — `claude --print /usage` 출력 전용 파서.
+     *
+     * Claude Code 2.1.x 의 `/usage` 화면 구조:
+     * ```
+     *   Current session
+     *   ███████▌                                  15% used
+     *   Resets 10:20pm (Asia/Seoul)
+     *
+     *   Current week (all models)
+     *   ▌                                          1% used
+     *   Resets Jun 2, 6pm (Asia/Seoul)
+     *
+     *   Current week (Sonnet only)
+     *                                              0% used
+     * ```
+     *
+     * 섹션 헤더 ("Current session" / "Current week (all models)") 이후 3 줄 안에서
+     * 첫 `\d+% used` 패턴과 첫 `Resets <text>` 라인을 추출. 정확히 같은 섹션 안의 것만
+     * 짝지어 둠 (Sonnet only week 는 별도 fields 없으므로 skip).
+     */
+    private fun parseUsageOutput(raw: String): ParsedStatus {
+        if (raw.isBlank()) return ParsedStatus(null, null, null, null, null)
+        val lines = raw.lines().map { it.trim() }
+        val percentRegex = Regex("(\\d{1,3})\\s*%\\s*used", RegexOption.IGNORE_CASE)
+        val resetRegex = Regex("^Resets\\s+(.+)$", RegexOption.IGNORE_CASE)
+
+        var sessionUsage: Int? = null
+        var weeklyUsage: Int? = null
+        var sessionReset: String? = null
+        var weeklyReset: String? = null
+
+        // 섹션 추적: "Current session" / "Current week (all models)" 헤더 발견 시 lookahead.
+        for ((i, line) in lines.withIndex()) {
+            val lower = line.lowercase()
+            val isSessionHeader = lower == "current session" ||
+                lower.startsWith("current session ") || lower.startsWith("current session:")
+            // "Current week (all models)" 우선. "(sonnet only)" 등 변종은 무시.
+            val isWeeklyHeader = lower.startsWith("current week (all models)") ||
+                lower == "current week" || lower == "current week (all)"
+            if (!isSessionHeader && !isWeeklyHeader) continue
+
+            // lookahead 3 lines for percent + reset
+            for (j in (i + 1)..minOf(i + 4, lines.lastIndex)) {
+                val l = lines[j]
+                val pct = percentRegex.find(l)?.groupValues?.get(1)?.toIntOrNull()?.coerceIn(0, 100)
+                if (pct != null) {
+                    if (isSessionHeader && sessionUsage == null) sessionUsage = pct
+                    if (isWeeklyHeader && weeklyUsage == null) weeklyUsage = pct
+                }
+                val reset = resetRegex.find(l)?.groupValues?.get(1)?.trim()
+                if (reset != null) {
+                    if (isSessionHeader && sessionReset == null) sessionReset = "Resets $reset"
+                    if (isWeeklyHeader && weeklyReset == null) weeklyReset = "Resets $reset"
+                }
+            }
+        }
+        val legacyUsage = maxOf(sessionUsage ?: -1, weeklyUsage ?: -1).takeIf { it >= 0 }
+        val legacyReset = sessionReset ?: weeklyReset
+        return ParsedStatus(
+            model = null, plan = null, quotaRemaining = null,
+            usagePercent = legacyUsage, resetAt = legacyReset,
+            sessionUsagePercent = sessionUsage,
+            weeklyUsagePercent = weeklyUsage,
+            sessionResetAt = sessionReset,
+            weeklyResetAt = weeklyReset,
+        )
+    }
+
+    /** v1.3.2 — 두 ParsedStatus (예: /status + /usage) 의 non-null 필드 우선 결합. */
+    private fun ParsedStatus.merge(other: ParsedStatus): ParsedStatus = ParsedStatus(
+        model = model ?: other.model,
+        plan = plan ?: other.plan,
+        quotaRemaining = quotaRemaining ?: other.quotaRemaining,
+        usagePercent = usagePercent ?: other.usagePercent,
+        resetAt = resetAt ?: other.resetAt,
+        sessionUsagePercent = sessionUsagePercent ?: other.sessionUsagePercent,
+        weeklyUsagePercent = weeklyUsagePercent ?: other.weeklyUsagePercent,
+        sessionResetAt = sessionResetAt ?: other.sessionResetAt,
+        weeklyResetAt = weeklyResetAt ?: other.weeklyResetAt,
+    )
 
     private fun resolveClaudeCmd(): String {
         val override = System.getenv("CLAUDE_CMD")
