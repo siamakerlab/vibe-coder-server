@@ -2048,7 +2048,11 @@ ${renderBuildHistoryChart(builds, artifactsByBuild, lang)}
 ${renderBuildComparison(comparison, lang, p.id, b.id)}
 
 ${renderPlayUploadCard(p, b, playPrecheck, playFlashOk, playFlashErr, csrf, lang)}
-${renderTestFlightUploadCard(p, b, testFlightPrecheck, tfFlashOk, tfFlashErr, csrf, lang)}
+<!-- v1.7.21 — TestFlight 카드 렌더 제거. vibe-coder-server 는 Android 전용 도구
+     (CLAUDE.md §1) — iOS 빌드 미지원이라 사용자에 노이즈. POST 라우트는 그대로
+     남겨 둠 (API 호환). 다시 켜려면 아래 라인 복원:
+     ${'$'}{renderTestFlightUploadCard(p, b, testFlightPrecheck, tfFlashOk, tfFlashErr, csrf, lang)} -->
+
 
 <div class="card">
   <h2>${esc(t("build.detail.logs"))} ${if (attachWs) """<small class="dim" style="font-size:11px;text-transform:none;letter-spacing:0">${esc(t("build.detail.logs.live"))}</small>""" else """<small class="dim" style="font-size:11px;text-transform:none;letter-spacing:0">${esc(t("build.detail.logs.replay"))}</small>"""}</h2>
