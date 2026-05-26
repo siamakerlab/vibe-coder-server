@@ -705,6 +705,11 @@ services:
       # is never overwritten on subsequent boots, so the key survives image
       # upgrades. View / regenerate it under Settings → SSH Key.
       - ./vibe-coder-data/dev-tools/ssh:/home/vibe/.ssh
+      # v1.5.0 — Android signing keystores. Managed via Settings → Keystores
+      # (one form per package → generates release / debug / properties / AdMob
+      # files). LOSING THE RELEASE KEY blocks Play Store updates forever, so
+      # back up this directory religiously.
+      - ./vibe-coder-data/dev-tools/keystores:/home/vibe/keystores
       - ./vibe-coder-data/claude:/home/vibe/.claude
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:17880/health"]
@@ -746,6 +751,7 @@ your SDK, Gradle cache, MCP servers, Playwright browsers, or Claude auth.
 | Playwright browsers (optional)    | `./vibe-coder-data/dev-tools/playwright/`           | `/home/vibe/.cache/ms-playwright` | ✅ kept |
 | Other tool config                 | `./vibe-coder-data/dev-tools/config/`               | `/home/vibe/.config`            | ✅ kept |
 | **SSH key (v1.2.0+)**             | `./vibe-coder-data/dev-tools/ssh/`                  | `/home/vibe/.ssh`               | ✅ kept |
+| **Android keystores (v1.5.0+)** ⚠️ | `./vibe-coder-data/dev-tools/keystores/`            | `/home/vibe/keystores`          | ✅ kept (back up!) |
 | Claude auth (OAuth / API key / MCP registrations) | `./vibe-coder-data/claude/`         | `/home/vibe/.claude`            | ✅ kept |
 | **Server body** (Ktor + Claude CLI + JDK + Node) | image layer                          | —                               | 🔄 replaced |
 

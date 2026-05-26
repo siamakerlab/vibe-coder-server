@@ -125,11 +125,12 @@ ${VIBE_DATA_ROOT}/                          컨테이너
 │   ├── npm-cache/              →  /home/vibe/.npm                    (npx 캐시)
 │   ├── playwright/             →  /home/vibe/.cache/ms-playwright    (선택)
 │   ├── config/                 →  /home/vibe/.config                 (도구 설정)
-│   └── ssh/                    →  /home/vibe/.ssh                    (v1.2.0+ SSH 키)
+│   ├── ssh/                    →  /home/vibe/.ssh                    (v1.2.0+ SSH 키)
+│   └── keystores/              →  /home/vibe/keystores               (v1.5.0+ Android signing keys ⚠️)
 └── claude/                     →  /home/vibe/.claude                 (OAuth/MCP 등록)
 ```
 
-`dev-tools/` 안의 7개 디렉토리는 모두 "한 번 다운로드 → 영구 보존" 도구
+`dev-tools/` 안의 8개 디렉토리는 모두 "한 번 다운로드 → 영구 보존" 도구
 캐시입니다. **이미지 업그레이드(`docker compose pull && up -d`) 후에도
 절대 사라지지 않습니다.**
 
@@ -137,6 +138,12 @@ ${VIBE_DATA_ROOT}/                          컨테이너
 ED25519 키쌍 (`id_ed25519` + `id_ed25519.pub`) 을 자동 생성. 이미 키가 있으면
 **절대 덮어쓰지 않음** — 서버 이미지 교체 시 동일 키 유지. 설정 → SSH Key 페이지
 에서 공개키 복사하여 Gitea / GitHub 등에 등록.
+
+**v1.5.0+ Android 키스토어 (`dev-tools/keystores/`)** ⚠️: 설정 → Keystores
+페이지에서 패키지명별로 4-파일 set (release / debug / properties / admob) 자동
+생성. **릴리즈 키 분실 = Play Store 업데이트 영구 차단** 이므로 본 디렉토리는
+정기 백업 필수. server.yml 의 `keystore.defaults` 에 본인 DN/password 한 번
+입력해두면 form 에서 패키지명만 새로 입력해 즉시 생성 가능.
 
 ### 백업 / 이전
 

@@ -437,7 +437,8 @@ ${VIBE_DATA_ROOT}/                          container
 │   ├── npm-cache/              →  /home/vibe/.npm                  (npx cache)
 │   ├── playwright/             →  /home/vibe/.cache/ms-playwright  (optional)
 │   ├── config/                 →  /home/vibe/.config               (tool config)
-│   └── ssh/                    →  /home/vibe/.ssh                  (v1.2.0+ SSH key — auto-generated on first boot)
+│   ├── ssh/                    →  /home/vibe/.ssh                  (v1.2.0+ SSH key — auto-generated on first boot)
+│   └── keystores/              →  /home/vibe/keystores             (v1.5.0+ Android signing keys ⚠️ back up!)
 └── claude/                     →  /home/vibe/.claude               (OAuth / API key / MCP registrations)
 ```
 
@@ -447,6 +448,14 @@ ${VIBE_DATA_ROOT}/                          container
 > upgrades. View / copy / regenerate it under Settings → SSH Key in the admin
 > UI. Requires `openssh-client` in the image (included since v1.3.1; v1.2.0
 > and v1.3.0 had a missing-package regression — upgrade to v1.3.1 or later).
+
+> **v1.5.0+ Android keystore management** ⚠️. Settings → Keystores creates a
+> 4-file set per package (release / debug / Gradle properties / optional
+> AdMob IDs) under `dev-tools/keystores/`. Pre-fill the form by editing
+> `keystore.defaults` in `server.yml` (CN / O / OU / country / city +
+> default password) — then only the package name has to be typed for each
+> new app. **Losing the release key blocks Play Store updates forever**, so
+> back up `dev-tools/keystores/` immediately after creation.
 
 > **v0.7.0 fixed a data-loss bug.** Pre-0.7.0 stored MCP servers in the
 > image's system directory (`/usr/local/lib/node_modules`), so they vanished
