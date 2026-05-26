@@ -837,7 +837,6 @@ $errHtml
         val sideLinks = if (isChat) """
       <a href="/chat/history" class="chip chip-link">${esc(t("console.nav.history"))}</a>"""
         else """
-      <a href="/projects/${esc(p.id)}" class="chip chip-link">${esc(t("console.nav.project"))}</a>
       <a href="/projects/${esc(p.id)}/builds" class="chip chip-link">${esc(t("projects.detail.builds"))}</a>
       <a href="/projects/${esc(p.id)}/history" class="chip chip-link">${esc(t("console.nav.history"))}</a>
       <a href="/projects/${esc(p.id)}/files" class="chip chip-link">${esc(t("console.nav.files"))}</a>
