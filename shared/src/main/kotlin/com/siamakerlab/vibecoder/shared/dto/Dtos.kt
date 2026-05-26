@@ -123,6 +123,12 @@ data class ProjectDto(
     val lastBuildStatus: String? = null,
     val hasGitChanges: Boolean = false,
     val updatedAt: String,
+    /**
+     * v1.1.0 — 현재 프로젝트의 Claude 응답중 여부 (ClaudeSessionManager.isBusy(id)).
+     * UI 가 list 에 응답중/대기중 뱃지를 표시할 때 사용. default false (process
+     * 안 떠있거나 미감지). additive default-value 라 wire 호환.
+     */
+    val busy: Boolean = false,
 )
 
 @Serializable

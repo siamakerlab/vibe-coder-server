@@ -41,6 +41,12 @@ class ProjectService(
      * 운영 환경에선 항상 주입.
      */
     private val projectAclRepo: com.siamakerlab.vibecoder.server.repo.ProjectAclRepository? = null,
+    /**
+     * v1.1.0 — `ClaudeSessionManager.isBusy(projectId)` 콜백. ProjectDto.busy 필드 채움.
+     * Construction-order 문제 회피 위해 lambda. null 이면 항상 false (테스트 / dev 환경).
+     * 운영에선 ServerMain 에서 sessionManager::isBusy 전달.
+     */
+    private val isBusyOf: ((String) -> Boolean)? = null,
 ) {
 
     /**
@@ -178,7 +184,8 @@ class ProjectService(
             .filter { it.id != SCRATCH_ID }
             .map { row ->
                 val last = buildRepo.lastForProject(row.id)
-                row.toDto(false, last?.status?.name)
+                // v1.1.0 — Claude busy 상태 주입 (manager 미주입 = false).
+                row.toDto(false, last?.status?.name, isBusyOf?.invoke(row.id) ?: false)
             }
     }
 
@@ -246,7 +253,7 @@ class ProjectService(
             ?: throw ApiException.localized(404, "project_not_found",
                 messageKey = "api.project.notFound", args = listOf(id))
         val last = buildRepo.lastForProject(id)
-        return row.toDto(false, last?.status?.name)
+        return row.toDto(false, last?.status?.name, isBusyOf?.invoke(id) ?: false)
     }
 
     fun sourcePathOrThrow(id: String): Path {
@@ -290,12 +297,17 @@ class ProjectService(
         |keystore: ${keystoreSummary ?: "none"}
     """.trimMargin()
 
-    private fun ProjectRow.toDto(hasGitChanges: Boolean, lastBuildStatus: String?): ProjectDto =
+    private fun ProjectRow.toDto(
+        hasGitChanges: Boolean,
+        lastBuildStatus: String?,
+        busy: Boolean = false,
+    ): ProjectDto =
         ProjectDto(
             id = id, name = name, packageName = packageName,
             sourcePath = sourcePath, moduleName = moduleName, debugTask = debugTask,
             lastBuildStatus = lastBuildStatus, hasGitChanges = hasGitChanges,
             updatedAt = updatedAt,
+            busy = busy,
         )
 
     companion object {

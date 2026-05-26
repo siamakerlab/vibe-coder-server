@@ -187,13 +187,16 @@ fun main(args: Array<String>) {
     )
     // v0.49.0 — Project ACL persistence (member 가 일부 프로젝트만 보기).
     val projectAclRepo = com.siamakerlab.vibecoder.server.repo.ProjectAclRepository(clock)
+    val sessionManager = ClaudeSessionManager(config, workspace, hub, history = conversationHistory)
+    // v1.1.0 — ProjectDto.busy 필드를 위해 sessionManager 를 lambda 로 주입.
+    // 구성 순서: sessionManager 가 먼저 생성되어야 lambda 가 안전하게 호출 가능.
     val projects = ProjectService(
         workspace, projectRepo, buildRepo, keystoreGen, gitClone,
         artifactRepo = artifactRepo, uploadedFileRepo = uploadedRepo,
         conversationRepo = conversationRepo,
         projectAclRepo = projectAclRepo,
+        isBusyOf = sessionManager::isBusy,
     )
-    val sessionManager = ClaudeSessionManager(config, workspace, hub, history = conversationHistory)
     // v0.44.0 — Phase 23 sub-agent process pool (real multi-agent). Independent of the main
     // ClaudeSessionManager so a project can run its primary console plus multiple sub-agents
     // (reviewer / frontend / backend / ...) concurrently in the same workspace.
