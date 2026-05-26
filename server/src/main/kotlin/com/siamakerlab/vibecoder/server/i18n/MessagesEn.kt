@@ -397,7 +397,7 @@ internal object MessagesEn {
 
         // ── badges (CLAUDE_AUTH vs others) ───────────────────────────
         "env.badge.loggedIn" to "✓ Signed in",
-        "env.badge.partialAuth" to "△ Partial auth",
+        "env.badge.partialAuth" to "△ Auto-refresh imminent",
         "env.badge.loginNeeded" to "✗ Sign in needed",
         "env.badge.installed" to "✓ Installed",
         "env.badge.partial" to "△ Partial",
@@ -1084,7 +1084,7 @@ internal object MessagesEn {
         "dashboard.sdkMissing" to "✗ Run doctor required",
         "dashboard.signedIn" to "✓ Signed in",
         "dashboard.signinRequired" to "✗ Sign-in required",
-        "dashboard.signinExpiring" to "△ Expires soon",
+        "dashboard.signinExpiring" to "△ Auto-refresh imminent",
         "dashboard.disabled" to "(disabled)",
         "dashboard.claudeLoginHint" to "Sign in: <code>docker exec -it --user vibe vibe-coder-server claude login</code>",
         "dashboard.diskHint" to "Threshold alerts go to email / webhook. Cache cleanup:",

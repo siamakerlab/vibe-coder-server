@@ -1117,12 +1117,17 @@ $authBannerHtml
     row.dataset.filterCat = cat;
     if (!isVisible(cat)) row.style.display = 'none';
     var timeStr = fmtTime(opts.ts);
-    // v1.7.7 — body 는 별도 dataset 으로 보관 (copy 버튼이 escape 안 된 raw 사용).
+    // v1.7.9 — meta (시각 + 복사 버튼) 를 응답 카드 내부 하단으로 이동.
+    //          .log-content wrapper 안에 .log-body 위 + .log-meta 아래.
     row.innerHTML =
       '<span class="log-label">' + escHtml(label) + '</span>' +
-      '<span class="log-body">' + escHtml(body) + '</span>' +
-      '<span class="log-time" title="' + escHtml(timeStr) + '">' + escHtml(timeStr) + '</span>' +
-      '<button type="button" class="log-copy" title="Copy" aria-label="Copy">' + COPY_SVG + '</button>';
+      '<div class="log-content">' +
+        '<div class="log-body">' + escHtml(body) + '</div>' +
+        '<div class="log-meta">' +
+          '<span class="log-time" title="' + escHtml(timeStr) + '">' + escHtml(timeStr) + '</span>' +
+          '<button type="button" class="log-copy" title="Copy" aria-label="Copy">' + COPY_SVG + '</button>' +
+        '</div>' +
+      '</div>';
     var btn = row.querySelector('.log-copy');
     if (btn) {
       btn.addEventListener('click', function(e) {

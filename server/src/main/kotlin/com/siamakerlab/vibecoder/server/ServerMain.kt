@@ -238,6 +238,13 @@ fun main(args: Array<String>) {
         activeProjectsProvider = { projectRepo.list().map { it.id } },
     )
     claudeUsageMonitor.start()
+    // v1.7.9 — 컨테이너 구동 중 토큰 자동 갱신. workspace.root 를 cwd 로 사용해
+    // SCRATCH 디렉토리 유무와 무관하게 동작 보장.
+    val claudeTokenRefresher = com.siamakerlab.vibecoder.server.claude.ClaudeTokenRefresher(
+        claudeAuthService = claudeAuth,
+        cwd = workspace.root,
+    )
+    claudeTokenRefresher.start()
     // v0.22.0 — Play Console 업로드 트리거 (MCP google-play-publisher 위임).
     val playPublishService = com.siamakerlab.vibecoder.server.publish.PlayPublishService(
         mcpService = mcp,

@@ -694,9 +694,9 @@ table.devices small.dim { font-size: 11px; }
 
 .console-log .log-line {
     display: grid;
-    /* v1.7.7 — label | body | time | copy. time/copy 는 auto (자식 없으면 0). */
-    grid-template-columns: 90px 1fr auto auto;
-    gap: 8px;
+    /* v1.7.9 — label | content. meta (time+copy) 는 content 내부 하단으로 이동. */
+    grid-template-columns: 90px 1fr;
+    gap: 12px;
     padding: 4px 0;
     border-bottom: 1px solid rgba(255,255,255,0.03);
     align-items: flex-start;
@@ -711,34 +711,38 @@ table.devices small.dim { font-size: 11px; }
     padding-top: 1px;
     user-select: none;
 }
+.console-log .log-content { display: flex; flex-direction: column; min-width: 0; }
 .console-log .log-body { white-space: pre-wrap; word-break: break-word; }
 
-/* v1.7.7 — 우측 메타: 시각 + 복사 버튼. hover 시 강조. */
+/* v1.7.9 — 응답 카드 내부 하단 meta: 시각 + 복사 버튼. 우측 정렬. */
+.console-log .log-meta {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 8px;
+    margin-top: 2px;
+    opacity: 0.45;
+    transition: opacity 0.15s;
+}
+.console-log .log-line:hover .log-meta { opacity: 1; }
 .console-log .log-time {
     color: var(--text-dim);
     font-size: 10.5px;
     font-variant-numeric: tabular-nums;
-    align-self: center;
     white-space: nowrap;
     user-select: none;
-    opacity: 0.55;
-    padding: 0 4px;
 }
-.console-log .log-line:hover .log-time { opacity: 0.9; }
 .console-log .log-copy {
     background: transparent;
     border: none;
     color: var(--text-dim);
     cursor: pointer;
-    padding: 0 4px;
+    padding: 0;
     line-height: 0;
-    opacity: 0.45;
-    transition: opacity 0.15s, color 0.15s;
-    align-self: center;
+    transition: color 0.15s;
 }
-.console-log .log-line:hover .log-copy { opacity: 1; }
 .console-log .log-copy:hover { color: var(--text); }
-.console-log .log-copy.copied { color: #5ed3a1; opacity: 1; }
+.console-log .log-copy.copied { color: #5ed3a1; }
 .console-log .log-copy svg { display: block; width: 14px; height: 14px; }
 
 .console-log .sys .log-label   { color: #6c7a93; }
