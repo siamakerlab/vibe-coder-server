@@ -120,9 +120,10 @@ class ClaudeStatusService(
     }
 
     /**
-     * v1.4.0 — `claude --print --output-format=stream-json --verbose ""` 호출.
-     * 빈 prompt 라 Claude 가 즉시 init + result frame 만 보내고 종료 (~0.1s).
-     * init frame 에 model / apiKeySource / mcp_servers 메타데이터 포함.
+     * v1.4.1 — `claude --print --output-format=stream-json --verbose "hi"` 호출.
+     * `--print ""` (빈 prompt) 는 "Input must be provided" 에러로 거절됨.
+     * dummy "hi" prompt 사용 + stdout 의 **첫 system/init JSON 줄만** 추출 후
+     * 즉시 process kill — Claude 가 "hi" 응답하기 전에 종료 → cost 최소화.
      */
     private fun runInitFrame(projectId: String): String {
         val cmd = resolveClaudeCmd()
@@ -130,30 +131,41 @@ class ClaudeStatusService(
         val workDir = if (projectRoot.isDirectory) projectRoot else workspace.root.toFile()
         val pb = ProcessBuilder(
             cmd, "--print", "--output-format=stream-json", "--verbose",
-            "--dangerously-skip-permissions", "",
+            "--dangerously-skip-permissions", "hi",
         ).directory(workDir).redirectErrorStream(true)
         com.siamakerlab.vibecoder.server.env.ClaudeProcessEnv.applyApiKey(pb.environment())
         return runCatching {
             val proc = pb.start()
-            val output = proc.inputStream.bufferedReader().readText()
-            proc.waitFor(10, TimeUnit.SECONDS)
+            // 첫 줄 (system/init frame) 만 capture 후 process kill — assistant
+            // 응답 frame 까지 기다리지 않아 cost / 지연 둘 다 최소.
+            val firstLine = proc.inputStream.bufferedReader().use { reader ->
+                val deadline = System.currentTimeMillis() + 8_000L
+                var line: String? = null
+                while (System.currentTimeMillis() < deadline) {
+                    line = reader.readLine() ?: break
+                    if (line.contains("\"type\":\"system\"")) break
+                    line = null
+                }
+                line.orEmpty()
+            }
             if (proc.isAlive) proc.destroyForcibly()
-            output
+            firstLine
         }.getOrDefault("")
     }
 
     /**
      * v1.4.0 — expect script 로 Claude TUI 의 Usage 탭 화면 capture.
-     * 스크립트 미설치 (dev 환경 등) 시 빈 문자열. timeout 25s.
+     * v1.4.1 — `env expect -f` shebang 이 env 의 옵션 처리 한계로 fail → `expect`
+     * 바이너리 직접 호출. 스크립트 미설치 (dev 환경) 시 빈 문자열. timeout 25s.
      */
     private fun runUsageCapture(projectId: String): String {
         val scriptPath = "/usr/local/bin/claude-usage-capture.exp"
-        if (!java.nio.file.Files.exists(java.nio.file.Path.of(scriptPath))) {
-            return ""
-        }
+        val expectBin = "/usr/bin/expect"
+        if (!java.nio.file.Files.exists(java.nio.file.Path.of(scriptPath))) return ""
+        if (!java.nio.file.Files.exists(java.nio.file.Path.of(expectBin))) return ""
         val projectRoot = workspace.projectRoot(projectId).toFile()
         val workDir = if (projectRoot.isDirectory) projectRoot.toString() else workspace.root.toString()
-        val pb = ProcessBuilder(scriptPath, workDir).redirectErrorStream(false)
+        val pb = ProcessBuilder(expectBin, "-f", scriptPath, workDir).redirectErrorStream(false)
         com.siamakerlab.vibecoder.server.env.ClaudeProcessEnv.applyApiKey(pb.environment())
         return runCatching {
             val proc = pb.start()

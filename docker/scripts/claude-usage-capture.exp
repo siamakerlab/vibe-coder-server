@@ -19,9 +19,11 @@ set timeout 20
 set cwd [lindex $argv 0]
 if {$cwd eq ""} { set cwd "/workspace/__scratch__" }
 
-# stdin/stdout 분리: TUI screen 데이터는 stdout 으로만, expect 자체 로그는 stderr.
+# stdin/stdout 분리: TUI screen 데이터는 stdout 으로만, expect 자체 로그는 끔.
+# v1.4.1 — log_file -a /dev/stderr 는 seek 에러 ("could not seek to end of file
+# while opening /dev/stderr: invalid seek") 라 그냥 disable. log_user 0 만으로
+# noise 충분히 제거.
 log_user 0
-log_file -a /dev/stderr
 
 # 디렉토리 이동 (subprocess 환경 변수 cd) — claude 가 cwd 영향 받음 (.claude/settings.json 검색 등).
 if {[catch {cd $cwd} err]} {
