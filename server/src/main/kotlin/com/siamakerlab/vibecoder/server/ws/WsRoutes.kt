@@ -72,6 +72,14 @@ fun Routing.wsRoutes(
             actionRegistry, actionHandler, projectId, since, userRepo, projects,
         )
     }
+    // v1.3.0 — cross-project busy state push (workspaces 목록 / 대시보드 실시간 동기).
+    // 단방향 — 클라이언트는 auth frame 한 번 보낸 뒤 `ProjectBusyChanged` 만 받음.
+    // since query param 으로 ring 의 missing slice replay 가능 (재연결 후 누락 방지).
+    webSocket("/ws/projects") {
+        val since = call.request.queryParameters["since"]?.toLongOrNull() ?: 0L
+        handleProjectsStateStream(hub, deviceRepo, tokens, since)
+    }
+
     // v0.44.0 — sub-agent 콘솔 (Phase 23). prompt 송신 채널이 main console 과 분리되어 있어
     // WS 양방향이 아니라 단방향 stream 만 처리하면 됨 (prompt 는 별도 REST 로 보냄).
     webSocket("/ws/projects/{projectId}/agents/{agentName}/console/logs") {
@@ -387,4 +395,41 @@ private suspend fun WebSocketServerSession.handleSubAgentConsoleStream(
 
 private suspend fun WebSocketServerSession.sendFrame(frame: WsFrame) {
     send(Frame.Text(wsJson.encodeToString(WsFrame.serializer(), frame)))
+}
+
+/**
+ * v1.3.0 — Cross-project busy state push.
+ *
+ * 단방향 stream. 클라이언트는 첫 frame 으로 `WsFrame.Auth(token)` 만 보내면 됨.
+ * 이후 서버는 `ConsoleHub.subscribeConsole(PROJECTS_TOPIC, since)` 로 ring 의
+ * 누락 slice + live flow 를 합쳐 흘려보낸다. since=0 (첫 접속) 이면 ring 이 비어
+ * 있을 수도 — 클라이언트는 REST `/api/projects` 로 한 번 초기 snapshot 받고 본
+ * stream 으로 patch.
+ */
+private suspend fun WebSocketServerSession.handleProjectsStateStream(
+    hub: LogHub,
+    deviceRepo: DeviceRepository,
+    tokens: TokenService,
+    since: Long,
+) {
+    if (!authenticateFirstFrame(deviceRepo, tokens)) return
+
+    val view = hub.subscribeConsole(
+        com.siamakerlab.vibecoder.server.claude.ClaudeSessionManager.PROJECTS_TOPIC,
+        since,
+    )
+
+    // Replay slice — ring 에 남아있는 가장 최근 history. 첫 접속이면 비어있을 수 있음.
+    for (sf in view.replay) {
+        if (sf.seq <= since) continue
+        runCatching { sendFrame(sf.frame) }
+            .onFailure { log.debug { "ws projects replay send failed: ${it.message}" } }
+    }
+
+    view.live.collect { sf ->
+        if (sf.seq <= since) return@collect
+        if (view.replay.any { it.seq == sf.seq }) return@collect
+        runCatching { sendFrame(sf.frame) }
+            .onFailure { log.debug { "ws projects live send failed: ${it.message}" } }
+    }
 }

@@ -178,6 +178,11 @@ class ClaudeSessionManager(
         val prev = busy.put(projectId, value)
         if (prev == value) return
         hub.emitConsole(topic(projectId)) { seq -> WsFrame.ConsoleBusyState(busy = value, seq = seq) }
+        // v1.3.0 — cross-project topic 으로도 broadcast. /ws/projects 구독자
+        // (workspaces 목록 / 대시보드) 가 실시간으로 busy 뱃지 갱신.
+        hub.emitConsole(PROJECTS_TOPIC) { seq ->
+            WsFrame.ProjectBusyChanged(projectId = projectId, busy = value, seq = seq)
+        }
     }
 
     suspend fun shutdown() {
@@ -481,6 +486,11 @@ class ClaudeSessionManager(
     companion object {
         const val MAX_PROMPT_BYTES = 32 * 1024
         const val IDLE_CHECK_INTERVAL_MS = 60_000L
+        /**
+         * v1.3.0 — Cross-project busy state broadcast topic. workspaces 목록 /
+         * 대시보드가 `/ws/projects` 로 구독.
+         */
+        const val PROJECTS_TOPIC = "__projects__"
         /** Sessions that die within this window with `--resume` are treated as resume failures. */
         const val RESUME_FAILURE_WINDOW_MS = 5_000L
         const val STDERR_TAIL_LIMIT = 20

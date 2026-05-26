@@ -147,6 +147,22 @@ sealed class WsFrame {
         val seq: Long,
     ) : WsFrame()
 
+    /**
+     * v1.3.0 — 프로젝트별 busy 상태 변화를 cross-project 토픽 (`/ws/projects`)
+     * 으로 broadcast. workspaces 목록 / 대시보드 등이 실시간 busy 뱃지 동기.
+     *
+     * 서버 [ClaudeSessionManager.setBusy] 가 ConsoleBusyState (per-project topic)
+     * 와 동시에 본 frame 도 `__projects__` topic 으로 emit. Android 의 workspaces
+     * list 가 `/ws/projects` 에 구독해서 list state 의 해당 projectId.busy 만 patch.
+     */
+    @Serializable
+    @SerialName("project_busy_changed")
+    data class ProjectBusyChanged(
+        val projectId: String,
+        val busy: Boolean,
+        val seq: Long,
+    ) : WsFrame()
+
     /** Sent right before replay frames so the client can show a "loading history" affordance. */
     @Serializable
     @SerialName("console_replay_begin")
