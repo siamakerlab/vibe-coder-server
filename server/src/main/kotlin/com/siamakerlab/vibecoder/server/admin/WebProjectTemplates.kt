@@ -1592,7 +1592,10 @@ $authBannerHtml
       setInFlight(false);
     } finally {
       sendBtn.disabled = false;
-      input.focus();
+      // v1.7.11 — 전송 후 textarea blur. 이전엔 input.focus() 자동 호출 →
+      // 모바일 키보드 다시 올라오고 PC 에서 다음 자동 입력 의도 안 했는데 유지되던
+      // UX 문제. 사용자가 답변 본 후 명시적으로 클릭해서 다음 prompt 입력.
+      input.blur();
     }
   }
 
@@ -1608,7 +1611,7 @@ $authBannerHtml
              QUEUE_ADDED_TPL.replace('___N___', pendingPrompts.length).replace('___PREVIEW___', preview),
              'system');
       input.value = '';
-      input.focus();
+      input.blur();  // v1.7.11 — 큐에 push 후에도 동일하게 포커스 해제.
       updateBusyBadge();
       return;
     }
