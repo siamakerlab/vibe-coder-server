@@ -122,8 +122,16 @@ internal object ProjectTabsTemplate {
   }
   #project-tabs-root .pt-header .spacer { flex: 1; }
   #project-tabs-root .tab-bar {
-    display: flex; gap: 2px; padding: 0 16px;
+    /* v1.12.1 — overflow-x: auto 가 자식 absolute 의 .more-menu 까지 잘랐던 회귀
+       해소. 내부 .tab-scroll 만 가로 스크롤, more-dropdown 은 외부에 둬서
+       absolute child 가 잘리지 않게. */
+    display: flex; gap: 2px; padding: 0;
     border-bottom: 1px solid #1f2330; background: #0d1018;
+    align-items: stretch;
+  }
+  #project-tabs-root .tab-scroll {
+    flex: 1; min-width: 0;
+    display: flex; gap: 2px; padding: 0 16px;
     overflow-x: auto;
   }
   #project-tabs-root .tab-btn {
@@ -138,7 +146,7 @@ internal object ProjectTabsTemplate {
     border-bottom-color: var(--accent, #6aa9ff);
   }
   #project-tabs-root .more-dropdown {
-    position: relative; margin-left: auto;
+    position: relative; flex-shrink: 0; border-left: 1px solid #1f2330;
   }
   #project-tabs-root .more-dropdown summary {
     list-style: none; cursor: pointer; padding: 10px 12px;
@@ -182,7 +190,9 @@ internal object ProjectTabsTemplate {
   </div>
   $flashHtml
   <div class="tab-bar" role="tablist">
-    $tabBtns
+    <div class="tab-scroll">
+      $tabBtns
+    </div>
     <details class="more-dropdown">
       <summary>${esc(t("tabs.more.label"))} ▾</summary>
       <div class="more-menu">$moreLinks</div>
