@@ -276,11 +276,11 @@ fun Application.module(ctx: ServerContext) {
         // v1.25.0 — 이전엔 Long.MAX_VALUE 라 단일 frame 으로 메모리 고갈 DoS surface.
         // 인증된 사용자만 도달하므로 실 위험 낮으나 외부 노출 (vibe.wody.work) 환경에서
         // 잘못 만든 클라이언트의 무한 buffer 차단.
-        // v1.25.1 — 8MB → 32MB 완화. Claude stream / 콘솔 / 빌드 로그 는 8MB 이내라
-        // 영향 없으나 noVNC 풀-HD AVD 의 RAW encoding 첫 framebuffer (~8.3MB) +
-        // ZRLE 의 큰 rectangle 이 한도 직전에서 drop 되는 회귀를 대비. 32MB 도 외부
-        // 위협 surface 는 동일 (인증된 사용자만 도달).
-        maxFrameSize = 32L * 1024 * 1024
+        // v1.25.2 — 글로벌 8MB 환원. 32MB 가 필요한 곳은 VNC framebuffer 만 — 그 라우트
+        // (VncProxyRoutes) 가 자체 webSocketRaw 옵션으로 override (필요 시). Claude
+        // stream / 콘솔 / 빌드 로그 는 8MB 이내라 영향 없음. 단일 사용자 가정. 멀티
+        // role 도입 시 재검토.
+        maxFrameSize = 8L * 1024 * 1024
         masking = false
         contentConverter = KotlinxWebsocketSerializationConverter(jsonCfg)
     }
@@ -387,6 +387,7 @@ fun Application.module(ctx: ServerContext) {
             apkSignerInspector = ctx.apkSignerInspector,
             projectArchiver = ctx.projectArchiver,
             conversationRepo = ctx.conversationRepo,
+            keystoreService = ctx.keystoreService,
         )
         // v0.28.0 — /settings/cache 라우트.
         buildCacheRoutes(adminDeps, ctx.buildCacheService)

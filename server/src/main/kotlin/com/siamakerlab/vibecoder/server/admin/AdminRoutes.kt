@@ -67,11 +67,16 @@ fun Routing.adminRoutes(deps: AdminRoutesDeps) {
     // ── 진입점: 대시보드 = 루트 ────────────────────────────────────
     get("/") {
         val sess = requireSessionOrRedirect(deps) ?: return@get
-        val status = deps.statusService.snapshot(sess.language)
+        // v1.25.2 — Q1 회수: envDiagnostics.run() 이 child process × 3 spawn 이라
+        // 같은 cycle 안에서 statusService 와 별도 호출하면 6 spawn. 1회만 실행 + 결과
+        // 공유 (snapshot overload + claudeAuth 재사용).
+        val envSnap = runCatching { deps.envDiagnostics.run(sess.language) }.getOrNull()
+        val status = if (envSnap != null) deps.statusService.snapshot(envSnap)
+                     else deps.statusService.snapshot(sess.language)
         val deviceCount = deps.deviceRepo.listAll().size
         // running build count는 status에 없으므로 0 표시. (간단함을 위해 PoC에선 보류)
         // Claude 인증 진단도 같이 — 사용자가 콘솔에서 처음으로 에러를 만나기 전에 대시보드에서 알아채도록.
-        val claudeAuth = runCatching { deps.envDiagnostics.run(sess.language).claudeAuth }.getOrNull()
+        val claudeAuth = envSnap?.claudeAuth
         // v0.21.0 — 백그라운드 모니터의 최신 snapshot. 미수집 시 null → 카드가
         // "아직 정보 없음" 메시지로 graceful degrade.
         val claudeUsage = deps.claudeUsageMonitor.snapshot()

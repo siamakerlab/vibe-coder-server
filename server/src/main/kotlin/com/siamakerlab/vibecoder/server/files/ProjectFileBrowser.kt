@@ -564,12 +564,14 @@ class ProjectFileBrowser(
         )
 
         // v1.25.0 — MIME 이 downgrade 된 후에도 위험 확장자는 path 기반으로 차단.
-        // v1.25.1 — `.mhtml` / `.mht` 추가 — Chrome 의 MIME-HTML archive inline 렌더링
-        // (history: CVE-2017-5102 류). writable actor 가 심을 수 있는 추가 active-content.
+        // v1.25.1 — `.mht` 추가 — Chrome 의 MIME-HTML archive inline 렌더링 차단.
+        // v1.25.2 — `.mhtml` 제거. `.mht` 가 `endsWith` 로 둘 다 cover — Q2 회수.
+        // `.htm` 도 `.html` 의 짧은 형태로 별도 entry 가 의도된 케이스 (서로 endsWith
+        // 매치 안 함 — `.htm` 으로 끝나는 `.html` 없음).
         private val UNTRUSTED_EXTENSIONS = listOf(
             ".svg", ".svgz",
             ".html", ".htm", ".xhtml",
-            ".mhtml", ".mht",
+            ".mht",            // covers `.mhtml` via endsWith
             ".js", ".mjs",
             ".xml", ".xsl", ".xslt",   // XSLT 가 일부 브라우저에서 inline render
         )

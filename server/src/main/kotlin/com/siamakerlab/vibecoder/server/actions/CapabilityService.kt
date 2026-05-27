@@ -54,7 +54,7 @@ class CapabilityService(
         val cached = hostCache.get()
         if (cached != null && nowMs - cached.computedAt < ttlMs) return cached
         val fresh = try {
-            val snap = env.run("en")   // v1.25.0 — service-to-service, 사용자 lang 모름.
+            val snap = env.run()   // v1.25.2 — service-to-service. config.i18n.defaultLanguage 사용.
             HostCaps(
                 git = snap.git.status == CheckStatus.OK,
                 claude = snap.claude.status == CheckStatus.OK,

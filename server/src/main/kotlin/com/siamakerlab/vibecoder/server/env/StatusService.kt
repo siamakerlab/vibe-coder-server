@@ -12,10 +12,19 @@ class StatusService(
     private val buildRepo: BuildRepository,
     private val env: EnvDiagnostics,
 ) {
-    fun snapshot(lang: String): ServerStatusDto {
+    /** v1.25.2 — Q4 회수: service-to-service / API entry 가 사용자 lang 모를 때 사용. */
+    fun snapshot(): ServerStatusDto = snapshot(env.run())
+
+    fun snapshot(lang: String): ServerStatusDto = snapshot(env.run(lang))
+
+    /**
+     * v1.25.2 — overload. caller 가 이미 보유한 EnvSnapshot 재사용 — `EnvDiagnostics.run()`
+     * 의 process spawn × 3 비용 회피. Dashboard render 등 같은 cycle 안에서 두 번 호출
+     * 되던 중복 패턴 (`/admin` 의 statusService.snapshot + envDiagnostics.run) 해소.
+     */
+    fun snapshot(envSnap: com.siamakerlab.vibecoder.shared.dto.EnvironmentCheckDto): ServerStatusDto {
         val workspaceRoot = Path.of(config.workspace.root).toAbsolutePath()
         val freeSpace = runCatching { workspaceRoot.toFile().freeSpace }.getOrDefault(-1L)
-        val envSnap = env.run(lang)
         return ServerStatusDto(
             serverName = config.server.name,
             serverVersion = config.server.version,

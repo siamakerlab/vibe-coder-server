@@ -63,7 +63,7 @@ fun Routing.envSetupApiRoutes(
 
         // ── Env setup 컴포넌트 ─────────────────────────────────
         get(ApiPath.ENV_SETUP_COMPONENTS) {
-            val items = envSetup.detectAll("en").map { it.toDto() }
+            val items = envSetup.detectAll().map { it.toDto() }
             call.respond(EnvSetupComponentsResponseDto(items))
         }
 

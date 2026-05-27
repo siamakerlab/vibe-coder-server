@@ -11,8 +11,8 @@ import io.ktor.server.routing.post
 
 fun Routing.envRoutes(status: StatusService, env: EnvDiagnostics) {
     authenticate(AUTH_BEARER) {
-        get(ApiPath.SERVER_STATUS) { call.respond(status.snapshot("en")) }
-        get(ApiPath.SERVER_ENVIRONMENT) { call.respond(env.run("en")) }
-        post(ApiPath.SERVER_ENVIRONMENT_CHECK) { call.respond(env.run("en")) }
+        get(ApiPath.SERVER_STATUS) { call.respond(status.snapshot()) }
+        get(ApiPath.SERVER_ENVIRONMENT) { call.respond(env.run()) }
+        post(ApiPath.SERVER_ENVIRONMENT_CHECK) { call.respond(env.run()) }
     }
 }

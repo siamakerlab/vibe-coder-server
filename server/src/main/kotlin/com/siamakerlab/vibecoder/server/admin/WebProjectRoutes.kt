@@ -71,6 +71,8 @@ fun Routing.webProjectRoutes(
      * 재시작 후에도 기존 대화 가시. WS ring buffer 가 휘발성인 한계 보완.
      */
     conversationRepo: ConversationTurnRepository,
+    /** v1.26.0 — 빌드 시작 전 keystore readiness 검사 (운영 정책: 임의 생성 금지). */
+    keystoreService: com.siamakerlab.vibecoder.server.admin.KeystoreService,
 ) {
 
     // ── 목록 + 등록 폼 ────────────────────────────────────────────────
@@ -300,10 +302,13 @@ fun Routing.webProjectRoutes(
         val ok = call.request.queryParameters["ok"]
         // v0.59.0 — Phase 38 통계 카드.
         val stats = runCatching { builds.statistics(id, artifactRepo) }.getOrNull()
+        // v1.26.0 — keystore readiness (운영 정책: 임의 생성 금지). false 면 빌드 버튼 disabled.
+        val keystoreReady = runCatching { keystoreService.get(p.packageName) != null }.getOrDefault(false)
         call.respondText(
             WebProjectTemplates.buildsPage(
                 sess.username, p, buildDtos, artifacts,
                 stats = stats,
+                keystoreReady = keystoreReady,
                 flashErr = err, flashOk = ok, csrf = sess.csrf,
                 lang = sess.language,
             ),
@@ -316,6 +321,17 @@ fun Routing.webProjectRoutes(
         if (!requireWriteAccessOrRedirect(sess)) return@post
         requireCsrf()
         val id = call.parameters["id"]!!
+        // v1.26.0 — keystore 가드 (운영 정책: 키스토어 임의 생성 금지). UI 가 이미 비활성화
+        // 했지만 직접 POST 우회 차단. project.packageName 매칭 keystore 가 있어야만 진행.
+        val pkgOk = runCatching {
+            val proj = projects.get(id)
+            keystoreService.get(proj.packageName) != null
+        }.getOrDefault(false)
+        if (!pkgOk) {
+            val msg = Messages.t(sess.language, "flash.build.keystoreRequired")
+            call.respondRedirect("/projects/$id/builds?err=${msg.encodeUrl()}")
+            return@post
+        }
         val row = runCatching { builds.enqueueDebug(id, hub) }.getOrElse { e ->
             val msg = (e as? ApiException)?.message ?: e.message ?: Messages.t(sess.language, "flash.build.queueFailed")
             log.warn(e) { "build enqueue failed: $id" }

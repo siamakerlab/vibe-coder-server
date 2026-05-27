@@ -57,7 +57,7 @@ fun Routing.consoleRoutes(
 
             // 인증 안 된 상태에서 자식 프로세스를 띄우면 사용자는 의미 없는 stderr 만 보게 된다.
             // 미리 차단하고 명확한 가이드를 응답으로 돌려준다.
-            val env = envDiagnostics.run("en")
+            val env = envDiagnostics.run()
             if (env.claude.status != CheckStatus.OK) {
                 throw ApiException.localized(503, "claude_cli_missing", messageKey = "api.console.claudeCliMissing")
             }

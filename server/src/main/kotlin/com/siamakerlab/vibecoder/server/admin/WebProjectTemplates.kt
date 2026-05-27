@@ -1838,6 +1838,8 @@ $authBannerHtml
         artifactsByBuild: Map<String, ArtifactRow>,
         /** v0.59.0 — Phase 38 통계 카드 (null = repo / artifact 조회 실패). */
         stats: com.siamakerlab.vibecoder.server.build.BuildService.BuildStatistics? = null,
+        /** v1.26.0 — packageName 매칭 키스토어 존재 여부. false 면 빌드 버튼 비활성화 + 안내. */
+        keystoreReady: Boolean = true,
         flashErr: String? = null,
         flashOk: String? = null,
         csrf: String? = null,
@@ -1898,11 +1900,23 @@ $errHtml
       <a href="/projects/${esc(p.id)}" class="primary-link" style="width:auto;display:inline-block;padding:6px 12px;background:transparent;border:1px solid var(--border);color:var(--text-dim)">${esc(t("builds.back"))}</a>
       <form method="post" action="/projects/${esc(p.id)}/builds" style="display:inline">
         ${CsrfTokens.hiddenInput(csrf)}
-        <button type="submit" class="primary" style="width:auto;padding:8px 16px">${esc(t("builds.queue"))}</button>
+        <button type="submit" class="primary" style="width:auto;padding:8px 16px"${if (!keystoreReady) " disabled title=\"${esc(t("builds.disabled.noKeystore"))}\"" else ""}>${esc(t("builds.queue"))}</button>
       </form>
     </div>
   </div>
   <p class="hint">${esc(t("builds.queueHint"))}</p>
+  ${if (!keystoreReady) """
+  <!-- v1.26.0 — 키스토어 미준비 시 빌드 차단 안내. 운영 정책: AGP 의 default
+       debug.keystore 자동 생성도 허용 X (CLAUDE.md "키스토어 임의 생성 금지"). -->
+  <div class="warn" style="margin-top:10px;padding:10px 12px;background:rgba(234,179,8,0.08);border:1px solid rgba(234,179,8,0.35);border-radius:6px">
+    <strong>⚠ ${esc(t("builds.disabled.title"))}</strong>
+    <p style="margin:4px 0 0;font-size:13px;line-height:1.5">${esc(t("builds.disabled.body"))}</p>
+    <p style="margin:6px 0 0;font-size:12px">
+      <a href="/settings/keystores" class="chip chip-link">${esc(t("builds.disabled.openKeystores"))}</a>
+      <code style="margin-left:8px">${esc(p.packageName)}</code> ${esc(t("builds.disabled.expected"))}
+    </p>
+  </div>
+  """ else ""}
 </div>
 
 ${renderBuildStatistics(stats, lang)}

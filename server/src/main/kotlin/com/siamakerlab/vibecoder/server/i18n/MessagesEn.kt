@@ -398,6 +398,13 @@ internal object MessagesEn {
         "builds.summary.hint" to "Hover a dot to see id + status + duration. The line connects SUCCESS only (so failures don't skew the trend). Yellow squares are APK size (auto-scaled right axis).",
         "builds.queue" to "Enqueue debug build",
         "builds.queueHint" to "After enqueue you can see live logs in the console; once finished the APK download link appears in this table.",
+        // v1.26.0 — Build blocked because keystore is not prepared (policy: no auto-generate).
+        "builds.disabled.title" to "Keystore is not prepared",
+        "builds.disabled.body" to "No keystore set is registered for this project's packageName. Operator policy forbids auto-generation, so you must create/upload one before building.",
+        "builds.disabled.openKeystores" to "Open keystore management",
+        "builds.disabled.expected" to "expects a matching keystore set",
+        "builds.disabled.noKeystore" to "Keystore not prepared — register one via Settings → Keystores first.",
+        "flash.build.keystoreRequired" to "Build cannot start: no keystore matches this project's packageName (policy: no auto-generation). Register one via Settings → Keystores first.",
         "builds.col.id" to "Build ID",
         "builds.col.status" to "Status",
         "builds.col.started" to "Started",

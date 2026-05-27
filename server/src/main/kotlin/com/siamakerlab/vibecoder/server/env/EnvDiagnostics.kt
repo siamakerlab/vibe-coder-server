@@ -20,8 +20,15 @@ import kotlin.io.path.exists
 class EnvDiagnostics(private val config: ServerConfig) {
 
     /**
+     * v1.25.2 — Q4 회수: service-to-service / JSON API entry 등 사용자 lang 모르는
+     * 호출자는 `run()` overload 사용 → 서버 default language 자동. 이전엔 `"en"`
+     * hardcode 6 site 였음.
+     */
+    fun run(): EnvironmentCheckDto = run(config.i18n.defaultLanguage)
+
+    /**
      * v1.7.15 — lang 받아 message / detail 을 i18n 키 기반으로 emit. 호출자가
-     * sess.language 전달. API endpoint 등 lang 없는 호출자는 default "en".
+     * sess.language 전달. API endpoint 등 lang 없는 호출자는 [run] no-arg overload 사용.
      */
     fun run(lang: String): EnvironmentCheckDto {
         val cli = checkClaude(lang)

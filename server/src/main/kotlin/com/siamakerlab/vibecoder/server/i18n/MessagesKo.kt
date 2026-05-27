@@ -376,6 +376,13 @@ internal object MessagesKo {
         "builds.summary.hint" to "점에 마우스 오버하면 빌드 id + 상태 + duration. 라인은 SUCCESS 만 연결 (실패가 평균을 왜곡하지 않도록). 노란 점은 APK 크기 추세 (오른쪽 축, 자동 스케일).",
         "builds.queue" to "Debug 빌드 큐 등록",
         "builds.queueHint" to "큐 등록 후엔 콘솔에서 실시간 로그를 볼 수 있으며, 완료되면 APK 다운로드 링크가 이 표에 나타납니다.",
+        // v1.26.0 — 키스토어 미준비 시 빌드 차단 안내 (운영 정책: 키스토어 임의 생성 금지).
+        "builds.disabled.title" to "키스토어가 준비되지 않았습니다",
+        "builds.disabled.body" to "이 프로젝트의 packageName 으로 등록된 keystore set 이 없습니다. 운영 정책상 키스토어 임의 자동 생성은 금지되어 있어, 사용자가 미리 생성/업로드 해 두어야 빌드가 가능합니다.",
+        "builds.disabled.openKeystores" to "키스토어 관리 페이지 열기",
+        "builds.disabled.expected" to "에 매칭되는 keystore set 필요",
+        "builds.disabled.noKeystore" to "키스토어 미준비 — 설정 → 키스토어 에서 먼저 등록하세요.",
+        "flash.build.keystoreRequired" to "이 프로젝트의 packageName 에 매칭되는 키스토어가 없어 빌드를 시작할 수 없습니다 (정책: 임의 생성 금지). 설정 → 키스토어 에서 먼저 등록하세요.",
         "builds.col.id" to "빌드 ID",
         "builds.col.status" to "상태",
         "builds.col.started" to "시작",

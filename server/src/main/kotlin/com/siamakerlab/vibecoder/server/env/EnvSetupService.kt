@@ -172,6 +172,9 @@ class EnvSetupService(
      *  default "en" — API / internal 호출자 호환. */
     fun detectAll(lang: String): List<ComponentState> = SetupComponent.entries.map { detect(it, lang) }
 
+    /** v1.25.2 — Q4 회수: service-to-service / API entry 가 lang 모를 때 사용. */
+    fun detectAll(): List<ComponentState> = detectAll(config.i18n.defaultLanguage)
+
     fun detect(c: SetupComponent, lang: String): ComponentState = when (c) {
         SetupComponent.JAVA -> probeCmd(c, listOf("java", "-version"), lang)
         SetupComponent.GIT -> probeCmd(c, listOf("git", "--version"), lang)
