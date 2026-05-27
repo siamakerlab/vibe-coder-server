@@ -163,7 +163,34 @@ fun Routing.webProjectRoutes(
     }
 
     // ── 상세 ──────────────────────────────────────────────────────────
+    //
+    // v1.11.0 — 단일 페이지 + 5개 iframe 탭 (Console / Builds / Files / Git / Agents)
+    // 으로 교체. 기존 `projectDetailPage` (메타데이터 카드 위주) 는
+    // `/projects/{id}/overview` 로 이동해서 More 메뉴에서 접근 가능 + 직접 URL 진입
+    // 보존. 첫 진입은 console 탭 자동 활성 — 사용자가 다른 페이지로 이동해도
+    // iframe 들이 항상 살아 있어 Claude WS / 빌드 로그 stream 이 끊기지 않는다.
     get("/projects/{id}") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@get
+        val id = call.parameters["id"]!!
+        val p = runCatching { projects.get(id) }.getOrElse {
+            call.respondRedirect("/projects?err=${Messages.t(sess.language, "flash.project.notFound", id).encodeUrl()}")
+            return@get
+        }
+        val err = call.request.queryParameters["err"]
+        val ok = call.request.queryParameters["ok"]
+        call.respondText(
+            ProjectTabsTemplate.page(
+                username = sess.username,
+                project = p,
+                flashErr = err, flashOk = ok,
+                csrf = sess.csrf, lang = sess.language,
+            ),
+            ContentType.Text.Html,
+        )
+    }
+
+    // v1.11.0 — 기존 detail (메타데이터 카드) 페이지 보존 — More 메뉴에서 link.
+    get("/projects/{id}/overview") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
         val id = call.parameters["id"]!!
         val p = runCatching { projects.get(id) }.getOrElse {

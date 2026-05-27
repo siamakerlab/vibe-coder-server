@@ -1388,6 +1388,24 @@ internal object MessagesKo {
         "dashboard.gitIdentity.body" to "컨테이너의 global git user.name / user.email 이 비어 있어 commit author 가 빈 값으로 기록되거나 commit 자체가 실패할 수 있습니다. 빌드환경 페이지의 \"Git Identity\" 카드에서 한 번 입력해 두면 영구 적용됩니다.",
         "dashboard.gitIdentity.cta" to "빌드환경 → Git Identity 입력",
 
+        // ─────────────────────────────────────────────── project tabs (v1.11.0)
+        "tabs.title" to "프로젝트",
+        "tabs.backToList" to "프로젝트 목록",
+        "tabs.console" to "콘솔",
+        "tabs.builds" to "빌드",
+        "tabs.files" to "파일",
+        "tabs.git" to "Git",
+        "tabs.agents" to "에이전트",
+        "tabs.more.label" to "더보기",
+        "tabs.more.history" to "대화 히스토리",
+        "tabs.more.symbols" to "심볼",
+        "tabs.more.usage" to "Claude 사용량",
+        "tabs.more.wrapper" to "Gradle Wrapper",
+        "tabs.more.stats" to "코드 통계",
+        "tabs.more.deps" to "의존성 audit",
+        "tabs.more.automation" to "빌드 자동화",
+        "tabs.more.envFiles" to "환경 파일",
+
         // ─────────────────────────────────────────────── terminal (v1.6.0)
         "term.title" to "Workspace 터미널",
         "term.backToSettings" to "← 설정",

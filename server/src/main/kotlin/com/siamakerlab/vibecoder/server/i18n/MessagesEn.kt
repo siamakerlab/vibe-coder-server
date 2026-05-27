@@ -1411,6 +1411,24 @@ internal object MessagesEn {
         "dashboard.gitIdentity.body" to "The container's global git user.name / user.email is empty, so commit authorship would be recorded as missing or commits would abort. Visit the Build Environment page and enter it once — it will persist across container restarts and image upgrades.",
         "dashboard.gitIdentity.cta" to "Open Build Environment → Git Identity",
 
+        // ─────────────────────────────────────────────── project tabs (v1.11.0)
+        "tabs.title" to "Project",
+        "tabs.backToList" to "Projects",
+        "tabs.console" to "Console",
+        "tabs.builds" to "Builds",
+        "tabs.files" to "Files",
+        "tabs.git" to "Git",
+        "tabs.agents" to "Agents",
+        "tabs.more.label" to "More",
+        "tabs.more.history" to "Conversation history",
+        "tabs.more.symbols" to "Symbols",
+        "tabs.more.usage" to "Claude usage",
+        "tabs.more.wrapper" to "Gradle wrapper",
+        "tabs.more.stats" to "Code stats",
+        "tabs.more.deps" to "Dependency audit",
+        "tabs.more.automation" to "Build automation",
+        "tabs.more.envFiles" to "Env files",
+
         // ─────────────────────────────────────────────── terminal (v1.6.0)
         "term.title" to "Workspace Terminal",
         "term.backToSettings" to "← Settings",
