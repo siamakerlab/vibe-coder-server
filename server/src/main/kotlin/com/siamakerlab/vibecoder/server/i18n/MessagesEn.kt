@@ -535,6 +535,19 @@ internal object MessagesEn {
         "fileTree.prompt.newFolder" to "New folder name:",
         "fileTree.prompt.rename" to "New name:",
         "fileTree.confirm.delete" to "Delete '{0}'? Directories are removed recursively. Continue?",
+        // v1.19.0 — multi-select mode.
+        "fileTree.hint.select" to "Long-press a row or right-click → multi-select mode (copy / cut / download / delete).",
+        "fileTree.select.title" to "Selected",
+        "fileTree.select.copy" to "Copy",
+        "fileTree.select.cut" to "Cut",
+        "fileTree.select.download" to "Download",
+        "fileTree.select.delete" to "Delete",
+        "fileTree.select.close" to "Exit selection",
+        "fileTree.confirm.deleteN" to "Delete {0} items? Directories are removed recursively. Continue?",
+        "flash.file.copied" to "{0} items copied.",
+        "flash.file.moved" to "{0} items moved.",
+        "flash.file.deletedN" to "{0} items deleted.",
+        "api.fileBrowser.cycleMove" to "Destination is inside the source — cycle would occur, rejected: {0}",
 
         // ── file view page extras ────────────────────────────────────
         "fileView.heading" to "File view / edit",

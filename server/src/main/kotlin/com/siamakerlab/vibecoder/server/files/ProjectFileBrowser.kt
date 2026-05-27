@@ -335,6 +335,97 @@ class ProjectFileBrowser(
     }
 
     /**
+     * v1.19.0 — 파일 또는 디렉토리를 다른 디렉토리 안으로 이동. rename 의 cross-dir 확장.
+     *
+     * `srcRel` 는 기존 entry. `dstParentRel` 는 대상 부모 디렉토리 (빈 문자열 = 프로젝트
+     * 루트). 결과 path = `<dstParent>/<src name>`. 같은 부모 디렉토리로의 move 는 no-op
+     * (src == dst). cycle 방지 — dst 가 src 의 자식이면 거부.
+     */
+    fun move(projectId: String, srcRel: String, dstParentRel: String) {
+        val (projectRoot, src) = safeWriteTarget(projectId, srcRel)
+        if (!Files.exists(src, LinkOption.NOFOLLOW_LINKS)) {
+            throw ApiException.localized(404, "path_not_found", messageKey = "api.fileBrowser.pathNotFound", args = listOf(srcRel))
+        }
+        if (Files.isSymbolicLink(src)) {
+            throw ApiException.localized(403, "symlink_blocked", messageKey = "api.fileBrowser.symlinkBlockedEdit")
+        }
+        val dstParent = if (dstParentRel.isBlank()) projectRoot
+            else PathSafety.normalizeAndCheck(projectRoot, dstParentRel)
+        if (!Files.exists(dstParent) || !dstParent.isDirectory()) {
+            throw ApiException.localized(400, "parent_missing",
+                messageKey = "api.fileBrowser.parentMissing", args = listOf(dstParentRel))
+        }
+        val dst = dstParent.resolve(src.fileName)
+        // dstParent 가 src 자체 또는 src 의 자식이면 cycle.
+        if (dstParent.normalize().startsWith(src.normalize())) {
+            throw ApiException.localized(400, "cycle",
+                messageKey = "api.fileBrowser.cycleMove", args = listOf(srcRel))
+        }
+        // dst Path 도 PathSafety 재검증.
+        val dstRel = projectRoot.relativize(dst).toString().replace('\\', '/')
+        val dstChecked = PathSafety.normalizeAndCheck(projectRoot, dstRel)
+        if (src.normalize() == dstChecked.normalize()) {
+            // 같은 위치 → no-op.
+            return
+        }
+        if (Files.exists(dstChecked, LinkOption.NOFOLLOW_LINKS)) {
+            throw ApiException.localized(409, "already_exists",
+                messageKey = "api.fileBrowser.alreadyExists", args = listOf(src.fileName.toString()))
+        }
+        Files.move(src, dstChecked)
+        log.info { "move: $projectId :: $srcRel → $dstRel" }
+    }
+
+    /**
+     * v1.19.0 — 파일 또는 디렉토리를 다른 디렉토리 안으로 복사. 디렉토리는 재귀.
+     * 동명 entry 있으면 거부 (overwrite 미지원 — 사용자가 명시적 delete 후 paste).
+     * cycle 방지 — dst 가 src 자체 또는 자식이면 거부.
+     */
+    fun copy(projectId: String, srcRel: String, dstParentRel: String) {
+        val (projectRoot, src) = safeWriteTarget(projectId, srcRel)
+        if (!Files.exists(src, LinkOption.NOFOLLOW_LINKS)) {
+            throw ApiException.localized(404, "path_not_found", messageKey = "api.fileBrowser.pathNotFound", args = listOf(srcRel))
+        }
+        if (Files.isSymbolicLink(src)) {
+            throw ApiException.localized(403, "symlink_blocked", messageKey = "api.fileBrowser.symlinkBlockedEdit")
+        }
+        val dstParent = if (dstParentRel.isBlank()) projectRoot
+            else PathSafety.normalizeAndCheck(projectRoot, dstParentRel)
+        if (!Files.exists(dstParent) || !dstParent.isDirectory()) {
+            throw ApiException.localized(400, "parent_missing",
+                messageKey = "api.fileBrowser.parentMissing", args = listOf(dstParentRel))
+        }
+        if (dstParent.normalize().startsWith(src.normalize())) {
+            throw ApiException.localized(400, "cycle",
+                messageKey = "api.fileBrowser.cycleMove", args = listOf(srcRel))
+        }
+        val dst = dstParent.resolve(src.fileName)
+        val dstRel = projectRoot.relativize(dst).toString().replace('\\', '/')
+        val dstChecked = PathSafety.normalizeAndCheck(projectRoot, dstRel)
+        if (Files.exists(dstChecked, LinkOption.NOFOLLOW_LINKS)) {
+            throw ApiException.localized(409, "already_exists",
+                messageKey = "api.fileBrowser.alreadyExists", args = listOf(src.fileName.toString()))
+        }
+        if (src.isDirectory()) {
+            Files.walk(src).use { stream ->
+                stream.forEach { p ->
+                    val rel = src.relativize(p)
+                    val target = dstChecked.resolve(rel.toString())
+                    if (p.isDirectory()) {
+                        Files.createDirectories(target)
+                    } else if (!Files.isSymbolicLink(p)) {
+                        Files.createDirectories(target.parent)
+                        Files.copy(p, target)
+                    } // symlink 는 skip — 외부 escape 방지.
+                }
+            }
+        } else {
+            Files.copy(src, dstChecked)
+        }
+        log.info { "copy: $projectId :: $srcRel → $dstRel" }
+    }
+
+    /**
      * v1.17.0 — 이미지 raw stream 읽기. /raw 엔드포인트가 path traversal 검증 후
      * 직접 file 을 stream 으로 응답할 수 있도록 안전 검증된 절대 경로 + 추정 MIME
      * 만 반환. 호출자가 Files.newInputStream(path) 또는 respondFile 으로 응답.

@@ -513,6 +513,20 @@ internal object MessagesKo {
         "fileTree.prompt.newFolder" to "새 폴더 이름:",
         "fileTree.prompt.rename" to "새 이름:",
         "fileTree.confirm.delete" to "{0} 을(를) 삭제합니다. 디렉토리는 재귀 삭제됩니다. 진행할까요?",
+        // v1.19.0 — 다중 선택 모드.
+        "fileTree.hint.select" to "row 길게 누름 또는 우클릭 → 다중 선택 모드 (복사 / 잘라내기 / 다운로드 / 삭제).",
+        "fileTree.select.title" to "선택됨",
+        "fileTree.select.copy" to "복사",
+        "fileTree.select.cut" to "잘라내기",
+        "fileTree.select.download" to "다운로드",
+        "fileTree.select.delete" to "삭제",
+        "fileTree.select.close" to "선택 모드 종료",
+        "fileTree.confirm.deleteN" to "{0}개 항목을 삭제합니다. 디렉토리는 재귀 삭제됩니다. 진행할까요?",
+        // 서버측 flash 메시지.
+        "flash.file.copied" to "{0}개 항목 복사됨.",
+        "flash.file.moved" to "{0}개 항목 이동됨.",
+        "flash.file.deletedN" to "{0}개 항목 삭제됨.",
+        "api.fileBrowser.cycleMove" to "대상이 원본의 자식 경로라 cycle 발생 — 거부됨: {0}",
 
         // ── file view page extras ────────────────────────────────────
         "fileView.heading" to "파일 보기 / 편집",

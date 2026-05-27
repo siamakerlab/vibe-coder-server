@@ -2415,7 +2415,9 @@ ${if (status != null && !unavailable) """
                       <input type="hidden" name="path" value="${esc(e.relPath)}">
                       <button type="submit" class="chip chip-link" style="color:#ff9e9e" title="${esc(t("fileTree.delete"))}">🗑</button>
                     </form>"""
-                """<tr>
+                // v1.19.0 — row 에 data-rel-path / data-is-dir 추가. row 자체 class "row-link"
+                // (long-press / contextmenu / click 핸들러 가 JS 에서 binding).
+                """<tr class="row-link" data-rel-path="${esc(e.relPath)}" data-is-dir="${if (e.isDirectory) "1" else "0"}">
                     <td><a href="$href">$icon ${esc(e.name)}</a></td>
                     <td class="dim">$sizeKb</td>
                     <td class="dim" style="font-size:11px">${esc(e.modifiedAt)}</td>
@@ -2423,33 +2425,50 @@ ${if (status != null && !unavailable) """
                   </tr>"""
             }
         }
-        // v1.14.0 — 상단 toolbar: Upload / New file / New folder. 모두 prompt 기반 단순 UI.
+        // v1.14.0 — 상단 toolbar: Upload / New file / New folder.
+        // v1.19.0 — 다중 선택 모드 toolbar 추가 (기본 toolbar 와 토글). long-press / 우클릭 시
+        // selection toolbar 표시. clipboard 는 sessionStorage 영속.
         val newFilePrompt = t("fileTree.prompt.newFile")
         val newFolderPrompt = t("fileTree.prompt.newFolder")
-        val toolbar = """<div class="card" style="margin-bottom:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-  <form method="post" action="/projects/${esc(p.id)}/files/upload?_csrf=${csrf?.encodeUrl() ?: ""}"
-        enctype="multipart/form-data" style="display:inline-flex;gap:6px;align-items:center">
-    <input type="hidden" name="parent" value="${esc(subPath)}">
-    <label class="chip chip-link" style="cursor:pointer">
-      ⬆ ${esc(t("fileTree.upload"))}
-      <input type="file" name="file" style="display:none" onchange="this.form.submit()">
-    </label>
-  </form>
-  <form method="post" action="/projects/${esc(p.id)}/files/new-file"
-        style="display:inline" onsubmit="var v=prompt('${esc(newFilePrompt)}',''); if(!v){return false;} this.name.value=v;">
-    $csrfHidden
-    <input type="hidden" name="parent" value="${esc(subPath)}">
-    <input type="hidden" name="name" value="">
-    <button type="submit" class="chip chip-link">＋ ${esc(t("fileTree.newFile"))}</button>
-  </form>
-  <form method="post" action="/projects/${esc(p.id)}/files/new-folder"
-        style="display:inline" onsubmit="var v=prompt('${esc(newFolderPrompt)}',''); if(!v){return false;} this.name.value=v;">
-    $csrfHidden
-    <input type="hidden" name="parent" value="${esc(subPath)}">
-    <input type="hidden" name="name" value="">
-    <button type="submit" class="chip chip-link">📁＋ ${esc(t("fileTree.newFolder"))}</button>
-  </form>
-  <span class="dim" style="font-size:12px;margin-left:auto">${esc(t("fileTree.hint.toolbar"))}</span>
+        val confirmDeleteN = t("fileTree.confirm.deleteN")
+        val toolbar = """<div class="card" style="margin-bottom:10px">
+  <div id="fts-toolbar-default" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    <form method="post" action="/projects/${esc(p.id)}/files/upload?_csrf=${csrf?.encodeUrl() ?: ""}"
+          enctype="multipart/form-data" style="display:inline-flex;gap:6px;align-items:center">
+      <input type="hidden" name="parent" value="${esc(subPath)}">
+      <label class="chip chip-link" style="cursor:pointer">
+        ⬆ ${esc(t("fileTree.upload"))}
+        <input type="file" name="file" style="display:none" onchange="this.form.submit()">
+      </label>
+    </form>
+    <form method="post" action="/projects/${esc(p.id)}/files/new-file"
+          style="display:inline" onsubmit="var v=prompt('${esc(newFilePrompt)}',''); if(!v){return false;} this.name.value=v;">
+      $csrfHidden
+      <input type="hidden" name="parent" value="${esc(subPath)}">
+      <input type="hidden" name="name" value="">
+      <button type="submit" class="chip chip-link">＋ ${esc(t("fileTree.newFile"))}</button>
+    </form>
+    <form method="post" action="/projects/${esc(p.id)}/files/new-folder"
+          style="display:inline" onsubmit="var v=prompt('${esc(newFolderPrompt)}',''); if(!v){return false;} this.name.value=v;">
+      $csrfHidden
+      <input type="hidden" name="parent" value="${esc(subPath)}">
+      <input type="hidden" name="name" value="">
+      <button type="submit" class="chip chip-link">📁＋ ${esc(t("fileTree.newFolder"))}</button>
+    </form>
+    <button type="button" id="fts-paste-btn" class="chip chip-link" style="display:none">
+      <span id="fts-paste-label">⎘ paste</span>
+    </button>
+    <span class="dim" style="font-size:12px;margin-left:auto">${esc(t("fileTree.hint.toolbar"))}</span>
+  </div>
+  <div id="fts-toolbar-select" style="display:none;gap:8px;flex-wrap:wrap;align-items:center">
+    <span style="font-weight:600">${esc(t("fileTree.select.title"))}: <span id="fts-count">0</span></span>
+    <button type="button" id="fts-copy-btn" class="chip chip-link">⎘ ${esc(t("fileTree.select.copy"))}</button>
+    <button type="button" id="fts-cut-btn" class="chip chip-link">✂ ${esc(t("fileTree.select.cut"))}</button>
+    <button type="button" id="fts-download-btn" class="chip chip-link">⬇ ${esc(t("fileTree.select.download"))}</button>
+    <button type="button" id="fts-delete-btn" class="chip chip-link" style="color:#ff9e9e"
+            data-confirm="${esc(confirmDeleteN)}">🗑 ${esc(t("fileTree.select.delete"))}</button>
+    <button type="button" id="fts-close-btn" class="chip chip-link" style="margin-left:auto">✕ ${esc(t("fileTree.select.close"))}</button>
+  </div>
 </div>"""
 
         return AdminTemplates.shell(
@@ -2471,7 +2490,19 @@ $errHtml
   <div style="font-size:13px">$crumbs</div>
 </div>
 
+<div id="file-tree-root"
+     data-project-id="${esc(p.id)}"
+     data-sub-path="${esc(subPath)}"
+     data-csrf="${esc(csrf ?: "")}">
 $toolbar
+
+<style>
+  /* v1.19.0 — 다중 선택 모드 시각 강조. */
+  table.devices tr.fts-selectable td a { pointer-events: none; }
+  table.devices tr.fts-selectable { cursor: pointer; user-select: none; }
+  table.devices tr.fts-selected { background: rgba(106,169,255,0.15) !important; }
+  table.devices tr.fts-selected td { box-shadow: inset 3px 0 0 var(--accent, #6aa9ff); }
+</style>
 
 <table class="devices">
   <thead><tr>
@@ -2483,7 +2514,10 @@ $toolbar
   <tbody>$rowsHtml</tbody>
 </table>
 
-<p class="hint" style="font-size:12px">${esc(t("fileTree.hint"))}</p>
+<p class="hint" style="font-size:12px">${esc(t("fileTree.hint"))} · ${esc(t("fileTree.hint.select"))}</p>
+</div>
+
+<script src="/static/file-tree-select.js" defer></script>
 """
         )
     }

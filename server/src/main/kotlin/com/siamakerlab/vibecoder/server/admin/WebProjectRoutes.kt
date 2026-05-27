@@ -603,6 +603,163 @@ fun Routing.webProjectRoutes(
         call.respondRedirect("/projects/$id/tree?path=${parent.encodeUrl()}&ok=${Messages.t(sess.language, "flash.file.deleted").encodeUrl()}")
     }
 
+    // v1.19.0 — 다중 선택 모드 액션. paths form param 은 newline-separated relPath 목록.
+
+    post("/projects/{id}/files/copy") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireWriteAccessOrRedirect(sess)) return@post
+        val params = requireCsrf()
+        val id = call.parameters["id"]!!
+        val dstParent = params["dstParent"].orEmpty()
+        val paths = (params["paths"].orEmpty()).split("\n").map { it.trim() }.filter { it.isNotEmpty() }
+        var failMsg: String? = null
+        for (src in paths) {
+            try {
+                fileBrowser.copy(id, src, dstParent)
+            } catch (e: Throwable) {
+                failMsg = (e as? ApiException)?.message ?: e.message ?: "copy failed"
+                break
+            }
+        }
+        if (failMsg != null) {
+            call.respondRedirect("/projects/$id/tree?path=${dstParent.encodeUrl()}&err=${failMsg.encodeUrl()}")
+        } else {
+            call.respondRedirect("/projects/$id/tree?path=${dstParent.encodeUrl()}&ok=${Messages.t(sess.language, "flash.file.copied", paths.size).encodeUrl()}")
+        }
+    }
+
+    post("/projects/{id}/files/move") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireWriteAccessOrRedirect(sess)) return@post
+        val params = requireCsrf()
+        val id = call.parameters["id"]!!
+        val dstParent = params["dstParent"].orEmpty()
+        val paths = (params["paths"].orEmpty()).split("\n").map { it.trim() }.filter { it.isNotEmpty() }
+        var failMsg: String? = null
+        for (src in paths) {
+            try {
+                fileBrowser.move(id, src, dstParent)
+            } catch (e: Throwable) {
+                failMsg = (e as? ApiException)?.message ?: e.message ?: "move failed"
+                break
+            }
+        }
+        if (failMsg != null) {
+            call.respondRedirect("/projects/$id/tree?path=${dstParent.encodeUrl()}&err=${failMsg.encodeUrl()}")
+        } else {
+            call.respondRedirect("/projects/$id/tree?path=${dstParent.encodeUrl()}&ok=${Messages.t(sess.language, "flash.file.moved", paths.size).encodeUrl()}")
+        }
+    }
+
+    post("/projects/{id}/files/delete-batch") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireWriteAccessOrRedirect(sess)) return@post
+        val params = requireCsrf()
+        val id = call.parameters["id"]!!
+        val parent = params["parent"].orEmpty()
+        val paths = (params["paths"].orEmpty()).split("\n").map { it.trim() }.filter { it.isNotEmpty() }
+        var deleted = 0
+        var failMsg: String? = null
+        for (p in paths) {
+            try {
+                fileBrowser.delete(id, p)
+                deleted++
+            } catch (e: Throwable) {
+                failMsg = (e as? ApiException)?.message ?: e.message ?: "delete failed"
+                break
+            }
+        }
+        if (failMsg != null) {
+            call.respondRedirect("/projects/$id/tree?path=${parent.encodeUrl()}&err=${failMsg.encodeUrl()}")
+        } else {
+            call.respondRedirect("/projects/$id/tree?path=${parent.encodeUrl()}&ok=${Messages.t(sess.language, "flash.file.deletedN", deleted).encodeUrl()}")
+        }
+    }
+
+    // 단일 파일 다운로드 — 이미지 외 일반 binary/text 모두. attachment disposition.
+    get("/projects/{id}/files/download") {
+        requireSessionOrRedirect(authDeps) ?: return@get
+        val id = call.parameters["id"]!!
+        val relPath = call.request.queryParameters["path"].orEmpty()
+        val raw = runCatching { fileBrowser.resolveForRawRead(id, relPath) }.getOrElse { e ->
+            val sc = (e as? ApiException)?.statusCode ?: 500
+            call.respondText(e.message ?: "download failed", ContentType.Text.Plain, HttpStatusCode.fromValue(sc))
+            return@get
+        }
+        val name = relPath.substringAfterLast('/')
+        call.response.header(
+            HttpHeaders.ContentDisposition,
+            ContentDisposition.Attachment.withParameter(
+                ContentDisposition.Parameters.FileName, name,
+            ).toString(),
+        )
+        call.response.header(HttpHeaders.ContentType, raw.mime)
+        call.respondFile(raw.absolutePath.toFile())
+    }
+
+    // 다중 파일 다운로드 → zip stream. paths 는 form post (newline-separated) 또는
+    // GET query 의 `paths` (\n encoded). UI 는 hidden form POST 로 호출.
+    post("/projects/{id}/files/download-zip") {
+        requireSessionOrRedirect(authDeps) ?: return@post
+        val params = requireCsrf()
+        val id = call.parameters["id"]!!
+        val paths = (params["paths"].orEmpty()).split("\n").map { it.trim() }.filter { it.isNotEmpty() }
+        if (paths.isEmpty()) {
+            call.respondText("no paths", ContentType.Text.Plain, HttpStatusCode.BadRequest)
+            return@post
+        }
+        // 각 path 를 resolveForRawRead 로 검증 — 디렉토리도 허용 (raw 는 file 만이라 우회).
+        // 디렉토리는 workspace projectRoot 기준 직접 walk. 안전: PathSafety.normalizeAndCheck.
+        val projectRoot = workspace.projectRoot(id)
+        if (!projectRoot.toFile().exists()) {
+            call.respondText("project not found", ContentType.Text.Plain, HttpStatusCode.NotFound)
+            return@post
+        }
+        val resolved = paths.map { rel ->
+            try {
+                com.siamakerlab.vibecoder.server.core.PathSafety.normalizeAndCheck(projectRoot, rel) to rel
+            } catch (e: Throwable) {
+                call.respondText(e.message ?: "bad path", ContentType.Text.Plain, HttpStatusCode.BadRequest)
+                return@post
+            }
+        }
+        val ts = java.time.Instant.now().toString().take(10)
+        call.response.header(
+            HttpHeaders.ContentDisposition,
+            ContentDisposition.Attachment.withParameter(
+                ContentDisposition.Parameters.FileName, "vibe-coder-$id-$ts.zip",
+            ).toString(),
+        )
+        call.respondOutputStream(ContentType.Application.Zip) {
+            java.util.zip.ZipOutputStream(this).use { zip ->
+                for ((abs, rel) in resolved) {
+                    if (!java.nio.file.Files.exists(abs)) continue
+                    if (java.nio.file.Files.isSymbolicLink(abs)) continue
+                    if (java.nio.file.Files.isDirectory(abs)) {
+                        // 재귀 walk — 디렉토리 안의 모든 정규 파일 entry. zip 안 path 는
+                        // rel 기준 상대.
+                        java.nio.file.Files.walk(abs).use { stream ->
+                            stream.forEach { p ->
+                                if (java.nio.file.Files.isSymbolicLink(p)) return@forEach
+                                if (java.nio.file.Files.isRegularFile(p)) {
+                                    val sub = abs.parent.relativize(p).toString().replace('\\', '/')
+                                    zip.putNextEntry(java.util.zip.ZipEntry(sub))
+                                    java.nio.file.Files.copy(p, zip)
+                                    zip.closeEntry()
+                                }
+                            }
+                        }
+                    } else if (java.nio.file.Files.isRegularFile(abs)) {
+                        val name = rel.substringAfterLast('/').ifEmpty { rel }
+                        zip.putNextEntry(java.util.zip.ZipEntry(name))
+                        java.nio.file.Files.copy(abs, zip)
+                        zip.closeEntry()
+                    }
+                }
+            }
+        }
+    }
+
     post("/projects/{id}/files/upload") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireWriteAccessOrRedirect(sess)) return@post
