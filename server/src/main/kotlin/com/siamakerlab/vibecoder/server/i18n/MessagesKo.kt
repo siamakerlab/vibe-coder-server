@@ -525,6 +525,8 @@ internal object MessagesKo {
         "fileView.cancel" to "취소",
         "fileView.save" to "저장",
         "fileView.editHint" to "Ctrl+S 로 저장. 이진/심볼릭/1MB 초과는 서버에서 차단.",
+        // v1.18.0 — CodeMirror 통합 에디터.
+        "fileView.dirty" to "변경됨",
 
         // ─────────────────────────────────────────────── env setup
         "env.title" to "환경 설정",

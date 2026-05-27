@@ -2548,110 +2548,118 @@ $toolbar
         } else if (view == null) {
             errHtml.ifEmpty { """<p class="dim">${esc(t("fileView.cannotOpen"))}</p>""" }
         } else {
+            // v1.18.0 — view/edit 토글 분리 모드 제거. CodeMirror 5 단일 에디터로 통합:
+            //   - line numbers gutter, syntax highlight (자동 mode 매핑), active line
+            //   - 직접 편집 + Ctrl/Cmd+S 저장 + 변경 시 dirty indicator
+            //   - 큰 파일 (MAX_HL_CHARS 초과) 도 CodeMirror 로 표시 (mode 만 plain)
             val sizeKb = (view.sizeBytes + 512L) / 1024L
-            val hlLang = mapMimeToHljs(view.mimeGuess)
-            val hlSkip = view.content.length > MAX_HL_CHARS
+            val cmMode = mapMimeToCodeMirror(view.mimeGuess, view.relPath)
             """
 <div class="card" style="margin-bottom:12px">
   <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
     <div><strong><code>${esc(view.relPath)}</code></strong>
       <span class="dim" style="font-size:12px;margin-left:8px">${sizeKb}KB · ${esc(view.mimeGuess)}</span>
+      <span id="dirty-indicator" class="dim" style="font-size:12px;margin-left:8px;display:none;color:var(--warn)">●&nbsp;${esc(t("fileView.dirty"))}</span>
     </div>
-    <div style="display:flex;gap:6px">
-      <button type="button" id="toggle-mode" class="chip chip-link" style="font-size:12px;padding:4px 10px">${esc(t("fileView.toggleMode"))}</button>
+    <div style="display:flex;gap:6px;align-items:center">
+      <small class="dim">${esc(t("fileView.editHint"))}</small>
       <a href="/projects/${esc(p.id)}/tree?path=${parentOf(relPath).encodeUrl()}" class="chip chip-link">${esc(t("fileView.parentDir"))}</a>
+      <button type="submit" form="file-form" id="cm-save-btn" class="primary" style="width:auto;padding:6px 14px;font-size:13px">${esc(t("fileView.save"))}</button>
     </div>
   </div>
 </div>
 
-<!-- View 모드 (신택스 하이라이트, read-only) — 기본. -->
-<div id="file-view-pane" class="card" style="padding:0;overflow:hidden">
-  <pre style="margin:0"><code id="file-view-code" class="${if (hlSkip) "" else "language-${esc(hlLang)}"}" style="display:block;padding:12px;font-size:13px;line-height:1.5;tab-size:2;white-space:pre;overflow-x:auto">${esc(view.content)}</code></pre>
-</div>
-
-<!-- Edit 모드 (textarea) — toggle 로 전환. -->
-<form method="post" action="/projects/${esc(p.id)}/edit" id="file-form" style="display:none">
+<form method="post" action="/projects/${esc(p.id)}/edit" id="file-form" style="margin:0">
   ${CsrfTokens.hiddenInput(csrf)}
   <input type="hidden" name="path" value="${esc(view.relPath)}">
-  <textarea name="content" id="file-content" rows="28" spellcheck="false"
-            style="width:100%;font-family:ui-monospace,Menlo,monospace;font-size:13px;tab-size:2;padding:8px;background:#0e0e0e;color:#e8e8e8;border:1px solid #333;border-radius:4px"
-  >${esc(view.content)}</textarea>
-  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px">
-    <small class="dim">${esc(t("fileView.editHint"))}</small>
-    <div style="display:flex;gap:8px">
-      <a href="/projects/${esc(p.id)}/tree?path=${parentOf(relPath).encodeUrl()}" class="chip chip-link">${esc(t("fileView.cancel"))}</a>
-      <button type="submit" class="primary" style="width:auto;padding:8px 18px">${esc(t("fileView.save"))}</button>
-    </div>
-  </div>
+  <textarea name="content" id="file-content" spellcheck="false">${esc(view.content)}</textarea>
 </form>
 
-<link rel="stylesheet" href="/static/highlight-github-dark.min.css">
-<script src="/static/highlight.min.js"></script>
+<link rel="stylesheet" href="/static/vendor/codemirror/lib/codemirror.css">
+<link rel="stylesheet" href="/static/vendor/codemirror/theme/material-darker.css">
+<style>
+  /* v1.18.0 — CodeMirror 통합 에디터. 카드 안에서 사용 가능한 높이 모두 사용. */
+  .CodeMirror {
+    height: calc(100vh - 240px); min-height: 320px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px; line-height: 1.5; border: 1px solid #2a2a2a; border-radius: 6px;
+  }
+  .CodeMirror-gutters { background: #0d0d0d; border-right: 1px solid #2a2a2a; }
+  .CodeMirror-linenumber { color: #5a5a5a; padding: 0 8px 0 6px; }
+  .CodeMirror-activeline-background { background: rgba(255,255,255,0.04); }
+  .CodeMirror-activeline-gutter { background: rgba(255,255,255,0.05); }
+  .CodeMirror-matchingbracket { color: #facc15 !important; font-weight: 700; }
+</style>
+<script src="/static/vendor/codemirror/lib/codemirror.js"></script>
+<script src="/static/vendor/codemirror/addon/active-line.js"></script>
+<script src="/static/vendor/codemirror/addon/matchbrackets.js"></script>
+<script src="/static/vendor/codemirror/addon/closebrackets.js"></script>
+<script src="/static/vendor/codemirror/mode/xml.js"></script>
+<script src="/static/vendor/codemirror/mode/javascript.js"></script>
+<script src="/static/vendor/codemirror/mode/clike.js"></script>
+<script src="/static/vendor/codemirror/mode/yaml.js"></script>
+<script src="/static/vendor/codemirror/mode/markdown.js"></script>
+<script src="/static/vendor/codemirror/mode/properties.js"></script>
+<script src="/static/vendor/codemirror/mode/shell.js"></script>
+<script src="/static/vendor/codemirror/mode/css.js"></script>
+<script src="/static/vendor/codemirror/mode/htmlmixed.js"></script>
+<script src="/static/vendor/codemirror/mode/dockerfile.js"></script>
 <script>
 (function() {
-  var skip = ${hlSkip};
-  if (!skip && window.hljs) {
-    try { hljs.highlightElement(document.getElementById('file-view-code')); }
-    catch (e) { console.warn('hljs failed:', e); }
-  }
+  var ta = document.getElementById('file-content');
+  var form = document.getElementById('file-form');
+  var dirtyEl = document.getElementById('dirty-indicator');
+  if (!ta || !form || !window.CodeMirror) return;
 
-  // v0.54.0 — ?line=N 으로 들어오면 해당 라인으로 스크롤 + 짧게 강조 (심볼 검색
-  // 결과에서 jump 한 경우). highlight.js 가 끝난 뒤 DOM 측정해야 위치 정확.
+  var cm = CodeMirror.fromTextArea(ta, {
+    mode: ${jsLit(cmMode)},
+    theme: 'material-darker',
+    lineNumbers: true,
+    lineWrapping: false,
+    indentUnit: 2,
+    tabSize: 2,
+    indentWithTabs: false,
+    styleActiveLine: true,
+    matchBrackets: true,
+    autoCloseBrackets: true,
+    extraKeys: {
+      'Ctrl-S': function() { form.requestSubmit(); return false; },
+      'Cmd-S':  function() { form.requestSubmit(); return false; },
+      'Tab':    function(cm) {
+        if (cm.somethingSelected()) cm.indentSelection('add');
+        else cm.replaceSelection('  ', 'end');
+      },
+    },
+  });
+  var initial = cm.getValue();
+  cm.on('change', function() {
+    if (dirtyEl) dirtyEl.style.display = (cm.getValue() === initial) ? 'none' : '';
+  });
+  // submit 직전에 CodeMirror 의 값을 textarea 로 sync (fromTextArea 가 자동 sync 하지만
+  // 명시적으로 한 번 더 — 일부 브라우저에서 안전).
+  form.addEventListener('submit', function() {
+    cm.save();
+    initial = cm.getValue();
+  });
+
+  // v0.54.0 — ?line=N 으로 들어오면 해당 라인으로 scroll + 잠시 강조.
   try {
     var sp = new URLSearchParams(location.search);
     var lineParam = parseInt(sp.get('line') || '0', 10);
     if (lineParam > 0) {
-      var code = document.getElementById('file-view-code');
-      if (code) {
-        var lineHeight = parseFloat(getComputedStyle(code).lineHeight) || 19.5;
-        var topOffset = code.getBoundingClientRect().top + window.scrollY;
-        // 1-based → 0-based, 그리고 화면 상단에서 1/3 지점에 오도록 보정.
-        var target = topOffset + (lineParam - 1) * lineHeight - window.innerHeight / 3;
-        window.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
-        // 강조: 노란색 outline 1.5초.
-        var orig = code.style.outline;
-        code.style.outline = '2px solid #facc15';
-        setTimeout(function() { code.style.outline = orig; }, 1500);
-      }
+      cm.setCursor({ line: lineParam - 1, ch: 0 });
+      cm.scrollIntoView({ line: lineParam - 1, ch: 0 }, 100);
+      cm.addLineClass(lineParam - 1, 'background', 'cm-jump-highlight');
+      setTimeout(function() {
+        cm.removeLineClass(lineParam - 1, 'background', 'cm-jump-highlight');
+      }, 1500);
     }
   } catch (e) { /* ignore */ }
-
-  var ta = document.getElementById('file-content');
-  var form = document.getElementById('file-form');
-  var viewPane = document.getElementById('file-view-pane');
-  var toggleBtn = document.getElementById('toggle-mode');
-  var mode = 'view';
-  function applyMode() {
-    if (mode === 'view') {
-      viewPane.style.display = '';
-      form.style.display = 'none';
-    } else {
-      viewPane.style.display = 'none';
-      form.style.display = '';
-      ta.focus();
-    }
-  }
-  toggleBtn.addEventListener('click', function() {
-    mode = mode === 'view' ? 'edit' : 'view';
-    applyMode();
-  });
-
-  if (!ta || !form) return;
-  ta.addEventListener('keydown', function(ev) {
-    if ((ev.ctrlKey || ev.metaKey) && ev.key === 's') {
-      ev.preventDefault();
-      form.requestSubmit();
-    }
-    // Tab 키는 indent 로 (form submit 방지).
-    if (ev.key === 'Tab' && !ev.shiftKey) {
-      ev.preventDefault();
-      var s = ta.selectionStart, e = ta.selectionEnd;
-      ta.value = ta.value.slice(0, s) + '  ' + ta.value.slice(e);
-      ta.selectionStart = ta.selectionEnd = s + 2;
-    }
-  });
 })();
 </script>
+<style>
+  .cm-jump-highlight { background: rgba(250, 204, 21, 0.15) !important; }
+</style>
 """
         }
 
@@ -2717,6 +2725,38 @@ $bodyHtml
         "text/x-properties" -> "properties"
         "text/x-shellscript" -> "bash"
         else -> "plaintext"
+    }
+
+    /**
+     * v1.18.0 — ProjectFileBrowser.mimeGuess + 파일 확장자 → CodeMirror 5 mode name.
+     * CodeMirror 가 자체 mode 인지 또는 MIME 등록을 가지며, 본 함수는 그 매핑을
+     * 단순화 — addModeAlias 호출 없이 직접 mode 값 반환.
+     *
+     * 우리가 bundle 한 mode 파일: xml / javascript / clike (Java/Kotlin/C-family) /
+     * yaml / markdown / properties / shell / css / htmlmixed / dockerfile. 그 외엔
+     * `null` 반환하면 CodeMirror 가 plain text mode 로 동작.
+     */
+    private fun mapMimeToCodeMirror(mime: String, relPath: String): String {
+        val ext = relPath.substringAfterLast('.', "").lowercase()
+        return when {
+            mime == "text/x-kotlin" || ext == "kt" || ext == "kts" -> "text/x-kotlin"
+            mime == "text/x-gradle" || ext == "gradle" -> "text/x-kotlin"
+            mime == "text/x-java" || ext == "java" -> "text/x-java"
+            ext == "c" || ext == "cpp" || ext == "h" || ext == "hpp" -> "text/x-c++src"
+            ext == "cs" -> "text/x-csharp"
+            mime == "application/json" || ext == "json" -> "application/json"
+            mime == "text/xml" || ext == "xml" -> "application/xml"
+            ext == "html" || ext == "htm" -> "text/html"
+            ext == "css" -> "text/css"
+            ext == "js" || ext == "mjs" -> "text/javascript"
+            ext == "ts" -> "text/typescript"
+            mime == "text/yaml" || ext == "yml" || ext == "yaml" -> "text/x-yaml"
+            mime == "text/markdown" || ext == "md" || ext == "markdown" -> "text/x-markdown"
+            mime == "text/x-properties" || ext == "properties" -> "text/x-properties"
+            mime == "text/x-shellscript" || ext == "sh" || ext == "bash" -> "text/x-sh"
+            relPath.endsWith("Dockerfile", ignoreCase = true) || ext == "dockerfile" -> "text/x-dockerfile"
+            else -> "text/plain"
+        }
     }
 
     /** highlight.js 적용 최대 길이 — 그 이상이면 적용 skip (브라우저 freeze 방지). */

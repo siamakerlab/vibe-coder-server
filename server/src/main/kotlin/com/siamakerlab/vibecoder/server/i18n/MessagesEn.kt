@@ -547,6 +547,8 @@ internal object MessagesEn {
         "fileView.cancel" to "Cancel",
         "fileView.save" to "Save",
         "fileView.editHint" to "Ctrl+S to save. Binary / symlink / over 1MB are blocked server-side.",
+        // v1.18.0 — CodeMirror integrated editor.
+        "fileView.dirty" to "modified",
 
         // ─────────────────────────────────────────────── env setup
         "env.title" to "Environment setup",
