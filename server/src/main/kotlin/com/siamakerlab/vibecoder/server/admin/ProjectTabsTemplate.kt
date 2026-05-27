@@ -1,5 +1,6 @@
 package com.siamakerlab.vibecoder.server.admin
 
+import com.siamakerlab.vibecoder.server.auth.CsrfTokens
 import com.siamakerlab.vibecoder.server.i18n.Messages
 import com.siamakerlab.vibecoder.shared.dto.ProjectDto
 
@@ -40,6 +41,9 @@ internal object ProjectTabsTemplate {
     // 탭에 통합. 13개 iframe 모두 페이지 첫 진입 시 동시 fetch 라 첫 로드는 무거워
     // 지지만, 이후 탭 전환은 CSS display 토글로 즉시. WebSocket / SSE 도 모두 백그라
     // 운드 유지. /projects/X/usage 는 존재하지 않음 (global /usage 만) → 제외.
+    // v1.13.0 — Overview 탭 제거. 그 안의 unique 기능 (메타데이터 / Delete /
+    // Zip download) 은 sticky 헤더와 Settings 드롭다운으로 이동. Recent builds 는
+    // 이미 Builds 탭에 있어 중복 제거. Action link 들은 모두 다른 탭으로 이미 존재.
     private val TABS = listOf(
         Tab("console", "tabs.console", "/console", "tab-console"),
         Tab("builds", "tabs.builds", "/builds", "tab-builds"),
@@ -47,7 +51,6 @@ internal object ProjectTabsTemplate {
         Tab("git", "tabs.git", "/git", "tab-git"),
         Tab("agents", "tabs.agents", "/agents", "tab-agents"),
         Tab("history", "tabs.history", "/history", "tab-history"),
-        Tab("overview", "tabs.overview", "/overview", "tab-overview"),
         Tab("symbols", "tabs.symbols", "/symbols", "tab-symbols"),
         Tab("stats", "tabs.stats", "/stats", "tab-stats"),
         Tab("deps", "tabs.deps", "/deps", "tab-deps"),
@@ -112,15 +115,53 @@ internal object ProjectTabsTemplate {
   }
   #project-tabs-root .pt-header {
     display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-    padding: 10px 16px 6px; border-bottom: 1px solid #1f2330;
+    padding: 10px 16px 8px; border-bottom: 1px solid #1f2330;
   }
   #project-tabs-root .pt-header h1 {
     font-size: 16px; margin: 0; font-weight: 600;
   }
-  #project-tabs-root .pt-header .meta {
-    font-size: 12px; color: var(--text-dim, #888); font-family: ui-monospace, Menlo, monospace;
+  /* v1.13.0 — Overview 의 메타데이터 카드 내용을 헤더 인라인 칩 row 로 통합. */
+  #project-tabs-root .pt-header .meta-chips {
+    display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center;
+    font-size: 11px; color: var(--text-dim, #888);
+    font-family: ui-monospace, Menlo, monospace;
+  }
+  #project-tabs-root .pt-header .meta-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  #project-tabs-root .pt-header .meta-chip .label {
+    color: #5a6175; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  #project-tabs-root .pt-header .meta-chip code {
+    color: var(--text, #ddd); background: transparent; padding: 0;
   }
   #project-tabs-root .pt-header .spacer { flex: 1; }
+  /* v1.13.0 — sticky 헤더 우측 Settings 드롭다운 (Delete / Zip 등 Overview 액션). */
+  #project-tabs-root .pt-settings {
+    position: relative;
+  }
+  #project-tabs-root .pt-settings summary {
+    list-style: none; cursor: pointer; padding: 6px 10px; font-size: 12px;
+    color: var(--text-dim, #888); border: 1px solid #1f2330; border-radius: 4px;
+  }
+  #project-tabs-root .pt-settings summary::-webkit-details-marker { display: none; }
+  #project-tabs-root .pt-settings[open] summary { color: var(--text, #ddd); border-color: #2a3145; }
+  #project-tabs-root .pt-settings .pt-settings-menu {
+    position: absolute; right: 0; top: calc(100% + 4px); background: #131722;
+    border: 1px solid #1f2330; border-radius: 4px; min-width: 220px;
+    padding: 6px 0; z-index: 100; display: flex; flex-direction: column;
+  }
+  #project-tabs-root .pt-settings .pt-settings-menu .item {
+    color: var(--text, #ddd); text-decoration: none; padding: 8px 14px;
+    font-size: 13px; background: transparent; border: 0; text-align: left;
+    cursor: pointer; font-family: inherit; display: block; width: 100%;
+  }
+  #project-tabs-root .pt-settings .pt-settings-menu .item:hover { background: #1a1f2c; }
+  #project-tabs-root .pt-settings .pt-settings-menu .item.danger { color: #ff9e9e; }
+  #project-tabs-root .pt-settings .pt-settings-menu .item.danger:hover { background: #2c1a1a; }
+  #project-tabs-root .pt-settings .pt-settings-menu hr {
+    border: 0; border-top: 1px solid #1f2330; margin: 4px 0;
+  }
   #project-tabs-root .tab-bar {
     /* v1.12.1 — overflow-x: auto 가 자식 absolute 의 .more-menu 까지 잘랐던 회귀
        해소. 내부 .tab-scroll 만 가로 스크롤, more-dropdown 은 외부에 둬서
@@ -185,8 +226,28 @@ internal object ProjectTabsTemplate {
   <div class="pt-header">
     <a href="/projects" style="color:var(--text-dim);text-decoration:none;font-size:12px">← ${esc(t("tabs.backToList"))}</a>
     <h1>${esc(project.name)}</h1>
-    <span class="meta">${esc(project.packageName)} · ${esc(project.moduleName)}</span>
+    <div class="meta-chips">
+      <span class="meta-chip"><span class="label">${esc(t("projects.detail.package"))}</span><code>${esc(project.packageName)}</code></span>
+      <span class="meta-chip"><span class="label">${esc(t("projects.detail.module"))}</span><code>${esc(project.moduleName)}</code></span>
+      <span class="meta-chip"><span class="label">${esc(t("projects.detail.source"))}</span><code title="${esc(project.sourcePath)}">${esc(shortenPath(project.sourcePath))}</code></span>
+      <span class="meta-chip"><span class="label">${esc(t("projects.detail.debugTask"))}</span><code>${esc(project.debugTask)}</code></span>
+      <span class="meta-chip"><span class="label">${esc(t("projects.lastBuild"))}</span><code>${esc(project.lastBuildStatus ?: "-")}</code></span>
+      <span class="meta-chip"><span class="label">${esc(t("projects.detail.updated"))}</span><code>${esc(project.updatedAt)}</code></span>
+    </div>
     <span class="spacer"></span>
+    <details class="pt-settings">
+      <summary>⚙ ${esc(t("tabs.settings.label"))}</summary>
+      <div class="pt-settings-menu">
+        <a href="/projects/${esc(project.id)}/zip" class="item">${esc(t("projects.detail.zip"))}</a>
+        <a href="/projects/${esc(project.id)}/env-files" target="${esc("tab-env-files")}" class="item">${esc(t("projects.detail.envFiles"))}</a>
+        <hr>
+        <form method="post" action="/projects/${esc(project.id)}/delete" style="margin:0"
+              onsubmit="return confirm(${jsLit(t("projects.detail.deleteConfirm"))})">
+          ${CsrfTokens.hiddenInput(csrf)}
+          <button type="submit" class="item danger">${esc(t("projects.detail.delete"))}</button>
+        </form>
+      </div>
+    </details>
   </div>
   $flashHtml
   <div class="tab-bar" role="tablist">
@@ -211,4 +272,14 @@ $tabPanes
     private fun escapeHtml(s: String): String =
         s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             .replace("\"", "&quot;").replace("'", "&#39;")
+
+    /** workspace root 가 매우 긴 path 인 경우 (예: `/workspace/<project>/src/...`) 보기 좋게 축약. */
+    private fun shortenPath(p: String, max: Int = 40): String =
+        if (p.length <= max) p else "…" + p.takeLast(max - 1)
+
+    /** JS literal context 안전. esc 보다 더 보수적. */
+    private fun jsLit(s: String): String =
+        "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"")
+            .replace("<", "\\u003C").replace(">", "\\u003E")
+            .replace("\n", "\\n") + "\""
 }

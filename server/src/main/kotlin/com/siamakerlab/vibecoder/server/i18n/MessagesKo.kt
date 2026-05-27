@@ -1398,8 +1398,9 @@ internal object MessagesKo {
         "tabs.agents" to "에이전트",
         // v1.12.0 — 기존 More 드롭다운 안에 있던 페이지들도 모두 prerender 탭으로.
         "tabs.history" to "대화 히스토리",
-        "tabs.overview" to "개요",
         "tabs.symbols" to "심볼",
+        // v1.13.0 — Overview 탭 제거, 기능은 sticky 헤더로. 라벨은 settings 드롭다운에서 재사용.
+        "tabs.settings.label" to "프로젝트 설정",
         "tabs.stats" to "코드 통계",
         "tabs.deps" to "의존성",
         "tabs.wrapper" to "Wrapper",
