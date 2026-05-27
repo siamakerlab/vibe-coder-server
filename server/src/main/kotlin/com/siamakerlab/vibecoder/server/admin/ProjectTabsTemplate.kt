@@ -36,12 +36,24 @@ internal object ProjectTabsTemplate {
         val frameName: String,
     )
 
+    // v1.12.0 — 사용자 명시 요청으로 기존 모든 프로젝트 scope SSR 페이지를 prerender
+    // 탭에 통합. 13개 iframe 모두 페이지 첫 진입 시 동시 fetch 라 첫 로드는 무거워
+    // 지지만, 이후 탭 전환은 CSS display 토글로 즉시. WebSocket / SSE 도 모두 백그라
+    // 운드 유지. /projects/X/usage 는 존재하지 않음 (global /usage 만) → 제외.
     private val TABS = listOf(
         Tab("console", "tabs.console", "/console", "tab-console"),
         Tab("builds", "tabs.builds", "/builds", "tab-builds"),
         Tab("files", "tabs.files", "/tree", "tab-files"),
         Tab("git", "tabs.git", "/git", "tab-git"),
         Tab("agents", "tabs.agents", "/agents", "tab-agents"),
+        Tab("history", "tabs.history", "/history", "tab-history"),
+        Tab("overview", "tabs.overview", "/overview", "tab-overview"),
+        Tab("symbols", "tabs.symbols", "/symbols", "tab-symbols"),
+        Tab("stats", "tabs.stats", "/stats", "tab-stats"),
+        Tab("deps", "tabs.deps", "/deps", "tab-deps"),
+        Tab("wrapper", "tabs.wrapper", "/wrapper", "tab-wrapper"),
+        Tab("automation", "tabs.automation", "/automation", "tab-automation"),
+        Tab("envFiles", "tabs.envFiles", "/env-files", "tab-env-files"),
     )
 
     /**
@@ -70,20 +82,9 @@ internal object ProjectTabsTemplate {
                         referrerpolicy="same-origin"></iframe>
               </div>"""
         }
-        // "More" 메뉴 — 자주 안 쓰는 페이지로의 직접 link. 새 브라우저 탭으로 open.
-        val moreLinks = listOf(
-            "tabs.more.history" to "/history",
-            "tabs.more.symbols" to "/symbols",
-            "tabs.more.usage" to "/usage",
-            "tabs.more.wrapper" to "/wrapper",
-            "tabs.more.stats" to "/stats",
-            "tabs.more.deps" to "/deps",
-            "tabs.more.automation" to "/automation",
-            "tabs.more.envFiles" to "/env-files",
-        ).joinToString("") { (key, suffix) ->
-            """<a href="/projects/${esc(project.id)}${esc(suffix)}" target="_blank"
-                  rel="noopener" class="more-item">${esc(t(key))} ↗</a>"""
-        }
+        // v1.12.0 — 기존 More 메뉴는 모든 항목을 탭으로 통합하면서 제거. 단 global
+        // /usage 는 프로젝트 scope 가 아니라 탭에 부적합 — 별도 한 줄 link 로만 남김.
+        val moreLinks = """<a href="/usage" target="_blank" rel="noopener" class="more-item">${esc(t("tabs.more.usage"))} ↗</a>"""
 
         val flashHtml = buildString {
             if (!flashOk.isNullOrBlank()) {

@@ -1419,15 +1419,18 @@ internal object MessagesEn {
         "tabs.files" to "Files",
         "tabs.git" to "Git",
         "tabs.agents" to "Agents",
+        // v1.12.0 — Pages that used to live in the More dropdown are now prerendered tabs.
+        "tabs.history" to "History",
+        "tabs.overview" to "Overview",
+        "tabs.symbols" to "Symbols",
+        "tabs.stats" to "Code stats",
+        "tabs.deps" to "Deps",
+        "tabs.wrapper" to "Wrapper",
+        "tabs.automation" to "Automation",
+        "tabs.envFiles" to "Env files",
         "tabs.more.label" to "More",
-        "tabs.more.history" to "Conversation history",
-        "tabs.more.symbols" to "Symbols",
-        "tabs.more.usage" to "Claude usage",
-        "tabs.more.wrapper" to "Gradle wrapper",
-        "tabs.more.stats" to "Code stats",
-        "tabs.more.deps" to "Dependency audit",
-        "tabs.more.automation" to "Build automation",
-        "tabs.more.envFiles" to "Env files",
+        // v1.12.0 — /projects/X/usage doesn't exist (only the global /usage). Keep as external link.
+        "tabs.more.usage" to "Claude usage (global)",
 
         // ─────────────────────────────────────────────── terminal (v1.6.0)
         "term.title" to "Workspace Terminal",

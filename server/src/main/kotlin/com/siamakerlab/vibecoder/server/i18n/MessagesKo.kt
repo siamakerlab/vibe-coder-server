@@ -1396,15 +1396,18 @@ internal object MessagesKo {
         "tabs.files" to "파일",
         "tabs.git" to "Git",
         "tabs.agents" to "에이전트",
+        // v1.12.0 — 기존 More 드롭다운 안에 있던 페이지들도 모두 prerender 탭으로.
+        "tabs.history" to "대화 히스토리",
+        "tabs.overview" to "개요",
+        "tabs.symbols" to "심볼",
+        "tabs.stats" to "코드 통계",
+        "tabs.deps" to "의존성",
+        "tabs.wrapper" to "Wrapper",
+        "tabs.automation" to "자동화",
+        "tabs.envFiles" to "환경 파일",
         "tabs.more.label" to "더보기",
-        "tabs.more.history" to "대화 히스토리",
-        "tabs.more.symbols" to "심볼",
-        "tabs.more.usage" to "Claude 사용량",
-        "tabs.more.wrapper" to "Gradle Wrapper",
-        "tabs.more.stats" to "코드 통계",
-        "tabs.more.deps" to "의존성 audit",
-        "tabs.more.automation" to "빌드 자동화",
-        "tabs.more.envFiles" to "환경 파일",
+        // v1.12.0 — /projects/X/usage 는 없음 (global /usage 만 존재). 외부 link 로만.
+        "tabs.more.usage" to "Claude 사용량 (글로벌)",
 
         // ─────────────────────────────────────────────── terminal (v1.6.0)
         "term.title" to "Workspace 터미널",
