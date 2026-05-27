@@ -102,3 +102,48 @@ install_android_sdk_all() {
     install_packages
     log_ok "Android SDK 설치 모두 완료"
 }
+
+# v1.10.0 — 안드로이드 에뮬레이터 패키지 (manifest.yml 의 `emulator:` 섹션).
+# `emulator` 바이너리 + 1개 default system-image. 부피 1GB+ — 사용자 명시 클릭 시만.
+install_emulator_packages() {
+    local sdk="${ANDROID_HOME:-/opt/android-sdk}"
+    local sdkmanager="$sdk/cmdline-tools/latest/bin/sdkmanager"
+
+    [[ -x "$sdkmanager" ]] || { log_err "sdkmanager 없음 — Android SDK 카드 먼저 설치하세요"; return 1; }
+
+    log_step "안드로이드 에뮬레이터 패키지 설치"
+
+    local manifest="/opt/vibe-doctor/manifest.yml"
+    local packages=()
+    if [[ -f "$manifest" ]]; then
+        # `emulator:` 섹션 안의 `  - "..."` 라인 추출.
+        while IFS= read -r pkg; do
+            packages+=("$pkg")
+        done < <(sed -n '/^emulator:/,/^[a-z]/p' "$manifest" \
+                 | grep -E '^\s+-\s+"[^"]+"' \
+                 | sed -E 's/^\s+-\s+"([^"]+)".*/\1/')
+    fi
+    if [[ ${#packages[@]} -eq 0 ]]; then
+        # manifest 파싱 실패 시 hardcoded fallback.
+        packages=("emulator" "system-images;android-35;google_apis;x86_64")
+    fi
+
+    for p in "${packages[@]}"; do
+        log_info "설치: $p"
+        if ! yes 2>/dev/null | "$sdkmanager" "$p" >/dev/null 2>&1; then
+            log_warn "  → $p 설치 실패 (계속 진행)"
+        else
+            log_ok "  → 완료"
+        fi
+    done
+    log_ok "에뮬레이터 패키지 설치 완료. 부팅은 /emulator 페이지에서 진행하세요."
+    log_dim "참고: 컨테이너 안 에뮬레이터 부팅은 --device /dev/kvm + privileged 또는 :full 이미지 필요."
+}
+
+install_emulator_all() {
+    # cmdline-tools / 라이선스 사전 조건 — Android SDK 카드가 먼저 설치돼야 정상.
+    install_cmdline_tools || return 1
+    accept_licenses
+    install_emulator_packages
+    log_ok "안드로이드 에뮬레이터 환경 설치 완료"
+}

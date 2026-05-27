@@ -212,12 +212,16 @@ internal object MessagesEn {
         "env.comp.mcp.desc" to "filesystem / sqlite / fetch / playwright and other common MCP servers. Each is installed individually after user consent.",
         "env.comp.gradle.name" to "Gradle",
         "env.comp.gradle.desc" to "Bootstrap for Android builds. BuildService uses this when a new project lacks gradle wrapper. After install, the wrapper version in build.gradle.kts drives actual builds (this is a bootstrap tool).",
+        // v1.10.0 — Android emulator build environment card.
+        "env.comp.emulator.name" to "Android Emulator",
+        "env.comp.emulator.desc" to "Emulator binary + system-image (android-35, google_apis, x86_64). Required for creating/booting AVDs. Booting itself happens separately (`--device /dev/kvm` + privileged or the :full image + /emulator page).",
         "env.size.builtin" to "Bundled",
         "env.size.aboutMin" to "~1 min",
         "env.size.sdkLarge" to "~3-4 GB · 5-15 min",
         "env.size.platformTools" to "~12 MB",
         "env.size.optional" to "Optional",
         "env.size.gradle" to "~130 MB",
+        "env.size.emulator" to "~1.5-2 GB · 5-10 min",
         // v1.7.16 — EnvSetupService probe messages.
         "probe.cmd.missing" to "Not installed: %s failed",
         "probe.claudeAuth.apiKey" to "API key mode (ANTHROPIC_API_KEY)",
@@ -570,6 +574,16 @@ internal object MessagesEn {
         "env.action.gradleLabel.missing" to "Install (latest stable)",
         "env.action.gradleConfirm" to "Downloads the latest Gradle stable and installs it under /home/vibe/.local/gradle (~130 MB). Used to bootstrap wrappers in new projects. Continue?",
         "env.action.gradleNote" to "Wrapper bootstrap tool. After install the wrapper version pinned in your build.gradle.kts is what actually runs. Persisted via bind mount.",
+        // v1.10.0 — emulator card actions.
+        "env.action.emulatorLabel.installed" to "Reinstall / add system-image",
+        "env.action.emulatorLabel.partial" to "Continue install",
+        "env.action.emulatorLabel.missing" to "Download emulator package",
+        "env.action.emulatorConfirm" to "Downloads the Android emulator + system-image (android-35, google_apis, x86_64) — about 1.5-2 GB, 5-10 min. The progress page will open. Continue?",
+        "env.action.emulatorNote" to "Booting an AVD happens at /emulator after download (requires KVM passthrough — `--device /dev/kvm` + privileged or the :full image). Additional system-images can be installed individually via sdkmanager or the /emulator page.",
+        // v1.10.0 — emulator probe messages.
+        "probe.emulator.ok" to "Emulator + system-image present (%s)",
+        "probe.emulator.partial" to "Partial install (%s) — emulator binary or system-image is missing",
+        "probe.emulator.missing" to "Emulator package not installed (%s)",
 
         // ── claude flash blurbs ──────────────────────────────────────
         "env.flash.uploaded" to "✓ Claude credentials file is registered. Available in the console immediately.",

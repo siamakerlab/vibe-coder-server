@@ -190,12 +190,16 @@ internal object MessagesKo {
         "env.comp.mcp.desc" to "filesystem / sqlite / fetch / playwright 등 자주 쓰는 MCP 서버. 각 서버는 사용자 동의 후 개별 설치.",
         "env.comp.gradle.name" to "Gradle",
         "env.comp.gradle.desc" to "Android 빌드 wrapper bootstrap 용. 신규 프로젝트에 gradle wrapper 가 없을 때 BuildService 가 자동 사용. 설치 후 사용자 build.gradle.kts 의 wrapper 버전이 실제 빌드를 좌우 (이건 부트스트랩 도구).",
+        // v1.10.0 — 안드로이드 에뮬레이터 빌드환경 카드.
+        "env.comp.emulator.name" to "Android 에뮬레이터",
+        "env.comp.emulator.desc" to "에뮬레이터 바이너리 + system-image (android-35, google_apis, x86_64). AVD 생성/부팅에 필요. 부팅 자체는 별도 (`/dev/kvm` privileged 또는 :full 이미지 + /emulator 페이지).",
         "env.size.builtin" to "이미지 내장",
         "env.size.aboutMin" to "~1 분",
         "env.size.sdkLarge" to "약 3~4 GB · 5~15 분",
         "env.size.platformTools" to "약 12 MB",
         "env.size.optional" to "선택적",
         "env.size.gradle" to "약 130 MB",
+        "env.size.emulator" to "약 1.5~2 GB · 5~10 분",
         // v1.7.16 — EnvSetupService probe 메시지.
         "probe.cmd.missing" to "미설치: %s 실행 실패",
         "probe.claudeAuth.apiKey" to "API 키 모드 (ANTHROPIC_API_KEY)",
@@ -548,6 +552,16 @@ internal object MessagesKo {
         "env.action.gradleLabel.missing" to "설치 (최신 stable)",
         "env.action.gradleConfirm" to "Gradle 최신 stable 을 다운로드해 /home/vibe/.local/gradle 에 설치합니다 (~130MB). 신규 프로젝트의 wrapper bootstrap 에 사용됩니다. 계속할까요?",
         "env.action.gradleNote" to "Wrapper bootstrap 도구. 한 번 설치 후엔 사용자 build.gradle.kts 의 wrapper 버전이 실제 빌드에 사용됨. 영구 보존 (bind mount).",
+        // v1.10.0 — 안드로이드 에뮬레이터 카드 액션.
+        "env.action.emulatorLabel.installed" to "재설치 / system-image 추가",
+        "env.action.emulatorLabel.partial" to "이어서 설치",
+        "env.action.emulatorLabel.missing" to "에뮬레이터 패키지 다운로드",
+        "env.action.emulatorConfirm" to "안드로이드 에뮬레이터 + system-image (android-35, google_apis, x86_64) 를 다운로드합니다 (약 1.5~2GB, 5~10분). 진행 페이지로 이동합니다. 계속할까요?",
+        "env.action.emulatorNote" to "다운로드 후 부팅은 /emulator 페이지에서 별도 처리 (KVM passthrough 필요 — `--device /dev/kvm` + privileged 또는 :full 이미지). 추가 system-image 가 필요하면 sdkmanager 또는 /emulator 페이지에서 개별 설치.",
+        // v1.10.0 — emulator probe 메시지.
+        "probe.emulator.ok" to "에뮬레이터 패키지 + system-image 설치됨 (%s)",
+        "probe.emulator.partial" to "일부만 설치됨 (%s) — 에뮬레이터 바이너리 또는 system-image 누락",
+        "probe.emulator.missing" to "에뮬레이터 패키지 미설치 (%s)",
 
         // ── claude flash blurbs ──────────────────────────────────────
         "env.flash.uploaded" to "✓ Claude 자격증명 파일이 등록되었습니다. 콘솔에서 즉시 사용할 수 있습니다.",
