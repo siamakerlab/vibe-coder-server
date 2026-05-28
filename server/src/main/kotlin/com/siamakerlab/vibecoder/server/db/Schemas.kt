@@ -88,6 +88,12 @@ object Builds : Table("builds") {
     val gitBranch = varchar("git_branch", 128).nullable()
     val gitSha = varchar("git_sha", 64).nullable()
     override val primaryKey = PrimaryKey(id)
+    init {
+        // v1.34.1 (19차 Q1) — PG 는 FK 에 인덱스를 자동 생성하지 않음. 빌드 목록/통계/
+        // 비교가 project_id 로 자주 필터 → seq scan 방지. (project_id, created_at) 은
+        // 목록 정렬 + 비교 쿼리 동시 커버.
+        index(isUnique = false, columns = arrayOf(projectId, createdAt))
+    }
 }
 
 /** v0.71.0 — Phase 51 #3 Notification DB 영속화 (v0.68.0 in-memory queue 의 영구화). */
@@ -123,6 +129,10 @@ object Artifacts : Table("artifacts") {
     val sha256 = varchar("sha256", 128)
     val createdAt = varchar("created_at", 64)
     override val primaryKey = PrimaryKey(id)
+    init {
+        // v1.34.1 (19차 Q1) — prune(listForProjectAll) / 목록이 project_id 필터.
+        index(isUnique = false, columns = arrayOf(projectId, createdAt))
+    }
 }
 
 object UploadedFiles : Table("uploaded_files") {
@@ -134,6 +144,10 @@ object UploadedFiles : Table("uploaded_files") {
     val sizeBytes = long("size_bytes")
     val createdAt = varchar("created_at", 64)
     override val primaryKey = PrimaryKey(id)
+    init {
+        // v1.34.1 (19차 Q1) — 프로젝트별 업로드 파일 목록 필터.
+        index(isUnique = false, columns = arrayOf(projectId, createdAt))
+    }
 }
 
 /**

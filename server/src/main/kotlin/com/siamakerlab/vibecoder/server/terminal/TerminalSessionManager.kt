@@ -82,7 +82,15 @@ class TerminalSession(
         synchronized(scrollbackLock) {
             scrollback.append(s)
             val over = scrollback.length - MAX_SCROLLBACK_CHARS
-            if (over > 0) scrollback.delete(0, over)
+            if (over > 0) {
+                scrollback.delete(0, over)
+                // v1.34.1 (19차 BUG-1) — UTF-16 char 단위 절단이 surrogate pair 중간을
+                // 자르면 외톨이 low surrogate 가 맨 앞에 남아 replay 시 깨진 글자(�).
+                // 외톨이 low surrogate 1개 제거(이모지/CJK 보충문자 경계 방어).
+                if (scrollback.isNotEmpty() && Character.isLowSurrogate(scrollback[0])) {
+                    scrollback.deleteCharAt(0)
+                }
+            }
         }
     }
 
