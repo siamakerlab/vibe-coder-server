@@ -679,28 +679,9 @@ $gitIdentityBanner
 $okHtml
 $errHtml
 
-<!-- v1.7.13 — settings sub-pages quick links. 이전엔 SettingsNav 탭 8개 외에
-     sub-page 들 (keystores / ssh-key / cache / terminal / cors / webhook / push /
-     2fa / webauthn / devices / git-integrations) 이 어디서도 link 노출 안 됐음.
-     사용자가 URL 직접 입력해야 닿는 상태였던 회귀 fix. -->
-<div class="card" style="margin-bottom:16px">
-  <h2 style="margin-bottom:8px">${esc(t("settings.quicklinks.title"))}</h2>
-  <p class="dim" style="font-size:12px;margin-bottom:10px">${esc(t("settings.quicklinks.body"))}</p>
-  <div style="display:flex;flex-wrap:wrap;gap:8px">
-    <a href="/settings/keystores" class="chip chip-link">${esc(t("settings.quicklinks.keystores"))}</a>
-    <a href="/settings/ssh-key" class="chip chip-link">${esc(t("settings.quicklinks.sshKey"))}</a>
-    <a href="/settings/cache" class="chip chip-link">${esc(t("settings.quicklinks.cache"))}</a>
-    <!-- v1.27.0 — 터미널은 사이드바 글로벌 메뉴 /terminal 로 이전. quicklinks 에서 제거. -->
-    <a href="/settings/cors" class="chip chip-link">${esc(t("settings.quicklinks.cors"))}</a>
-    <a href="/settings/email" class="chip chip-link">${esc(t("settings.quicklinks.email"))}</a>
-    <a href="/settings/webhook" class="chip chip-link">${esc(t("settings.quicklinks.webhook"))}</a>
-    <a href="/settings/push" class="chip chip-link">${esc(t("settings.quicklinks.push"))}</a>
-    <a href="/settings/git-integrations" class="chip chip-link">${esc(t("settings.quicklinks.gitIntegrations"))}</a>
-    <a href="/2fa" class="chip chip-link">${esc(t("settings.quicklinks.twoFa"))}</a>
-    <a href="/webauthn" class="chip chip-link">${esc(t("settings.quicklinks.webauthn"))}</a>
-    <a href="/devices" class="chip chip-link">${esc(t("settings.quicklinks.devices"))}</a>
-  </div>
-</div>
+<!-- v1.31.3 — 기존 quicklinks(모든 sub-page 평면 중복 나열)를 제거하고 각 sub-page 를
+     소속 카테고리 대표 페이지의 sub-nav(SettingsNav.categoryNav)로 분산. 일반설정에는
+     language + 서버/워크스페이스/Claude/빌드 config 만 남긴다. -->
 
 <form method="post" action="/settings/language" class="settings-form">
   ${CsrfTokens.hiddenInput(csrf)}
@@ -776,6 +757,7 @@ $errHtml
             lang = lang,
             body = """
 <header><h1>${esc(t("password.heading"))}</h1></header>
+${SettingsNav.categoryNav("/password", lang)}
 $okHtml
 $errHtml
 <form method="post" action="/password" class="auth-card narrow">

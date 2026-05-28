@@ -162,6 +162,7 @@ private fun renderUsagePage(
 <header>
   <h1>Claude 사용량 / Cache 조회 <small class="dim" style="font-size:14px;font-weight:400">v0.47.0+ / v0.63.0+</small></h1>
 </header>
+${com.siamakerlab.vibecoder.server.admin.SettingsNav.categoryNav("/usage", lang)}
 
 $cacheCard
 

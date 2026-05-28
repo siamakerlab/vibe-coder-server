@@ -127,4 +127,40 @@ internal object SettingsNav {
     // v0.69.1 — CSS 는 admin.css 의 .settings-tabs 로 이동. HTML wrapper 만 emit.
     private const val TAB_BAR_PREFIX = "<div class=\"settings-tabs\">"
     private const val TAB_BAR_SUFFIX = "</div>"
+
+    /**
+     * v1.31.3 — 카테고리별 sub-page chip sub-nav. 각 카테고리 대표 페이지(보안 /password,
+     * 알림 /settings/email, 모니터링 /usage) 상단에 배치해 같은 카테고리 sub-page 로
+     * 이동. 이전엔 일반설정(/settings)의 quicklinks 가 모든 sub-page 를 평면 중복
+     * 나열했으나(8탭 카테고리 구조와 충돌), 카테고리별로 분산. 빌드환경(env-setup)/
+     * 프롬프트(prompts)는 각 페이지가 자체 chip 을 이미 보유.
+     */
+    fun categoryNav(currentPath: String, lang: String): String {
+        val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
+        val subs: List<Pair<String, String>> = when (tabOf(currentPath)) {
+            "security" -> listOf(
+                "/password" to "settings.cat.password",
+                "/2fa" to "settings.quicklinks.twoFa",
+                "/webauthn" to "settings.quicklinks.webauthn",
+                "/devices" to "settings.quicklinks.devices",
+                "/settings/cors" to "settings.quicklinks.cors",
+            )
+            "notifications" -> listOf(
+                "/settings/email" to "settings.quicklinks.email",
+                "/settings/webhook" to "settings.quicklinks.webhook",
+                "/settings/push" to "settings.quicklinks.push",
+            )
+            "monitoring" -> listOf(
+                "/usage" to "settings.cat.usage",
+                "/audit" to "settings.cat.audit",
+            )
+            else -> emptyList()
+        }
+        if (subs.isEmpty()) return ""
+        val items = subs.joinToString("") { (href, key) ->
+            val active = if (href == currentPath) " active" else ""
+            "<a href=\"" + esc(href) + "\" class=\"chip chip-link" + active + "\">" + esc(t(key)) + "</a>"
+        }
+        return "<div class=\"settings-subnav\" style=\"display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px\">" + items + "</div>"
+    }
 }

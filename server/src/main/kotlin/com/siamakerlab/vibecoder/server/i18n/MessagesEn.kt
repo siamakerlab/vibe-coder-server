@@ -99,6 +99,11 @@ internal object MessagesEn {
         "settings.tab.buildEnv" to "Build environment",
         "settings.tab.prompts" to "Prompts & Agents",
         "settings.tab.monitoring" to "Monitoring",
+        // v1.31.3 — 카테고리 sub-nav chip 라벨 (대표 페이지 + audit). 나머지는 기존
+        // settings.quicklinks.* 재사용.
+        "settings.cat.password" to "Password",
+        "settings.cat.usage" to "Claude usage",
+        "settings.cat.audit" to "Audit log",
         // v1.22.0 — Settings unified tab page title.
         "settings.tabs.title" to "Settings",
         // v1.23.0 — Tools unified tab page.
@@ -112,16 +117,13 @@ internal object MessagesEn {
 
         // ─────────────────────────────────────────────── settings page
         "settings.title" to "Settings",
-        "settings.quicklinks.title" to "Settings pages",
-        "settings.quicklinks.body" to "Jump to each category's settings page.",
-        "settings.quicklinks.keystores" to "Keystores",
-        "settings.quicklinks.sshKey" to "SSH key",
-        "settings.quicklinks.cache" to "Build cache",
+        // v1.31.3 — quicklinks card 제거(카테고리 sub-nav 로 분산). 아래는 SettingsNav.
+        // categoryNav 가 재사용하는 chip 라벨만 유지 (title/body/keystores/sshKey/cache/
+        // gitIntegrations 는 dead 제거 — buildEnv chip 은 env.subsettings.* 사용).
         "settings.quicklinks.cors" to "CORS",
         "settings.quicklinks.email" to "Email alerts",
         "settings.quicklinks.webhook" to "Webhook",
         "settings.quicklinks.push" to "Push notifications",
-        "settings.quicklinks.gitIntegrations" to "Git integrations",
         "settings.quicklinks.twoFa" to "2FA",
         "settings.quicklinks.webauthn" to "Passkey",
         "settings.quicklinks.devices" to "Devices",

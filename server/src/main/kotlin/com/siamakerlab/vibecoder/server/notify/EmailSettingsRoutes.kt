@@ -89,6 +89,7 @@ object EmailSettingsTemplates {
     <code>VIBECODER_SMTP_*</code> env 로 변경합니다 (CORS settings 와 같은 정책).
   </p>
 </header>
+${com.siamakerlab.vibecoder.server.admin.SettingsNav.categoryNav("/settings/email", lang)}
 
 $okHtml
 $errHtml

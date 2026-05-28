@@ -77,6 +77,10 @@ internal object MessagesKo {
         "settings.tab.buildEnv" to "빌드 환경",
         "settings.tab.prompts" to "프롬프트 & 에이전트",
         "settings.tab.monitoring" to "모니터링",
+        // v1.31.3 — 카테고리 sub-nav chip 라벨 (대표 페이지 + audit).
+        "settings.cat.password" to "비밀번호",
+        "settings.cat.usage" to "Claude 사용량",
+        "settings.cat.audit" to "감사 로그",
         // v1.22.0 — 설정 통합 탭 페이지 타이틀.
         "settings.tabs.title" to "설정",
         // v1.23.0 — 도구 통합 탭 페이지.
@@ -90,16 +94,12 @@ internal object MessagesKo {
 
         // ─────────────────────────────────────────────── settings page
         "settings.title" to "설정",
-        "settings.quicklinks.title" to "설정 페이지",
-        "settings.quicklinks.body" to "각 카테고리 설정 페이지로 바로 이동.",
-        "settings.quicklinks.keystores" to "키스토어",
-        "settings.quicklinks.sshKey" to "SSH 키",
-        "settings.quicklinks.cache" to "빌드 캐시",
+        // v1.31.3 — quicklinks card 제거(카테고리 sub-nav 로 분산). categoryNav 재사용
+        // chip 라벨만 유지.
         "settings.quicklinks.cors" to "CORS",
         "settings.quicklinks.email" to "이메일 알림",
         "settings.quicklinks.webhook" to "Webhook",
         "settings.quicklinks.push" to "Push 알림",
-        "settings.quicklinks.gitIntegrations" to "Git 통합",
         "settings.quicklinks.twoFa" to "2FA",
         "settings.quicklinks.webauthn" to "Passkey",
         "settings.quicklinks.devices" to "디바이스",
