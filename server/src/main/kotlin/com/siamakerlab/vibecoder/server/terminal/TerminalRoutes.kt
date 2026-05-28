@@ -359,7 +359,8 @@ internal object TerminalTemplates {
 </header>
 <div class="card" style="margin-top:14px">
   <p style="margin:0">${esc(t("term.disabled.hint"))}</p>
-  <code style="display:block;margin-top:8px;padding:10px;background:var(--code-bg,#f4f4f5);border-radius:6px;font-size:12px">security:\n  allowTerminal: true</code>
+  <code style="display:block;white-space:pre;margin-top:8px;padding:10px;background:var(--code-bg,#f4f4f5);border-radius:6px;font-size:12px">security:
+  allowTerminal: true</code>
 </div>
 """,
         )
