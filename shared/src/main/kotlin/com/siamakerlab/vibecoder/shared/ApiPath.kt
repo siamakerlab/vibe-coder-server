@@ -143,11 +143,15 @@ object ApiPath {
     // **사용 구분**:
     //   - 정적 path (`HISTORY_SEARCH_JSON` 등 `const val`) — 라우터 등록 + client
     //     호출 모두 그대로 사용.
-    //   - 동적 path (`projectHistory(projectId)` 등 `fun`) — **client 호출 전용**.
-    //     pathSeg 가 `{}` 까지 URL encode 하므로 Ktor 라우터 path template
-    //     (`{name}` placeholder) 에 직접 못 들어감. 라우터에서는 같은 모양의
-    //     hardcoded path template 을 쓰되, 클라이언트 호출은 이 함수로 통일.
-    //     SSOT 효과: path 형식/placeholder 이름이 한 곳에 명세됨 + grep 매칭 가능.
+    //   - 동적 path (`projectHistory(projectId)` 등 `fun`) — client 호출 + **라우터
+    //     등록 양쪽 사용 가능**. pathSeg 가 `{name}` 을 `%7Bname%7D` 로 URL encode
+    //     하지만, Ktor routing 은 등록 path 를 URL-decode 후 segment 를 파싱하므로
+    //     `%7Bname%7D` 가 `{name}` placeholder 로 정상 매칭된다 (JsonAdminRoutes 의
+    //     `userRole("{userId}")` / `automationSchedule(...)`, WsRoutes 의
+    //     `wsAgentConsoleLogs("{projectId}","{agentName}")` 등이 그렇게 운영 중).
+    //     v1.31.2 — 이전 주석은 "라우터에 못 들어감, hardcoded 써야 함" 이라 실제
+    //     동작과 반대였음 (16차 점검 Q2). SSOT 효과: path 형식/placeholder 이름이
+    //     한 곳에 명세 + grep 매칭. 라우터는 이 함수에 `"{name}"` 리터럴 전달.
     // ─────────────────────────────────────────────────────────────────────
 
     /**

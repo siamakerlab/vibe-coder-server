@@ -113,8 +113,13 @@ class SymbolFinder(private val workspace: WorkspacePath) {
     /** Kotlin / Java identifier 문법 + leading char 제한. 임의 정규식 injection 방지. */
     private fun isValidSymbol(s: String): Boolean {
         if (s.isBlank() || s.length > 80) return false
-        return s.first().isLetter() || s.first() == '_'
-            && s.all { it.isLetterOrDigit() || it == '_' }
+        // v1.31.2 (Q1) — 연산자 우선순위 버그 fix. `&&` 가 `||` 보다 우선이라
+        // 이전엔 `isLetter() || ('_' && all{...})` 로 파싱돼 첫 글자가 letter 면
+        // 나머지 글자 검증(`s.all`)을 건너뛰어 `foo bar`/`foo${'$'}x` 등이 통과했음.
+        // (Regex.escape 안전망 덕에 인젝션은 불가, 비정상 심볼이 매치 0 으로 새던
+        // 기능 결함.) 괄호로 leading-char OR 를 묶음.
+        return (s.first().isLetter() || s.first() == '_') &&
+            s.all { it.isLetterOrDigit() || it == '_' }
     }
 
     private fun shouldExclude(rel: String): Boolean {
