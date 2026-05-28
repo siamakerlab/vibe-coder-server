@@ -764,7 +764,7 @@ $lastLinesBlock
         val t = { key: String -> Messages.t(lang, key) }
         val htmlLang = if (lang == "ko") "ko" else "en"
         return """<!doctype html><html lang="$htmlLang"><head><meta charset="utf-8"><title>${esc(t("env.error.title"))}</title>
-        <link rel="stylesheet" href="/static/admin.css"></head><body class="layout no-nav">
+        <link rel="stylesheet" href="/static/admin.css?v=1.33.1"></head><body class="layout no-nav">
         <main class="content"><div class="auth-card"><h1>${esc(t("env.error.installFailed"))}</h1>
         <div class="error">${esc(message)}</div>
         <a href="/env-setup" class="primary-link">${esc(t("env.error.backToEnv"))}</a></div></main></body></html>"""

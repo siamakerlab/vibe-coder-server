@@ -227,10 +227,6 @@ a:hover { color: var(--primary-hover); text-decoration: underline; }
 .quota-pill .qp-reset {
     font-size: 10px; color: var(--text-dim); margin-top: 1px;
 }
-@media (max-width: 760px) {
-    /* mobile horizontal layout — pill 은 비표시 (사이드바 자체가 좁아짐). */
-    .quota-pill { display: none; }
-}
 .logout {
     width: 100%;
     background: transparent;
@@ -263,24 +259,11 @@ a:hover { color: var(--primary-hover); text-decoration: underline; }
     overflow: hidden;
 }
 
-/* v1.16.0 — 모바일 폭 자동 collapsed sidebar.
-   - 768px 이하: 사이드바 56px 폭, 라벨 / 브랜드 타이틀 / quota / 로그아웃 등 hide.
-   - 자동 collapsed CSS 는 기존 [data-sidebar-collapsed="1"] 룰들이 처리하지만,
-     media query 안에서 selector 를 layout 으로 한정해 같은 효과 적용. */
-@media (max-width: 768px) {
-    .layout { grid-template-columns: 56px 1fr; }
-    .layout .brand-title,
-    .layout .nav-links a .nav-label,
-    .layout .quota-pill,
-    .layout .user-box .user,
-    .layout .logout { display: none; }
-    .layout .sidebar { padding: 12px 8px; gap: 10px; align-items: center; }
-    .layout .brand-icon { width: 40px; height: 40px; }
-    .layout .user-box { padding-top: 0; border-top: none; }
-    .layout .sidebar-toggle { width: 32px; height: 32px; }
-    /* 모바일 content padding 도 축소. */
-    .content { padding: 16px; }
-}
+/* v1.33.1 — 모바일(≤768px) 레이아웃은 아래 "작은 태블릿 / 큰 폰" 블록(가로 헤더
+   nav)으로 단일화. 이전엔 여기에 또 다른 768px 블록(사이드바 56px 세로 collapsed)이
+   있어 같은 breakpoint 에서 가로 헤더 블록과 cascade/specificity 충돌 → 상단 헤더
+   메뉴 높이/라벨이 깨졌음(16차 이후 검토). 데스크톱 접기는 [data-sidebar-collapsed]
+   룰이 그대로 담당. */
 
 header h1 {
     margin: 0 0 24px;
@@ -963,22 +946,30 @@ pre.diff-block {
     .content { padding: 24px; }
 }
 
-/* 작은 태블릿 / 큰 폰. 사이드바 horizontal nav 로 전환. */
+/* 작은 태블릿 / 큰 폰. 사이드바 horizontal nav(상단 헤더)로 전환. v1.33.1 — 모바일
+   768px 단일 블록으로 통합(이전엔 56px 세로 collapsed 블록과 충돌). */
 @media (max-width: 768px) {
-    .layout { grid-template-columns: 1fr; }
+    /* v1.33.1 — 1칼럼 + rows(헤더 auto / 컨텐츠 1fr). 이전엔 grid-template-rows 가
+       없어 fullbleed 탭(#project-tabs-root height:100%)의 높이 기준이 무너졌음. */
+    .layout { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
     .sidebar {
         flex-direction: row;
         align-items: center;
-        padding: 12px 16px;
-        gap: 12px;
+        padding: 10px 14px;
+        gap: 10px;
         flex-wrap: wrap;
         border-right: none;
         border-bottom: 1px solid var(--border);
     }
+    /* v1.33.1 — 가로 헤더에선 접기 토글 불필요, quota pill 은 좁아 부적합. */
+    .sidebar-toggle { display: none; }
+    .quota-pill { display: none; }
     /* v1.7.6 — mobile: brand 는 horizontal (icon + title 한 줄). */
     .brand { flex-direction: row; gap: 8px; padding: 0; }
     .brand-icon { width: 32px; height: 32px; }
-    .nav-links { flex-direction: row; flex-wrap: wrap; gap: 6px; }
+    /* v1.33.1 — 가로 nav. 기본 .nav-links 의 flex:1/overflow:auto(세로 스크롤용)를
+       override — 가로에선 내용폭만 차지하고 wrap. */
+    .nav-links { flex-direction: row; flex-wrap: wrap; gap: 6px; flex: 0 1 auto; overflow: visible; min-height: 0; }
     .nav-links a { padding: 6px 10px; font-size: 13px; gap: 6px; }
     .nav-links a .nav-icon { width: 16px; height: 16px; }
     .user-box { padding: 0; border: none; margin-left: auto; }
