@@ -65,20 +65,15 @@ internal object MessagesKo {
         "nav.chat" to "채팅",
         "nav.tools" to "도구",
         "nav.terminal" to "터미널",
-        "nav.builds" to "빌드",
-        "nav.devices" to "디바이스",
         "nav.settings" to "설정",
         "nav.logout" to "로그아웃",
 
         // ─────────────────────────────────────────────── settings tabs
         "settings.tab.general" to "일반",
-        "settings.tab.account" to "계정",
         "settings.tab.security" to "보안",
-        "settings.tab.network" to "네트워크",
         "settings.tab.notifications" to "알림",
         "settings.tab.backup" to "백업",
         "settings.tab.users" to "사용자",
-        "settings.tab.audit" to "감사 로그",
         "settings.tab.buildEnv" to "빌드 환경",
         "settings.tab.prompts" to "프롬프트 & 에이전트",
         "settings.tab.monitoring" to "모니터링",
@@ -1478,7 +1473,6 @@ internal object MessagesKo {
 
         // ─────────────────────────────────────────────── terminal (v1.6.0)
         "term.title" to "Workspace 터미널",
-        "term.backToSettings" to "← 설정",
         "term.intro" to "vibe-coder-server 컨테이너 안에서 작동하는 인터랙티브 bash PTY. 완전한 xterm-256color — vim/tmux/less/htop 모두 사용 가능. 작업 디렉토리: /workspace.",
         "term.status.connecting" to "세션 생성 중…",
         "term.status.connectingWs" to "WS 연결 중 — session",

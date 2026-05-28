@@ -87,20 +87,15 @@ internal object MessagesEn {
         "nav.chat" to "Chat",
         "nav.tools" to "Tools",
         "nav.terminal" to "Terminal",
-        "nav.builds" to "Builds",
-        "nav.devices" to "Devices",
         "nav.settings" to "Settings",
         "nav.logout" to "Sign out",
 
         // ─────────────────────────────────────────────── settings tabs
         "settings.tab.general" to "General",
-        "settings.tab.account" to "Account",
         "settings.tab.security" to "Security",
-        "settings.tab.network" to "Network",
         "settings.tab.notifications" to "Notifications",
         "settings.tab.backup" to "Backup",
         "settings.tab.users" to "Users",
-        "settings.tab.audit" to "Audit",
         "settings.tab.buildEnv" to "Build environment",
         "settings.tab.prompts" to "Prompts & Agents",
         "settings.tab.monitoring" to "Monitoring",
@@ -1500,7 +1495,6 @@ internal object MessagesEn {
 
         // ─────────────────────────────────────────────── terminal (v1.6.0)
         "term.title" to "Workspace Terminal",
-        "term.backToSettings" to "← Settings",
         "term.intro" to "Interactive bash PTY running inside the vibe-coder-server container. Full xterm-256color — vim, tmux, less, htop all work. Working directory: /workspace.",
         "term.status.connecting" to "Creating session…",
         "term.status.connectingWs" to "Connecting WS to session",

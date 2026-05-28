@@ -51,8 +51,13 @@ object AdminTemplates {
         val nav = if (showNav) navHtml(currentPath, username, csrf, lang) else ""
         val layoutCls = if (showNav) "layout" else "layout no-nav"
         val contentCls = if (fullbleed) "content fullbleed" else "content"
+        // v1.27.3 Q1 회수: fullbleed 페이지 (예: /settings/tabs, /tools/tabs) 는 자체
+        // iframe 탭 UI 를 갖는다. 여기에 settings tabBar 까지 주입하면 탭바가 2줄로
+        // 중복 노출 (SettingsTabsTemplate 가 currentPath="/settings" 라 topLevelOf=="settings"
+        // → maybeTabs 주입 + iframe 내부 .tab-bar 동시). fullbleed 면 외부 tabBar 생략.
+        // 일반 settings sub-page (직접 접근, fullbleed=false) 는 그대로 tabBar 노출.
         val maybeTabs =
-            if (showNav && SettingsNav.topLevelOf(currentPath) == "settings")
+            if (showNav && !fullbleed && SettingsNav.topLevelOf(currentPath) == "settings")
                 SettingsNav.tabBar(currentPath, lang)
             else ""
         // v0.12.4 — JS 가 ajax POST 시 CSRF 토큰을 첨부할 수 있도록 meta + global.
