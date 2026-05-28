@@ -80,12 +80,20 @@ object AdminTemplates {
   <script>
     // v1.6.2 — 사이드바 접힘 상태를 first paint 전에 :root data-attribute 로 적용 (FOUC 회피).
     // CSS 의 :root[data-sidebar-collapsed="1"] .layout 가 grid-template-columns 축소.
+    // v1.33.2 — 모바일 폭(≤768px)에선 collapsed 를 무시한다. 전역 collapsed 룰
+    // (specificity (0,2,1))이 768px media 의 가로 헤더 룰((0,1,0))을 이겨, 데스크톱에서
+    // 접어둔 사용자가 모바일로 오면 가로 헤더가 56px 로 찌그러지던 문제(17차 BUG-1).
+    // first-paint + resize(matchMedia change) 양쪽에서 폭 인지하여 attribute 토글.
     (function(){
-      try {
-        if (localStorage.getItem('vibe.sidebar.collapsed') === '1') {
-          document.documentElement.dataset.sidebarCollapsed = '1';
-        }
-      } catch(e) {}
+      var KEY = 'vibe.sidebar.collapsed';
+      var mq = window.matchMedia('(max-width: 768px)');
+      function apply(){
+        var collapsed = false;
+        try { collapsed = localStorage.getItem(KEY) === '1'; } catch(e) {}
+        document.documentElement.dataset.sidebarCollapsed = (collapsed && !mq.matches) ? '1' : '0';
+      }
+      apply();
+      if (mq.addEventListener) mq.addEventListener('change', apply);
     })();
   </script>
   <script src="/static/keyboard.js" defer></script>

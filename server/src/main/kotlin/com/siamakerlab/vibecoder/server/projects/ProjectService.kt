@@ -276,14 +276,23 @@ class ProjectService(
             if (existing.sourcePath != newPath) {
                 val oldP = Path.of(existing.sourcePath)
                 Files.createDirectories(srcRoot.parent)
-                if (Files.exists(oldP) && srcRoot.notExists()) {
-                    runCatching { Files.move(oldP, srcRoot) }
-                        .onFailure { log.warn(it) { "scratch dir move failed: $oldP → $srcRoot" } }
+                // v1.33.2 (17차 BUG-2) — move 성공(또는 옮길 디렉토리 없음) 시에만 DB 갱신.
+                // 이전엔 move 실패해도 무조건 updateSourcePath 라, 실패 시 실제 데이터는
+                // oldP 에 남고 DB 는 newPath(빈 디렉토리)를 가리켜 기존 scratch 대화가
+                // 고아화됐음. 실패 시 DB 보류 → 다음 /chat 진입에서 재시도.
+                val migrated = if (Files.exists(oldP) && srcRoot.notExists()) {
+                    runCatching { Files.move(oldP, srcRoot); true }
+                        .onFailure { log.warn(it) { "scratch dir move failed: $oldP → $srcRoot (DB 갱신 보류)" } }
+                        .getOrDefault(false)
+                } else true  // 옮길 옛 디렉토리 없음 / 새 경로 이미 존재 → 경로만 갱신.
+                if (migrated) {
+                    repo.updateSourcePath(SCRATCH_ID, newPath)
+                    log.info { "scratch migrated: ${existing.sourcePath} → $newPath" }
                 }
-                repo.updateSourcePath(SCRATCH_ID, newPath)
-                log.info { "scratch migrated: ${existing.sourcePath} → $newPath" }
             }
-            ensureScratchDirsExist(newPath)
+            // migrated 실패 시 DB 는 아직 oldP — 그 경로의 dirs 보장(데이터 보존).
+            val effectivePath = (repo.findById(SCRATCH_ID) ?: existing).sourcePath
+            ensureScratchDirsExist(effectivePath)
             return (repo.findById(SCRATCH_ID) ?: existing).toDto(false, null)
         }
         Files.createDirectories(srcRoot)

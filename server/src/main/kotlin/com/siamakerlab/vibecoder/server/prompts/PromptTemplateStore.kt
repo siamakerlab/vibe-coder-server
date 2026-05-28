@@ -131,7 +131,12 @@ class PromptTemplateStore(
             val text = Files.readString(p, Charsets.UTF_8)
             json.decodeFromString(Storage.serializer(), text)
         } catch (e: Throwable) {
-            log.warn(e) { "prompt-templates.json 파싱 실패 → 빈 storage" }
+            // v1.33.2 (17차 Q-2) — 파싱 실패 시 빈 storage 로 진행하면 이후 create/update
+            // 의 persist 가 corrupt 파일을 덮어써 기존 템플릿이 영구 소실. 백업 후 진행.
+            val bak = p.resolveSibling("${p.fileName}.corrupt.${System.currentTimeMillis()}")
+            runCatching { Files.copy(p, bak) }
+                .onSuccess { log.warn(e) { "prompt-templates.json 파싱 실패 → $bak 로 백업 후 빈 storage" } }
+                .onFailure { log.warn(e) { "prompt-templates.json 파싱 실패 + 백업 실패 → 빈 storage" } }
             Storage()
         }
     }

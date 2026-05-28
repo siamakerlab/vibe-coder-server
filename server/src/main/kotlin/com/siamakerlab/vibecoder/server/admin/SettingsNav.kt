@@ -157,8 +157,10 @@ internal object SettingsNav {
             else -> emptyList()
         }
         if (subs.isEmpty()) return ""
+        val pathNoQuery = currentPath.substringBefore('?')
         val items = subs.joinToString("") { (href, key) ->
-            val active = if (href == currentPath) " active" else ""
+            // v1.33.2 (17차 Q-1) — query string 동반 경로(`/usage?range=7d`)에서도 active.
+            val active = if (href == pathNoQuery) " active" else ""
             "<a href=\"" + esc(href) + "\" class=\"chip chip-link" + active + "\">" + esc(t(key)) + "</a>"
         }
         return "<div class=\"settings-subnav\" style=\"display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px\">" + items + "</div>"
