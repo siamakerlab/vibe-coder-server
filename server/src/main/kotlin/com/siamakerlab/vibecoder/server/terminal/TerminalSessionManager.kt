@@ -246,6 +246,14 @@ class TerminalSessionManager(
 
     fun list(): List<TerminalSession> = sessions.values.toList()
 
+    /**
+     * v1.30.1 (CRITICAL-1) — owner 필터 목록. REST `GET /api/terminal/sessions` 가
+     * caller 본인 세션만 보도록 (WS owner ACL 과 대칭). ownerUserId 가 null 인 세션
+     * (legacy/이상 케이스) 은 노출하지 않는다 — 정보 누출 측면 보수적.
+     */
+    fun list(ownerUserId: String?): List<TerminalSession> =
+        sessions.values.filter { ownerUserId != null && it.ownerUserId == ownerUserId }
+
     fun close(id: String) {
         sessions[id]?.let {
             it.kill()

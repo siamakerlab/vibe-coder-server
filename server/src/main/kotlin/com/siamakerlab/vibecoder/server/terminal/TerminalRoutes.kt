@@ -141,7 +141,11 @@ fun Routing.terminalRoutes(
 
         get(ApiPath.TERMINAL_SESSIONS) {
             if (!requireApiAdminOrFail()) return@get
-            val list = manager.list().map {
+            // v1.30.1 (CRITICAL-1) — caller 본인 세션만 노출. WS 핸드셰이크는 owner ACL
+            // 을 강제하는데 REST list 만 전체 노출이라 비대칭이었음 (멀티 admin 시 타 owner
+            // sessionId/workdir 누출 + /terminal init 이 타 세션 attach → orphan pane).
+            val uid = userIdOf()
+            val list = manager.list(uid).map {
                 mapOf(
                     "sessionId" to it.id,
                     "workdir" to it.workdir,
@@ -155,6 +159,12 @@ fun Routing.terminalRoutes(
         delete(ApiPath.terminalSession("{id}")) {
             if (!requireApiAdminOrFail()) return@delete
             val id = call.parameters["id"].orEmpty()
+            // v1.30.1 (BUG-2) — owner 검증. WS 와 동일하게 본인 세션만 종료 가능.
+            val sess = manager.get(id)
+            if (sess != null && sess.ownerUserId != null && sess.ownerUserId != userIdOf()) {
+                call.respond(HttpStatusCode.Forbidden, mapOf("error" to "not_session_owner"))
+                return@delete
+            }
             manager.close(id)
             call.respond(HttpStatusCode.NoContent)
         }
