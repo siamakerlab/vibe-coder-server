@@ -48,6 +48,20 @@
       if (window.location.hash !== '#' + tab) {
         history.replaceState(null, '', '#' + tab);
       }
+      // v1.29.0 — "더보기" 드롭다운: 항목 선택 후 닫고, overflow 탭이 활성일 때
+      // summary 에 현재 탭명을 표시(상단 탭바엔 primary 만 있어 위치 파악용).
+      var moreDd = root.querySelector('details.more-dropdown');
+      if (moreDd) {
+        moreDd.removeAttribute('open');
+        var summary = moreDd.querySelector('summary');
+        if (summary) {
+          var baseLabel = summary.getAttribute('data-more-label') || '';
+          var activeOverflow = moreDd.querySelector('[data-tab-btn="' + tab + '"]');
+          summary.textContent = (activeOverflow
+            ? baseLabel + ': ' + activeOverflow.textContent.trim()
+            : baseLabel) + ' ▾';
+        }
+      }
     }
 
     buttons.forEach(b => {

@@ -44,13 +44,19 @@ internal object ProjectTabsTemplate {
     // v1.13.0 — Overview 탭 제거. 그 안의 unique 기능 (메타데이터 / Delete /
     // Zip download) 은 sticky 헤더와 Settings 드롭다운으로 이동. Recent builds 는
     // 이미 Builds 탭에 있어 중복 제거. Action link 들은 모두 다른 탭으로 이미 존재.
-    private val TABS = listOf(
+    // v1.29.0 — 탭 빈도 분석으로 primary/overflow 분리 (사용자 요청).
+    //  primary  = 일상 워크플로 (콘솔/빌드/파일/Git/에이전트/히스토리) → 상단 탭바.
+    //  overflow = 저빈도 분석·도구 (심볼/통계/의존성/wrapper/자동화/env-files) → "더보기" 드롭다운.
+    // iframe prerender 는 전체 유지(탭 전환 즉시성 보존) — 탭 "버튼"만 더보기로 이동.
+    private val PRIMARY_TABS = listOf(
         Tab("console", "tabs.console", "/console", "tab-console"),
         Tab("builds", "tabs.builds", "/builds", "tab-builds"),
         Tab("files", "tabs.files", "/tree", "tab-files"),
         Tab("git", "tabs.git", "/git", "tab-git"),
         Tab("agents", "tabs.agents", "/agents", "tab-agents"),
         Tab("history", "tabs.history", "/history", "tab-history"),
+    )
+    private val OVERFLOW_TABS = listOf(
         Tab("symbols", "tabs.symbols", "/symbols", "tab-symbols"),
         Tab("stats", "tabs.stats", "/stats", "tab-stats"),
         Tab("deps", "tabs.deps", "/deps", "tab-deps"),
@@ -58,6 +64,7 @@ internal object ProjectTabsTemplate {
         Tab("automation", "tabs.automation", "/automation", "tab-automation"),
         Tab("envFiles", "tabs.envFiles", "/env-files", "tab-env-files"),
     )
+    private val TABS = PRIMARY_TABS + OVERFLOW_TABS
 
     /**
      * Render 통합 페이지. [project] 는 sticky 헤더 + iframe 5개 src 의 base path.
@@ -73,7 +80,8 @@ internal object ProjectTabsTemplate {
         val t = { key: String -> Messages.t(lang, key) }
         val esc = ::escapeHtml
 
-        val tabBtns = TABS.joinToString("") { tab ->
+        // primary 탭만 상단 탭바에. overflow 는 더보기 드롭다운에 (아래 moreLinks).
+        val tabBtns = PRIMARY_TABS.joinToString("") { tab ->
             """<button type="button" class="tab-btn" data-tab-btn="${esc(tab.id)}"
                        title="${esc(t(tab.labelKey))}">${esc(t(tab.labelKey))}</button>"""
         }
@@ -85,9 +93,14 @@ internal object ProjectTabsTemplate {
                         referrerpolicy="same-origin"></iframe>
               </div>"""
         }
-        // v1.12.0 — 기존 More 메뉴는 모든 항목을 탭으로 통합하면서 제거. 단 global
-        // /usage 는 프로젝트 scope 가 아니라 탭에 부적합 — 별도 한 줄 link 로만 남김.
-        val moreLinks = """<a href="/usage" target="_blank" rel="noopener" class="more-item">${esc(t("tabs.more.usage"))} ↗</a>"""
+        // v1.29.0 — 더보기 드롭다운: overflow 탭 버튼(data-tab-btn — project-tabs.js 가
+        // 기존 탭 로직으로 처리, iframe pane 재사용) + 구분선 + global /usage 외부 link.
+        val overflowBtns = OVERFLOW_TABS.joinToString("") { tab ->
+            """<button type="button" class="more-item" data-tab-btn="${esc(tab.id)}"
+                       title="${esc(t(tab.labelKey))}">${esc(t(tab.labelKey))}</button>"""
+        }
+        val moreLinks = overflowBtns +
+            """<hr><a href="/usage" target="_blank" rel="noopener" class="more-item">${esc(t("tabs.more.usage"))} ↗</a>"""
 
         val flashHtml = buildString {
             if (!flashOk.isNullOrBlank()) {
@@ -209,6 +222,15 @@ internal object ProjectTabsTemplate {
     font-size: 13px;
   }
   #project-tabs-root .more-item:hover { background: #1a1f2c; }
+  /* v1.29.0 — 더보기 메뉴 안 overflow 탭 버튼 (a.more-item 과 동일 외형, button reset). */
+  #project-tabs-root button.more-item {
+    display: block; width: 100%; text-align: left; background: transparent;
+    border: 0; cursor: pointer; font-family: inherit;
+  }
+  #project-tabs-root button.more-item.active { color: var(--accent, #6aa9ff); }
+  #project-tabs-root .more-menu hr {
+    border: 0; border-top: 1px solid #1f2330; margin: 4px 0;
+  }
   #project-tabs-root .tab-content {
     flex: 1; position: relative; overflow: hidden;
   }
@@ -262,7 +284,7 @@ internal object ProjectTabsTemplate {
       $tabBtns
     </div>
     <details class="more-dropdown">
-      <summary>${esc(t("tabs.more.label"))} ▾</summary>
+      <summary data-more-label="${esc(t("tabs.more.label"))}">${esc(t("tabs.more.label"))} ▾</summary>
       <div class="more-menu">$moreLinks</div>
     </details>
   </div>
@@ -271,7 +293,7 @@ $tabPanes
   </div>
 </div>
 
-<script src="/static/project-tabs.js?v=1.27.5" defer></script>
+<script src="/static/project-tabs.js?v=1.29.0" defer></script>
 """,
         )
     }
