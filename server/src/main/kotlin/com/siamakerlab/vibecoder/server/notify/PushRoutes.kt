@@ -11,6 +11,7 @@ import com.siamakerlab.vibecoder.server.repo.PushSubscriptionRepository
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
+import io.ktor.server.request.receiveParameters
 import io.ktor.server.auth.authenticate
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.respond
@@ -103,6 +104,13 @@ fun Routing.pushRoutes(
     post("/settings/push/test") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireWriteAccessOrRedirect(sess)) return@post
+        // v1.31.0 (A-B3) — CSRF 검증. 폼은 _csrf hidden input(body)을 렌더하나
+        // 핸들러가 검증을 빠뜨려 cross-site POST 로 broadcast/삭제 트리거 가능했음.
+        val form = call.receiveParameters()
+        if (!CsrfTokens.isValidCsrf(call, form["_csrf"])) {
+            call.respondRedirect("/settings/push?err=csrf")
+            return@post
+        }
         notifier.broadcast("Vibe Coder 테스트", "이 알림을 보면 Web Push 가 정상 동작합니다.")
         call.respondRedirect("/settings/push?ok=test_sent")
     }
@@ -110,6 +118,11 @@ fun Routing.pushRoutes(
     post("/settings/push/delete/{id}") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireWriteAccessOrRedirect(sess)) return@post
+        val form = call.receiveParameters()
+        if (!CsrfTokens.isValidCsrf(call, form["_csrf"])) {
+            call.respondRedirect("/settings/push?err=csrf")
+            return@post
+        }
         val id = call.parameters["id"]
             ?: return@post call.respondRedirect("/settings/push?err=missing_id")
         subscriptionRepo.deleteById(id)

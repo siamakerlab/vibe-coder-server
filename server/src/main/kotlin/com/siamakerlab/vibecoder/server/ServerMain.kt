@@ -490,6 +490,9 @@ fun main(args: Array<String>) {
         // cancel. 누락 시 docker stop 후에도 zombie bash 가 남아 다음 부팅에서 FD
         // 누수 가능.
         runCatching { terminalManager.shutdownAll() }
+        // v1.31.0 (B-BUG1) — 진행 중 claude OAuth 로그인 세션의 script/claude 자식
+        // 프로세스 + drainOutput/watchProcess job graceful 종료.
+        runCatching { claudeLogin.shutdown() }
     })
 
     printBanner(config, workspaceRoot, pairing, authService.adminExists())

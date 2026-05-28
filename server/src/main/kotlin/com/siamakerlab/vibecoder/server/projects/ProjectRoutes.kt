@@ -3,6 +3,7 @@ package com.siamakerlab.vibecoder.server.projects
 import com.siamakerlab.vibecoder.server.auth.AUTH_BEARER
 import com.siamakerlab.vibecoder.server.auth.requireApiWrite
 import com.siamakerlab.vibecoder.server.auth.requireDevice
+import com.siamakerlab.vibecoder.server.auth.requireProjectAcl
 import com.siamakerlab.vibecoder.shared.ApiPath
 import com.siamakerlab.vibecoder.shared.dto.RegisterProjectRequestDto
 import io.ktor.http.HttpStatusCode
@@ -52,6 +53,9 @@ fun Routing.projectRoutes(service: ProjectService) {
             call.requireApiWrite()
             val id = call.parameters["projectId"]
                 ?: throw com.siamakerlab.vibecoder.server.error.ApiException.localized(400, "bad_request", messageKey = "api.common.projectIdRequired")
+            // v1.31.0 (A-B1) — Project ACL. GET 은 canUserAccess 검증하는데 delete 만
+            // 누락돼 있었음(비대칭). ACL 제한 member 가 임의 프로젝트 삭제 가능했음.
+            call.requireProjectAcl(service, id)
             val removed = service.delete(id)
             call.respond(if (removed) HttpStatusCode.NoContent else HttpStatusCode.NotFound)
         }

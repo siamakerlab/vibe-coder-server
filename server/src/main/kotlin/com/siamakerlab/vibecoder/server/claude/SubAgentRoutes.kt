@@ -15,6 +15,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
+import io.ktor.server.request.receiveParameters
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondRedirect
@@ -224,6 +225,12 @@ $rowsHtml
         if (!requireWriteAccessOrRedirect(sess)) return@post
         val id = call.parameters["id"] ?: return@post call.respondRedirect("/projects")
         val agentName = call.parameters["agent"] ?: return@post call.respondRedirect("/projects/$id/agents")
+        // v1.31.0 (A-B4) — CSRF 검증. 폼은 _csrf hidden input 을 렌더하나 핸들러가
+        // 빠뜨려 cross-site POST 로 sub-agent 세션 강제 재시작 가능했음.
+        val form = call.receiveParameters()
+        if (!CsrfTokens.isValidCsrf(call, form["_csrf"])) {
+            return@post call.respondRedirect("/projects/$id/agents?err=csrf")
+        }
         if (!AGENT_NAME_PATTERN.matches(agentName)) {
             return@post call.respondRedirect("/projects/$id/agents?err=bad_name")
         }

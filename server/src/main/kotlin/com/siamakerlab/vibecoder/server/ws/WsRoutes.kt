@@ -56,11 +56,17 @@ fun Routing.wsRoutes(
     projects: ProjectService,
 ) {
     webSocket("/ws/projects/{projectId}/builds/{buildId}/logs") {
-        handleLegacyLogStream(hub, deviceRepo, tokens, topic = call.parameters["buildId"]!!)
+        // v1.31.0 (A-B2) — projectId scope ACL 검증 (console WS 와 대칭).
+        handleLegacyLogStream(
+            hub, deviceRepo, tokens, topic = call.parameters["buildId"]!!,
+            aclProjectId = call.parameters["projectId"], userRepo = userRepo, projects = projects,
+        )
     }
     webSocket("/ws/env-setup/{taskId}/logs") {
         // 빌드환경 설치 작업 (vibe-doctor) 의 stdout 라인 + 종료 Done 을 흘려보낸다.
         // 빌드 로그와 동일한 legacy log stream 패턴이므로 그대로 재사용.
+        // v1.31.0 — env-setup 은 글로벌 빌드환경 작업(특정 프로젝트 아님)이라 project
+        // ACL 미적용. 인증(authenticateFirstFrame)은 그대로.
         handleLegacyLogStream(hub, deviceRepo, tokens, topic = call.parameters["taskId"]!!)
     }
     webSocket("/ws/projects/{projectId}/console/logs") {
@@ -189,8 +195,31 @@ private suspend fun WebSocketServerSession.handleLegacyLogStream(
     deviceRepo: DeviceRepository,
     tokens: TokenService,
     topic: String,
+    // v1.31.0 (A-B2) — build logs WS 의 Project ACL. console WS 와 동일하게 caller 가
+    // 해당 프로젝트 ACL 을 가졌는지 검증. null 이면 (env-setup 같은 글로벌 작업) skip.
+    aclProjectId: String? = null,
+    userRepo: AdminUserRepository? = null,
+    projects: ProjectService? = null,
 ) {
     if (!authenticateFirstFrame(deviceRepo, tokens)) return
+
+    // v1.31.0 (A-B2) — build 로그처럼 projectId scope 가 있으면 ACL 검사 (console WS 와
+    // 대칭). 이전엔 buildId 만 알면 ACL 밖 프로젝트 빌드 로그를 스트리밍 가능했음.
+    if (aclProjectId != null && userRepo != null && projects != null) {
+        val raw = call.request.cookies[SESSION_COOKIE]
+            ?: call.request.headers["Authorization"]?.removePrefix("Bearer ")?.trim()
+        val device = raw?.let { deviceRepo.findByTokenHash(tokens.hashOf(it)) }
+        val role = device?.userId?.let { runCatching { userRepo.findById(it)?.role }.getOrNull() }
+        val isAdmin = (role ?: "admin") == "admin"
+        val userId = device?.userId
+        if (userId != null && !projects.canUserAccess(userId, isAdmin, aclProjectId)) {
+            runCatching {
+                sendFrame(WsFrame.Error("project_forbidden", "project not in your ACL"))
+                close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "project_forbidden"))
+            }
+            return
+        }
+    }
 
     // Forward broadcast frames until Done arrives, then send Done and stop.
     hub.subscribe(topic)

@@ -598,6 +598,24 @@ internal suspend fun io.ktor.server.routing.RoutingContext.requireProjectAccessO
     return false
 }
 
+/**
+ * v1.31.0 (A-C1 회수) — throw 방식 Project ACL 가드. label(`return@get`/`return@post`)
+ * 이 필요 없어 다수 핸들러에 일괄 한 줄로 삽입 가능(WebProjectRoutes 전 per-project
+ * SSR 핸들러). 위반 시 `project_forbidden` ApiException → StatusPagesPlugin 이 브라우저
+ * 폼 navigation(Accept: text/html)이면 `/projects?err=forbidden` 으로 redirect.
+ */
+internal fun requireProjectAccessOrThrow(
+    sess: WebSession,
+    projects: com.siamakerlab.vibecoder.server.projects.ProjectService,
+    projectId: String,
+) {
+    if (!projects.canUserAccess(sess.userId, sess.isAdmin, projectId)) {
+        throw com.siamakerlab.vibecoder.server.error.ApiException.localized(
+            403, "project_forbidden", messageKey = "api.auth.projectForbidden",
+        )
+    }
+}
+
 private fun setSessionCookie(call: ApplicationCall, token: String) {
     // LAN HTTP 환경 가정 → Secure 미지정 (reverse proxy 뒤라면 X-Forwarded-Proto로 감지 가능하나 PoC에서는 생략)
     call.response.cookies.append(

@@ -46,6 +46,11 @@ object ConfigPersistence {
      * 검증: ServerConfig 의 valueOf 가능 여부는 호출자 (라우트) 가 책임. 본 메서드는
      * 직렬화 + 디스크 쓰기만 담당.
      */
+    // v1.31.0 (C-B1 회수) — 동시 /settings 저장 직렬화. 이전엔 동기화 없이 고정 tmp
+    // 파일명(`server.yml.tmp`)을 공유 → 두 저장이 거의 동시에 오면 tmp 가 서로 덮어써져
+    // 깨진 YAML move 가능, backup rotation 도 같은 초에 비결정적. @Synchronized 로
+    // save 를 직렬화 + tmp 에 고유 suffix 추가(이중 안전).
+    @Synchronized
     fun save(newConfig: ServerConfig): SaveResult {
         val target = resolveTargetPath()
         Files.createDirectories(target.parent)
@@ -64,7 +69,7 @@ object ConfigPersistence {
         } else null
 
         val yamlText = yaml.encodeToString(ServerConfig.serializer(), newConfig)
-        val tmp = target.resolveSibling("${target.fileName}.tmp")
+        val tmp = target.resolveSibling("${target.fileName}.tmp.${System.nanoTime()}")
         try {
             Files.writeString(
                 tmp, yamlText, Charsets.UTF_8,

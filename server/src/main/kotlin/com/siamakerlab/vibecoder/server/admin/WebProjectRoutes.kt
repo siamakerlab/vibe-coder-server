@@ -173,6 +173,7 @@ fun Routing.webProjectRoutes(
     get("/projects/{id}") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val p = runCatching { projects.get(id) }.getOrElse {
             call.respondRedirect("/projects?err=${Messages.t(sess.language, "flash.project.notFound", id).encodeUrl()}")
             return@get
@@ -194,6 +195,7 @@ fun Routing.webProjectRoutes(
     get("/projects/{id}/overview") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val p = runCatching { projects.get(id) }.getOrElse {
             call.respondRedirect("/projects?err=${Messages.t(sess.language, "flash.project.notFound", id).encodeUrl()}")
             return@get
@@ -222,6 +224,7 @@ fun Routing.webProjectRoutes(
         if (!requireWriteAccessOrRedirect(sess)) return@post
         requireCsrf()
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val removed = projects.delete(id)
         log.info { "project delete: id=$id removed=$removed by ${sess.username}" }
         authDeps.audit.projectDelete(sess.userId, id, call.request.origin.remoteHost, removed)
@@ -233,6 +236,7 @@ fun Routing.webProjectRoutes(
     get("/projects/{id}/console") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val p = runCatching { projects.get(id) }.getOrElse {
             call.respondRedirect("/projects?err=${Messages.t(sess.language, "flash.project.notFound", id).encodeUrl()}")
             return@get
@@ -272,6 +276,7 @@ fun Routing.webProjectRoutes(
         if (!requireWriteAccessOrRedirect(sess)) return@post
         requireCsrf()
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         runCatching { sessionManager.startNew(id) }
             .onFailure { log.warn(it) { "console reset failed for $id" } }
         log.info { "console reset: $id by ${sess.username}" }
@@ -285,6 +290,7 @@ fun Routing.webProjectRoutes(
     get("/projects/{id}/builds") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val p = runCatching { projects.get(id) }.getOrElse {
             call.respondRedirect("/projects?err=${Messages.t(sess.language, "flash.project.notFound", id).encodeUrl()}")
             return@get
@@ -325,6 +331,7 @@ fun Routing.webProjectRoutes(
         if (!requireWriteAccessOrRedirect(sess)) return@post
         requireCsrf()
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         // v1.26.0 — keystore 가드 (운영 정책: 키스토어 임의 생성 금지). UI 가 이미 비활성화
         // 했지만 직접 POST 우회 차단. project.packageName 매칭 keystore 가 있어야만 진행.
         // v1.26.2 — Q-2 명시: 실제 enforcement 는 v1.26.1 의 `BuildService.requireKeystoreOrThrow`
@@ -357,6 +364,7 @@ fun Routing.webProjectRoutes(
     get("/projects/{id}/builds/{buildId}") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val buildId = call.parameters["buildId"]!!
         val p = runCatching { projects.get(id) }.getOrElse {
             call.respondRedirect("/projects?err=${Messages.t(sess.language, "flash.project.notFound", id).encodeUrl()}")
@@ -428,6 +436,7 @@ fun Routing.webProjectRoutes(
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         requireCsrf()
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val buildId = call.parameters["buildId"]!!
         val p = runCatching { projects.get(id) }.getOrElse {
             call.respondRedirect("/projects?err=${Messages.t(sess.language, "flash.project.notFound", id).encodeUrl()}")
@@ -467,6 +476,7 @@ fun Routing.webProjectRoutes(
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         requireCsrf()
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val buildId = call.parameters["buildId"]!!
         runCatching { projects.get(id) }.getOrElse {
             call.respondRedirect("/projects?err=${Messages.t(sess.language, "flash.project.notFound", id).encodeUrl()}")
@@ -502,6 +512,7 @@ fun Routing.webProjectRoutes(
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         requireCsrf()
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val buildId = call.parameters["buildId"]!!
         try {
             builds.cancel(buildId)
@@ -521,6 +532,7 @@ fun Routing.webProjectRoutes(
     get("/projects/{id}/tree") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val p = runCatching { projects.get(id) }.getOrElse {
             call.respondRedirect("/projects?err=${Messages.t(sess.language, "flash.project.notFound", id).encodeUrl()}")
             return@get
@@ -559,6 +571,7 @@ fun Routing.webProjectRoutes(
         if (!requireWriteAccessOrRedirect(sess)) return@post
         val params = requireCsrf()
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val parent = params["parent"].orEmpty()
         val name = params["name"].orEmpty().trim()
         val relPath = if (parent.isBlank()) name else "$parent/$name"
@@ -577,6 +590,7 @@ fun Routing.webProjectRoutes(
         if (!requireWriteAccessOrRedirect(sess)) return@post
         val params = requireCsrf()
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val parent = params["parent"].orEmpty()
         val name = params["name"].orEmpty().trim()
         val relPath = if (parent.isBlank()) name else "$parent/$name"
@@ -596,6 +610,7 @@ fun Routing.webProjectRoutes(
         if (!requireWriteAccessOrRedirect(sess)) return@post
         val params = requireCsrf()
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val relPath = params["path"].orEmpty()
         val newName = params["newName"].orEmpty().trim()
         // parent 추출 — relPath 의 마지막 / 앞.
@@ -615,6 +630,7 @@ fun Routing.webProjectRoutes(
         if (!requireWriteAccessOrRedirect(sess)) return@post
         val params = requireCsrf()
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val relPath = params["path"].orEmpty()
         val parent = relPath.substringBeforeLast('/', "")
         val result = runCatching { fileBrowser.delete(id, relPath) }
@@ -634,6 +650,7 @@ fun Routing.webProjectRoutes(
         if (!requireWriteAccessOrRedirect(sess)) return@post
         val params = requireCsrf()
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val dstParent = params["dstParent"].orEmpty()
         val paths = (params["paths"].orEmpty()).split("\n").map { it.trim() }.filter { it.isNotEmpty() }
         var failMsg: String? = null
@@ -657,6 +674,7 @@ fun Routing.webProjectRoutes(
         if (!requireWriteAccessOrRedirect(sess)) return@post
         val params = requireCsrf()
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val dstParent = params["dstParent"].orEmpty()
         val paths = (params["paths"].orEmpty()).split("\n").map { it.trim() }.filter { it.isNotEmpty() }
         var failMsg: String? = null
@@ -680,6 +698,7 @@ fun Routing.webProjectRoutes(
         if (!requireWriteAccessOrRedirect(sess)) return@post
         val params = requireCsrf()
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val parent = params["parent"].orEmpty()
         val paths = (params["paths"].orEmpty()).split("\n").map { it.trim() }.filter { it.isNotEmpty() }
         var deleted = 0
@@ -704,8 +723,9 @@ fun Routing.webProjectRoutes(
     // v1.24.0 — MAX_DOWNLOAD_BYTES (200 MB) 사용. 기존 /raw 의 10 MB 한도가
     // APK / AAB 다운로드 차단하던 회귀 회수.
     get("/projects/{id}/files/download") {
-        requireSessionOrRedirect(authDeps) ?: return@get
+        val sess = requireSessionOrRedirect(authDeps) ?: return@get
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val relPath = call.request.queryParameters["path"].orEmpty()
         val raw = runCatching {
             fileBrowser.resolveForRawRead(id, relPath,
@@ -729,9 +749,10 @@ fun Routing.webProjectRoutes(
     // 다중 파일 다운로드 → zip stream. paths 는 form post (newline-separated) 또는
     // GET query 의 `paths` (\n encoded). UI 는 hidden form POST 로 호출.
     post("/projects/{id}/files/download-zip") {
-        requireSessionOrRedirect(authDeps) ?: return@post
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
         val params = requireCsrf()
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val paths = (params["paths"].orEmpty()).split("\n").map { it.trim() }.filter { it.isNotEmpty() }
         if (paths.isEmpty()) {
             call.respondText("no paths", ContentType.Text.Plain, HttpStatusCode.BadRequest)
@@ -795,6 +816,7 @@ fun Routing.webProjectRoutes(
         // multipart 라 requireCsrf 못 씀 → query string `?_csrf=...` 또는 헤더 검증.
         CsrfTokens.verifyCsrfFromQueryOrHeader(call)
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         // v1.27.4 (B1 회수) — parent 를 query param 에서 먼저 확정. multipart part 순서
         // 의존 제거: file part 가 parent FormItem 보다 먼저 와도 정확한 디렉토리에 업로드.
         // FormItem "parent" 는 query 가 없을 때만 fallback (구형 form 호환).
@@ -845,6 +867,7 @@ fun Routing.webProjectRoutes(
     get("/projects/{id}/view") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val relPath = call.request.queryParameters["path"].orEmpty()
         val p = runCatching { projects.get(id) }.getOrElse {
             call.respondRedirect("/projects?err=${Messages.t(sess.language, "flash.project.notFound", id).encodeUrl()}")
@@ -902,8 +925,9 @@ fun Routing.webProjectRoutes(
     // v1.24.0 — 보안 강화: X-Content-Type-Options: nosniff + CSP sandbox 헤더. SVG 같은
     // active-content MIME 은 guessImageMime 에서 octet-stream 으로 downgrade (XSS 방어).
     get("/projects/{id}/raw") {
-        requireSessionOrRedirect(authDeps) ?: return@get
+        val sess = requireSessionOrRedirect(authDeps) ?: return@get
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val relPath = call.request.queryParameters["path"].orEmpty()
         val raw = runCatching { fileBrowser.resolveForRawRead(id, relPath) }.getOrElse { e ->
             val sc = (e as? ApiException)?.statusCode ?: 500
@@ -939,6 +963,7 @@ fun Routing.webProjectRoutes(
         if (!requireWriteAccessOrRedirect(sess)) return@post
         val params = requireCsrf()
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val relPath = params["path"].orEmpty()
         val content = params["content"].orEmpty()
         try {
@@ -956,6 +981,7 @@ fun Routing.webProjectRoutes(
     get("/projects/{id}/git") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val p = runCatching { projects.get(id) }.getOrElse {
             call.respondRedirect("/projects?err=${Messages.t(sess.language, "flash.project.notFound", id).encodeUrl()}")
             return@get
@@ -987,6 +1013,7 @@ fun Routing.webProjectRoutes(
         if (!requireWriteAccessOrRedirect(sess)) return@post
         val params = requireCsrf()
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val message = params["message"].orEmpty()
         val push = params["push"] != null
         val onlyTracked = params["onlyTracked"] != null
@@ -1046,6 +1073,7 @@ fun Routing.webProjectRoutes(
     get("/projects/{id}/zip") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         // ProjectService.get 으로 존재 확인 (잘못된 id → 404).
         val p = runCatching { projects.get(id) }.getOrElse {
             call.respondRedirect("/projects?err=${Messages.t(sess.language, "flash.project.notFound", id).encodeUrl()}")
@@ -1079,6 +1107,7 @@ fun Routing.webProjectRoutes(
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireWriteAccessOrRedirect(sess)) return@post
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         requireCsrf()  // CSRF 검증은 유지 — 외부 트리거 방지.
         log.info { "slash chip ignored (deprecated v0.75.0): project=$id by ${sess.username}" }
         val target = if (id == ProjectService.SCRATCH_ID) "/chat" else "/projects/$id/console"

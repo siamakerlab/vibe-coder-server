@@ -191,7 +191,15 @@ fun Routing.buildAutomationRoutes(
             authDeps.audit.webhookBuildTriggered(null, call.request.origin.remoteHost, projectId, row.name)
         }.onFailure { e ->
             log.warn(e) { "webhook enqueue failed: $projectId" }
-            call.respond(HttpStatusCode.InternalServerError, mapOf("error" to (e.message ?: "enqueue failed")))
+            // v1.31.0 (B-BUG2) — ApiException(예: 키스토어 미등록 409 keystore_required)은
+            // 그 status code 로 응답. 이전엔 모두 500 으로 변질돼 외부 CI 가 "서버 내부
+            // 오류"로 오인 (실제론 운영자가 키스토어를 등록해야 하는 client-fixable 상황).
+            val ae = e as? com.siamakerlab.vibecoder.server.error.ApiException
+            if (ae != null) {
+                call.respond(HttpStatusCode.fromValue(ae.statusCode), mapOf("error" to ae.code))
+            } else {
+                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to (e.message ?: "enqueue failed")))
+            }
             return@post
         }
         call.respond(HttpStatusCode.Accepted, mapOf("projectId" to projectId, "triggered" to true))

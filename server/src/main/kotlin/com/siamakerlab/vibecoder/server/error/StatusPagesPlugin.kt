@@ -30,13 +30,21 @@ fun Application.installStatusPages(
             // v1.28.1 에서 이미 SSR redirect 로 회수). open-redirect 방지 위해 referer 의
             // path 만 사용(host 무시). JSON API(Accept: application/json)는 기존 JSON 유지.
             val isCsrf = cause.code == "csrf_token_mismatch" || cause.code == "csrf_no_session"
+            // v1.31.0 (A-C1) — project_forbidden 도 브라우저 폼 navigation 이면 JSON
+            // 대신 /projects 로 redirect. WebProjectRoutes 의 throw 기반 ACL 가드
+            // (requireProjectAccessOrThrow)가 던지는 코드.
+            val isForbidden = cause.code == "project_forbidden"
             val wantsHtml = call.request.headers["Accept"]?.contains("text/html") == true
-            if (isCsrf && wantsHtml) {
-                val refPath = call.request.headers["Referer"]
-                    ?.let { runCatching { java.net.URI(it).path }.getOrNull() }
-                    ?.takeIf { it.startsWith("/") } ?: "/"
-                val sep = if (refPath.contains("?")) "&" else "?"
-                call.respondRedirect("$refPath${sep}err=csrf")
+            if ((isCsrf || isForbidden) && wantsHtml) {
+                if (isForbidden) {
+                    call.respondRedirect("/projects?err=forbidden")
+                } else {
+                    val refPath = call.request.headers["Referer"]
+                        ?.let { runCatching { java.net.URI(it).path }.getOrNull() }
+                        ?.takeIf { it.startsWith("/") } ?: "/"
+                    val sep = if (refPath.contains("?")) "&" else "?"
+                    call.respondRedirect("$refPath${sep}err=csrf")
+                }
                 return@exception
             }
             // v0.92.0 — Phase 67 i18n. messageKey 가 있으면 Accept-Language 기반 localize.

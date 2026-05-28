@@ -103,8 +103,13 @@ class ConversationArchiver(
             val ok = runCatching {
                 if (!dryRun) {
                     Files.createDirectories(dir)
-                    val target = dir.resolve("session-$sid.json")
-                    if (!Files.exists(target)) Files.writeString(target, sessionJson)
+                    // v1.31.0 (C1 회수) — 파일명에 archive 시각 포함 + 무조건 write.
+                    // 이전엔 `session-<sid>.json` 고정 + exists 시 skip 인데 delete 는
+                    // 무조건 실행 → 같은 sessionId 가 --resume 으로 재활성돼 새 turn 이
+                    // 쌓인 뒤 다시 archive 되면, 옛 파일은 그대로 두고 새 turn 만 DB 에서
+                    // 삭제 = 데이터 영구 유실. 매 archive 를 고유 파일로 써서 손실 차단.
+                    val target = dir.resolve("session-$sid-${Instant.now().toEpochMilli()}.json")
+                    Files.writeString(target, sessionJson)
                 }
                 true
             }.getOrElse { e ->

@@ -7,6 +7,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -142,6 +143,17 @@ class ClaudeLoginService(
         }
         log.info { "claude login session canceled: ${s.id}" }
         s.toDto()
+    }
+
+    /**
+     * v1.31.0 (B-BUG1 회수) — JVM shutdown hook 용. 진행 중인 `script claude auth login`
+     * 자식 프로세스를 강제 종료하고 내부 scope 를 cancel (drainOutput/watchProcess 정리).
+     * 이전엔 shutdown 경로가 없어 컨테이너 재시작 시 orphan script/claude 프로세스 +
+     * 두 블로킹 job 이 JVM 강제 종료에만 의존했음.
+     */
+    fun shutdown() {
+        runCatching { session?.process?.destroyForcibly() }
+        scope.cancel()
     }
 
     // ─────────────────────────────────────────────────────────────────
