@@ -9,6 +9,7 @@ import com.siamakerlab.vibecoder.server.repo.AdminUserRepository
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentType
 import io.ktor.server.application.call
+import io.ktor.server.plugins.origin
 import io.ktor.server.request.receiveParameters
 import io.ktor.server.response.respondRedirect
 import io.ktor.server.response.respondText
@@ -80,7 +81,7 @@ fun Routing.twoFactorRoutes(deps: AdminRoutesDeps, users: AdminUserRepository) {
         }
         users.enableTotp(sess.userId, secret)
         pendingSecrets.remove(sess.userId)
-        deps.audit.twoFactorEnabled(sess.userId, call.request.local.remoteHost)
+        deps.audit.twoFactorEnabled(sess.userId, call.request.origin.remoteHost)
         log.info { "2FA enabled for user ${sess.username}" }
         call.respondRedirect("/2fa?ok=${enc(Messages.t(sess.language, "twofa.flash.enabled"))}")
     }
@@ -100,7 +101,7 @@ fun Routing.twoFactorRoutes(deps: AdminRoutesDeps, users: AdminUserRepository) {
             return@post
         }
         users.disableTotp(sess.userId)
-        deps.audit.twoFactorDisabled(sess.userId, call.request.local.remoteHost)
+        deps.audit.twoFactorDisabled(sess.userId, call.request.origin.remoteHost)
         log.info { "2FA disabled for user ${sess.username}" }
         call.respondRedirect("/2fa?ok=${enc(Messages.t(sess.language, "twofa.flash.disabled"))}")
     }

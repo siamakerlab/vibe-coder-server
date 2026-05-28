@@ -17,6 +17,7 @@ import com.siamakerlab.vibecoder.shared.dto.SetupStatusDto
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
 import io.ktor.server.auth.authenticate
+import io.ktor.server.plugins.origin
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Routing
@@ -44,7 +45,7 @@ fun Routing.authRoutes(
     // 첫 admin 생성 (admin 없을 때만)
     post(ApiPath.AUTH_SETUP) {
         val body = call.receive<SetupRequestDto>()
-        val ip = call.request.local.remoteHost
+        val ip = call.request.origin.remoteHost
         val outcome = authService.setup(
             username = body.username,
             password = body.password,
@@ -66,7 +67,7 @@ fun Routing.authRoutes(
     // 로그인 (페어링 대체)
     post(ApiPath.AUTH_LOGIN) {
         val body = call.receive<LoginRequestDto>()
-        val ip = call.request.local.remoteHost
+        val ip = call.request.origin.remoteHost
         val outcome = try {
             authService.login(
                 username = body.username,

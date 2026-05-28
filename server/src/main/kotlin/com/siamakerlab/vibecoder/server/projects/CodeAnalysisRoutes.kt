@@ -9,6 +9,7 @@ import com.siamakerlab.vibecoder.server.build.GradleWrapperService
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentType
 import io.ktor.server.application.call
+import io.ktor.server.plugins.origin
 import io.ktor.server.request.receiveParameters
 import io.ktor.server.response.respondRedirect
 import io.ktor.server.response.respondText
@@ -58,7 +59,7 @@ fun Routing.codeAnalysisRoutes(
         runCatching { wrapperService.setVersion(id, version, type) }
             .onSuccess {
                 log.info { "wrapper version: $id → $version ($type) by ${sess.username}" }
-                authDeps.audit.wrapperUpdate(sess.userId, call.request.local.remoteHost, id, version)
+                authDeps.audit.wrapperUpdate(sess.userId, call.request.origin.remoteHost, id, version)
                 call.respondRedirect("/projects/$id/wrapper?ok=${enc("wrapper $version ($type) 설정됨")}")
             }
             .onFailure { e ->

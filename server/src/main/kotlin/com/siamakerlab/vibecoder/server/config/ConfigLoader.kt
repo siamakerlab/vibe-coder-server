@@ -66,6 +66,12 @@ object ConfigLoader {
             ?.takeIf { it in setOf("en", "ko") }
             ?.let { current = current.copy(i18n = current.i18n.copy(defaultLanguage = it)) }
 
+        // v1.28.0 (B-1) — 신뢰 프록시 뒤 배포 시 X-Forwarded-For 사용. 운영(openresty
+        //   뒤)에서 server.yml 수정 없이 compose env 로 켤 수 있도록 override 지원.
+        System.getenv("VIBECODER_TRUST_FORWARDED_FOR")?.takeIf { it.isNotBlank() }?.let {
+            current = current.copy(security = current.security.copy(trustForwardedFor = it.equals("true", true)))
+        }
+
         return current
     }
 

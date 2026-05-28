@@ -12,6 +12,7 @@ import com.siamakerlab.vibecoder.shared.dto.GitCommitResponseDto
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
 import io.ktor.server.auth.authenticate
+import io.ktor.server.plugins.origin
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Routing
@@ -60,12 +61,12 @@ fun Routing.gitRoutes(
                 )
             } catch (e: ApiException) {
                 audit.gitCommit(call.requireDevice().device.userId, projectId, false, body.push,
-                    call.request.local.remoteHost)
+                    call.request.origin.remoteHost)
                 throw e
             }
             audit.gitCommit(call.requireDevice().device.userId, projectId,
                 ok = result.committed, push = result.pushed,
-                ip = call.request.local.remoteHost)
+                ip = call.request.origin.remoteHost)
             call.respond(GitCommitResponseDto(
                 committed = result.committed, pushed = result.pushed,
                 branch = result.branch, sha = result.sha, log = result.log,

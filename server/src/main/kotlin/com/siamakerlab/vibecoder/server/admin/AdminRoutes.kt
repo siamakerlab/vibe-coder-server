@@ -21,6 +21,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.parameters
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.call
+import io.ktor.server.plugins.origin
 import io.ktor.server.http.content.staticResources
 import io.ktor.server.request.receiveParameters
 import io.ktor.server.response.respondRedirect
@@ -134,7 +135,7 @@ fun Routing.adminRoutes(deps: AdminRoutesDeps) {
             )
             return@post
         }
-        val ip = call.request.local.remoteHost
+        val ip = call.request.origin.remoteHost
         val outcome = runCatching {
             deps.authService.setup(
                 username = username,
@@ -178,7 +179,7 @@ fun Routing.adminRoutes(deps: AdminRoutesDeps) {
         // open-redirect 방지: 외부 도메인이나 `//` 로 시작하는 schemeless URL 차단
         val next = params["next"]?.takeIf { it.startsWith("/") && !it.startsWith("//") } ?: "/"
 
-        val ip = call.request.local.remoteHost
+        val ip = call.request.origin.remoteHost
         val outcome = runCatching {
             deps.authService.login(
                 username = username,
@@ -231,7 +232,7 @@ fun Routing.adminRoutes(deps: AdminRoutesDeps) {
             requireCsrf()
         }
         val token = call.bearerTokenOrNull()
-        val ip = call.request.local.remoteHost
+        val ip = call.request.origin.remoteHost
         var userId: String? = null
         var deviceId: String? = null
         if (token != null) {
@@ -392,7 +393,7 @@ fun Routing.adminRoutes(deps: AdminRoutesDeps) {
             )
             return@post
         }
-        val ip = call.request.local.remoteHost
+        val ip = call.request.origin.remoteHost
         val result = runCatching {
             deps.authService.changePassword(sess.userId, current, new)
         }
@@ -445,7 +446,7 @@ fun Routing.adminRoutes(deps: AdminRoutesDeps) {
             return@post
         }
         deps.deviceRepo.deleteById(id)
-        deps.audit.deviceRevoke(sess.userId, id, call.request.local.remoteHost)
+        deps.audit.deviceRevoke(sess.userId, id, call.request.origin.remoteHost)
         call.respondRedirect("/devices?ok=1")
     }
 
@@ -520,7 +521,7 @@ internal suspend fun io.ktor.server.routing.RoutingContext.requireSessionOrRedir
         if (ageMs != null && ageMs > idleMin * 60_000L) {
             deps.deviceRepo.deleteById(device.id)
             clearSessionCookie(call)
-            deps.audit.sessionTimeout(device.userId, device.id, call.request.local.remoteHost)
+            deps.audit.sessionTimeout(device.userId, device.id, call.request.origin.remoteHost)
             call.respondRedirect("/login?err=session_timeout")
             return null
         }

@@ -250,6 +250,12 @@ fun Application.module(ctx: ServerContext) {
     }
 
     install(DefaultHeaders)
+    // v1.28.0 (B-1) — 신뢰 프록시 뒤 배포 시 X-Forwarded-For 로 실제 클라 IP 식별.
+    // 활성 시 request.origin.remoteHost 가 XFF 반영 → IP 차단/rate-limit/audit 이
+    // 프록시 IP 가 아닌 실제 클라 IP 기준. 직노출(LAN)에선 스푸핑 위험으로 기본 off.
+    if (ctx.config.security.trustForwardedFor) {
+        install(io.ktor.server.plugins.forwardedheaders.XForwardedHeaders)
+    }
     install(CallLogging)
     install(IgnoreTrailingSlash) // accept `/api/path` and `/api/path/` as the same route
     install(ContentNegotiation) { json(jsonCfg) }

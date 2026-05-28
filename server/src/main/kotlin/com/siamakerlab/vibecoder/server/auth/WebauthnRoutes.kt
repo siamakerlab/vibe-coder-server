@@ -7,6 +7,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
+import io.ktor.server.plugins.origin
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondRedirect
@@ -127,7 +128,7 @@ fun Routing.webauthnRoutes(
                 transports = transports,
                 name = name,
             )
-            authDeps.audit.passkeyRegister(sess.userId, row.id, call.request.local.remoteHost)
+            authDeps.audit.passkeyRegister(sess.userId, row.id, call.request.origin.remoteHost)
             call.respondText(
                 """{"id":"${row.id}","name":"${esc(row.name)}","ok":true}""",
                 ContentType.Application.Json,
@@ -200,7 +201,7 @@ fun Routing.webauthnRoutes(
             channel = "webauthn",
         )
         val token = issue.token
-        authDeps.audit.passkeyLogin(user.id, result.credentialId, call.request.local.remoteHost)
+        authDeps.audit.passkeyLogin(user.id, result.credentialId, call.request.origin.remoteHost)
         // SSR cookie + return Bearer for JSON consumers.
         call.response.cookies.append(io.ktor.http.Cookie(
             name = SESSION_COOKIE, value = token,

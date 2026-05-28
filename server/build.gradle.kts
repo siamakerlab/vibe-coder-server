@@ -39,6 +39,7 @@ dependencies {
     implementation(libs.ktor.server.default.headers)
     implementation(libs.ktor.server.partial.content)
     implementation(libs.ktor.server.host.common)
+    implementation(libs.ktor.server.forwarded.header)
     implementation(libs.ktor.serialization.kotlinx.json)
 
     // DB

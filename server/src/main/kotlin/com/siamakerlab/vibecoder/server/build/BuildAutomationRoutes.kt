@@ -14,6 +14,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
+import io.ktor.server.plugins.origin
 import io.ktor.server.request.receiveParameters
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.respond
@@ -84,7 +85,7 @@ fun Routing.buildAutomationRoutes(
         }
         scheduleRepo.create(id, cronExpr, description = description)
         log.info { "schedule created: $id '$cronExpr' by ${sess.username}" }
-        authDeps.audit.scheduleCreate(sess.userId, call.request.local.remoteHost, id, cronExpr)
+        authDeps.audit.scheduleCreate(sess.userId, call.request.origin.remoteHost, id, cronExpr)
         call.respondRedirect("/projects/$id/automation?ok=${enc("schedule '$cronExpr' 추가됨")}")
     }
 
@@ -105,7 +106,7 @@ fun Routing.buildAutomationRoutes(
         val id = call.parameters["id"]!!
         val scheduleId = call.parameters["scheduleId"]!!
         scheduleRepo.delete(scheduleId)
-        authDeps.audit.scheduleDelete(sess.userId, call.request.local.remoteHost, scheduleId)
+        authDeps.audit.scheduleDelete(sess.userId, call.request.origin.remoteHost, scheduleId)
         call.respondRedirect("/projects/$id/automation?ok=${enc("schedule 삭제됨")}")
     }
 
@@ -122,7 +123,7 @@ fun Routing.buildAutomationRoutes(
         val secret = generateSecret()
         secretRepo.create(id, name, secret)
         log.info { "webhook secret created: $id name='$name' by ${sess.username}" }
-        authDeps.audit.webhookSecretCreate(sess.userId, call.request.local.remoteHost, id, name)
+        authDeps.audit.webhookSecretCreate(sess.userId, call.request.origin.remoteHost, id, name)
         call.respondRedirect("/projects/$id/automation?ok=${enc("secret 생성됨 — 아래 박스에 1회 표시")}&newSecret=${enc(secret)}")
     }
 
@@ -132,7 +133,7 @@ fun Routing.buildAutomationRoutes(
         val id = call.parameters["id"]!!
         val secretId = call.parameters["secretId"]!!
         secretRepo.delete(secretId)
-        authDeps.audit.webhookSecretDelete(sess.userId, call.request.local.remoteHost, secretId)
+        authDeps.audit.webhookSecretDelete(sess.userId, call.request.origin.remoteHost, secretId)
         call.respondRedirect("/projects/$id/automation?ok=${enc("secret 삭제됨")}")
     }
 
@@ -155,7 +156,19 @@ fun Routing.buildAutomationRoutes(
             )
             return@post
         }
-        val body = call.receiveText().take(MAX_BODY_BYTES)
+        // v1.28.0 (Q-1 회수) — body 크기 가드. 이전엔 `receiveText().take(MAX_BODY_BYTES)`
+        // 로 char 단위 truncate(멀티바이트면 byte 한도 초과 가능) + 전체 body 를 먼저
+        // 메모리 적재. Content-Length 선체크로 거대 body 를 받기 전에 413 거절, byte 기준.
+        val declaredLen = call.request.headers["Content-Length"]?.toLongOrNull()
+        if (declaredLen != null && declaredLen > MAX_BODY_BYTES) {
+            call.respond(HttpStatusCode.PayloadTooLarge, mapOf("error" to "body too large"))
+            return@post
+        }
+        val body = call.receiveText()
+        if (body.toByteArray(Charsets.UTF_8).size > MAX_BODY_BYTES) {
+            call.respond(HttpStatusCode.PayloadTooLarge, mapOf("error" to "body too large"))
+            return@post
+        }
         // secretId 로 row lookup. 못 찾으면 existence-disclosure 막기 위해 일관 메시지.
         val row = secretRepo.listForProject(projectId).firstOrNull { it.id == secretId }
         if (row == null) {
@@ -175,7 +188,7 @@ fun Routing.buildAutomationRoutes(
         runCatching {
             buildService.enqueueDebug(projectId, hub)
             secretRepo.touchLastUsed(row.id, clock.nowIso())
-            authDeps.audit.webhookBuildTriggered(null, call.request.local.remoteHost, projectId, row.name)
+            authDeps.audit.webhookBuildTriggered(null, call.request.origin.remoteHost, projectId, row.name)
         }.onFailure { e ->
             log.warn(e) { "webhook enqueue failed: $projectId" }
             call.respond(HttpStatusCode.InternalServerError, mapOf("error" to (e.message ?: "enqueue failed")))

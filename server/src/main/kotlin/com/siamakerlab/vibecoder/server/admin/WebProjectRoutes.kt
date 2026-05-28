@@ -25,6 +25,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.PartData
 import io.ktor.server.application.call
+import io.ktor.server.plugins.origin
 import io.ktor.server.request.receiveMultipart
 import io.ktor.server.request.receiveParameters
 import io.ktor.server.response.header
@@ -158,7 +159,7 @@ fun Routing.webProjectRoutes(
         }
 
         log.info { "project registered: ${created.id} by ${sess.username}" }
-        authDeps.audit.projectCreate(sess.userId, created.id, sourceType, call.request.local.remoteHost)
+        authDeps.audit.projectCreate(sess.userId, created.id, sourceType, call.request.origin.remoteHost)
         call.respondRedirect("/projects/${created.id}")
     }
 
@@ -223,7 +224,7 @@ fun Routing.webProjectRoutes(
         val id = call.parameters["id"]!!
         val removed = projects.delete(id)
         log.info { "project delete: id=$id removed=$removed by ${sess.username}" }
-        authDeps.audit.projectDelete(sess.userId, id, call.request.local.remoteHost, removed)
+        authDeps.audit.projectDelete(sess.userId, id, call.request.origin.remoteHost, removed)
         val ok = if (removed) Messages.t(sess.language, "flash.project.deleted") else Messages.t(sess.language, "flash.project.notExist")
         call.respondRedirect("/projects?ok=${ok.encodeUrl()}")
     }
@@ -274,7 +275,7 @@ fun Routing.webProjectRoutes(
         runCatching { sessionManager.startNew(id) }
             .onFailure { log.warn(it) { "console reset failed for $id" } }
         log.info { "console reset: $id by ${sess.username}" }
-        authDeps.audit.consoleNew(sess.userId, id, call.request.local.remoteHost)
+        authDeps.audit.consoleNew(sess.userId, id, call.request.origin.remoteHost)
         // v0.13.0 — scratch 는 /chat 으로 redirect (전용 페이지 유지).
         val target = if (id == ProjectService.SCRATCH_ID) "/chat" else "/projects/$id/console"
         call.respondRedirect(target)
@@ -348,7 +349,7 @@ fun Routing.webProjectRoutes(
             return@post
         }
         log.info { "build enqueued: ${row.id} project=$id by ${sess.username}" }
-        authDeps.audit.buildEnqueue(sess.userId, id, row.id, call.request.local.remoteHost)
+        authDeps.audit.buildEnqueue(sess.userId, id, row.id, call.request.origin.remoteHost)
         // 새 빌드는 곧바로 상세 페이지로 — 실시간 로그를 바로 본다.
         call.respondRedirect("/projects/$id/builds/${row.id}")
     }
@@ -449,12 +450,12 @@ fun Routing.webProjectRoutes(
             )
         }.onFailure { e ->
             log.warn(e) { "play upload trigger failed: $id $buildId" }
-            authDeps.audit.playUploadFailed(sess.userId, id, buildId, call.request.local.remoteHost, e.message)
+            authDeps.audit.playUploadFailed(sess.userId, id, buildId, call.request.origin.remoteHost, e.message)
             call.respondRedirect("/projects/$id/builds/$buildId?play_err=${Messages.t(sess.language, "flash.publish.uploadFailed", e.message ?: "").encodeUrl()}")
             return@post
         }
         log.info { "play upload prompt sent: project=$id build=$buildId track=$track aab=$aabPath by ${sess.username}" }
-        authDeps.audit.playUploadTriggered(sess.userId, id, buildId, call.request.local.remoteHost, track)
+        authDeps.audit.playUploadTriggered(sess.userId, id, buildId, call.request.origin.remoteHost, track)
         // 사용자를 콘솔로 이동 — Claude 의 진행이 라이브로 보이는 곳.
         call.respondRedirect("/projects/$id/console")
     }
@@ -488,12 +489,12 @@ fun Routing.webProjectRoutes(
             )
         }.onFailure { e ->
             log.warn(e) { "testflight upload trigger failed: $id $buildId" }
-            authDeps.audit.testFlightUploadFailed(sess.userId, id, buildId, call.request.local.remoteHost, e.message)
+            authDeps.audit.testFlightUploadFailed(sess.userId, id, buildId, call.request.origin.remoteHost, e.message)
             call.respondRedirect("/projects/$id/builds/$buildId?tf_err=${Messages.t(sess.language, "flash.publish.uploadFailed", e.message ?: "").encodeUrl()}")
             return@post
         }
         log.info { "testflight upload prompt sent: project=$id build=$buildId ipa=$ipaPath groups=$groups by ${sess.username}" }
-        authDeps.audit.testFlightUploadTriggered(sess.userId, id, buildId, call.request.local.remoteHost, groups)
+        authDeps.audit.testFlightUploadTriggered(sess.userId, id, buildId, call.request.origin.remoteHost, groups)
         call.respondRedirect("/projects/$id/console")
     }
 
@@ -508,7 +509,7 @@ fun Routing.webProjectRoutes(
             log.warn(e) { "build cancel failed: $buildId" }
         }
         log.info { "build cancel: $buildId project=$id by ${sess.username}" }
-        authDeps.audit.buildCancel(sess.userId, id, buildId, call.request.local.remoteHost)
+        authDeps.audit.buildCancel(sess.userId, id, buildId, call.request.origin.remoteHost)
         call.respondRedirect("/projects/$id/builds/$buildId")
     }
 

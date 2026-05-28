@@ -10,6 +10,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCallPipeline
 import io.ktor.server.application.call
+import io.ktor.server.plugins.origin
 import io.ktor.server.request.header
 import io.ktor.server.request.path
 import io.ktor.server.response.header
@@ -51,7 +52,7 @@ fun Application.installRateLimit(
         val path = call.request.path()
         if (!shouldThrottle(path)) return@intercept
 
-        val ip = call.request.local.remoteHost.takeIf { it.isNotBlank() }
+        val ip = call.request.origin.remoteHost.takeIf { it.isNotBlank() }
             ?: return@intercept
         val isAdmin = resolveIsAdmin(call, deviceRepo, tokens, userRepo)
         // Pick the appropriate bucket — auth path is much stricter.

@@ -141,6 +141,19 @@ data class SecuritySection(
     val sessionIdleTimeoutMinutes: Int = 0,
     /** v0.56.0 — Phase 35 per-IP rate limit. */
     val rateLimit: RateLimitSection = RateLimitSection(),
+    /**
+     * v1.28.0 — 신뢰 리버스 프록시 뒤 배포 시 X-Forwarded-For 로 실제 클라이언트
+     * IP 식별. true 면 `XForwardedHeaders` 플러그인 설치 → `request.origin.remoteHost`
+     * 가 XFF 의 클라이언트 IP 반영. false (기본) 면 직접 TCP peer (LAN 직노출).
+     *
+     * **중요**: 신뢰할 수 있는 프록시(openresty 등) 뒤에서만 true. 직노출 환경에서
+     * true 면 클라이언트가 X-Forwarded-For 헤더를 스푸핑해 IP 차단/rate-limit 우회
+     * 가능. 운영(https://vibe.wody.work — openresty→localhost:17880)처럼 프록시가
+     * XFF 를 세팅·전달하는 환경에서 켠다. 안 켜면 모든 외부 IP 가 프록시 IP 하나로
+     * 합쳐져 IP 차단/rate-limit 의 per-IP 격리가 무의미해진다(v1.27.4 의 IP 차단
+     * 회수가 프록시 뒤에서 무력화되던 문제 — B-1).
+     */
+    val trustForwardedFor: Boolean = false,
 )
 
 /**

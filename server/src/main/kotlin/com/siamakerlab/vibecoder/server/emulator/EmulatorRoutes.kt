@@ -7,6 +7,7 @@ import com.siamakerlab.vibecoder.server.auth.CsrfTokens.requireCsrf
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentType
 import io.ktor.server.application.call
+import io.ktor.server.plugins.origin
 import io.ktor.server.request.receiveParameters
 import io.ktor.server.response.respondRedirect
 import io.ktor.server.response.respondText
@@ -41,7 +42,7 @@ fun Routing.emulatorRoutes(authDeps: AdminRoutesDeps, svc: EmulatorService) {
         requireCsrf()
         val r = svc.createDefaultAvd()
         log.info { "create-default AVD by ${sess.username}: ok=${r.ok} msg=${r.message.take(120)}" }
-        authDeps.audit.emulatorAvdCreate(sess.userId, call.request.local.remoteHost, r.ok, "vibe-default")
+        authDeps.audit.emulatorAvdCreate(sess.userId, call.request.origin.remoteHost, r.ok, "vibe-default")
         val q = if (r.ok) "ok=${enc("AVD 'vibe-default' 생성됨")}" else "err=${enc(r.message.take(200))}"
         call.respondRedirect("/emulator?$q")
     }
@@ -54,7 +55,7 @@ fun Routing.emulatorRoutes(authDeps: AdminRoutesDeps, svc: EmulatorService) {
         val name = form["name"]?.trim().orEmpty().ifBlank { "vibe-default" }
         val r = svc.launchAvd(name)
         log.info { "launch AVD '$name' by ${sess.username}: ok=${r.ok} msg=${r.message.take(120)}" }
-        authDeps.audit.emulatorAvdLaunch(sess.userId, call.request.local.remoteHost, r.ok, name)
+        authDeps.audit.emulatorAvdLaunch(sess.userId, call.request.origin.remoteHost, r.ok, name)
         val q = if (r.ok) "ok=${enc(r.message)}" else "err=${enc(r.message.take(200))}"
         call.respondRedirect("/emulator?$q")
     }
@@ -71,7 +72,7 @@ fun Routing.emulatorRoutes(authDeps: AdminRoutesDeps, svc: EmulatorService) {
         }
         val r = svc.stopAvd(serial)
         log.info { "stop AVD '$serial' by ${sess.username}: ok=${r.ok}" }
-        authDeps.audit.emulatorAvdStop(sess.userId, call.request.local.remoteHost, r.ok, serial)
+        authDeps.audit.emulatorAvdStop(sess.userId, call.request.origin.remoteHost, r.ok, serial)
         val q = if (r.ok) "ok=${enc("emulator '$serial' 종료")}" else "err=${enc(r.message.take(200))}"
         call.respondRedirect("/emulator?$q")
     }

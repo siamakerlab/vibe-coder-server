@@ -13,6 +13,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.PartData
 import io.ktor.server.application.call
+import io.ktor.server.plugins.origin
 import io.ktor.server.request.receiveMultipart
 import io.ktor.server.request.receiveParameters
 import io.ktor.server.response.respond
@@ -73,7 +74,7 @@ fun Routing.mcpRoutes(
             return@post
         }
         log.info { "MCP install batch by ${sess.username}: ${selectedIds.joinToString(",")}" }
-        authDeps.audit.mcpInstall(sess.userId, taskId, selectedIds, call.request.local.remoteHost)
+        authDeps.audit.mcpInstall(sess.userId, taskId, selectedIds, call.request.origin.remoteHost)
         call.respondRedirect("/env-setup/tasks/$taskId")
     }
 
@@ -87,7 +88,7 @@ fun Routing.mcpRoutes(
         }
         mcp.unregister(ids)
         log.info { "MCP unregister by ${sess.username}: ${ids.joinToString(",")}" }
-        authDeps.audit.mcpUnregister(sess.userId, ids, call.request.local.remoteHost)
+        authDeps.audit.mcpUnregister(sess.userId, ids, call.request.origin.remoteHost)
         call.respondRedirect("/env-setup/mcp?flash=unregistered")
     }
 

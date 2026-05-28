@@ -12,6 +12,7 @@ import com.siamakerlab.vibecoder.server.repo.DeviceRepository
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentType
 import io.ktor.server.application.call
+import io.ktor.server.plugins.origin
 import io.ktor.server.request.receiveParameters
 import io.ktor.server.response.respondRedirect
 import io.ktor.server.response.respondText
@@ -86,7 +87,7 @@ fun Routing.usersRoutes(
         val hash = hasher.hash(password)
         userRepo.insert(Ids.deviceId(), username, hash, role)
         log.info { "user created: $username role=$role by ${sess.username}" }
-        deps.audit.userCreate(sess.userId, call.request.local.remoteHost, username, role)
+        deps.audit.userCreate(sess.userId, call.request.origin.remoteHost, username, role)
         call.respondRedirect("/users?ok=${enc(Messages.t(sess.language, "users.flash.created", username, role))}")
     }
 
@@ -115,7 +116,7 @@ fun Routing.usersRoutes(
         }
         userRepo.setRole(targetId, newRole)
         log.info { "role change: ${target.username} → $newRole by ${sess.username}" }
-        deps.audit.userRoleChange(sess.userId, call.request.local.remoteHost, target.username, newRole)
+        deps.audit.userRoleChange(sess.userId, call.request.origin.remoteHost, target.username, newRole)
         call.respondRedirect("/users?ok=${enc("${target.username} → $newRole")}")
     }
 
@@ -145,7 +146,7 @@ fun Routing.usersRoutes(
         for (d in devices) deviceRepo.deleteById(d.id)
         userRepo.delete(targetId)
         log.info { "user delete: ${target.username} (devices=${devices.size}) by ${sess.username}" }
-        deps.audit.userDelete(sess.userId, call.request.local.remoteHost, target.username)
+        deps.audit.userDelete(sess.userId, call.request.origin.remoteHost, target.username)
         call.respondRedirect("/users?ok=${enc(Messages.t(sess.language, "users.flash.deleted", target.username, devices.size))}")
     }
 }

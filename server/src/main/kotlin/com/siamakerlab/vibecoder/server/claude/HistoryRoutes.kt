@@ -2,6 +2,7 @@ package com.siamakerlab.vibecoder.server.claude
 
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.AdminTemplates
+import com.siamakerlab.vibecoder.server.admin.requireProjectAccessOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import com.siamakerlab.vibecoder.server.projects.ProjectService
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens.requireCsrf
@@ -46,6 +47,10 @@ fun Routing.historyRoutes(
     get("/projects/{id}/history") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
         val id = call.parameters["id"]!!
+        // v1.28.0 (B-2 회수) — Project ACL. memo/star JSON variant 는 v0.75.1 에서
+        // 보강됐으나 SSR view/export/import 경로가 누락돼 비-admin 이 타 프로젝트
+        // 대화 전문을 열람/덮어쓸 수 있었음.
+        if (!requireProjectAccessOrRedirect(sess, projects, id)) return@get
         val p = runCatching { projects.get(id) }.getOrElse {
             call.respondText("project not found", ContentType.Text.Plain, io.ktor.http.HttpStatusCode.NotFound)
             return@get
@@ -63,6 +68,7 @@ fun Routing.historyRoutes(
     get("/projects/{id}/history/export") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
         val id = call.parameters["id"]!!
+        if (!requireProjectAccessOrRedirect(sess, projects, id)) return@get   // v1.28.0 (B-2)
         val json = exportService.exportProject(id)
         val ts = java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmm")
             .withZone(java.time.ZoneId.systemDefault())
@@ -75,15 +81,16 @@ fun Routing.historyRoutes(
     // v0.31.0 — multipart import. CSRF query string.
     post("/projects/{id}/history/import") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        val id = call.parameters["id"]!!
+        if (!requireProjectAccessOrRedirect(sess, projects, id)) return@post   // v1.28.0 (B-2)
         // multipart 는 requireCsrf() (form param 기반) 안 됨 — _csrf query param 으로 검증.
         val csrfQuery = call.request.queryParameters["_csrf"] ?: ""
         if (csrfQuery != sess.csrf) {
             call.respondRedirect(
-                "/projects/${call.parameters["id"]}/history?err=${enc("CSRF 검증 실패 — 새로고침 후 재시도")}"
+                "/projects/$id/history?err=${enc("CSRF 검증 실패 — 새로고침 후 재시도")}"
             )
             return@post
         }
-        val id = call.parameters["id"]!!
         val dryRun = call.request.queryParameters["dryRun"] != "false"
 
         var json: String? = null

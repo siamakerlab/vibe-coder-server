@@ -11,6 +11,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentType
 import io.ktor.server.application.call
 import io.ktor.server.auth.authenticate
+import io.ktor.server.plugins.origin
 import io.ktor.server.request.receiveParameters
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondRedirect
@@ -64,7 +65,7 @@ fun Routing.agentRoutes(authDeps: AdminRoutesDeps, registry: AgentRegistry) {
         val body = params["body"].orEmpty()
         runCatching { registry.write(name, body) }
             .onSuccess {
-                authDeps.audit.agentSave(sess.userId, call.request.local.remoteHost, name)
+                authDeps.audit.agentSave(sess.userId, call.request.origin.remoteHost, name)
                 call.respondRedirect("/agents?ok=${enc("agent '$name' 저장됨")}")
             }
             .onFailure { e ->
@@ -81,7 +82,7 @@ fun Routing.agentRoutes(authDeps: AdminRoutesDeps, registry: AgentRegistry) {
             call.respondRedirect("/agents"); return@post
         }
         val ok = registry.delete(name)
-        authDeps.audit.agentDelete(sess.userId, call.request.local.remoteHost, name, ok)
+        authDeps.audit.agentDelete(sess.userId, call.request.origin.remoteHost, name, ok)
         val q = if (ok) "ok=${enc("agent '$name' 삭제됨")}" else "err=${enc("'$name' 삭제 실패")}"
         call.respondRedirect("/agents?$q")
     }

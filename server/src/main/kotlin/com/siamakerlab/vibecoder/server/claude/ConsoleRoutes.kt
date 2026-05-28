@@ -16,6 +16,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
 import io.ktor.server.auth.authenticate
+import io.ktor.server.plugins.origin
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Routing
@@ -108,7 +109,7 @@ fun Routing.consoleRoutes(
             projects.rowOrThrow(projectId)
             sessionManager.cancelTurn(projectId)
             val device = call.requireDevice().device
-            audit.consoleCancel(device.userId, projectId, call.request.local.remoteHost)
+            audit.consoleCancel(device.userId, projectId, call.request.origin.remoteHost)
             call.respond(HttpStatusCode.Accepted)
         }
 

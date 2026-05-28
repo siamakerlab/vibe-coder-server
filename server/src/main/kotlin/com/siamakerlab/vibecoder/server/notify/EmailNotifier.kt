@@ -21,6 +21,9 @@ import java.util.Properties
 
 private val log = KotlinLogging.logger {}
 
+// v1.28.0 (Q-2) — SMTP passwordFile 최대 크기. 비번은 짧으므로 4KB 면 충분 + OOM 방어.
+private const val MAX_PASSWORD_FILE_BYTES = 4096L
+
 /**
  * v0.17.0 — SMTP 알림 발송.
  *
@@ -65,9 +68,15 @@ class EmailNotifier(
     private fun resolvePassword(cfg: EmailSection): String? {
         if (cfg.passwordFile.isNotBlank()) {
             val p = Path.of(cfg.passwordFile)
-            if (Files.exists(p)) {
+            // v1.28.0 (Q-2 회수) — admin-only 신뢰 config 경로지만 방어적 가드:
+            // 정규 파일 + 크기 제한. 디렉토리/특수파일·거대 파일(OOM) 거부. SMTP 비번은
+            // 짧음. isRegularFile 은 심볼릭을 따라가므로 Docker secret(/run/secrets/*)
+            // 호환 유지 — NOFOLLOW 는 일부러 안 씀.
+            if (Files.isRegularFile(p) && Files.size(p) <= MAX_PASSWORD_FILE_BYTES) {
                 val v = Files.readString(p).trim()
                 if (v.isNotEmpty()) return v
+            } else if (Files.exists(p)) {
+                log.warn { "email passwordFile rejected (not a regular file or too large): ${cfg.passwordFile}" }
             }
         }
         return cfg.password.takeIf { it.isNotBlank() }

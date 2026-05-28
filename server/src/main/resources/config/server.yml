@@ -2,7 +2,7 @@ server:
   name: Vibe Coder Server
   host: 0.0.0.0
   port: 17880
-  version: 1.27.5
+  version: 1.28.0
 
 workspace:
   # Each project lives at <root>/<projectId>/.
@@ -36,6 +36,13 @@ security:
   # 자동 로그아웃되던 UX 문제 회수. 0 = 무제한이 default (LAN 단일 사용자
   # 도구 특성상 안전). 외부 노출 시 30~60 분 권장.
   sessionIdleTimeoutMinutes: 0
+  # v1.28.0 — 신뢰 리버스 프록시 뒤 배포 시 X-Forwarded-For 로 실제 클라이언트 IP
+  # 식별. true 면 XForwardedHeaders 설치 → IP 차단/rate-limit 이 프록시 IP 가 아닌
+  # 실제 클라 IP 기준으로 동작. 운영(openresty→localhost:17880)에서는 true 권장.
+  # 직노출(LAN) 환경에서 true 면 X-Forwarded-For 스푸핑으로 IP 차단 우회 가능하므로
+  # 반드시 신뢰 프록시 뒤에서만 켤 것. compose 의 VIBECODER_TRUST_FORWARDED_FOR
+  # env 로도 override 가능.
+  trustForwardedFor: false
 
 claude:
   enabled: true
