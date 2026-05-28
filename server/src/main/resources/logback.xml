@@ -1,5 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
+    <!-- v1.33.0 — 로그 디렉토리를 VIBECODER_LOG_DIR 로 분리. 이전엔 상대경로
+         `vibe-coder-server-data/logs` + 서버 cwd=/workspace 라서 워크스페이스 안
+         (`/workspace/vibe-coder-server-data/logs`)에 서버 로그가 쌓여 프로젝트 목록에
+         노이즈로 섞였음. 운영 compose 는 VIBECODER_LOG_DIR=/data/logs (server 볼륨)로
+         지정 — workspace 밖. 미설정(dev) 시 기본값 ./logs (gradle cwd = 프로젝트 루트
+         → workspace(./workspace) 밖). -->
+    <property name="LOG_DIR" value="${VIBECODER_LOG_DIR:-logs}"/>
+
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
             <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
@@ -7,9 +15,9 @@
     </appender>
 
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>vibe-coder-server-data/logs/server.log</file>
+        <file>${LOG_DIR}/server.log</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
-            <fileNamePattern>vibe-coder-server-data/logs/server.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <fileNamePattern>${LOG_DIR}/server.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
             <maxFileSize>10MB</maxFileSize>
             <maxHistory>14</maxHistory>
             <totalSizeCap>200MB</totalSizeCap>

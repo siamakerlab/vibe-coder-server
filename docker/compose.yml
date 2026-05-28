@@ -96,6 +96,11 @@ services:
       #   사용자는 Settings → General → Language 에서 본인 언어 선택.
       VIBECODER_DEFAULT_LANGUAGE: ${VIBECODER_DEFAULT_LANGUAGE:-en}
 
+      # v1.33.0 — 서버 로그 디렉토리. 이전엔 logback 상대경로 + cwd=/workspace 라서
+      #   /workspace/vibe-coder-server-data/logs 에 로그가 쌓여 프로젝트 목록에 섞였음.
+      #   server 볼륨(/data)으로 분리 — workspace 밖. (logback.xml 의 LOG_DIR property)
+      VIBECODER_LOG_DIR: ${VIBECODER_LOG_DIR:-/data/logs}
+
     # LAN 페어링 / admin 웹 / API 모두 같은 포트
     ports:
       - "${VIBE_PORT:-17880}:17880"

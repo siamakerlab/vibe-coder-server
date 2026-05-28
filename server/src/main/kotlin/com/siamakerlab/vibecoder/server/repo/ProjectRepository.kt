@@ -8,6 +8,7 @@ import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
+import org.jetbrains.exposed.sql.update
 
 data class ProjectRow(
     val id: String,
@@ -55,6 +56,14 @@ class ProjectRepository(private val clock: Clock) {
 
     fun delete(id: String): Int = transaction {
         Projects.deleteWhere { Projects.id eq id }
+    }
+
+    /** v1.33.0 — scratch 디렉토리 이동(workspace → .vibecoder) 마이그레이션용 source_path 갱신. */
+    fun updateSourcePath(id: String, sourcePath: String): Int = transaction {
+        Projects.update({ Projects.id eq id }) {
+            it[Projects.sourcePath] = sourcePath
+            it[updatedAt] = clock.nowIso()
+        }
     }
 
     fun count(): Int = transaction { Projects.selectAll().count().toInt() }

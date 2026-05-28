@@ -262,19 +262,37 @@ class ProjectService(
      * 일반 list() / register() / delete() 에서는 차단/필터링.
      */
     fun ensureScratchProject(): ProjectDto {
+        // v1.33.0 — scratch 를 워크스페이스 루트(`/workspace/__scratch__`)에서 서버 메타
+        // sidecar(`/workspace/.vibecoder/__scratch__`)로 이동. 워크스페이스 프로젝트
+        // 목록/파일 탐색에 ghost 프로젝트가 섞이지 않게. BackupService 의 excludedSegments
+        // (`.vibecoder/__scratch__`)와도 정합. Claude 작업 접근성은 동일(같은 볼륨).
+        // projectRoot(SCRATCH_ID) 가 v1.33.0 부터 .vibecoder/__scratch__ 를 반환 — 모든
+        // 서비스(ClaudeSessionManager cwd 등)와 동일 경로로 일관.
+        val srcRoot = workspace.projectRoot(SCRATCH_ID)
+        val newPath = srcRoot.toString()
         val existing = repo.findById(SCRATCH_ID)
         if (existing != null) {
-            ensureScratchDirsExist(existing.sourcePath)
-            return existing.toDto(false, null)
+            // 옛 경로(`/workspace/__scratch__`)에서 자동 마이그레이션.
+            if (existing.sourcePath != newPath) {
+                val oldP = Path.of(existing.sourcePath)
+                Files.createDirectories(srcRoot.parent)
+                if (Files.exists(oldP) && srcRoot.notExists()) {
+                    runCatching { Files.move(oldP, srcRoot) }
+                        .onFailure { log.warn(it) { "scratch dir move failed: $oldP → $srcRoot" } }
+                }
+                repo.updateSourcePath(SCRATCH_ID, newPath)
+                log.info { "scratch migrated: ${existing.sourcePath} → $newPath" }
+            }
+            ensureScratchDirsExist(newPath)
+            return (repo.findById(SCRATCH_ID) ?: existing).toDto(false, null)
         }
-        val srcRoot = workspace.root.resolve(SCRATCH_ID)
         Files.createDirectories(srcRoot)
         ProjectScaffolder.ensureClaudeFiles(srcRoot)
         val row = repo.insert(
             id = SCRATCH_ID,
             name = "General Chat",
             packageName = "scratch",
-            sourcePath = srcRoot.toString(),
+            sourcePath = newPath,
             moduleName = DEFAULT_MODULE,
             debugTask = DEFAULT_DEBUG_TASK,
         )

@@ -33,9 +33,23 @@ class WorkspacePath(val root: Path) {
         root.createDirectories()
     }
 
-    /** `<root>/<projectId>` — NOT auto-created; the user places their project here. */
+    companion object {
+        // v1.33.0 — General Chat ghost 프로젝트 id. ProjectService.SCRATCH_ID 와 같은 값
+        // (모듈 독립성 위해 별도 정의). projectRoot 매핑 + vibecoderDir 에 사용.
+        const val SCRATCH_ID = "__scratch__"
+    }
+
+    /**
+     * `<root>/<projectId>` — NOT auto-created; the user places their project here.
+     *
+     * v1.33.0 — scratch(`__scratch__`)만 예외: `<root>/.vibecoder/__scratch__` 반환.
+     * General Chat ghost 프로젝트가 워크스페이스 루트의 프로젝트 목록/파일 탐색에 섞이지
+     * 않게 메타 sidecar 안으로 이동. ClaudeSessionManager(cwd)·ProjectFileBrowser 등 모든
+     * 서비스가 projectRoot 를 쓰므로 여기서 한 번만 매핑하면 전부 일관.
+     */
     fun projectRoot(projectId: String): Path =
-        PathSafety.normalizeAndCheck(root, projectId)
+        if (projectId == SCRATCH_ID) vibecoderDir(SCRATCH_ID)
+        else PathSafety.normalizeAndCheck(root, projectId)
 
     /** `<root>/.vibecoder/<projectId>` — auto-created (server-owned metadata sidecar). */
     fun vibecoderDir(projectId: String): Path {
