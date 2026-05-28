@@ -7,6 +7,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
+import io.ktor.server.request.receiveParameters
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondRedirect
 import io.ktor.server.response.respondText
@@ -42,7 +43,14 @@ fun Routing.sshKeyRoutes(authDeps: AdminRoutesDeps, sshKey: SshKeyService) {
     post("/settings/ssh-key/regenerate") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireAdminOrRedirect(sess)) return@post
-        com.siamakerlab.vibecoder.server.auth.CsrfTokens.verifyCsrfFromQueryOrHeader(call)
+        // v1.28.1 — 폼은 csrf 를 hidden input(body)으로 보낸다. body `_csrf` 검증 +
+        // 실패 시 SSR redirect (이전 verifyCsrfFromQueryOrHeader 는 query/header 만
+        // 봐서 항상 실패 + JSON 응답으로 페이지 붕괴 — keystore 와 동일 버그).
+        val form = call.receiveParameters()
+        if (!com.siamakerlab.vibecoder.server.auth.CsrfTokens.isValidCsrf(call, form["_csrf"])) {
+            call.respondRedirect("/settings/ssh-key?err=csrf")
+            return@post
+        }
         runCatching { sshKey.regenerate() }
             .onFailure { e -> log.warn(e) { "SSH key regenerate failed" } }
         call.respondRedirect("/settings/ssh-key")

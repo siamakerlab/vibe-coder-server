@@ -1429,6 +1429,7 @@ internal object MessagesEn {
         "ks.flash.created" to "Keystore set created:",
         "ks.flash.deleted" to "Keystore set deleted:",
         "ks.flash.applied" to "build.gradle.kts apply-signing prompt sent to Claude console:",
+        "ks.flash.csrfExpired" to "Security token expired. Please refresh the page and try again.",
         // v1.8.0 — Phase 2 Apply-to-project column.
         "ks.col.apply" to "Apply to project (Claude)",
         "ks.apply.button" to "Apply",

@@ -1407,6 +1407,7 @@ internal object MessagesKo {
         "ks.flash.created" to "키스토어 set 생성됨:",
         "ks.flash.deleted" to "키스토어 set 삭제됨:",
         "ks.flash.applied" to "Claude 콘솔에 build.gradle.kts 수정 prompt 전송됨:",
+        "ks.flash.csrfExpired" to "보안 토큰이 만료되었습니다. 페이지를 새로고침한 뒤 다시 시도하세요.",
         // v1.8.0 — Phase 2 Apply-to-project 컬럼.
         "ks.col.apply" to "프로젝트 적용 (Claude)",
         "ks.apply.button" to "Apply",

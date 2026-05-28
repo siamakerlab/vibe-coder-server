@@ -85,6 +85,20 @@ object CsrfTokens {
     }
 
     /**
+     * v1.28.1 — SSR 폼 body 의 `_csrf` 검증 (예외 없이 Boolean). 호출자가 이미
+     * `receiveParameters()` 로 폼을 읽은 뒤, 그 안의 `_csrf` 를 넘겨 검증한다.
+     * 실패 시 false 만 반환 → 호출자가 **JSON 예외 대신 SSR flash redirect** 로
+     * 처리할 수 있다 (CSRF 만료 시 페이지가 JSON 으로 깨지는 것 방지).
+     *
+     * 배경: [verifyCsrfFromQueryOrHeader] 는 query/header 만 보므로 hidden input
+     * (body) 으로 `_csrf` 를 보내는 일반 form POST 에는 맞지 않는다 (항상 실패).
+     */
+    fun isValidCsrf(call: ApplicationCall, providedFromBody: String?): Boolean {
+        val expected = tokenFromCall(call) ?: return false
+        return providedFromBody != null && constantTimeEquals(expected, providedFromBody)
+    }
+
+    /**
      * SSR 폼 안에 박는 hidden input 한 줄. csrf 가 null 이면 빈 문자열 — 호출자가
      * 인증된 페이지 안에서만 호출해야 함.
      */

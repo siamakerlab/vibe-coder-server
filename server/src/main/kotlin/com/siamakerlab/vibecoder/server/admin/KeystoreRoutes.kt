@@ -58,8 +58,15 @@ fun Routing.keystoreRoutes(
     post("/settings/keystores") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireAdminOrRedirect(sess)) return@post
-        com.siamakerlab.vibecoder.server.auth.CsrfTokens.verifyCsrfFromQueryOrHeader(call)
+        // v1.28.1 — 폼은 csrf 를 hidden input(body)으로 보낸다. body 의 `_csrf` 를
+        // 검증하고, 실패 시 JSON 403 대신 SSR flash redirect (페이지가 JSON 으로
+        // 깨지지 않도록). 이전 verifyCsrfFromQueryOrHeader 는 query/header 만 봐서
+        // body hidden input 과 불일치 → CSRF 항상 실패 + JSON 응답으로 UI 붕괴.
         val form = call.receiveParameters()
+        if (!com.siamakerlab.vibecoder.server.auth.CsrfTokens.isValidCsrf(call, form["_csrf"])) {
+            call.respondRedirect("/settings/keystores?flash=err:csrf")
+            return@post
+        }
         val pkg = form["packageName"]?.trim().orEmpty()
         val req = CreateKeystoreRequest(
             packageName = pkg,
@@ -90,7 +97,12 @@ fun Routing.keystoreRoutes(
     post("/settings/keystores/{pkg}/delete") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireAdminOrRedirect(sess)) return@post
-        com.siamakerlab.vibecoder.server.auth.CsrfTokens.verifyCsrfFromQueryOrHeader(call)
+        // v1.28.1 — body `_csrf` 검증 + 실패 시 SSR redirect (위 create 와 동일).
+        val form = call.receiveParameters()
+        if (!com.siamakerlab.vibecoder.server.auth.CsrfTokens.isValidCsrf(call, form["_csrf"])) {
+            call.respondRedirect("/settings/keystores?flash=err:csrf")
+            return@post
+        }
         val pkg = call.parameters["pkg"].orEmpty()
         runCatching { service.delete(pkg) }
             .onFailure { log.warn(it) { "keystore delete failed for $pkg" } }
@@ -111,7 +123,12 @@ fun Routing.keystoreRoutes(
     post("/settings/keystores/{pkg}/apply/{projectId}") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireAdminOrRedirect(sess)) return@post
-        com.siamakerlab.vibecoder.server.auth.CsrfTokens.verifyCsrfFromQueryOrHeader(call)
+        // v1.28.1 — body `_csrf` 검증 + 실패 시 SSR redirect (위 create 와 동일).
+        val form = call.receiveParameters()
+        if (!com.siamakerlab.vibecoder.server.auth.CsrfTokens.isValidCsrf(call, form["_csrf"])) {
+            call.respondRedirect("/settings/keystores?flash=err:csrf")
+            return@post
+        }
         val pkg = call.parameters["pkg"].orEmpty()
         val projectId = call.parameters["projectId"].orEmpty()
 
@@ -250,6 +267,7 @@ internal object KeystoreTemplates {
             flash.startsWith("ok:") -> """<div class="flash ok">✓ ${esc(t("ks.flash.created"))} <code>${esc(flash.removePrefix("ok:"))}</code></div>"""
             flash.startsWith("deleted:") -> """<div class="flash ok">✓ ${esc(t("ks.flash.deleted"))} <code>${esc(flash.removePrefix("deleted:"))}</code></div>"""
             flash.startsWith("applied:") -> """<div class="flash ok">✓ ${esc(t("ks.flash.applied"))} <code>${esc(flash.removePrefix("applied:"))}</code></div>"""
+            flash == "err:csrf" -> """<div class="flash err">⚠ ${esc(t("ks.flash.csrfExpired"))}</div>"""
             flash.startsWith("err:") -> """<div class="flash err">⚠ ${esc(flash.removePrefix("err:"))}</div>"""
             else -> ""
         }

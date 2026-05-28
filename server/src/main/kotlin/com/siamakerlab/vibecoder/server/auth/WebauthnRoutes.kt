@@ -8,6 +8,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
 import io.ktor.server.plugins.origin
+import io.ktor.server.request.receiveParameters
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondRedirect
@@ -67,6 +68,13 @@ fun Routing.webauthnRoutes(
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         val rowId = call.parameters["rowId"]
             ?: return@post call.respondRedirect("/webauthn?err=missing_id")
+        // v1.28.1 — CSRF 검증 추가. 이전엔 검증이 아예 없어 passkey 삭제가 CSRF 무방비
+        // (cookie 기반 SSR POST). 폼은 hidden input(body)으로 _csrf 를 보내므로 body 검증.
+        val form = call.receiveParameters()
+        if (!com.siamakerlab.vibecoder.server.auth.CsrfTokens.isValidCsrf(call, form["_csrf"])) {
+            call.respondRedirect("/webauthn?err=csrf")
+            return@post
+        }
         val removed = webauthn.deleteCredential(sess.userId, rowId)
         call.respondRedirect("/webauthn?${if (removed) "ok=deleted" else "err=not_found"}")
     }
