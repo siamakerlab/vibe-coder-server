@@ -1505,5 +1505,10 @@ internal object MessagesEn {
         // v1.27.1 — disabledPage (security.allowTerminal=false 일 때 SSR-only mode).
         "term.disabled.body" to "Terminal access is disabled in this environment. The administrator has set security.allowTerminal=false in server.yml.",
         "term.disabled.hint" to "To enable the terminal, edit server.yml and restart the server:",
+        // v1.30.0 — 다중 세션 탭.
+        "term.newSession" to "New session",
+        "term.sessionLabel" to "Session",
+        "term.limitReached" to "Maximum 4 sessions reached. Close one to open another.",
+        "term.closeSession" to "Close session",
     )
 }

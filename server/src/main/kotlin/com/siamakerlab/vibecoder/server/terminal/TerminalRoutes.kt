@@ -339,6 +339,12 @@ internal object TerminalTemplates {
             .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             .replace("\"", "&quot;").replace("'", "&#39;")
 
+    /** JS 문자열 리터럴 안전 — i18n 값을 JS 코드에 박을 때. */
+    private fun jsLit(s: String): String =
+        "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"")
+            .replace("<", "\\u003C").replace(">", "\\u003E")
+            .replace("\n", "\\n").replace("\r", "") + "\""
+
     /**
      * v1.27.1 B-1 회수: `security.allowTerminal=false` 환경 (외부 노출 시 보안
      * 차단 사용) 에서 사이드바 "터미널" 메뉴 클릭 시 404 가 아니라 비활성화 안내를
@@ -380,12 +386,30 @@ internal object TerminalTemplates {
   <p class="dim" style="margin:6px 0 0;font-size:13px">${esc(t("term.intro"))}</p>
 </header>
 
-<!-- xterm.js (BSD) — v1.7.19 로컬 번들. CLAUDE.md §3 의 "외부 CDN 미사용"
-     정책 일관. v1.7.20 — ?v=xterm-5.5.0-fit-0.10.0 cache-bust 로 브라우저
-     이전 CDN 응답 캐시 무력화 (사용자 보고: force-reload 안 해도 새 번들 로드). -->
+<!-- xterm.js (BSD) — v1.7.19 로컬 번들. CLAUDE.md §3 "외부 CDN 미사용" 정책. -->
 <link rel="stylesheet" href="/static/vendor/xterm/xterm.min.css?v=5.5.0">
 
-<div id="term-host" style="background:#000;padding:10px;border-radius:8px;height:70vh;min-height:400px"></div>
+<!-- v1.30.0 — 다중 세션 탭. 세션마다 별도 xterm + WS. 서버 per-user 한도(4) 연동. -->
+<style>
+  #term-tabbar { display:flex; gap:4px; align-items:center; border-bottom:1px solid #1f2330;
+                 padding:4px 0; margin-bottom:6px; overflow-x:auto }
+  #term-tabs { display:flex; gap:4px; flex:0 1 auto }
+  .term-tab { display:inline-flex; align-items:center; gap:6px; padding:6px 10px;
+              background:#131722; border:1px solid #1f2330; border-bottom:0;
+              border-radius:6px 6px 0 0; cursor:pointer; font-size:12px; color:#aaa; white-space:nowrap }
+  .term-tab.active { background:#000; color:#e5e5e5 }
+  .term-close { background:none; border:0; color:#888; cursor:pointer; font-size:14px; line-height:1; padding:0 2px }
+  .term-close:hover { color:#ff6b6b }
+  #term-new { padding:6px 12px; background:#1e40af; color:#fff; border:0; border-radius:6px;
+              cursor:pointer; font-size:12px; flex:0 0 auto; margin-left:4px }
+  #term-new:disabled { opacity:0.4; cursor:not-allowed }
+</style>
+
+<div id="term-tabbar">
+  <div id="term-tabs"></div>
+  <button id="term-new" type="button">+ ${esc(t("term.newSession"))}</button>
+</div>
+<div id="term-panes" style="position:relative;background:#000;border-radius:0 8px 8px 8px;height:70vh;min-height:400px;overflow:hidden"></div>
 <div id="term-status" class="dim" style="font-size:12px;margin-top:6px">${esc(t("term.status.connecting"))}</div>
 
 <script src="/static/vendor/xterm/xterm.min.js?v=5.5.0"></script>
@@ -393,62 +417,157 @@ internal object TerminalTemplates {
 <script>
 (function(){
   var status = document.getElementById('term-status');
+  var tabsEl = document.getElementById('term-tabs');
+  var panesEl = document.getElementById('term-panes');
+  var newBtn = document.getElementById('term-new');
   function setStatus(s){ status.textContent = s; }
+  var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  // 서버 TerminalSessionManager.MAX_SESSIONS_PER_USER 와 일치.
+  var MAX = 4;
+  var I18N = {
+    label: ${jsLit(t("term.sessionLabel"))},
+    limit: ${jsLit(t("term.limitReached"))},
+    close: ${jsLit(t("term.closeSession"))},
+    newSession: ${jsLit(t("term.newSession"))},
+    connecting: ${jsLit(t("term.status.connecting"))},
+    connected: ${jsLit(t("term.status.connected"))},
+    exited: ${jsLit(t("term.status.exited"))},
+    disconnected: ${jsLit(t("term.status.disconnected"))}
+  };
 
-  var term = new Terminal({
-    cursorBlink: true,
-    convertEol: true,
-    fontFamily: 'ui-monospace, Menlo, Consolas, monospace',
-    fontSize: 13,
-    theme: { background: '#000', foreground: '#e5e5e5', cursor: '#e5e5e5' },
-  });
-  var fit = new FitAddon.FitAddon();
-  term.loadAddon(fit);
-  term.open(document.getElementById('term-host'));
-  fit.fit();
+  var sessions = {};   // id -> {term, fit, ws, tab, pane}
+  var order = [];      // 탭 순서 (id)
+  var activeId = null;
+  var counter = 0;
 
-  // 1) session 생성.
-  // v1.26.3 — credentials:same-origin 으로 vibe_session 쿠키 자동 첨부 (server 가 Bearer
-  // 가드 안에서 vibe-session provider 로 인증). 이전엔 ?_csrf 만 있었고 인증 무가드.
-  fetch('/api/terminal/sessions', { method: 'POST', credentials: 'same-origin' })
-    .then(function(r){
-      if (!r.ok) throw new Error('session create failed: HTTP ' + r.status);
-      return r.json();
-    })
-    .then(function(s){
-      setStatus('${esc(t("term.status.connectingWs"))} ' + s.sessionId);
-      var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      // v1.26.3 — WS handshake 시 브라우저가 vibe_session 쿠키 자동 첨부 →
-      // server 의 authenticateTerminalWs 가 cookie-first 로 인증. JS 가 cookie 를
-      // 읽을 필요 없음 (httpOnly). 첫 Auth frame 도 보내지 않음.
-      var ws = new WebSocket(proto + '//' + location.host + '/ws/terminal/' + s.sessionId);
-      ws.onopen = function(){
-        setStatus('${esc(t("term.status.connected"))} ' + s.sessionId);
-        fit.fit();
-        ws.send(JSON.stringify({ type: 'terminal_resize', cols: term.cols, rows: term.rows }));
-      };
-      ws.onmessage = function(ev){
-        try {
-          var f = JSON.parse(ev.data);
-          if (f.type === 'terminal_output') term.write(f.data);
-          else if (f.type === 'terminal_exit') {
-            term.write('\r\n\r\n[process exited code=' + f.exitCode + ']');
-            setStatus('${esc(t("term.status.exited"))}');
-          }
-        } catch(e){}
-      };
-      ws.onclose = function(){ setStatus('${esc(t("term.status.disconnected"))}'); };
-      term.onData(function(d){
-        if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'terminal_input', data: d }));
-      });
-      window.addEventListener('resize', function(){
-        fit.fit();
-        if (ws.readyState === 1) {
-          ws.send(JSON.stringify({ type: 'terminal_resize', cols: term.cols, rows: term.rows }));
+  function updateNewBtn(){
+    newBtn.disabled = order.length >= MAX;
+    newBtn.title = order.length >= MAX ? I18N.limit : I18N.newSession;
+  }
+
+  function activate(id){
+    var s = sessions[id]; if (!s) return;
+    activeId = id;
+    order.forEach(function(sid){
+      var o = sessions[sid]; if (!o) return;
+      var on = sid === id;
+      o.pane.style.display = on ? 'block' : 'none';
+      o.tab.classList.toggle('active', on);
+    });
+    try {
+      s.fit.fit(); s.term.focus();
+      if (s.ws.readyState === 1)
+        s.ws.send(JSON.stringify({ type:'terminal_resize', cols:s.term.cols, rows:s.term.rows }));
+    } catch(e){}
+  }
+
+  function closeSession(id){
+    var s = sessions[id]; if (!s) return;
+    try { fetch('/api/terminal/sessions/' + id, { method:'DELETE', credentials:'same-origin' }); } catch(e){}
+    try { s.ws.close(); } catch(e){}
+    try { s.term.dispose(); } catch(e){}
+    if (s.pane.parentNode) s.pane.parentNode.removeChild(s.pane);
+    if (s.tab.parentNode) s.tab.parentNode.removeChild(s.tab);
+    delete sessions[id];
+    order = order.filter(function(x){ return x !== id; });
+    updateNewBtn();
+    if (activeId === id) {
+      activeId = null;
+      if (order.length) activate(order[order.length - 1]);
+      else setStatus(I18N.disconnected);
+    }
+  }
+
+  function attachSession(sessionId){
+    counter++;
+    var label = I18N.label + ' ' + counter;
+    var pane = document.createElement('div');
+    pane.style.cssText = 'position:absolute;inset:0;padding:10px;display:none';
+    panesEl.appendChild(pane);
+    var term = new Terminal({
+      cursorBlink:true, convertEol:true,
+      fontFamily:'ui-monospace, Menlo, Consolas, monospace', fontSize:13,
+      theme:{ background:'#000', foreground:'#e5e5e5', cursor:'#e5e5e5' }
+    });
+    var fit = new FitAddon.FitAddon();
+    term.loadAddon(fit);
+    term.open(pane);
+
+    var tab = document.createElement('div');
+    tab.className = 'term-tab';
+    var labelEl = document.createElement('span');
+    labelEl.textContent = label;
+    var closeBtn = document.createElement('button');
+    closeBtn.type = 'button'; closeBtn.className = 'term-close';
+    closeBtn.textContent = '×'; closeBtn.title = I18N.close;
+    tab.appendChild(labelEl); tab.appendChild(closeBtn);
+    tabsEl.appendChild(tab);
+    tab.addEventListener('click', function(e){ if (e.target === closeBtn) return; activate(sessionId); });
+    closeBtn.addEventListener('click', function(e){ e.stopPropagation(); closeSession(sessionId); });
+
+    var ws = new WebSocket(proto + '//' + location.host + '/ws/terminal/' + sessionId);
+    ws.onopen = function(){
+      setStatus(I18N.connected + ' ' + sessionId);
+      try { fit.fit(); } catch(e){}
+      ws.send(JSON.stringify({ type:'terminal_resize', cols:term.cols, rows:term.rows }));
+    };
+    ws.onmessage = function(ev){
+      try {
+        var f = JSON.parse(ev.data);
+        if (f.type === 'terminal_output') term.write(f.data);
+        else if (f.type === 'terminal_exit') {
+          term.write('\r\n\r\n[process exited code=' + f.exitCode + ']');
+          setStatus(I18N.exited);
         }
-      });
+      } catch(e){}
+    };
+    ws.onclose = function(){ if (activeId === sessionId) setStatus(I18N.disconnected); };
+    term.onData(function(d){
+      if (ws.readyState === 1) ws.send(JSON.stringify({ type:'terminal_input', data:d }));
+    });
+
+    sessions[sessionId] = { term:term, fit:fit, ws:ws, tab:tab, pane:pane };
+    order.push(sessionId);
+    updateNewBtn();
+    activate(sessionId);
+  }
+
+  function newSession(){
+    if (order.length >= MAX) { setStatus(I18N.limit); return; }
+    setStatus(I18N.connecting);
+    fetch('/api/terminal/sessions', { method:'POST', credentials:'same-origin' })
+      .then(function(r){
+        if (r.status === 429) throw new Error('__limit__');
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function(s){ attachSession(s.sessionId); })
+      .catch(function(e){ setStatus(e.message === '__limit__' ? I18N.limit : ('error: ' + e)); });
+  }
+
+  newBtn.addEventListener('click', newSession);
+  window.addEventListener('resize', function(){
+    if (activeId && sessions[activeId]) {
+      var s = sessions[activeId];
+      try {
+        s.fit.fit();
+        if (s.ws.readyState === 1)
+          s.ws.send(JSON.stringify({ type:'terminal_resize', cols:s.term.cols, rows:s.term.rows }));
+      } catch(e){}
+    }
+  });
+
+  // init — 기존 활성 세션이 있으면 탭으로 복원(WS 재연결, 과거 출력은 replay 안 됨),
+  // 없으면 새 세션 1개 자동 생성.
+  fetch('/api/terminal/sessions', { credentials:'same-origin' })
+    .then(function(r){ return r.ok ? r.json() : { sessions: [] }; })
+    .then(function(d){
+      var list = (d && d.sessions) || [];
+      var alive = list.filter(function(x){ return x.alive; });
+      if (alive.length) alive.forEach(function(x){ attachSession(x.sessionId); });
+      else newSession();
     })
-    .catch(function(e){ setStatus('error: ' + e); });
+    .catch(function(){ newSession(); });
 })();
 </script>
 """,

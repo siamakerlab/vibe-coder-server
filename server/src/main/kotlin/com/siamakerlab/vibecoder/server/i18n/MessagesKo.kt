@@ -1483,5 +1483,10 @@ internal object MessagesKo {
         // v1.27.1 — disabledPage (security.allowTerminal=false 일 때 SSR-only mode).
         "term.disabled.body" to "이 환경에서는 터미널 접근이 비활성화되어 있습니다. 운영자가 server.yml 의 security.allowTerminal=false 로 설정한 상태입니다.",
         "term.disabled.hint" to "터미널을 활성화하려면 server.yml 을 다음과 같이 수정한 뒤 서버를 재시작해야 합니다:",
+        // v1.30.0 — 다중 세션 탭.
+        "term.newSession" to "새 세션",
+        "term.sessionLabel" to "세션",
+        "term.limitReached" to "최대 4개 세션까지 가능합니다. 하나를 닫아야 새로 열 수 있습니다.",
+        "term.closeSession" to "세션 닫기",
     )
 }
