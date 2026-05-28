@@ -100,7 +100,6 @@ internal object MessagesKo {
         "settings.quicklinks.keystores" to "키스토어",
         "settings.quicklinks.sshKey" to "SSH 키",
         "settings.quicklinks.cache" to "빌드 캐시",
-        "settings.quicklinks.terminal" to "터미널",
         "settings.quicklinks.cors" to "CORS",
         "settings.quicklinks.email" to "이메일 알림",
         "settings.quicklinks.webhook" to "Webhook",
@@ -245,7 +244,6 @@ internal object MessagesKo {
         "env.subsettings.keystores" to "키스토어",
         "env.subsettings.sshKey" to "SSH 키",
         "env.subsettings.cache" to "빌드 캐시",
-        "env.subsettings.terminal" to "터미널",
         "env.subsettings.gitIntegrations" to "Git 통합",
         "env.subsettings.mcp" to "MCP 카탈로그",
         "settings.general.language.title" to "언어",
@@ -1487,5 +1485,8 @@ internal object MessagesKo {
         "term.status.connected" to "✓ 연결됨 — session",
         "term.status.exited" to "프로세스 종료됨",
         "term.status.disconnected" to "연결 끊김",
+        // v1.27.1 — disabledPage (security.allowTerminal=false 일 때 SSR-only mode).
+        "term.disabled.body" to "이 환경에서는 터미널 접근이 비활성화되어 있습니다. 운영자가 server.yml 의 security.allowTerminal=false 로 설정한 상태입니다.",
+        "term.disabled.hint" to "터미널을 활성화하려면 server.yml 을 다음과 같이 수정한 뒤 서버를 재시작해야 합니다:",
     )
 }

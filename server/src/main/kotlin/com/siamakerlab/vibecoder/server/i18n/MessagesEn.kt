@@ -122,7 +122,6 @@ internal object MessagesEn {
         "settings.quicklinks.keystores" to "Keystores",
         "settings.quicklinks.sshKey" to "SSH key",
         "settings.quicklinks.cache" to "Build cache",
-        "settings.quicklinks.terminal" to "Terminal",
         "settings.quicklinks.cors" to "CORS",
         "settings.quicklinks.email" to "Email alerts",
         "settings.quicklinks.webhook" to "Webhook",
@@ -267,7 +266,6 @@ internal object MessagesEn {
         "env.subsettings.keystores" to "Keystores",
         "env.subsettings.sshKey" to "SSH key",
         "env.subsettings.cache" to "Build cache",
-        "env.subsettings.terminal" to "Terminal",
         "env.subsettings.gitIntegrations" to "Git integrations",
         "env.subsettings.mcp" to "MCP catalog",
         "settings.general.language.title" to "Language",
@@ -1509,5 +1507,8 @@ internal object MessagesEn {
         "term.status.connected" to "✓ Connected to session",
         "term.status.exited" to "Process exited",
         "term.status.disconnected" to "Disconnected",
+        // v1.27.1 — disabledPage (security.allowTerminal=false 일 때 SSR-only mode).
+        "term.disabled.body" to "Terminal access is disabled in this environment. The administrator has set security.allowTerminal=false in server.yml.",
+        "term.disabled.hint" to "To enable the terminal, edit server.yml and restart the server:",
     )
 }

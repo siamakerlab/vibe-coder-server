@@ -119,8 +119,12 @@ data class SecuritySection(
     val pairingCodeExpireMinutes: Int = 10,
     val allowRawShell: Boolean = false,
     /**
-     * v1.6.0 — Workspace terminal (PTY bash) 활성. /settings/terminal SSR +
-     * /ws/terminal/{id} WS 라우트가 본 flag 미설정 시 404 반환.
+     * v1.6.0 — Workspace terminal (PTY bash) 활성.
+     * v1.27.0 — 사이드바 글로벌 메뉴로 이전. SSR 경로는 `/terminal`,
+     * WS 는 `/ws/terminal/{id}` (둘 다 `ApiPath.wsTerminal()` SSOT 참조).
+     * v1.27.1 — false 일 때도 SSR `/terminal` 은 등록되어 "비활성화됨" 안내를
+     * 보여주고 (사이드바 메뉴 404 회피), REST/WS 만 미등록 — 외부 노출 환경의
+     * 보안 차단 의도는 그대로.
      * v1.6.1 — default true. 컨테이너 sandbox + admin 인증 두 단계 가드로 충분.
      * 외부 노출 환경에서 비활성화하려면 false 명시.
      */

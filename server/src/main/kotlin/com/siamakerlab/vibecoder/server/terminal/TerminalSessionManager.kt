@@ -13,6 +13,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.nio.charset.StandardCharsets
@@ -142,8 +143,10 @@ class TerminalSession(
  *  - [create]: 신규 PTY spawn. cwd 기본 [workspaceRoot] (호스트 vibe-coder-data
  *    /workspace 마운트 위치 — 컨테이너 안에서 그대로 read/write 가능).
  *  - [get] / [list] / [close]: 호출 기본.
- *  - [shutdownAll]: graceful — `ApplicationStopping` 후크에서 호출. 모든 활성
- *    PTY 종료 + 내부 coroutine scope cancel.
+ *  - [shutdownAll]: graceful — JVM shutdown hook (`Runtime.addShutdownHook`,
+ *    ServerMain) 에서 호출. 모든 활성 PTY 종료 + 내부 coroutine scope cancel.
+ *    Ktor `ApplicationStopping` 보다 JVM shutdown hook 이 더 광범위 (`kill -TERM`
+ *    docker stop 양쪽 모두 cover).
  *
  * v1.27.0 — lifecycle + 리소스 제어:
  *  - 사용자별 최대 [MAX_SESSIONS_PER_USER] 세션. 초과 시 [SessionLimitException].
@@ -174,6 +177,12 @@ class TerminalSessionManager(
      *   경우 WS ACL 이 owner check 를 skip 하지만 admin 가드는 그대로 유지.
      * @throws SessionLimitException 같은 [ownerUserId] 가 이미 [MAX_SESSIONS_PER_USER]
      *   개 활성 세션 보유 시.
+     *
+     * v1.27.1 Q-3 회수: per-user 한도 검사 + insert 가 동기화되지 않아 TOCTOU
+     * 가능 (탭 두 개 동시 POST → 둘 다 count=N 통과 → 한도 +1 자리). 같은 admin 의
+     * 동시성 좁아서 실 영향 작지만 SLO 명시 — `synchronized(sessions)` 블록으로
+     * count + reservation 묶음. PTY spawn 자체는 lock 밖에서 진행 (외부 process
+     * fork 가 lock 안에서 일어나면 다른 thread 가 한도 초과 분석 동안 무한 대기).
      */
     fun create(
         ownerUserId: String?,
@@ -181,15 +190,22 @@ class TerminalSessionManager(
         cols: Int = 80,
         rows: Int = 24,
     ): TerminalSession {
+        val id = UUID.randomUUID().toString().take(12)
+        // Q-3: 한도 체크 + placeholder 등록을 한 블록으로 묶어 race 차단. 같은 user
+        // 의 동시 POST 가 둘 다 count 통과하는 TOCTOU 회피. sessions 는 ConcurrentHashMap
+        // 이지만 "count → put" 시퀀스의 atomicity 를 위해 명시 synchronized.
         if (ownerUserId != null) {
-            val active = sessions.values.count { it.ownerUserId == ownerUserId && it.isAlive() }
-            if (active >= MAX_SESSIONS_PER_USER) {
-                throw SessionLimitException(
-                    "user $ownerUserId already has $active active terminal sessions (max $MAX_SESSIONS_PER_USER)",
-                )
+            synchronized(sessions) {
+                val active = sessions.values.count {
+                    it.ownerUserId == ownerUserId && it.isAlive()
+                }
+                if (active >= MAX_SESSIONS_PER_USER) {
+                    throw SessionLimitException(
+                        "user $ownerUserId already has $active active terminal sessions (max $MAX_SESSIONS_PER_USER)",
+                    )
+                }
             }
         }
-        val id = UUID.randomUUID().toString().take(12)
         // 컨테이너 내부 bash. interactive + login → ~/.bashrc 로드되어 PATH /
         // alias 정상. TERM=xterm-256color 로 vim/tmux 친화.
         val pb = PtyProcessBuilder(arrayOf("/bin/bash", "--login", "-i"))
@@ -215,8 +231,12 @@ class TerminalSessionManager(
         )
         sess.start()
         sessions[id] = sess
+        // v1.27.1 Q-4 회수: `exit.collect { ... }` 가 SharedFlow 라 emit 후에도
+        // suspend 유지 → 세션이 reapIdle/close 로 사라져도 collector job 이 살아남아
+        // shutdownAll 까지 누적. `first()` 로 한 번만 받고 자연 종료.
         scope.launch {
-            sess.exit.collect { sessions.remove(id) }
+            runCatching { sess.exit.first() }
+            sessions.remove(id)
         }
         log.info { "[term $id] spawned bash in $workdir owner=$ownerUserId" }
         return sess
@@ -234,8 +254,9 @@ class TerminalSessionManager(
     }
 
     /**
-     * v1.27.0 — `ApplicationStopping` 후크에서 호출. 모든 활성 PTY 종료 (kill →
-     * destroyForcibly fallback) + 내부 scope cancel (reaper 코루틴 정리).
+     * v1.27.0 — JVM shutdown hook (`Runtime.addShutdownHook`, ServerMain) 에서 호출.
+     * 모든 활성 PTY 종료 (kill → destroyForcibly fallback) + 내부 scope cancel
+     * (reaper 코루틴 + 세션별 exit collector 들 정리).
      */
     fun shutdownAll() {
         log.info { "terminal manager shutdown: closing ${sessions.size} sessions" }
