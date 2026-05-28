@@ -16,24 +16,25 @@ data class BuildWebhookSecretRow(
     val id: String,
     val projectId: String,
     val name: String,
-    val secretHash: String,
+    // v1.27.4 (Q3) — 평문 secret (대칭 HMAC 키). 이전엔 sha256(secret).
+    val secret: String,
     val createdAt: String,
     val lastUsedAt: String?,
 )
 
 class BuildWebhookSecretRepository(private val clock: Clock) {
 
-    fun create(projectId: String, name: String, secretHash: String): BuildWebhookSecretRow = transaction {
+    fun create(projectId: String, name: String, secret: String): BuildWebhookSecretRow = transaction {
         val now = clock.nowIso()
         val id = Ids.taskId()
         BuildWebhookSecrets.insert {
             it[BuildWebhookSecrets.id] = id
             it[BuildWebhookSecrets.projectId] = projectId
             it[BuildWebhookSecrets.name] = name
-            it[BuildWebhookSecrets.secretHash] = secretHash
+            it[BuildWebhookSecrets.secret] = secret
             it[createdAt] = now
         }
-        BuildWebhookSecretRow(id, projectId, name, secretHash, now, null)
+        BuildWebhookSecretRow(id, projectId, name, secret, now, null)
     }
 
     fun listForProject(projectId: String): List<BuildWebhookSecretRow> = transaction {
@@ -60,7 +61,7 @@ class BuildWebhookSecretRepository(private val clock: Clock) {
         id = this[BuildWebhookSecrets.id],
         projectId = this[BuildWebhookSecrets.projectId],
         name = this[BuildWebhookSecrets.name],
-        secretHash = this[BuildWebhookSecrets.secretHash],
+        secret = this[BuildWebhookSecrets.secret],
         createdAt = this[BuildWebhookSecrets.createdAt],
         lastUsedAt = this[BuildWebhookSecrets.lastUsedAt],
     )

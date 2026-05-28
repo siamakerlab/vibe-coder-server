@@ -2485,7 +2485,10 @@ ${if (status != null && !unavailable) """
         val confirmDeleteN = t("fileTree.confirm.deleteN")
         val toolbar = """<div class="card" style="margin-bottom:10px">
   <div id="fts-toolbar-default" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-    <form method="post" action="/projects/${esc(p.id)}/files/upload?_csrf=${csrf?.encodeUrl() ?: ""}"
+    <!-- v1.27.4 (B1) — parent 를 query param 으로도 전달. multipart part 순서에
+         의존하지 않도록 (file part 가 parent FormItem 보다 먼저 와도 정확한 위치).
+         hidden input 은 fallback 으로 유지. -->
+    <form method="post" action="/projects/${esc(p.id)}/files/upload?_csrf=${csrf?.encodeUrl() ?: ""}&parent=${subPath.encodeUrl()}"
           enctype="multipart/form-data" style="display:inline-flex;gap:6px;align-items:center">
       <input type="hidden" name="parent" value="${esc(subPath)}">
       <label class="chip chip-link" style="cursor:pointer">

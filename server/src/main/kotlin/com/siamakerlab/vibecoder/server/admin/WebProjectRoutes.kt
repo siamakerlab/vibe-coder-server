@@ -794,8 +794,11 @@ fun Routing.webProjectRoutes(
         // multipart 라 requireCsrf 못 씀 → query string `?_csrf=...` 또는 헤더 검증.
         CsrfTokens.verifyCsrfFromQueryOrHeader(call)
         val id = call.parameters["id"]!!
+        // v1.27.4 (B1 회수) — parent 를 query param 에서 먼저 확정. multipart part 순서
+        // 의존 제거: file part 가 parent FormItem 보다 먼저 와도 정확한 디렉토리에 업로드.
+        // FormItem "parent" 는 query 가 없을 때만 fallback (구형 form 호환).
         val multipart = call.receiveMultipart()
-        var parentRel = ""
+        var parentRel = call.request.queryParameters["parent"].orEmpty()
         var fileName: String? = null
         var stream: java.io.InputStream? = null
         var failMsg: String? = null
@@ -805,7 +808,7 @@ fun Routing.webProjectRoutes(
                 try {
                     when (part) {
                         is PartData.FormItem -> {
-                            if (part.name == "parent") parentRel = part.value
+                            if (part.name == "parent" && parentRel.isBlank()) parentRel = part.value
                         }
                         is PartData.FileItem -> {
                             if (fileName == null) {

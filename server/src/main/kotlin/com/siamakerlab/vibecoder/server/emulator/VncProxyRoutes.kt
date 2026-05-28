@@ -87,6 +87,20 @@ fun Routing.vncProxyRoutes(authDeps: AdminRoutesDeps) {
      * `wss://` (TLS) 는 reverse proxy 가 처리. 본 endpoint 는 plain WS.
      */
     webSocket("/emulator/vnc/websockify") {
+        // v1.27.4 (Q4 회수) — CSWSH 방어: Origin ↔ Host 검증. WsRoutes / TerminalRoutes
+        // 가 일관 적용하는 표준인데 본 endpoint 만 누락돼 있었음. 실행 중 에뮬레이터의
+        // live VNC 채널은 화면 캡처 / 입력 주입이 가능하므로 cross-origin WS 차단 필수.
+        // Origin 빈 클라(curl / 네이티브)는 통과 — 인증은 어차피 cookie+admin 으로.
+        val origin = call.request.headers["Origin"]
+        if (!origin.isNullOrBlank()) {
+            val host = call.request.headers["Host"]
+            val originHost = runCatching { java.net.URI(origin).host }.getOrNull()
+            if (host != null && originHost != null && originHost != host.substringBefore(':')) {
+                log.warn { "vnc ws origin mismatch: origin=$origin host=$host — closing" }
+                close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "origin_denied"))
+                return@webSocket
+            }
+        }
         // 인증 가드 — Ktor WS handshake 에서 같은 cookie 가 흘러옴.
         // call.principal 직접 못 쓰니 cookie 기반 직접 검증 (간단화):
         val token = call.request.cookies["vibe_session"]

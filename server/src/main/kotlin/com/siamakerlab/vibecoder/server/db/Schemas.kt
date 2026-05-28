@@ -263,13 +263,22 @@ object BuildSchedules : Table("build_schedules") {
  * POST /api/webhooks/build/{projectId} 로 빌드 트리거. body 의 HMAC-SHA256
  * 서명을 `X-Vibe-Signature` 헤더로 보내 검증.
  *
- * secretHash 는 BCrypt — plaintext 는 한 번 생성 시점에만 노출.
+ * v1.27.4 (Q3 회수) — `secret_hash` 컬럼은 이제 **평문 secret** 을 저장한다.
+ * webhook secret 은 sender/server 가 공유하는 대칭키라 단방향 hash (BCrypt/sha256)
+ * 로는 server 가 HMAC 을 재계산할 수 없다 (GitHub/GitLab webhook 도 동일하게
+ * secret 을 복원 가능 형태로 보관). 이전 구현은 sha256(secret) 만 저장해서 결국
+ * sender 가 평문 secret 헤더(X-Vibe-Secret)를 전송하게 만들었고 (TLS 의존),
+ * 그게 GitHub-style HMAC-only 보다 약했다. 이제 평문 보관 + HMAC-only 검증.
+ * 컬럼명은 마이그레이션 회피를 위해 `secret_hash` 그대로 둔다 (의미는 평문).
+ * 단일 admin LAN 도구 + DB 접근 격리 + secret 권한이 "빌드 트리거"로 한정되고
+ * 빌드는 keystore 가드를 거치므로 평문 보관 위험 등급 낮음.
  */
 object BuildWebhookSecrets : Table("build_webhook_secrets") {
     val id = varchar("id", 64)
     val projectId = varchar("project_id", 64).references(Projects.id)
     val name = varchar("name", 64)
-    val secretHash = varchar("secret_hash", 96)
+    // v1.27.4 — 평문 secret (대칭 HMAC 키). 컬럼명만 legacy 유지.
+    val secret = varchar("secret_hash", 96)
     val createdAt = varchar("created_at", 64)
     val lastUsedAt = varchar("last_used_at", 64).nullable()
     override val primaryKey = PrimaryKey(id)
