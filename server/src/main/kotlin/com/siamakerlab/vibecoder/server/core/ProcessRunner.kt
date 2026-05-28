@@ -12,6 +12,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.BufferedReader
 import java.io.InputStream
 import java.io.InputStreamReader
@@ -76,8 +77,17 @@ class ProcessRunner(
             if (process.isAlive) process.destroyForcibly().waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
             Triple(-1, true, false)
         } finally {
-            stdoutJob.join()
-            stderrJob.join()
+            // v1.31.1 (B-Q3) — reader join 에 timeout. 정상(EOF)/timeout(파이프 close)
+            // 경로는 즉시 unblock 되지만, 외부 cancellation 으로 process 가 아직
+            // destroyForcibly 되기 전 자식이 stdout 을 계속 흘리면 join 이 길어질 수
+            // 있어 2초 상한. 초과 시 reader job 강제 cancel.
+            withTimeoutOrNull(2_000) {
+                stdoutJob.join()
+                stderrJob.join()
+            } ?: run {
+                stdoutJob.cancel()
+                stderrJob.cancel()
+            }
             cancelJob.cancel()
         }
 

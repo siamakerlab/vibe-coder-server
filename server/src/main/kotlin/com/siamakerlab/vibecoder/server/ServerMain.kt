@@ -493,6 +493,8 @@ fun main(args: Array<String>) {
         // v1.31.0 (B-BUG1) — 진행 중 claude OAuth 로그인 세션의 script/claude 자식
         // 프로세스 + drainOutput/watchProcess job graceful 종료.
         runCatching { claudeLogin.shutdown() }
+        // v1.31.1 (B-Q1) — TaskQueue 내부 scope cancel (진행 중 빌드 job 정리 신호).
+        runCatching { queue.shutdown() }
     })
 
     printBanner(config, workspaceRoot, pairing, authService.adminExists())

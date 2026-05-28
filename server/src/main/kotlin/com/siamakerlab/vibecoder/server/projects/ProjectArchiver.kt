@@ -40,6 +40,11 @@ class ProjectArchiver(private val workspace: WorkspacePath) {
                     if (p == root) return@forEach
                     val rel = root.relativize(p).toString().replace('\\', '/')
                     if (shouldExclude(rel)) return@forEach
+                    // v1.31.1 (B-Q2) — 심볼릭 링크 skip. Files.walk 는 링크 디렉토리를
+                    // 따라가지 않지만, 링크 노드 자체에 isRegularFile 가 링크 대상을
+                    // 따라가 판정 → 워크스페이스 밖 호스트 파일(/etc/passwd 등)을 가리키는
+                    // 링크가 zip 에 포함될 수 있었음. zip export 가 sandbox 밖 유출 경로.
+                    if (Files.isSymbolicLink(p)) return@forEach
                     try {
                         if (Files.isDirectory(p)) {
                             zip.putNextEntry(ZipEntry("$rel/"))

@@ -96,6 +96,8 @@ object ApiPath {
         "/ws/projects/$projectId/builds/$buildId/logs"
     fun wsConsoleLogs(projectId: String) =
         "/ws/projects/$projectId/console/logs"
+    // v1.31.1 — cross-project busy state push (대시보드 / workspaces 실시간 동기).
+    const val WS_PROJECTS_STATE = "/ws/projects"
 
     // v0.10.0 — Env setup (빌드환경 컴포넌트 진단/설치)
     const val ENV_SETUP_COMPONENTS = "/api/env-setup/components"

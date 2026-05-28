@@ -79,6 +79,14 @@ class GitWriter {
         // 4) push (옵션). 실패해도 commit 은 유지.
         var pushed = false
         if (push) {
+            // v1.31.1 (B-Q4) — push 전 origin scheme 검증. Claude/콘솔에서 origin 을
+            // file:// 등 로컬/비신뢰 scheme 으로 바꿔치기한 뒤 push 하면 자격증명
+            // (~/.git-credentials) 이나 내용이 유출될 수 있어, https/http/ssh/git 만 허용.
+            val originUrl = run(source, listOf("git", "remote", "get-url", "origin"), sb).trim()
+            if (!isAllowedPushUrl(originUrl)) {
+                sb.appendLine("(push skipped — untrusted origin scheme: $originUrl)")
+                return CommitPushResult(committed = true, pushed = false, branch = branch, sha = sha, log = sb.toString())
+            }
             val pushEnv = mutableMapOf<String, String>()
             pushEnv["GIT_TERMINAL_PROMPT"] = "0"
             pushEnv["GIT_SSH_COMMAND"] = "ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes"
@@ -90,6 +98,14 @@ class GitWriter {
         }
 
         return CommitPushResult(committed = true, pushed = pushed, branch = branch, sha = sha, log = sb.toString())
+    }
+
+    // v1.31.1 (B-Q4) — push 허용 origin scheme whitelist (GitCloneService.validateUrl 과
+    // 동일 정신). file:/ext::/gopher: 등 로컬·비신뢰 scheme 거부.
+    private fun isAllowedPushUrl(url: String): Boolean {
+        val u = url.trim().lowercase()
+        return u.startsWith("https://") || u.startsWith("http://") ||
+            u.startsWith("ssh://") || u.startsWith("git://") || u.startsWith("git@")
     }
 
     private fun run(

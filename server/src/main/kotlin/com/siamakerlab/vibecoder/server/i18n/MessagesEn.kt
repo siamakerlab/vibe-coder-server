@@ -1498,7 +1498,6 @@ internal object MessagesEn {
         "term.title" to "Workspace Terminal",
         "term.intro" to "Interactive bash PTY running inside the vibe-coder-server container. Full xterm-256color — vim, tmux, less, htop all work. Working directory: /workspace.",
         "term.status.connecting" to "Creating session…",
-        "term.status.connectingWs" to "Connecting WS to session",
         "term.status.connected" to "✓ Connected to session",
         "term.status.exited" to "Process exited",
         "term.status.disconnected" to "Disconnected",
@@ -1508,6 +1507,7 @@ internal object MessagesEn {
         // v1.30.0 — 다중 세션 탭.
         "term.newSession" to "New session",
         "term.sessionLabel" to "Session",
+        "term.empty" to "No active sessions. Click \"+ New session\" to start.",
         "term.limitReached" to "Maximum 4 sessions reached. Close one to open another.",
         "term.closeSession" to "Close session",
     )

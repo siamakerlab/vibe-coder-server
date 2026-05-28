@@ -9,6 +9,7 @@ import com.siamakerlab.vibecoder.server.repo.AdminUserRepository
 import com.siamakerlab.vibecoder.server.claude.ClaudeSessionManager
 import com.siamakerlab.vibecoder.server.claude.SubAgentSessionManager
 import com.siamakerlab.vibecoder.server.repo.DeviceRepository
+import com.siamakerlab.vibecoder.shared.ApiPath
 import com.siamakerlab.vibecoder.shared.ws.WsFrame
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.server.routing.Routing
@@ -55,21 +56,22 @@ fun Routing.wsRoutes(
     /** v0.51.0 — Project ACL check on console + sub-agent WebSocket handshake. */
     projects: ProjectService,
 ) {
-    webSocket("/ws/projects/{projectId}/builds/{buildId}/logs") {
+    // v1.31.1 (A-Q2) — WS path 를 ApiPath SSOT 상수로 (Android client wire drift 방어).
+    webSocket(ApiPath.wsBuildLogs("{projectId}", "{buildId}")) {
         // v1.31.0 (A-B2) — projectId scope ACL 검증 (console WS 와 대칭).
         handleLegacyLogStream(
             hub, deviceRepo, tokens, topic = call.parameters["buildId"]!!,
             aclProjectId = call.parameters["projectId"], userRepo = userRepo, projects = projects,
         )
     }
-    webSocket("/ws/env-setup/{taskId}/logs") {
+    webSocket(ApiPath.wsEnvSetupLogs("{taskId}")) {
         // 빌드환경 설치 작업 (vibe-doctor) 의 stdout 라인 + 종료 Done 을 흘려보낸다.
         // 빌드 로그와 동일한 legacy log stream 패턴이므로 그대로 재사용.
         // v1.31.0 — env-setup 은 글로벌 빌드환경 작업(특정 프로젝트 아님)이라 project
         // ACL 미적용. 인증(authenticateFirstFrame)은 그대로.
         handleLegacyLogStream(hub, deviceRepo, tokens, topic = call.parameters["taskId"]!!)
     }
-    webSocket("/ws/projects/{projectId}/console/logs") {
+    webSocket(ApiPath.wsConsoleLogs("{projectId}")) {
         val projectId = call.parameters["projectId"]
             ?: return@webSocket close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "missing projectId"))
         val since = call.request.queryParameters["since"]?.toLongOrNull() ?: 0L
@@ -81,14 +83,14 @@ fun Routing.wsRoutes(
     // v1.3.0 — cross-project busy state push (workspaces 목록 / 대시보드 실시간 동기).
     // 단방향 — 클라이언트는 auth frame 한 번 보낸 뒤 `ProjectBusyChanged` 만 받음.
     // since query param 으로 ring 의 missing slice replay 가능 (재연결 후 누락 방지).
-    webSocket("/ws/projects") {
+    webSocket(ApiPath.WS_PROJECTS_STATE) {
         val since = call.request.queryParameters["since"]?.toLongOrNull() ?: 0L
         handleProjectsStateStream(hub, deviceRepo, tokens, since)
     }
 
     // v0.44.0 — sub-agent 콘솔 (Phase 23). prompt 송신 채널이 main console 과 분리되어 있어
     // WS 양방향이 아니라 단방향 stream 만 처리하면 됨 (prompt 는 별도 REST 로 보냄).
-    webSocket("/ws/projects/{projectId}/agents/{agentName}/console/logs") {
+    webSocket(ApiPath.wsAgentConsoleLogs("{projectId}", "{agentName}")) {
         val projectId = call.parameters["projectId"]
             ?: return@webSocket close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "missing projectId"))
         val agentName = call.parameters["agentName"]

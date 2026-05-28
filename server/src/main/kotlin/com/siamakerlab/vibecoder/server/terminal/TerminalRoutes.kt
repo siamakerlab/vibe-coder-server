@@ -439,6 +439,7 @@ internal object TerminalTemplates {
     limit: ${jsLit(t("term.limitReached"))},
     close: ${jsLit(t("term.closeSession"))},
     newSession: ${jsLit(t("term.newSession"))},
+    empty: ${jsLit(t("term.empty"))},
     connecting: ${jsLit(t("term.status.connecting"))},
     connected: ${jsLit(t("term.status.connected"))},
     exited: ${jsLit(t("term.status.exited"))},
@@ -448,7 +449,13 @@ internal object TerminalTemplates {
   var sessions = {};   // id -> {term, fit, ws, tab, pane}
   var order = [];      // 탭 순서 (id)
   var activeId = null;
-  var counter = 0;
+
+  // v1.31.1 (C-Q2) — 모든 탭을 닫으면 빈 상태 안내 표시.
+  function showEmptyState(){
+    panesEl.innerHTML = '<div id="term-empty" style="display:flex;align-items:center;'
+      + 'justify-content:center;height:100%;color:#888;font-size:13px;text-align:center;'
+      + 'padding:20px">' + I18N.empty + '</div>';
+  }
 
   function updateNewBtn(){
     newBtn.disabled = order.length >= MAX;
@@ -484,13 +491,17 @@ internal object TerminalTemplates {
     if (activeId === id) {
       activeId = null;
       if (order.length) activate(order[order.length - 1]);
-      else setStatus(I18N.disconnected);
+      else { showEmptyState(); setStatus(I18N.disconnected); }
     }
   }
 
   function attachSession(sessionId){
-    counter++;
-    var label = I18N.label + ' ' + counter;
+    // v1.31.1 (C-Q2) — 빈 상태 placeholder 제거.
+    var emp = document.getElementById('term-empty');
+    if (emp && emp.parentNode) emp.parentNode.removeChild(emp);
+    // v1.31.1 (C-Q3) — 라벨을 sessionId 접두 기반(안정 식별)으로. 이전 monotonic
+    // counter 는 닫았다 열면 "세션 5"처럼 어긋나고 서버 sessionId 와 무관해 혼란.
+    var label = I18N.label + ' #' + sessionId.slice(0, 6);
     var pane = document.createElement('div');
     pane.style.cssText = 'position:absolute;inset:0;padding:10px;display:none';
     panesEl.appendChild(pane);

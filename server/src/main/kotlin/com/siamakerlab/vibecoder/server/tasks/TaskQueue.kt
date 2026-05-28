@@ -3,6 +3,7 @@ package com.siamakerlab.vibecoder.server.tasks
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -79,4 +80,13 @@ class TaskQueue {
     }
 
     fun activeCount(): Int = activeJobs.size
+
+    /**
+     * v1.31.1 (B-Q1) — JVM shutdown hook 용. 내부 scope cancel — 진행 중 빌드/작업
+     * job 에 cancellation 신호. (ProcessRunner 가 JVM kill 시 자식 프로세스 자체
+     * 종료하지만, graceful 신호 경로를 명시적으로 확보.)
+     */
+    fun shutdown() {
+        scope.cancel()
+    }
 }

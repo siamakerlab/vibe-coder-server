@@ -5,6 +5,7 @@ import com.siamakerlab.vibecoder.server.admin.AdminTemplates
 import com.siamakerlab.vibecoder.server.admin.requireProjectAccessOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import com.siamakerlab.vibecoder.server.projects.ProjectService
+import com.siamakerlab.vibecoder.server.auth.CsrfTokens
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens.requireCsrf
 import com.siamakerlab.vibecoder.server.repo.ConversationTurnRepository
 import io.ktor.http.ContentType
@@ -84,8 +85,9 @@ fun Routing.historyRoutes(
         val id = call.parameters["id"]!!
         if (!requireProjectAccessOrRedirect(sess, projects, id)) return@post   // v1.28.0 (B-2)
         // multipart 는 requireCsrf() (form param 기반) 안 됨 — _csrf query param 으로 검증.
-        val csrfQuery = call.request.queryParameters["_csrf"] ?: ""
-        if (csrfQuery != sess.csrf) {
+        // v1.31.1 (A-Q3) — 평문 `!=` 대신 constant-time isValidCsrf (timing side-channel 제거).
+        val csrfQuery = call.request.queryParameters["_csrf"]
+        if (!CsrfTokens.isValidCsrf(call, csrfQuery)) {
             call.respondRedirect(
                 "/projects/$id/history?err=${enc("CSRF 검증 실패 — 새로고침 후 재시도")}"
             )
@@ -198,9 +200,9 @@ private suspend fun io.ktor.server.routing.RoutingContext.authorizeMemoStar(
         return true
     }
     // 기존 SSR cookie 세션 흐름.
-    val sess = requireSessionOrRedirect(authDeps) ?: return false
-    val csrfQuery = call.request.queryParameters["_csrf"] ?: ""
-    if (csrfQuery != sess.csrf) {
+    requireSessionOrRedirect(authDeps) ?: return false
+    // v1.31.1 (A-Q3) — constant-time isValidCsrf.
+    if (!CsrfTokens.isValidCsrf(call, call.request.queryParameters["_csrf"])) {
         call.respond(io.ktor.http.HttpStatusCode.Forbidden, "csrf")
         return false
     }

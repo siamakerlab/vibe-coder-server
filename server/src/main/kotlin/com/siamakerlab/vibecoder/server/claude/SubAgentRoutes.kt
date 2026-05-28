@@ -303,7 +303,16 @@ private suspend fun io.ktor.server.routing.RoutingContext.authorizeAgentJson(
 
     // Cookie 세션 fallback (admin SSR fetch).
     val sess = requireSessionOrRedirect(authDeps) ?: return null
-    if (requireWrite && !requireWriteAccessOrRedirect(sess)) return null
+    if (requireWrite) {
+        // v1.31.1 (A-Q1) — cookie(SSR) 분기 mutation 은 CSRF 검증 (Bearer 분기는
+        // cookie 미첨부라 CSRF 무관). HistoryRoutes.authorizeMemoStar 와 동일 패턴 —
+        // 이전엔 cookie 분기가 CSRF 없이 mutate 허용하던 비대칭. JS 는 ?_csrf= 송신.
+        if (!CsrfTokens.isValidCsrf(call, call.request.queryParameters["_csrf"])) {
+            call.respond(HttpStatusCode.Forbidden, "csrf")
+            return null
+        }
+        if (!requireWriteAccessOrRedirect(sess)) return null
+    }
     if (!projects.canUserAccess(sess.userId, sess.isAdmin, projectId)) {
         call.respond(HttpStatusCode.Forbidden, "project_forbidden")
         return null
@@ -439,7 +448,7 @@ private fun renderSubAgentConsole(
   async function cancelTurn() {
     if (!inFlight) return;
     try {
-      await fetch('/api/projects/' + projectId + '/agents/' + agentName + '/console/cancel',
+      await fetch('/api/projects/' + projectId + '/agents/' + agentName + '/console/cancel?_csrf=' + encodeURIComponent(window.__VIBE_CSRF__ || ''),
         { method: 'POST', credentials: 'same-origin' });
       append('sys', 'cancel', '사용자 중단 요청 전송됨');
     } catch (e) { append('err', 'cancel', String(e)); }
@@ -451,7 +460,7 @@ private fun renderSubAgentConsole(
     sendBtn.disabled = true;
     setInFlight(true);
     try {
-      var res = await fetch('/api/projects/' + projectId + '/agents/' + agentName + '/console/prompt', {
+      var res = await fetch('/api/projects/' + projectId + '/agents/' + agentName + '/console/prompt?_csrf=' + encodeURIComponent(window.__VIBE_CSRF__ || ''), {
         method: 'POST', credentials: 'same-origin',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({text: text}),

@@ -1476,7 +1476,6 @@ internal object MessagesKo {
         "term.title" to "Workspace 터미널",
         "term.intro" to "vibe-coder-server 컨테이너 안에서 작동하는 인터랙티브 bash PTY. 완전한 xterm-256color — vim/tmux/less/htop 모두 사용 가능. 작업 디렉토리: /workspace.",
         "term.status.connecting" to "세션 생성 중…",
-        "term.status.connectingWs" to "WS 연결 중 — session",
         "term.status.connected" to "✓ 연결됨 — session",
         "term.status.exited" to "프로세스 종료됨",
         "term.status.disconnected" to "연결 끊김",
@@ -1486,6 +1485,7 @@ internal object MessagesKo {
         // v1.30.0 — 다중 세션 탭.
         "term.newSession" to "새 세션",
         "term.sessionLabel" to "세션",
+        "term.empty" to "활성 세션이 없습니다. \"+ 새 세션\" 으로 시작하세요.",
         "term.limitReached" to "최대 4개 세션까지 가능합니다. 하나를 닫아야 새로 열 수 있습니다.",
         "term.closeSession" to "세션 닫기",
     )
