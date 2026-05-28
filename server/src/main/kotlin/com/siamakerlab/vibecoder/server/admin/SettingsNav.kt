@@ -29,6 +29,7 @@ internal object SettingsNav {
      * - projects:  /projects*
      * - chat:      /chat*
      * - tools:     /tools, /multi-console, /emulator, /logs, /code-search, /history
+     * - terminal:  /terminal  (v1.27.0 — 글로벌 사이드바 메뉴로 분리, workspace 시작)
      * - settings:  나머지 admin sub-page 모두 (settings/password/2fa/webauthn/devices/
      *              env-setup/backup/usage/audit/users/prompts/agents)
      */
@@ -44,9 +45,12 @@ internal object SettingsNav {
             p == "/logs" || p.startsWith("/logs/") -> "tools"
             p.startsWith("/code-search") -> "tools"
             p == "/history" || p.startsWith("/history/") -> "tools"
+            // v1.27.0 — 글로벌 사이드바 메뉴. 기존 /settings/terminal 진입은 라우터
+            // 단에서 301 → /terminal 로 redirect (호환). 여기선 두 경로 모두 active.
+            p == "/terminal" || p.startsWith("/terminal/") -> "terminal"
+            p.startsWith("/settings/terminal") -> "terminal"
             p.startsWith("/settings/ssh-key") -> "settings"
             p.startsWith("/settings/keystores") -> "settings"
-            p.startsWith("/settings/terminal") -> "settings"
             p.startsWith("/settings") -> "settings"
             p.startsWith("/password") -> "settings"
             p.startsWith("/2fa") -> "settings"
@@ -106,6 +110,9 @@ internal object SettingsNav {
             p == "/settings/cache" -> "build-env"
             p == "/settings/ssh-key" -> "build-env"
             p.startsWith("/settings/keystores") -> "build-env"
+            // v1.27.0 — /settings/terminal 은 /terminal 로 redirect. settings 탭바
+            // 안에선 더 이상 active 가 아니지만 legacy 진입자가 도달할 수 있으므로
+            // 매핑은 보존 (어차피 redirect 가 먼저 일어남).
             p.startsWith("/settings/terminal") -> "build-env"
             p.startsWith("/prompts") -> "prompts"
             p.startsWith("/agents") -> "prompts"

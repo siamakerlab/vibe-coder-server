@@ -20,10 +20,14 @@ class StatusService(
      * 사용자 lang 가정이 깨질 수 있음 (Android client 가 ko Accept-Language 보낸
      * 경우 server default 가 "ko" 면 영문 가정 깨짐). EnvRoutes 처럼 명시적 lang
      * 전달 권장. service-to-service (CapabilityService 등) 외엔 사용 자제.
+     *
+     * v1.27.0 — Bug-1 회수: `replaceWith = ReplaceWith("snapshot(\"en\")")` 는 IDE
+     * quick-fix 가 hardcoded "en" 으로 치환하게 만들어 사용자 lang 가정을 더
+     * 강하게 깰 위험. ReplaceWith 제거 — 사용자가 손으로 적절한 lang 변수를
+     * 전달하도록 유도.
      */
     @Deprecated(
-        message = "Prefer snapshot(lang) — no-arg may fall back to server default that differs from client expectation.",
-        replaceWith = ReplaceWith("snapshot(\"en\")"),
+        message = "Prefer snapshot(lang) — no-arg may fall back to server default that differs from client expectation. Pass sess.language or the resolved request language explicitly.",
     )
     fun snapshot(): ServerStatusDto = snapshot(env.run())
 

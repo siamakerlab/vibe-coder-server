@@ -234,6 +234,12 @@ data class ServerContext(
      * GIT_CONFIG_GLOBAL=/home/vibe/.config/git/config 파일을 통해 영속화.
      */
     val gitConfig: com.siamakerlab.vibecoder.server.env.GitConfigService,
+    /**
+     * v1.27.0 — Workspace bash PTY 등록부. 사이드바 글로벌 `/terminal` 메뉴 +
+     * `/ws/terminal/{id}` WebSocket 가 공유. lifecycle 은 [ServerMain] 에서
+     * `ApplicationStopping` 후크로 graceful 종료.
+     */
+    val terminalManager: TerminalSessionManager,
 )
 
 fun Application.module(ctx: ServerContext) {
@@ -359,7 +365,10 @@ fun Application.module(ctx: ServerContext) {
         // v1.8.0 — 같은 service 인스턴스를 BuildService 도 공유 (Gradle signing inject).
         keystoreRoutes(adminDeps, ctx.keystoreService, ctx.projectRepo, ctx.sessionManager)
         // v1.6.0 — Workspace terminal (security.allowTerminal=true 일 때만 등록).
-        terminalRoutes(adminDeps, TerminalSessionManager(), ctx.deviceRepo, ctx.tokens)
+        // v1.27.0 — 글로벌 사이드바 메뉴 (/terminal) 로 이전. manager 는 ServerMain
+        // 에서 hoist + ApplicationStopping 후크로 graceful 종료. admin role 가드 +
+        // owner-only ACL + idle reaper + per-user 한도 (자세히 TerminalSessionManager).
+        terminalRoutes(adminDeps, ctx.terminalManager, ctx.deviceRepo, ctx.tokens, ctx.adminUserRepo)
         // v0.10.0 — admin SSR 라우트들의 JSON API 이중 노출 (vibe-coder-android wire)
         envSetupApiRoutes(
             envSetup = ctx.envSetup,

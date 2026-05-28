@@ -72,7 +72,7 @@ $flashHtml
     <a href="/settings/keystores" class="chip chip-link">${esc(t("env.subsettings.keystores"))}</a>
     <a href="/settings/ssh-key" class="chip chip-link">${esc(t("env.subsettings.sshKey"))}</a>
     <a href="/settings/cache" class="chip chip-link">${esc(t("env.subsettings.cache"))}</a>
-    <a href="/settings/terminal" class="chip chip-link">${esc(t("env.subsettings.terminal"))}</a>
+    <!-- v1.27.0 — 터미널은 글로벌 사이드바 메뉴 /terminal 로 이전 (build-env 자식 아님). -->
     <a href="/settings/git-integrations" class="chip chip-link">${esc(t("env.subsettings.gitIntegrations"))}</a>
     <a href="/env-setup/mcp" class="chip chip-link">${esc(t("env.subsettings.mcp"))}</a>
   </div>

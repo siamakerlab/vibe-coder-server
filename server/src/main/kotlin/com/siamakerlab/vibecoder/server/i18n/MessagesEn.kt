@@ -86,6 +86,7 @@ internal object MessagesEn {
         "nav.projects" to "Projects",
         "nav.chat" to "Chat",
         "nav.tools" to "Tools",
+        "nav.terminal" to "Terminal",
         "nav.builds" to "Builds",
         "nav.devices" to "Devices",
         "nav.settings" to "Settings",

@@ -376,6 +376,12 @@ fun main(args: Array<String>) {
         labels = mapOf("bucket" to "auth")) { rateLimitAuth.currentBucketCount() }
     // v0.29.0 — 프로젝트 zip + 디스크 monitor (Notifiers 와 email warn percent 공유).
     val projectArchiver = com.siamakerlab.vibecoder.server.projects.ProjectArchiver(workspace)
+    // v1.27.0 — Workspace PTY 등록부. 컨테이너 안 `/workspace` 가 기본 cwd. 글로벌
+    // 사이드바 메뉴 (/terminal) + WS (/ws/terminal/{id}) 가 공유. ApplicationStopping
+    // 후크 (Runtime.getRuntime addShutdownHook 안) 에서 shutdownAll() 호출.
+    val terminalManager = com.siamakerlab.vibecoder.server.terminal.TerminalSessionManager(
+        workspaceRoot = workspaceRoot.toString(),
+    )
     val diskMonitor = com.siamakerlab.vibecoder.server.disk.DiskMonitor(
         rootProvider = { workspace.root },
         notifiers = notifiers,
@@ -462,6 +468,7 @@ fun main(args: Array<String>) {
         kotlinLspService = kotlinLspService,
         keystoreService = keystoreService,
         gitConfig = gitConfig,
+        terminalManager = terminalManager,
     )
 
     Runtime.getRuntime().addShutdownHook(Thread {
@@ -478,6 +485,11 @@ fun main(args: Array<String>) {
         // v0.76.0 (L2 fix) — FcmSender shutdown hook 등록. 현재는 no-op 본문이지만
         // 향후 connection pool / scope 정리 코드 추가 시 leak 방지.
         runCatching { fcmSender.shutdown() }
+        // v1.27.0 — Terminal PTY 들 graceful 종료. 컨테이너 SIGTERM → 활성 bash
+        // 프로세스 정리 (SIGTERM → 2s 후 destroyForcibly fallback) + reaper coroutine
+        // cancel. 누락 시 docker stop 후에도 zombie bash 가 남아 다음 부팅에서 FD
+        // 누수 가능.
+        runCatching { terminalManager.shutdownAll() }
     })
 
     printBanner(config, workspaceRoot, pairing, authService.adminExists())

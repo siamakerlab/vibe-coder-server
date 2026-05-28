@@ -64,6 +64,7 @@ internal object MessagesKo {
         "nav.projects" to "프로젝트",
         "nav.chat" to "채팅",
         "nav.tools" to "도구",
+        "nav.terminal" to "터미널",
         "nav.builds" to "빌드",
         "nav.devices" to "디바이스",
         "nav.settings" to "설정",
