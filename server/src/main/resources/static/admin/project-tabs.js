@@ -67,7 +67,7 @@
     // flashing in.
     root.querySelectorAll('iframe.tab-frame').forEach(iframe => {
       iframe.style.visibility = 'hidden';
-      iframe.addEventListener('load', function () {
+      function cleanup() {
         try {
           const doc = iframe.contentDocument;
           if (!doc) { iframe.style.visibility = 'visible'; return; }
@@ -89,7 +89,18 @@
           console && console.debug && console.debug('iframe cleanup failed', e);
         }
         iframe.style.visibility = 'visible';
-      });
+      }
+      iframe.addEventListener('load', cleanup);
+      // v1.27.5 — load race fix. project-tabs.js 는 defer 로드, iframe 은
+      // loading="eager". 가벼운 settings sub-page(/settings, /password 등)는
+      // defer 스크립트가 addEventListener 를 붙이기 전에 이미 load 완료될 수 있어,
+      // 지나간 load 이벤트를 놓쳐 cleanup 이 영영 안 걸렸다 → 내부 sidebar +
+      // .settings-tabs 가 그대로 노출(탭바 2줄 중복 + keystore 등 sub-page 레이아웃
+      // 깨짐으로 "다음 화면 안 보임"). 등록 시점에 이미 complete 면 즉시 1회 실행.
+      try {
+        const d = iframe.contentDocument;
+        if (d && d.readyState === 'complete') cleanup();
+      } catch (e) { /* same-origin SSR 이라 도달하지 않음 */ }
     });
 
     activate(resolveInitialTab());
