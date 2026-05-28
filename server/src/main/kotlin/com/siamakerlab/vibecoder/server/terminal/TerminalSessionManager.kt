@@ -69,6 +69,23 @@ class TerminalSession(
     private val _exit = MutableSharedFlow<Int>(replay = 1, extraBufferCapacity = 1)
     val exit: SharedFlow<Int> = _exit.asSharedFlow()
 
+    // v1.34.0 — 출력 scrollback ring buffer. WS 재연결(다른 화면 갔다 옴) 시 화면이
+    // 비어 보이던 문제(SharedFlow replay=0) 해소 — 재연결 client 에 이 버퍼를 먼저
+    // replay. char(코드포인트) 기준 cap. UTF-8 멀티바이트 안전(String 단위 누적).
+    private val scrollbackLock = Any()
+    private val scrollback = StringBuilder()
+
+    /** v1.34.0 — 현재 scrollback 스냅샷 (WS 연결 시 replay 용). */
+    fun scrollbackSnapshot(): String = synchronized(scrollbackLock) { scrollback.toString() }
+
+    private fun appendScrollback(s: String) {
+        synchronized(scrollbackLock) {
+            scrollback.append(s)
+            val over = scrollback.length - MAX_SCROLLBACK_CHARS
+            if (over > 0) scrollback.delete(0, over)
+        }
+    }
+
     private var readJob: Job? = null
     private val outStream = process.outputStream
     private val inStream = process.inputStream
@@ -84,6 +101,8 @@ class TerminalSession(
                         val s = String(buf, 0, n, StandardCharsets.UTF_8)
                         // v1.27.0 — output 발생 = 세션 활성. idle 시계 갱신.
                         touch()
+                        // v1.34.0 — scrollback 누적(재연결 replay 용) 후 emit.
+                        appendScrollback(s)
                         // _output.emit 은 SharedFlow buffer 가 가득 차면 suspend.
                         // IO dispatcher 라 안전.
                         _output.emit(s)
@@ -134,6 +153,10 @@ class TerminalSession(
         // 큰 값일 때 native PTY 가 SEGV 날 수 있어 상한. 999 는 일반 monitor 최대치
         // (e.g. 4K + 8pt font ≈ 240 cols) 보다 훨씬 크지만 안전 마진.
         const val MAX_TERMINAL_DIMENSION = 999
+
+        // v1.34.0 — scrollback ring buffer 최대 char. 재연결 replay 용 — 약 200KB
+        // (UTF-8 기준 더 큼). 일반 터미널 수백 줄 이상 보존, 메모리 부담 적음.
+        const val MAX_SCROLLBACK_CHARS = 200_000
     }
 }
 

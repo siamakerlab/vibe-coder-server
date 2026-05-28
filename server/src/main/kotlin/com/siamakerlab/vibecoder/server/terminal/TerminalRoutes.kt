@@ -198,6 +198,16 @@ fun Routing.terminalRoutes(
         sess.touch()   // v1.26.3 C5: WS connect → idle 시계 reset
 
         coroutineScope {
+            // v1.34.0 — 재연결 시 화면이 비어 보이던 문제 해소: scrollback 을 먼저
+            // replay 한 뒤 live 스트림 collect. 다른 화면 갔다 와도 직전 출력이 복원됨
+            // ("세션 상시 유지"). collect 등록 직전 스냅샷이라 그 사이 microsecond
+            // gap 은 무시(터미널 scrollback — 다음 프롬프트에서 자연 복구).
+            val replay = sess.scrollbackSnapshot()
+            if (replay.isNotEmpty()) {
+                runCatching {
+                    send(Frame.Text(wsJson.encodeToString(WsFrame.serializer(), WsFrame.TerminalOutput(replay))))
+                }
+            }
             // server → client: PTY stdout → TerminalOutput frame.
             val outJob = launch {
                 sess.output.collect { data ->
@@ -462,6 +472,20 @@ internal object TerminalTemplates {
     newBtn.title = order.length >= MAX ? I18N.limit : I18N.newSession;
   }
 
+  // v1.34.0 — fit + resize 송신. 반드시 pane 이 visible 일 때만 호출(숨김 pane 은
+  // clientWidth=0 → fit 이 잘못된 cols/rows 계산 → PTY 와 불일치해 입력 텍스트가
+  // 중복/깨져 보이던 버그). rAF 로 layout flush 후 측정.
+  function fitAndResize(s){
+    if (!s || s.pane.style.display === 'none') return;
+    requestAnimationFrame(function(){
+      try {
+        s.fit.fit();
+        if (s.ws.readyState === 1)
+          s.ws.send(JSON.stringify({ type:'terminal_resize', cols:s.term.cols, rows:s.term.rows }));
+      } catch(e){}
+    });
+  }
+
   function activate(id){
     var s = sessions[id]; if (!s) return;
     activeId = id;
@@ -471,11 +495,8 @@ internal object TerminalTemplates {
       o.pane.style.display = on ? 'block' : 'none';
       o.tab.classList.toggle('active', on);
     });
-    try {
-      s.fit.fit(); s.term.focus();
-      if (s.ws.readyState === 1)
-        s.ws.send(JSON.stringify({ type:'terminal_resize', cols:s.term.cols, rows:s.term.rows }));
-    } catch(e){}
+    try { s.term.focus(); } catch(e){}
+    fitAndResize(s);
   }
 
   function closeSession(id){
@@ -496,6 +517,9 @@ internal object TerminalTemplates {
   }
 
   function attachSession(sessionId){
+    // v1.34.0 — 중복 attach 가드. init 복원 + race 로 같은 sessionId 가 두 번 attach
+    // 되면 같은 PTY 에 WS 2개 → 입력 echo 가 두 pane 에 중복 표시되던 버그 방지.
+    if (sessions[sessionId]) { activate(sessionId); return; }
     // v1.31.1 (C-Q2) — 빈 상태 placeholder 제거.
     var emp = document.getElementById('term-empty');
     if (emp && emp.parentNode) emp.parentNode.removeChild(emp);
@@ -505,8 +529,11 @@ internal object TerminalTemplates {
     var pane = document.createElement('div');
     pane.style.cssText = 'position:absolute;inset:0;padding:10px;display:none';
     panesEl.appendChild(pane);
+    // v1.34.0 — convertEol:false. PTY 가 이미 CR/LF 를 제어하므로 xterm 의 \n→\r\n
+    // 재변환은 Claude Code 같은 커서 위치 제어 TUI 의 렌더를 깨뜨림(중복/어긋남).
+    // PTY-backed 터미널의 표준 설정.
     var term = new Terminal({
-      cursorBlink:true, convertEol:true,
+      cursorBlink:true, convertEol:false, scrollback:5000,
       fontFamily:'ui-monospace, Menlo, Consolas, monospace', fontSize:13,
       theme:{ background:'#000', foreground:'#e5e5e5', cursor:'#e5e5e5' }
     });
@@ -529,8 +556,9 @@ internal object TerminalTemplates {
     var ws = new WebSocket(proto + '//' + location.host + '/ws/terminal/' + sessionId);
     ws.onopen = function(){
       setStatus(I18N.connected + ' ' + sessionId);
-      try { fit.fit(); } catch(e){}
-      ws.send(JSON.stringify({ type:'terminal_resize', cols:term.cols, rows:term.rows }));
+      // v1.34.0 — active(visible) 세션만 fit+resize (숨김 pane fit 방지). 비활성
+      // 복원 세션은 클릭(activate) 시 fit 됨.
+      if (activeId === sessionId) fitAndResize(sessions[sessionId]);
     };
     ws.onmessage = function(ev){
       try {
@@ -568,15 +596,15 @@ internal object TerminalTemplates {
 
   newBtn.addEventListener('click', newSession);
   window.addEventListener('resize', function(){
-    if (activeId && sessions[activeId]) {
-      var s = sessions[activeId];
-      try {
-        s.fit.fit();
-        if (s.ws.readyState === 1)
-          s.ws.send(JSON.stringify({ type:'terminal_resize', cols:s.term.cols, rows:s.term.rows }));
-      } catch(e){}
-    }
+    if (activeId) fitAndResize(sessions[activeId]);
   });
+  // v1.34.0 — 컨테이너(#term-panes) 크기 변화(사이드바 접기/펼치기, 레이아웃 settle)
+  // 에도 active 터미널 refit. window resize 만으론 못 잡는 케이스 보강.
+  if (window.ResizeObserver) {
+    new ResizeObserver(function(){
+      if (activeId) fitAndResize(sessions[activeId]);
+    }).observe(panesEl);
+  }
 
   // init — 기존 활성 세션이 있으면 탭으로 복원(WS 재연결, 과거 출력은 replay 안 됨),
   // 없으면 새 세션 1개 자동 생성.
