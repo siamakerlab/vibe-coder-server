@@ -374,7 +374,7 @@ object McpCatalog {
             displayName = "Context7",
             pkg = "@upstash/context7-mcp",
             description = "최신 라이브러리/프레임워크 docs 검색. \"use context7\" 키워드로 호출.",
-            category = Category.SEARCH, trust = Trust.COMMUNITY, recommended = true,
+            category = Category.SEARCH, trust = Trust.COMMUNITY, recommended = true, defaultInstall = true,
             homepage = "https://context7.com",
         ))
 
@@ -384,7 +384,7 @@ object McpCatalog {
             displayName = "Playwright",
             pkg = "@playwright/mcp",
             description = "Microsoft Playwright 기반 브라우저 자동화 + screenshot. Chromium 자동 설치.",
-            category = Category.BROWSER, trust = Trust.VERIFIED, recommended = true,
+            category = Category.BROWSER, trust = Trust.VERIFIED, recommended = true, defaultInstall = true,
             homepage = "https://github.com/microsoft/playwright-mcp",
         ))
         add(McpEntry(
