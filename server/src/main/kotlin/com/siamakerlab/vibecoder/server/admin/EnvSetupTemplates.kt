@@ -40,7 +40,15 @@ object EnvSetupTemplates {
         lang: String,
     ): String {
         val t = { key: String -> Messages.t(lang, key) }
-        val cards = states.joinToString("\n") { renderCard(it, csrf, lang) }
+        // 21차 점검 후속 — 빌드환경 페이지 우선순위 재정렬. 이전엔 quick-links → 장문 welcome →
+        // preserved → git → grid(JDK/Git/Node 가 맨 앞) 순이라 정작 중요한 Claude 인증/Android SDK
+        // 가 한참 아래에 묻혔다. 이제 ① 핵심(설치/인증 필요, 우선순위순) → ② Git → ③ 이미지 내장
+        // (접힘, 문제 있을 때만 자동 펼침) → ④ 관련 설정 링크 → ⑤ 안내·데이터보존(접힘) 순.
+        val ordered = states.sortedBy { priorityRank(it.component) }
+        val (coreStates, builtinStates) = ordered.partition { it.component.doctorCmd != null }
+        val coreCards = coreStates.joinToString("\n") { renderCard(it, csrf, lang) }
+        val builtinCards = builtinStates.joinToString("\n") { renderCard(it, csrf, lang) }
+        val builtinNeedsAttention = builtinStates.any { it.status != ComponentStatus.INSTALLED }
         val flashHtml = claudeFlashBlurb(claudeFlash, lang) + gitFlashBlurb(gitFlash, lang)
         val gitCard = renderGitIdentityCard(gitIdentity, csrf, lang)
         return AdminTemplates.shell(
@@ -62,9 +70,27 @@ object EnvSetupTemplates {
 </header>
 $flashHtml
 
-<!-- v1.7.13 — build-env 관련 sub-settings quick links. 이전엔 URL 직접 입력해야
-     키스토어/ssh-key/cache/terminal 페이지에 닿을 수 있었음. 사용자 보고
-     ("설정/키스토어관련 메뉴가 안보임") 해소. -->
+<!-- ① 핵심 — 설치 / 인증 필요 (우선순위순: Claude 인증 → Android SDK → Gradle → …) -->
+<h2 style="margin:4px 0 10px;font-size:15px">${esc(t("env.section.core"))}</h2>
+<section class="grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr))">
+  $coreCards
+</section>
+
+<!-- ② Git identity -->
+$gitCard
+
+<!-- ③ 이미지 내장 — 보통 손댈 필요 없음. 문제 있을 때만 자동 펼침. -->
+<div class="card" style="margin-bottom:16px">
+  <details ${if (builtinNeedsAttention) "open" else ""}>
+    <summary style="cursor:pointer"><strong>${esc(t("env.section.builtin"))}</strong>
+      <span class="dim" style="font-size:12px">— ${esc(t("env.section.builtinHint"))}</span></summary>
+    <section class="grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr));margin-top:12px">
+      $builtinCards
+    </section>
+  </details>
+</div>
+
+<!-- ④ 빌드환경 관련 sub-settings quick links -->
 <div class="card" style="margin-bottom:16px">
   <h2 style="margin-bottom:8px">${esc(t("env.subsettings.title"))}</h2>
   <p class="dim" style="font-size:12px;margin-bottom:10px">${esc(t("env.subsettings.body"))}</p>
@@ -72,39 +98,50 @@ $flashHtml
     <a href="/settings/keystores" class="chip chip-link">${esc(t("env.subsettings.keystores"))}</a>
     <a href="/settings/ssh-key" class="chip chip-link">${esc(t("env.subsettings.sshKey"))}</a>
     <a href="/settings/cache" class="chip chip-link">${esc(t("env.subsettings.cache"))}</a>
-    <!-- v1.27.0 — 터미널은 글로벌 사이드바 메뉴 /terminal 로 이전 (build-env 자식 아님). -->
     <a href="/settings/git-integrations" class="chip chip-link">${esc(t("env.subsettings.gitIntegrations"))}</a>
     <a href="/env-setup/mcp" class="chip chip-link">${esc(t("env.subsettings.mcp"))}</a>
   </div>
 </div>
 
-<div class="card" style="margin-bottom:16px">
-  <h2>${esc(t("env.welcome.title"))}</h2>
-  <p>${esc(t("env.welcome.intro"))}</p>
-  <ol style="margin:8px 0 0 20px;line-height:1.8">
-    <li>${t("env.welcome.step1")}</li>
-    <li>${t("env.welcome.step2")}</li>
-    <li>${t("env.welcome.step3")}</li>
-    <li>${t("env.welcome.step4")}</li>
-  </ol>
-  <p class="hint">${esc(t("env.welcome.emulatorNote"))}</p>
-</div>
-
-<div class="card" style="margin-bottom:16px;background:rgba(105,219,124,0.06);border-color:var(--ok)">
-  <h2 style="color:var(--ok)">${esc(t("env.preserved.title"))}</h2>
-  <p>${t("env.preserved.desc")}</p>
-  <pre class="diff-block">docker pull siamakerlab/vibe-coder-server:&lt;new-version&gt;
+<!-- ⑤ 처음 사용 안내 + 데이터 보존 (참고용 — 접힘) -->
+<div class="card">
+  <details>
+    <summary style="cursor:pointer"><strong>${esc(t("env.section.help"))}</strong></summary>
+    <div style="margin-top:12px">
+      <h3 style="margin:0 0 6px">${esc(t("env.welcome.title"))}</h3>
+      <p style="margin:0 0 4px">${esc(t("env.welcome.intro"))}</p>
+      <ol style="margin:8px 0 0 20px;line-height:1.8">
+        <li>${t("env.welcome.step1")}</li>
+        <li>${t("env.welcome.step2")}</li>
+        <li>${t("env.welcome.step3")}</li>
+        <li>${t("env.welcome.step4")}</li>
+      </ol>
+      <p class="hint">${esc(t("env.welcome.emulatorNote"))}</p>
+      <hr style="border:none;border-top:1px solid var(--border);margin:14px 0">
+      <h3 style="margin:0 0 6px;color:var(--ok)">${esc(t("env.preserved.title"))}</h3>
+      <p style="margin:0 0 4px">${t("env.preserved.desc")}</p>
+      <pre class="diff-block">docker pull siamakerlab/vibe-coder-server:&lt;new-version&gt;
 docker compose up -d --force-recreate</pre>
-  <p class="hint">${t("env.preserved.warn")}</p>
+      <p class="hint">${t("env.preserved.warn")}</p>
+    </div>
+  </details>
 </div>
-
-$gitCard
-
-<section class="grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr))">
-  $cards
-</section>
 """
         )
+    }
+
+    /**
+     * 빌드환경 카드 정렬 우선순위 (낮을수록 위). 핵심 설치/인증 항목을 먼저, 이미지 내장
+     * (doctorCmd == null) 은 partition 으로 별도 섹션 처리되므로 여기선 9 로 후순위.
+     */
+    private fun priorityRank(c: SetupComponent): Int = when (c) {
+        SetupComponent.CLAUDE_AUTH -> 0      // 인증 — 이게 없으면 아무것도 안 됨
+        SetupComponent.ANDROID_SDK -> 1
+        SetupComponent.GRADLE -> 2
+        SetupComponent.PLATFORM_TOOLS -> 3
+        SetupComponent.MCP_DEFAULTS -> 4
+        SetupComponent.EMULATOR -> 5
+        else -> 9                            // built-in (JDK/Git/Node/Claude CLI)
     }
 
     /**
