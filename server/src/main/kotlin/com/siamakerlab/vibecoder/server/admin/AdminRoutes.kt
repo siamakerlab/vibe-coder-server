@@ -481,8 +481,8 @@ internal data class WebSession(
      */
     val csrf: String,
     /**
-     * v0.37.0 — "admin" | "member". 관리 페이지 가드용.
-     * v0.40.0 — "viewer" 추가. read-only.
+     * v1.45.0 — 단일 사용자(admin) 도구로 단순화. role 필드는 DB 호환을 위해 남기지만
+     * 항상 "admin" 이며 멀티유저/viewer/member 개념은 제거됨(유저관리/ACL UI 삭제).
      */
     val role: String = "admin",
     /**
@@ -491,9 +491,9 @@ internal data class WebSession(
      */
     val language: String = "en",
 ) {
-    val isAdmin: Boolean get() = role == "admin"
-    /** v0.40.0 — admin / member 만 write. viewer 는 read-only. */
-    val canWrite: Boolean get() = role == "admin" || role == "member"
+    // v1.45.0 — 단일 admin 화: 인증된 세션은 항상 admin + full write.
+    val isAdmin: Boolean get() = true
+    val canWrite: Boolean get() = true
 }
 
 /** 세션 유효 시 WebSession, 아니면 적절한 곳으로 redirect 후 null 반환. */

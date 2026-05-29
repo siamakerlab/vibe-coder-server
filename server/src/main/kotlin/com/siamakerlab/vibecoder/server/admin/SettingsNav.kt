@@ -60,7 +60,6 @@ internal object SettingsNav {
             p.startsWith("/backup") -> "settings"
             p.startsWith("/usage") -> "settings"
             p.startsWith("/audit") -> "settings"
-            p.startsWith("/users") -> "settings"
             p.startsWith("/prompts") -> "settings"
             p.startsWith("/agents") -> "settings"
             else -> "dashboard"
@@ -87,7 +86,6 @@ internal object SettingsNav {
             Triple("prompts", t("settings.tab.prompts"), "/prompts"),
             Triple("backup", t("settings.tab.backup"), "/backup"),
             Triple("monitoring", t("settings.tab.monitoring"), "/usage"),
-            Triple("users", t("settings.tab.users"), "/users"),
         )
         val items = tabs.joinToString("\n") { (key, label, href) ->
             val cls = if (key == tab) "tab active" else "tab"
@@ -129,7 +127,6 @@ internal object SettingsNav {
             p.startsWith("/backup") -> "backup"
             p.startsWith("/usage") -> "monitoring"
             p.startsWith("/audit") -> "monitoring"
-            p.startsWith("/users") -> "users"
             else -> "general"
         }
     }

@@ -9,7 +9,6 @@ import com.siamakerlab.vibecoder.server.admin.adminRoutes
 import com.siamakerlab.vibecoder.server.admin.backupRoutes
 import com.siamakerlab.vibecoder.server.admin.logSearchRoutes
 import com.siamakerlab.vibecoder.server.admin.multiConsoleRoutes
-import com.siamakerlab.vibecoder.server.admin.usersRoutes
 import com.siamakerlab.vibecoder.server.build.buildAutomationRoutes
 import com.siamakerlab.vibecoder.server.build.buildCacheRoutes
 import com.siamakerlab.vibecoder.server.build.dependencyAuditRoutes
@@ -52,7 +51,6 @@ import com.siamakerlab.vibecoder.server.build.buildRoutes
 import com.siamakerlab.vibecoder.server.claude.ClaudeSessionManager
 import com.siamakerlab.vibecoder.server.claude.SubAgentSessionManager
 import com.siamakerlab.vibecoder.server.claude.subAgentRoutes
-import com.siamakerlab.vibecoder.server.admin.projectAclRoutes
 import com.siamakerlab.vibecoder.server.metrics.metricsRoutes
 import com.siamakerlab.vibecoder.server.security.installRateLimit
 import com.siamakerlab.vibecoder.server.projects.symbolRoutes
@@ -470,8 +468,7 @@ fun Application.module(ctx: ServerContext) {
         )
         // v0.36.0 — N-pane multi-console.
         multiConsoleRoutes(adminDeps, ctx.projects)
-        // v0.37.0 — 멀티 사용자 / 팀 (admin / member).
-        usersRoutes(adminDeps, ctx.adminUserRepo, ctx.deviceRepo, ctx.hasher)
+        // v1.45.0 — 단일 admin 화: usersRoutes(멀티유저/역할 관리) 제거.
         emailSettingsRoutes(adminDeps, ctx.emailNotifier)
         webhookSettingsRoutes(adminDeps, ctx.webhookNotifier)
         // v0.44.0 — Phase 23 sub-agent process pool (real multi-agent).
@@ -508,8 +505,7 @@ fun Application.module(ctx: ServerContext) {
         usageRoutes(adminDeps, ctx.projects, ctx.claudeStatusService, ctx.conversationRepo)
         // v0.48.0 — Phase 27 WebAuthn (passkey 2FA).
         webauthnRoutes(adminDeps, ctx.webauthnService, ctx.authService, ctx.tokens)
-        // v0.49.0 — Phase 28 Project ACL 관리 UI.
-        projectAclRoutes(adminDeps, ctx.projects, ctx.adminUserRepo, ctx.projectAclRepo)
+        // v1.45.0 — 단일 admin 화: projectAclRoutes(Project ACL 관리 UI) 제거.
         // v0.54.0 — Phase 33 symbol definition lookup (best-effort regex).
         symbolRoutes(adminDeps, ctx.projects, ctx.symbolFinder, ctx.kotlinLspService)
         // v0.55.0 — Phase 34 Prometheus /metrics endpoint.

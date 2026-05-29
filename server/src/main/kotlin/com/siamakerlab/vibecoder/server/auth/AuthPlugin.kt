@@ -28,17 +28,9 @@ data class DevicePrincipal(
     val device: DeviceRow,
     val userRole: String? = null,
 ) {
-    /** v0.45.0 — `admin` only. Mirrors SSR `WebSession.isAdmin`. */
-    val isAdmin: Boolean get() = (userRole ?: "admin") == "admin"
-
-    /**
-     * v0.45.0 — write capability check. `admin` and `member` may mutate state; `viewer` is
-     * read-only. Used by JSON API + WebSocket role guards.
-     */
-    val canWrite: Boolean get() {
-        val r = userRole ?: "admin"
-        return r == "admin" || r == "member"
-    }
+    // v1.45.0 — 단일 admin 화. 멀티유저/viewer/member 제거 → 인증된 토큰은 항상 admin + write.
+    val isAdmin: Boolean get() = true
+    val canWrite: Boolean get() = true
 }
 
 fun Application.installAuth(
@@ -95,9 +87,8 @@ fun Application.installAuth(
                 }
 
                 deviceRepo.touchLastSeen(device.id)
-                val role = device.userId
-                    ?.let { uid -> runCatching { userRepo?.findById(uid)?.role }.getOrNull() }
-                DevicePrincipal(device = device, userRole = role)
+                // v1.45.0 — 단일 admin 화: role 조회 제거(요청마다 DB 쿼리 불필요).
+                DevicePrincipal(device = device)
             }
         }
     }

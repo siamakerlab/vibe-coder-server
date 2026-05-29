@@ -95,51 +95,8 @@ fun Routing.jsonAdminRoutes(
 ) {
     authenticate(AUTH_BEARER) {
 
-        // ────────── B1. Multi-user ──────────────────────────────────
-        get(ApiPath.USERS) {
-            call.requireApiAdmin()
-            val items = users.listAll().map { it.toDto() }
-            call.respond(UsersResponseDto(items))
-        }
-        post(ApiPath.USERS) {
-            call.requireApiAdmin()
-            val req = call.receive<UserCreateRequestDto>()
-            if (req.username.isBlank() || req.password.length < 6)
-                throw ApiException.localized(400, "bad_request", messageKey = "api.admin.usernameRequired")
-            if (users.findByUsername(req.username) != null)
-                throw ApiException.localized(409, "duplicate_username", messageKey = "api.admin.duplicateUsername")
-            val role = if (req.role in setOf("admin", "member", "viewer")) req.role else "member"
-            val u = users.insert(Ids.deviceId(), req.username, hasher.hash(req.password), role)
-            call.respond(HttpStatusCode.Created, u.toDto())
-        }
-        post(ApiPath.userRole("{userId}")) {
-            call.requireApiAdmin()
-            val id = call.parameters["userId"]!!
-            val req = call.receive<UserRoleUpdateRequestDto>()
-            if (req.role !in setOf("admin", "member", "viewer"))
-                throw ApiException.localized(400, "bad_request", messageKey = "api.admin.roleInvalid")
-            // 마지막 admin 의 강등 금지.
-            val target = users.findById(id) ?: throw ApiException.localized(404, "not_found", messageKey = "api.admin.userNotFound")
-            if (target.role == "admin" && req.role != "admin" && users.adminCount() <= 1L)
-                throw ApiException.localized(409, "last_admin", messageKey = "api.admin.lastAdminRole")
-            users.setRole(id, req.role)
-            call.respond(HttpStatusCode.NoContent)
-        }
-        delete(ApiPath.user("{userId}")) {
-            call.requireApiAdmin()
-            val id = call.parameters["userId"]!!
-            val target = users.findById(id) ?: throw ApiException.localized(404, "not_found", messageKey = "api.admin.userNotFound")
-            if (target.role == "admin" && users.adminCount() <= 1L)
-                throw ApiException.localized(409, "last_admin", messageKey = "api.admin.lastAdminDelete")
-            // device 세션도 모두 invalidate.
-            runCatching {
-                @Suppress("UNUSED_VARIABLE")
-                val devices = deviceRepo
-                // DeviceRepository 에 deleteByUserId 가 있을 수도/없을 수도 — 안전하게 무시 가능.
-            }
-            users.delete(id)
-            call.respond(HttpStatusCode.NoContent)
-        }
+        // v1.45.0 — 단일 admin 화: 멀티유저 JSON API(users CRUD / role) 제거.
+        // 인증/토큰/2FA/passkey 는 유지. user 관리 UI 와 함께 삭제.
 
         // ────────── B2. Build automation (project-scoped) ───────────
         get(ApiPath.automationSchedules("{projectId}")) {

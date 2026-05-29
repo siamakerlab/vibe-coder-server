@@ -207,23 +207,7 @@ private suspend fun WebSocketServerSession.handleLegacyLogStream(
 ) {
     if (!authenticateFirstFrame(deviceRepo, tokens)) return
 
-    // v1.31.0 (A-B2) — build 로그처럼 projectId scope 가 있으면 ACL 검사 (console WS 와
-    // 대칭). 이전엔 buildId 만 알면 ACL 밖 프로젝트 빌드 로그를 스트리밍 가능했음.
-    if (aclProjectId != null && userRepo != null && projects != null) {
-        val raw = call.request.cookies[SESSION_COOKIE]
-            ?: call.request.headers["Authorization"]?.removePrefix("Bearer ")?.trim()
-        val device = raw?.let { deviceRepo.findByTokenHash(tokens.hashOf(it)) }
-        val role = device?.userId?.let { runCatching { userRepo.findById(it)?.role }.getOrNull() }
-        val isAdmin = (role ?: "admin") == "admin"
-        val userId = device?.userId
-        if (userId != null && !projects.canUserAccess(userId, isAdmin, aclProjectId)) {
-            runCatching {
-                sendFrame(WsFrame.Error("project_forbidden", "project not in your ACL"))
-                close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "project_forbidden"))
-            }
-            return
-        }
-    }
+    // v1.45.0 — 단일 admin 화: Project ACL 검사 제거(인증만으로 충분, 모든 프로젝트 접근).
 
     // Forward broadcast frames until Done arrives, then send Done and stop.
     hub.subscribe(topic)
@@ -253,26 +237,8 @@ private suspend fun WebSocketServerSession.handleConsoleStream(
 ) {
     if (!authenticateFirstFrame(deviceRepo, tokens)) return
 
-    // v0.45.0 — once-per-session role lookup for UserPrompt / ActionInvoke guards.
-    // v0.51.0 — same lookup also drives the ACL check below.
-    val raw = call.request.cookies[SESSION_COOKIE]
-        ?: call.request.headers["Authorization"]?.removePrefix("Bearer ")?.trim()
-    val device = raw?.let { deviceRepo.findByTokenHash(tokens.hashOf(it)) }
-    val role = device?.userId?.let { runCatching { userRepo.findById(it)?.role }.getOrNull() }
-    val isAdmin = (role ?: "admin") == "admin"
-    val viewerOnly = role == "viewer"
-
-    // v0.51.0 — Project ACL on console WS handshake. Admin bypasses; non-admin must have
-    // explicit grant or zero ACL rows (default unrestricted). Closing the connection on
-    // violation matches REST 403 semantics.
-    val userId = device?.userId
-    if (userId != null && !projects.canUserAccess(userId, isAdmin, projectId)) {
-        runCatching {
-            sendFrame(WsFrame.Error("project_forbidden", "project not in your ACL"))
-            close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "project_forbidden"))
-        }
-        return
-    }
+    // v1.45.0 — 단일 admin 화: role 조회 / viewer 게이트 / Project ACL 검사 제거.
+    // 인증(authenticateFirstFrame)만으로 충분 — 모든 프로젝트 접근 + write 허용.
 
     val topic = LogHub.consoleTopic(projectId)
     val view = hub.subscribeConsole(topic, since)
@@ -310,18 +276,10 @@ private suspend fun WebSocketServerSession.handleConsoleStream(
                     .getOrNull() ?: continue
                 when (parsed) {
                     is WsFrame.UserPrompt -> {
-                        if (viewerOnly) {
-                            runCatching { sendFrame(WsFrame.Error("viewer_readonly", "viewer role cannot send prompts")) }
-                            continue
-                        }
                         runCatching { sessionManager.sendPrompt(projectId, parsed.text) }
                             .onFailure { log.warn(it) { "[$projectId] ws prompt failed" } }
                     }
                     is WsFrame.ActionInvoke -> {
-                        if (viewerOnly) {
-                            runCatching { sendFrame(WsFrame.Error("viewer_readonly", "viewer role cannot invoke actions")) }
-                            continue
-                        }
                         val action = actionRegistry.findAction(projectId, parsed.actionId)
                         if (action == null) {
                             log.warn { "[$projectId] action_invoke unknown id: ${parsed.actionId}" }
@@ -367,20 +325,7 @@ private suspend fun WebSocketServerSession.handleSubAgentConsoleStream(
 ) {
     if (!authenticateFirstFrame(deviceRepo, tokens)) return
 
-    // v0.51.0 — Project ACL on sub-agent WS handshake.
-    val raw = call.request.cookies[SESSION_COOKIE]
-        ?: call.request.headers["Authorization"]?.removePrefix("Bearer ")?.trim()
-    val device = raw?.let { deviceRepo.findByTokenHash(tokens.hashOf(it)) }
-    val role = device?.userId?.let { runCatching { userRepo.findById(it)?.role }.getOrNull() }
-    val isAdmin = (role ?: "admin") == "admin"
-    val userId = device?.userId
-    if (userId != null && !projects.canUserAccess(userId, isAdmin, projectId)) {
-        runCatching {
-            sendFrame(WsFrame.Error("project_forbidden", "project not in your ACL"))
-            close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "project_forbidden"))
-        }
-        return
-    }
+    // v1.45.0 — 단일 admin 화: Project ACL 검사 제거(인증만으로 충분).
 
     val topic = LogHub.subAgentConsoleTopic(projectId, agentName)
     val view = hub.subscribeConsole(topic, since)

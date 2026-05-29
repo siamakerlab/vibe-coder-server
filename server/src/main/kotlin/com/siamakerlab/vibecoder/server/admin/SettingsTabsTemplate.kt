@@ -39,7 +39,6 @@ internal object SettingsTabsTemplate {
         Tab("prompts",       "settings.tab.prompts",       "/prompts",                  "stab-prompts"),
         Tab("backup",        "settings.tab.backup",        "/backup",                   "stab-backup"),
         Tab("monitoring",    "settings.tab.monitoring",    "/usage",                    "stab-monitoring"),
-        Tab("users",         "settings.tab.users",         "/users",                    "stab-users"),
     )
 
     fun page(username: String, csrf: String?, lang: String): String {
