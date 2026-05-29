@@ -248,8 +248,7 @@ vibe-coder-server/
 ### Ubuntu 26.04 LTS rebase (v0.38.0+)
 - Base image moved from `eclipse-temurin:17-{jdk,jre}-noble` (24.04 LTS)
   to `-resolute` (26.04 LTS, "Resolute Raccoon"). JDK 17.0.19 unchanged.
-  Both slim and `:full` variants rebased. LTS support window now runs
-  through 2031-04. No code or wire changes.
+  LTS support window now runs through 2031-04. No code or wire changes.
 
 ### PWA + VS Code extension (v0.39.0+)
 - **PWA** — `static/admin/manifest.json` + `sw.js` (cache-first for
@@ -288,15 +287,6 @@ vibe-coder-server/
   tracked separately; this milestone is the UX wrapper around Claude
   Code's standard sub-agent dispatch.
 
-### In-browser noVNC reverse proxy (v0.42.0+)
-- New `/emulator/vnc/*` routes proxy `localhost:6080` (HTTP) and
-  `localhost:6080/websockify` (WebSocket) through the same `vibe_session`
-  cookie. Admin-only on both protocols.
-- `/emulator` page embeds the noVNC client in an iframe (`autoconnect=true`,
-  `resize=remote`). No more need to expose port 6080 on the host or set
-  up an SSH tunnel — same-origin admin auth is sufficient.
-- JDK 11+ `java.net.http.HttpClient` + `WebSocket` only; no new
-  dependencies.
 
 ### Real multi-agent (sub-agent process pool, v0.44.0+)
 - **`SubAgentSessionManager`** spawns a **separate** Claude child process per
@@ -362,8 +352,6 @@ vibe-coder-server/
   sidecar (or external PG) + optional `Ingress` (WebSocket-friendly
   nginx annotations). `values.yaml` inline-documented. See
   `helm/vibe-coder-server/README.md` for quick install.
-  `:full` (emulator + noVNC) image not yet supported — needs KVM
-  passthrough + privileged container.
 
 ### WebAuthn (passkey 2FA, v0.48.0+)
 - **`webauthn4j` 0.29.1** wraps the spec heavy lifting (COSE / CBOR /
@@ -541,16 +529,12 @@ vibe-coder-server/
   - Disable with `security.rateLimit.enabled: false` if a reverse
     proxy (nginx / Cloudflare) already throttles.
 
-### WebAuthn passwordless-only + Helm `:full` (v0.57.0+)
+### WebAuthn passwordless-only (v0.57.0+)
 - `admin_users.passwordless_only` column. When enabled, `AuthService.
   login` rejects password / TOTP attempts for users that have at
   least one passkey — `401 passkey_required` instead. Toggle at
   `/webauthn`; disabled is always allowed (recovery path). Activating
   on a user with zero passkeys is refused (lockout protection).
-- Helm chart `fullImage.enabled=true` swaps to the `:full` tag,
-  adds `securityContext.privileged: true`, mounts `/dev/kvm`
-  hostPath, and exposes port 6080 (noVNC). Requires KVM-capable
-  node + PodSecurity allowing privileged.
 
 ### Build comparison + statistics (v0.58.0+ / v0.59.0+)
 - **Build comparison card** on `/projects/{id}/builds/{buildId}` —
@@ -606,18 +590,6 @@ vibe-coder-server/
   `compose-basic`, `compose-mvvm-hilt`, `compose-mvvm-room`, `wear-os`,
   `android-tv`. Each template seeds a `starterPrompt` consumed by the first
   Claude console turn.
-
-### Android emulator (v0.19.0 scaffolding → v0.24.0 lifecycle → v0.25.0 :full)
-- `/emulator` page reports KVM availability, AVD inventory, and running
-  devices.
-- **v0.24.0** added one-click AVD lifecycle: "+ create default" (`vibe-default`,
-  API 35, Pixel 6 profile), "▶ headless start", per-device "■ stop". Each
-  audited.
-- **v0.25.0** ships the `:full` image (~3-4 GB, `siamakerlab/vibe-coder-server:full`)
-  with `qemu-system-x86`, Xvfb, x11vnc, websockify + noVNC pre-installed.
-  Use `docker/compose.full.yml` with `/dev/kvm` passthrough + `group_add KVM_GID`
-  + port `6080` for browser-based noVNC mirroring. Slim image still works for
-  CLI-only ADB workflows.
 
 ## Quick start (Docker, 3 minutes)
 
@@ -805,7 +777,6 @@ carries a CSRF `_csrf` token (v0.12.4+).
 | `/env-setup/mcp` | MCP catalog (60+ entries, checkbox multi-select) |
 | `/env-setup/claude-login` | Semi-automatic web OAuth |
 | `/env-setup/tasks/{taskId}` | Live install progress (WS) |
-| `/emulator` | **v0.19.0** diagnostics + **v0.24.0** AVD lifecycle (create / launch / stop) + **v0.25.0** `:full` setup guide |
 | `/settings/git-integrations` | PAT tokens + SSH public key (**v0.47.0** admin-only) |
 | `/settings/email` | **v0.17.0** SMTP configuration + trigger matrix (**v0.47.0** admin-only) |
 | `/settings/webhook` | **v0.27.0** Slack / Discord / Telegram webhook configuration + test (**v0.47.0** admin-only) |
@@ -826,7 +797,6 @@ carries a CSRF `_csrf` token (v0.12.4+).
 | `/code-search` | **v0.35.0** Workspace-wide grep |
 | `/multi-console` | **v0.36.0** N-pane multi-project console (iframe grid) |
 | `/users` | **v0.37.0** Multi-user / role management (admin only); **v0.40.0** added `viewer` |
-| `/emulator/vnc/*` | **v0.42.0** noVNC reverse proxy (HTTP + WebSocket; admin only) |
 | `/projects/{id}/agents` | **v0.44.0** Sub-agent index (per project) — registered agents + live status + open-console |
 | `/projects/{id}/agents/{agent}/console` | **v0.44.0** Per-agent console (independent Claude child) |
 | `/settings/push` | **v0.46.0** Web Push (VAPID) — subscribe / unsubscribe / list / test; **v0.50.0** payload-encrypted |
@@ -1023,11 +993,6 @@ violation.
   `discord.com` / `discordapp.com`, and Telegram (`api.telegram.org` via a
   bot-token regex `^\d+:[A-Za-z0-9_-]+$`) are accepted. `HttpClient` follows
   no redirects to prevent cross-host hops.
-- **noVNC mirroring** (`:full` image, v0.25.0+) — websockify exposes the
-  emulator screen on the container's loopback only; port 6080 is meant to be
-  reached either over LAN (single-operator assumption) or via an SSH tunnel.
-  No vibe-coder admin auth wraps it yet — production-grade integration
-  (server-side reverse proxy with cookie auth) is on the v0.26+ roadmap.
 
 ## Build matrix
 

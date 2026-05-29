@@ -12,7 +12,6 @@ import io.ktor.server.routing.get
  *
  * 기존 사이드바에 평탄하게 나열돼 있던 "보조 도구" 들을 한 페이지에 묶음:
  *   - Multi-console (여러 프로젝트 콘솔 동시 보기)
- *   - Emulator (Android emulator 제어)
  *   - 코드 검색 (cross-project file content search)
  *   - 빌드 로그 검색 (cross-project build logs grep)
  *   - 대화 검색 (cross-project conversation history search)
@@ -26,7 +25,7 @@ import io.ktor.server.routing.get
 fun Routing.toolsRoutes(authDeps: AdminRoutesDeps) {
 
     // v1.23.0 — 도구 통합 탭 페이지. 사이드바 "도구" link 가 가리키는 진입점.
-    // /tools, /multi-console, /emulator, /code-search, /logs, /history 를 iframe
+    // /tools, /multi-console, /code-search, /logs, /history 를 iframe
     // prerender. SettingsTabsTemplate / ProjectTabsTemplate 와 일관 디자인.
     get("/tools/tabs") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
@@ -48,7 +47,6 @@ fun Routing.toolsRoutes(authDeps: AdminRoutesDeps) {
 
 <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px">
   ${toolCard("Multi-console", t("tools.card.multiConsole.desc"), "/multi-console", "📺")}
-  ${toolCard("Emulator", t("tools.card.emulator.desc"), "/emulator", "📱")}
   ${toolCard(t("tools.card.codeSearch.title"), t("tools.card.codeSearch.desc"), "/code-search", "🔎")}
   ${toolCard(t("tools.card.buildLogs.title"), t("tools.card.buildLogs.desc"), "/logs", "📜")}
   ${toolCard(t("tools.card.history.title"), t("tools.card.history.desc"), "/history", "💬")}

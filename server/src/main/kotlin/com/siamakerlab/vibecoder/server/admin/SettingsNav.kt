@@ -28,7 +28,7 @@ internal object SettingsNav {
      * - dashboard: /
      * - projects:  /projects*
      * - chat:      /chat*
-     * - tools:     /tools, /multi-console, /emulator, /logs, /code-search, /history
+     * - tools:     /tools, /multi-console, /logs, /code-search, /history
      * - terminal:  /terminal  (v1.27.0 — 글로벌 사이드바 메뉴로 분리, workspace 시작)
      * - settings:  나머지 admin sub-page 모두 (settings/password/2fa/webauthn/devices/
      *              env-setup/backup/usage/audit/users/prompts/agents)
@@ -41,7 +41,6 @@ internal object SettingsNav {
             p.startsWith("/chat") -> "chat"
             p == "/tools" || p.startsWith("/tools/") -> "tools"
             p.startsWith("/multi-console") -> "tools"
-            p.startsWith("/emulator") -> "tools"
             p == "/logs" || p.startsWith("/logs/") -> "tools"
             p.startsWith("/code-search") -> "tools"
             p == "/history" || p.startsWith("/history/") -> "tools"

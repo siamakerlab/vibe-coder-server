@@ -176,7 +176,6 @@ internal object MessagesEn {
         "tools.tabs.title" to "Tools",
         "tools.tab.overview" to "Overview",
         "tools.tab.multi" to "Multi-console",
-        "tools.tab.emulator" to "Emulator",
         "tools.tab.codeSearch" to "Code search",
         "tools.tab.logs" to "Build logs",
         "tools.tab.history" to "Conversation search",
@@ -286,16 +285,12 @@ internal object MessagesEn {
         "env.comp.mcp.desc" to "filesystem / sqlite / fetch / playwright and other common MCP servers. Each is installed individually after user consent.",
         "env.comp.gradle.name" to "Gradle",
         "env.comp.gradle.desc" to "Bootstrap for Android builds. BuildService uses this when a new project lacks gradle wrapper. After install, the wrapper version in build.gradle.kts drives actual builds (this is a bootstrap tool).",
-        // v1.10.0 — Android emulator build environment card.
-        "env.comp.emulator.name" to "Android Emulator",
-        "env.comp.emulator.desc" to "Emulator binary + system-image (android-35, google_apis, x86_64). Required for creating/booting AVDs. Booting itself happens separately (`--device /dev/kvm` + privileged or the :full image + /emulator page).",
         "env.size.builtin" to "Bundled",
         "env.size.aboutMin" to "~1 min",
         "env.size.sdkLarge" to "~3-4 GB · 5-15 min",
         "env.size.platformTools" to "~12 MB",
         "env.size.optional" to "Optional",
         "env.size.gradle" to "~130 MB",
-        "env.size.emulator" to "~1.5-2 GB · 5-10 min",
         // v1.7.16 — EnvSetupService probe messages.
         "probe.cmd.missing" to "Not installed: %s failed",
         "probe.claudeAuth.apiKey" to "API key mode (ANTHROPIC_API_KEY)",
@@ -665,7 +660,6 @@ internal object MessagesEn {
         "env.welcome.step2" to "<strong>Claude sign-in</strong>: complete it from the <em>Claude auth</em> card below — web OAuth, terminal login, or API key all work.",
         "env.welcome.step3" to "Use <strong>\"Install / update all\"</strong> at the top right, or the per-card button, to install Android SDK / MCP. Progress is streamed live.",
         "env.welcome.step4" to "Once everything shows ✓, head over to <a href=\"/projects\">/projects</a>, create your first project, and ask Claude in the console to build the Android app.",
-        "env.welcome.emulatorNote" to "An emulator (AVD) is heavy (1 GB+) and not preinstalled — download it via the <em>Emulator</em> card below. Actually booting it needs KVM / the <code>:full</code> image (see /emulator). A real device (USB / wireless ADB) also works well.",
         "env.section.core" to "Setup &amp; sign-in",
         "env.section.builtin" to "Built into the image (status only)",
         "env.section.builtinHint" to "Already installed — usually nothing to do here.",
@@ -697,16 +691,6 @@ internal object MessagesEn {
         "env.action.gradleLabel.missing" to "Install (latest stable)",
         "env.action.gradleConfirm" to "Downloads the latest Gradle stable and installs it under /home/vibe/.local/gradle (~130 MB). Used to bootstrap wrappers in new projects. Continue?",
         "env.action.gradleNote" to "Wrapper bootstrap tool. After install the wrapper version pinned in your build.gradle.kts is what actually runs. Persisted via bind mount.",
-        // v1.10.0 — emulator card actions.
-        "env.action.emulatorLabel.installed" to "Reinstall / add system-image",
-        "env.action.emulatorLabel.partial" to "Continue install",
-        "env.action.emulatorLabel.missing" to "Download emulator package",
-        "env.action.emulatorConfirm" to "Downloads the Android emulator + system-image (android-35, google_apis, x86_64) — about 1.5-2 GB, 5-10 min. The progress page will open. Continue?",
-        "env.action.emulatorNote" to "Booting an AVD happens at /emulator after download (requires KVM passthrough — `--device /dev/kvm` + privileged or the :full image). Additional system-images can be installed individually via sdkmanager or the /emulator page.",
-        // v1.10.0 — emulator probe messages.
-        "probe.emulator.ok" to "Emulator + system-image present (%s)",
-        "probe.emulator.partial" to "Partial install (%s) — emulator binary or system-image is missing",
-        "probe.emulator.missing" to "Emulator package not installed (%s)",
 
         // ── claude flash blurbs ──────────────────────────────────────
         "env.flash.uploaded" to "✓ Claude credentials file is registered. Available in the console immediately.",
@@ -1029,7 +1013,6 @@ internal object MessagesEn {
         "tools.heading" to "Tools",
         "tools.intro" to "Cross-project / utility tools previously scattered across the sidebar, gathered in one place. Click a tool to jump to the existing page.",
         "tools.card.multiConsole.desc" to "Monitor multiple projects' Claude consoles simultaneously.",
-        "tools.card.emulator.desc" to "Android emulator launch / stop / VNC access.",
         "tools.card.codeSearch.title" to "Code search",
         "tools.card.codeSearch.desc" to "Grep file content across the entire workspace (all projects).",
         "tools.card.buildLogs.title" to "Build log search",

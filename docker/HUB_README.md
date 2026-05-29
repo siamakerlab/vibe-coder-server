@@ -37,8 +37,7 @@ have stale bugs — please open a GitHub issue and they'll be fixed quickly.
   <https://github.com/siamakerlab/vibe-coder-server/wiki>
 - **Issues**: <https://github.com/siamakerlab/vibe-coder-server/issues>
 - **Architectures**: `linux/amd64` (multi-arch builds reserved for milestones).
-- **Latest tags (slim)**: `0.43.0`, `latest`
-- **Latest tags (full / emulator + noVNC)**: `0.38.0-full`, `full`
+- **Latest tags**: `0.43.0`, `latest`
 - **Base OS**: Ubuntu 26.04 LTS (Resolute Raccoon) since v0.38.0
 - **Image size**: ~600 MB (Android SDK / Gradle / MCP packages live in
   bind-mounted volumes — see below). v0.14.0+ runs alongside a small
@@ -206,7 +205,7 @@ docker compose up -d            # boots postgres + vibe-coder-server
   Last-admin demotion + self-deletion blocked.
 
 **Ubuntu 26.04 LTS (v0.38.0+)**
-- Slim & `:full` images rebased on `eclipse-temurin:17-{jdk,jre}-resolute`.
+- Slim image rebased on `eclipse-temurin:17-{jdk,jre}-resolute`.
   JDK 17.0.19 unchanged. LTS support window through 2031-04.
 
 **PWA + VS Code extension (v0.39.0+)**
@@ -226,10 +225,6 @@ docker compose up -d            # boots postgres + vibe-coder-server
 - Console page picker for registered `~/.claude/agents/*.md` — selecting
   injects `Use the <agent-name> sub-agent to ` prefix.
 
-**In-browser noVNC reverse proxy (v0.42.0+)**
-- `/emulator/vnc/*` proxies localhost:6080 HTTP + WebSocket through the
-  same `vibe_session` cookie (admin only). No host-side 6080 exposure or
-  SSH tunnel needed.
 
 **Real multi-agent sub-agent pool (v0.44.0+)**
 - `SubAgentSessionManager` spawns a separate Claude child per
@@ -334,11 +329,9 @@ docker compose up -d            # boots postgres + vibe-coder-server
   bypass, `Retry-After` header on 429. Disable with
   `security.rateLimit.enabled: false` behind a reverse proxy.
 
-**WebAuthn passwordless + Helm `:full` (v0.57.0+)**
+**WebAuthn passwordless (v0.57.0+)**
 - `passwordless_only` user flag: when on, password/TOTP login
   returns `401 passkey_required`. Toggle from `/webauthn`.
-- Helm `fullImage.enabled=true` swaps to the emulator image,
-  mounts `/dev/kvm`, runs privileged, exposes port 6080.
 
 **Build comparison + statistics (v0.58.0+ / v0.59.0+)**
 - Per-build "vs previous SUCCESS" card on the detail page — APK
@@ -372,14 +365,6 @@ docker compose up -d            # boots postgres + vibe-coder-server
   `compose-mvvm-room`, `wear-os`, `android-tv`) — each seeds a
   `starterPrompt` for the first Claude console turn.
 
-**Android emulator (v0.19.0 → v0.24.0 lifecycle → v0.25.0 `:full`)**
-- `/emulator` page reports KVM availability, AVD inventory, running devices.
-- **v0.24.0** added one-click AVD lifecycle (create / launch / stop).
-- **v0.25.0** ships a separate `:full` image (~3-4 GB) with `qemu`, Xvfb,
-  x11vnc, websockify, noVNC pre-installed. Use `docker/compose.full.yml`
-  with `/dev/kvm` passthrough + `group_add KVM_GID` + port `6080` for
-  browser-based noVNC mirroring (LAN / SSH tunnel only — no auth on
-  port 6080).
 
 ## Image layout (~600 MB)
 
@@ -507,7 +492,6 @@ SSR POST forms carry a CSRF token (v0.12.4+).
 | `/env-setup` | Build environment installer |
 | `/env-setup/mcp` | MCP catalog (60+ entries) |
 | `/env-setup/claude-login` | Semi-automatic web OAuth |
-| `/emulator` | Diagnostics + AVD lifecycle (v0.24.0+) + `:full` setup guide (v0.25.0+) |
 | `/2fa` | Two-factor TOTP enable / disable (v0.26.0+) |
 | `/settings/git-integrations` | PAT + SSH key (admin-only, v0.47.0) |
 | `/settings/email` | SMTP config + notification triggers (v0.17.0+; admin-only, v0.47.0) |
@@ -529,7 +513,6 @@ SSR POST forms carry a CSRF token (v0.12.4+).
 | `/code-search` | Workspace-wide grep (v0.35.0+) |
 | `/multi-console` | N-pane multi-project console (v0.36.0+) |
 | `/users` | Multi-user / role management (admin only, v0.37.0+; `viewer` added v0.40.0) |
-| `/emulator/vnc/*` | noVNC reverse proxy (HTTP + WS; admin only, v0.42.0+) |
 | `/projects/{id}/agents` | Sub-agent index (v0.44.0+) — live status + open-console |
 | `/projects/{id}/agents/{agent}/console` | Per-agent console — independent Claude child (v0.44.0+) |
 | `/usage` | Claude `/status` raw viewer (admin-only, v0.47.0+) |
@@ -685,12 +668,6 @@ docker buildx build --platform linux/amd64 \
     -t siamakerlab/vibe-coder-server:latest \
     --push .
 
-# :full (emulator + noVNC) — amd64-only (KVM is host-arch dependent)
-docker buildx build --platform linux/amd64 \
-    -f docker/Dockerfile.full \
-    -t siamakerlab/vibe-coder-server:<ver>-full \
-    -t siamakerlab/vibe-coder-server:full \
-    --push .
 
 # Milestone multi-arch slim (slow 10-15 min via arm64 emulation)
 docker buildx build --platform linux/amd64,linux/arm64 ...

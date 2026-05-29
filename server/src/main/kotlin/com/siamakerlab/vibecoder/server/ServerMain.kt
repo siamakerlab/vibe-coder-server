@@ -226,7 +226,6 @@ fun main(args: Array<String>) {
     )
     val git = GitReader()
     val gitWriter = com.siamakerlab.vibecoder.server.git.GitWriter()
-    val emulator = com.siamakerlab.vibecoder.server.emulator.EmulatorService()
     val uploads = UploadService(config, workspace, uploadedRepo, clock)
     val fileBrowser = com.siamakerlab.vibecoder.server.files.ProjectFileBrowser(workspace)
     val promptStore = com.siamakerlab.vibecoder.server.prompts.PromptTemplateStore(workspace, clock)
@@ -418,7 +417,6 @@ fun main(args: Array<String>) {
         build = build,
         git = git,
         gitWriter = gitWriter,
-        emulator = emulator,
         uploads = uploads,
         fileBrowser = fileBrowser,
         promptStore = promptStore,

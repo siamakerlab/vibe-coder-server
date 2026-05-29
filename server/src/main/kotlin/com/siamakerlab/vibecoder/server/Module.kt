@@ -69,8 +69,6 @@ import com.siamakerlab.vibecoder.server.projects.projectTemplateRoutes
 import com.siamakerlab.vibecoder.server.admin.jsonAdminRoutes
 import com.siamakerlab.vibecoder.server.admin.toolsRoutes
 import com.siamakerlab.vibecoder.server.notify.notificationRoutes
-import com.siamakerlab.vibecoder.server.emulator.emulatorRoutes
-import com.siamakerlab.vibecoder.server.emulator.vncProxyRoutes
 import com.siamakerlab.vibecoder.server.notify.emailSettingsRoutes
 import com.siamakerlab.vibecoder.server.notify.webhookSettingsRoutes
 import com.siamakerlab.vibecoder.server.config.ServerConfig
@@ -146,7 +144,6 @@ data class ServerContext(
     val build: BuildService,
     val git: GitReader,
     val gitWriter: com.siamakerlab.vibecoder.server.git.GitWriter,
-    val emulator: com.siamakerlab.vibecoder.server.emulator.EmulatorService,
     val uploads: UploadService,
     val fileBrowser: com.siamakerlab.vibecoder.server.files.ProjectFileBrowser,
     val promptStore: com.siamakerlab.vibecoder.server.prompts.PromptTemplateStore,
@@ -472,9 +469,6 @@ fun Application.module(ctx: ServerContext) {
         usersRoutes(adminDeps, ctx.adminUserRepo, ctx.deviceRepo, ctx.hasher)
         emailSettingsRoutes(adminDeps, ctx.emailNotifier)
         webhookSettingsRoutes(adminDeps, ctx.webhookNotifier)
-        emulatorRoutes(adminDeps, ctx.emulator)
-        // v0.42.0 — noVNC reverse proxy (admin-only).
-        vncProxyRoutes(adminDeps)
         // v0.44.0 — Phase 23 sub-agent process pool (real multi-agent).
         subAgentRoutes(adminDeps, ctx.projects, ctx.subAgentManager, ctx.agentRegistry,
             ctx.tokens, ctx.deviceRepo)

@@ -4,7 +4,7 @@ import com.siamakerlab.vibecoder.server.i18n.Messages
 
 /**
  * v1.23.0 — 도구 통합 탭 페이지. [ProjectTabsTemplate] / [SettingsTabsTemplate] 와
- * 일관 디자인. tools 카테고리 sub-페이지 (/tools / /multi-console / /emulator /
+ * 일관 디자인. tools 카테고리 sub-페이지 (/tools / /multi-console /
  * /logs / /code-search / /history) 를 한 페이지의 iframe prerender 로 통합 —
  * 사용자가 도구 간 전환 시 page reload 없이 즉시.
  */
@@ -20,7 +20,6 @@ internal object ToolsTabsTemplate {
     private val TABS = listOf(
         Tab("tools",         "tools.tab.overview",   "/tools",         "ttab-tools"),
         Tab("multiConsole",  "tools.tab.multi",      "/multi-console", "ttab-multi"),
-        Tab("emulator",      "tools.tab.emulator",   "/emulator",      "ttab-emulator"),
         Tab("codeSearch",    "tools.tab.codeSearch", "/code-search",   "ttab-code-search"),
         Tab("logs",          "tools.tab.logs",       "/logs",          "ttab-logs"),
         Tab("history",       "tools.tab.history",    "/history",       "ttab-history"),

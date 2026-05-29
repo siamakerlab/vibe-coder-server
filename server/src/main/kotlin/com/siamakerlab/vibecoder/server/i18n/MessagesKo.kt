@@ -153,7 +153,6 @@ internal object MessagesKo {
         "tools.tabs.title" to "도구",
         "tools.tab.overview" to "개요",
         "tools.tab.multi" to "멀티 콘솔",
-        "tools.tab.emulator" to "에뮬레이터",
         "tools.tab.codeSearch" to "코드 검색",
         "tools.tab.logs" to "빌드 로그",
         "tools.tab.history" to "대화 검색",
@@ -263,15 +262,12 @@ internal object MessagesKo {
         "env.comp.gradle.name" to "Gradle",
         "env.comp.gradle.desc" to "Android 빌드 wrapper bootstrap 용. 신규 프로젝트에 gradle wrapper 가 없을 때 BuildService 가 자동 사용. 설치 후 사용자 build.gradle.kts 의 wrapper 버전이 실제 빌드를 좌우 (이건 부트스트랩 도구).",
         // v1.10.0 — 안드로이드 에뮬레이터 빌드환경 카드.
-        "env.comp.emulator.name" to "Android 에뮬레이터",
-        "env.comp.emulator.desc" to "에뮬레이터 바이너리 + system-image (android-35, google_apis, x86_64). AVD 생성/부팅에 필요. 부팅 자체는 별도 (`/dev/kvm` privileged 또는 :full 이미지 + /emulator 페이지).",
         "env.size.builtin" to "이미지 내장",
         "env.size.aboutMin" to "~1 분",
         "env.size.sdkLarge" to "약 3~4 GB · 5~15 분",
         "env.size.platformTools" to "약 12 MB",
         "env.size.optional" to "선택적",
         "env.size.gradle" to "약 130 MB",
-        "env.size.emulator" to "약 1.5~2 GB · 5~10 분",
         // v1.7.16 — EnvSetupService probe 메시지.
         "probe.cmd.missing" to "미설치: %s 실행 실패",
         "probe.claudeAuth.apiKey" to "API 키 모드 (ANTHROPIC_API_KEY)",
@@ -642,7 +638,6 @@ internal object MessagesKo {
         "env.welcome.step2" to "<strong>Claude 로그인</strong> 은 아래 <em>Claude 인증</em> 카드에서 완료하세요 — 웹 OAuth · 터미널 로그인 · API 키 중 한 가지면 됩니다.",
         "env.welcome.step3" to "위 우측 <strong>\"모두 설치/업데이트\"</strong> 버튼 또는 카드 개별 버튼으로 Android SDK / MCP 를 설치. 진행은 실시간 로그로 확인.",
         "env.welcome.step4" to "설치가 모두 ✓ 로 바뀌면 <a href=\"/projects\">/projects</a> 로 이동해 첫 프로젝트를 만들고 콘솔에서 Claude 에게 안드로이드 앱 생성을 부탁하세요.",
-        "env.welcome.emulatorNote" to "에뮬레이터(AVD) 는 부피가 커(1GB+) 기본 미설치입니다. 아래 <em>에뮬레이터</em> 카드로 내려받을 수 있고, 실제 부팅은 KVM / <code>:full</code> 이미지가 필요합니다(/emulator 페이지). 실 디바이스(USB / 무선 ADB)도 좋은 선택입니다.",
         "env.section.core" to "설치 · 인증",
         "env.section.builtin" to "이미지 내장 (확인용)",
         "env.section.builtinHint" to "이미 설치되어 있어 보통 손댈 필요가 없습니다.",
@@ -675,15 +670,6 @@ internal object MessagesKo {
         "env.action.gradleConfirm" to "Gradle 최신 stable 을 다운로드해 /home/vibe/.local/gradle 에 설치합니다 (~130MB). 신규 프로젝트의 wrapper bootstrap 에 사용됩니다. 계속할까요?",
         "env.action.gradleNote" to "Wrapper bootstrap 도구. 한 번 설치 후엔 사용자 build.gradle.kts 의 wrapper 버전이 실제 빌드에 사용됨. 영구 보존 (bind mount).",
         // v1.10.0 — 안드로이드 에뮬레이터 카드 액션.
-        "env.action.emulatorLabel.installed" to "재설치 / system-image 추가",
-        "env.action.emulatorLabel.partial" to "이어서 설치",
-        "env.action.emulatorLabel.missing" to "에뮬레이터 패키지 다운로드",
-        "env.action.emulatorConfirm" to "안드로이드 에뮬레이터 + system-image (android-35, google_apis, x86_64) 를 다운로드합니다 (약 1.5~2GB, 5~10분). 진행 페이지로 이동합니다. 계속할까요?",
-        "env.action.emulatorNote" to "다운로드 후 부팅은 /emulator 페이지에서 별도 처리 (KVM passthrough 필요 — `--device /dev/kvm` + privileged 또는 :full 이미지). 추가 system-image 가 필요하면 sdkmanager 또는 /emulator 페이지에서 개별 설치.",
-        // v1.10.0 — emulator probe 메시지.
-        "probe.emulator.ok" to "에뮬레이터 패키지 + system-image 설치됨 (%s)",
-        "probe.emulator.partial" to "일부만 설치됨 (%s) — 에뮬레이터 바이너리 또는 system-image 누락",
-        "probe.emulator.missing" to "에뮬레이터 패키지 미설치 (%s)",
 
         // ── claude flash blurbs ──────────────────────────────────────
         "env.flash.uploaded" to "✓ Claude 자격증명 파일이 등록되었습니다. 콘솔에서 즉시 사용할 수 있습니다.",
@@ -1006,7 +992,6 @@ internal object MessagesKo {
         "tools.heading" to "도구",
         "tools.intro" to "사이드바에 분산돼 있던 cross-project / 보조 도구들을 한 곳에 모았습니다. 각 도구를 클릭하면 기존 페이지로 이동합니다.",
         "tools.card.multiConsole.desc" to "여러 프로젝트의 Claude 콘솔을 동시에 모니터링.",
-        "tools.card.emulator.desc" to "Android 에뮬레이터 launch / stop / VNC 접속.",
         "tools.card.codeSearch.title" to "코드 검색",
         "tools.card.codeSearch.desc" to "워크스페이스 전체 (모든 프로젝트) 파일 content 를 grep 으로 검색.",
         "tools.card.buildLogs.title" to "빌드 로그 검색",

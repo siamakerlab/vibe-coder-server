@@ -104,23 +104,6 @@ enum class SetupComponent(
         description = "env.comp.gradle.desc",
         sizeHint = "env.size.gradle",
     ),
-    /**
-     * v1.10.0 — 안드로이드 에뮬레이터 빌드환경.
-     *
-     * 별도 카드로 분리: ANDROID_SDK 카드는 빌드용 코어 (platform-tools / platforms /
-     * build-tools) 만 다루고, 실제 에뮬레이터 실행에 필요한 추가 컴포넌트
-     * (`emulator` 바이너리 + 1개 default system-image) 는 본 카드를 통해 별도
-     * 다운로드. 부피 1GB+ 추가라 사용자 명시 클릭 시에만 작동.
-     *
-     * 실제 부팅 / KVM passthrough 는 `/emulator` 페이지에서 별도 처리.
-     */
-    EMULATOR(
-        id = "emulator",
-        displayName = "env.comp.emulator.name",
-        doctorCmd = "emulator",
-        description = "env.comp.emulator.desc",
-        sizeHint = "env.size.emulator",
-    ),
     ;
 
     companion object {
@@ -185,53 +168,6 @@ class EnvSetupService(
         SetupComponent.PLATFORM_TOOLS -> probePlatformTools(c, lang)
         SetupComponent.MCP_DEFAULTS -> probeMcpDefaults(c, lang)
         SetupComponent.GRADLE -> probeGradle(c, lang)
-        SetupComponent.EMULATOR -> probeEmulator(c, lang)
-    }
-
-    /**
-     * v1.10.0 — emulator 카드 진단.
-     *
-     * - INSTALLED: emulator 바이너리 (ANDROID_HOME/emulator/emulator) 존재 +
-     *   최소 1개의 system-images/android-NN/VARIANT/ABI 디렉토리 존재.
-     * - PARTIAL: 바이너리만 있거나 system-image 만 있는 경우.
-     * - MISSING: 둘 다 없음.
-     *
-     * 호출자는 ANDROID_SDK 카드를 먼저 설치하도록 사용자에게 안내해야 한다 —
-     * cmdline-tools / sdkmanager 가 사전 조건.
-     */
-    private fun probeEmulator(c: SetupComponent, lang: String): ComponentState {
-        val sdk = androidSdkRoot()
-            ?: return ComponentState(c, ComponentStatus.MISSING, t(lang, "probe.androidSdk.notSet"))
-        if (!sdk.exists()) {
-            return ComponentState(c, ComponentStatus.MISSING, t(lang, "probe.androidSdk.notExist", sdk.toString()))
-        }
-        val emulatorBin = sdk.resolve("emulator/emulator")
-        val emulatorBinExe = sdk.resolve("emulator/emulator.exe")
-        val hasBinary = emulatorBin.exists() || emulatorBinExe.exists()
-
-        val sysImgRoot = sdk.resolve("system-images")
-        val hasSystemImage = if (!sysImgRoot.exists()) false else {
-            // android-XX / variant / abi 3-deep 디렉토리가 적어도 하나 있는지.
-            Files.list(sysImgRoot).use { apiDirs ->
-                apiDirs.anyMatch { apiDir ->
-                    Files.isDirectory(apiDir) && Files.list(apiDir).use { variants ->
-                        variants.anyMatch { v ->
-                            Files.isDirectory(v) && Files.list(v).use { abis ->
-                                abis.anyMatch { Files.isDirectory(it) }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        return when {
-            hasBinary && hasSystemImage ->
-                ComponentState(c, ComponentStatus.INSTALLED, t(lang, "probe.emulator.ok", sdk.toString()))
-            hasBinary || hasSystemImage ->
-                ComponentState(c, ComponentStatus.PARTIAL, t(lang, "probe.emulator.partial", sdk.toString()))
-            else ->
-                ComponentState(c, ComponentStatus.MISSING, t(lang, "probe.emulator.missing", sdk.toString()))
-        }
     }
 
     private fun t(lang: String, key: String, vararg args: Any?): String =
