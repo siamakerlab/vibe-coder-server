@@ -53,6 +53,30 @@ class GlobalClaudeMdService(
         log.info { "global CLAUDE.md saved → $path (${content.toByteArray(StandardCharsets.UTF_8).size}B)" }
     }
 
+    /**
+     * v1.41.0 — 도커 first-run 시 전역 CLAUDE.md 가 없으면 번들 시드 템플릿으로 생성.
+     * **파일이 이미 있으면 절대 덮어쓰지 않는다**(운영자/사용자 편집본 보존). 리소스가
+     * 없거나 쓰기 실패해도 startup 비차단(무시 — /settings/claude-md 에서 직접 작성 가능).
+     */
+    fun seedDefaultIfAbsent() {
+        if (exists()) return
+        val seed = runCatching {
+            javaClass.getResourceAsStream("/templates/container-global-claude.md")
+                ?.bufferedReader(StandardCharsets.UTF_8)?.use { it.readText() }
+        }.getOrNull()
+        if (seed.isNullOrBlank()) {
+            log.warn { "global CLAUDE.md 시드 리소스를 찾을 수 없음 — skip" }
+            return
+        }
+        runCatching {
+            Files.createDirectories(path.parent)
+            val tmp = path.resolveSibling("${path.fileName}.seed.tmp")
+            Files.write(tmp, seed.toByteArray(StandardCharsets.UTF_8))
+            Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+            log.info { "global CLAUDE.md first-run 시드 생성 → $path (${seed.toByteArray(StandardCharsets.UTF_8).size}B)" }
+        }.onFailure { log.warn(it) { "global CLAUDE.md 시드 실패 (무시)" } }
+    }
+
     companion object {
         /** 256KB — CLAUDE.md 는 보통 수~수십 KB. 비정상적 대용량 차단. */
         const val MAX_BYTES = 256 * 1024
