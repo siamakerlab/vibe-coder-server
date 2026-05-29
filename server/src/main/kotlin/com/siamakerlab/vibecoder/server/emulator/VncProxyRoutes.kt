@@ -28,6 +28,7 @@ import java.net.http.WebSocket
 import java.nio.ByteBuffer
 import java.time.Duration
 import java.util.concurrent.CompletableFuture
+import kotlinx.coroutines.future.await
 import kotlinx.coroutines.launch
 
 private val log = KotlinLogging.logger {}
@@ -174,12 +175,15 @@ fun Routing.vncProxyRoutes(authDeps: AdminRoutesDeps) {
             for (frame in incoming) {
                 if (backendClosed.get()) break
                 when (frame) {
+                    // 21차 점검(minor) — .get() 동기 블로킹을 .await() suspend 로 전환.
+                    // 이전엔 매 프레임 송신마다 WS 핸들러 코루틴 스레드를 블로킹해
+                    // latency spike 시 다른 WS/HTTP 처리에 backpressure 를 유발했다.
                     is Frame.Binary -> {
                         val bytes = frame.readBytes()
-                        backend.sendBinary(ByteBuffer.wrap(bytes), true).get()
+                        backend.sendBinary(ByteBuffer.wrap(bytes), true).await()
                     }
                     is Frame.Text -> {
-                        backend.sendText(frame.readText(), true).get()
+                        backend.sendText(frame.readText(), true).await()
                     }
                     is Frame.Close -> break
                     else -> { /* ping/pong — Ktor 자동 처리 */ }

@@ -12,6 +12,12 @@ object Devices : Table("devices") {
     val userId = varchar("user_id", 64).nullable()
     val channel = varchar("channel", 16).default("app")  // "app" | "web"
     override val primaryKey = PrimaryKey(id)
+
+    // 21차 점검(minor) — findByTokenHash 는 Bearer/쿠키 인증마다 호출되는 hot-path 인데
+    // token_hash 인덱스가 없어 device row 증가 시 매 인증이 full table scan 이었다.
+    // (v1.34.1 Builds.project_id 인덱스 추가와 같은 유형의 누락.) non-unique 로 추가 —
+    // 사실상 unique 이나 기존 데이터의 예외적 중복으로 인한 startup 마이그 실패를 피한다.
+    init { index(false, tokenHash) }
 }
 
 object AdminUsers : Table("admin_users") {

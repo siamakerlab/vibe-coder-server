@@ -47,9 +47,16 @@ data class ConversationTurnRow(
  *
  * 적재는 [insert] 한 번. 읽기는 페이지네이션 list + 필터.
  *
- * turnIdx 는 (projectId, sessionId) 단위로 단조 증가. 같은 sessionId 안에서 row
- * 정렬을 사용자에게 안정적으로 보여주기 위함. session 이 새로 시작되면 turnIdx 가
- * 0 부터 다시 시작 (시각 정렬은 ts 로).
+ * turnIdx 는 (projectId, sessionId) 단위로 **best-effort 단조 증가**. session 이 새로
+ * 시작되면 0 부터 다시 시작.
+ *
+ * 21차 점검(minor) — [nextTurnIdx] 의 `SELECT max(turn_idx)+1` 과 INSERT 는 비원자적
+ * (READ COMMITTED). 같은 (projectId, sessionId) 에 두 코루틴(예: sendPrompt 의 user
+ * turn 적재 vs stdout reader 의 event 적재)이 동시에 적재하면 같은 turnIdx 가 INSERT
+ * 될 수 있다((projectId, sessionId, turnIdx) 인덱스가 non-unique 라 DB 가 막지 않음).
+ * **단 모든 읽기 경로(list/검색/export)가 ts ASC 로 정렬하고 turnIdx 를 정렬 키로 쓰지
+ * 않으므로 사용자 체감 영향은 없다** — SSOT 는 ts. 엄밀한 보장이 필요해지면 인덱스를
+ * unique 로 올리고 충돌 재시도 루프를 추가할 것.
  *
  * **성능 메모**: tool_use/tool_result content 가 수십 KB 일 수 있음 (Read tool 의
  * 큰 파일 결과 등). v0.16.0–v0.52.0 까지 본문 검색은 LIKE (full scan). v0.53.0

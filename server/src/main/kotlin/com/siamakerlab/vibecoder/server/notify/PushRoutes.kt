@@ -8,6 +8,7 @@ import com.siamakerlab.vibecoder.server.admin.requireWriteAccessOrRedirect
 import com.siamakerlab.vibecoder.server.auth.AUTH_BEARER
 import com.siamakerlab.vibecoder.server.auth.requireApiWrite
 import com.siamakerlab.vibecoder.server.repo.PushSubscriptionRepository
+import com.siamakerlab.vibecoder.shared.ApiPath
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
@@ -47,14 +48,14 @@ fun Routing.pushRoutes(
 ) {
     // ── JSON API (Bearer) ──────────────────────────────────────────────────
     authenticate(AUTH_BEARER) {
-        get("/api/push/vapid-public-key") {
+        get(ApiPath.PUSH_VAPID_PUBLIC_KEY) {
             call.respondText(
                 """{"publicKey":"${notifier.publicKeyBase64Url()}"}""",
                 ContentType.Application.Json,
             )
         }
 
-        post("/api/push/subscribe") {
+        post(ApiPath.PUSH_SUBSCRIBE) {
             val device = call.requireApiWrite()
             val raw = call.receiveText()
             val obj = (Json.parseToJsonElement(raw) as? JsonObject)
@@ -74,6 +75,8 @@ fun Routing.pushRoutes(
             )
         }
 
+        // ApiPath.pushSubscription(id) 는 pathSeg URL-encoding twin(클라이언트 URL 빌더용)
+        // 이라 route 패턴엔 부적합({id}→%7Bid%7D). route 는 리터럴, 클라이언트는 상수 사용.
         delete("/api/push/subscriptions/{id}") {
             call.requireApiWrite()
             val id = call.parameters["id"]

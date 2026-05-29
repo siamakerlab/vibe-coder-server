@@ -114,21 +114,23 @@ private suspend fun WebSocketServerSession.authenticateFirstFrame(
     // 비어 있어 통과 — 인증은 어차피 토큰으로.
     val origin = call.request.headers["Origin"]
     if (!origin.isNullOrBlank()) {
+        // 21차 점검(minor) — fail-closed. 이전엔 `host != null && originHost != null`
+        // 가드 안에서만 mismatch 를 검사해, Origin 은 있으나 Host 가 없거나 URI 파싱이
+        // 실패하면 검사 자체를 건너뛰고 통과했다(silent no-op). 실 브라우저는 Origin 과
+        // Host 를 항상 함께 보내므로, Origin 존재 + (Host null | 파싱 실패 | mismatch) 는
+        // 비정상/공격 핸드셰이크로 보고 거절.
         val host = call.request.headers["Host"]
         val originHost = runCatching { java.net.URI(origin).host }.getOrNull()
-        if (host != null && originHost != null) {
-            // host 는 보통 "vibe.local:17880" 형태. originHost 는 host 만.
-            val hostName = host.substringBefore(':')
-            if (originHost != hostName) {
-                io.github.oshai.kotlinlogging.KotlinLogging.logger {}.warn {
-                    "ws origin mismatch: origin=$origin host=$host — closing"
-                }
-                runCatching {
-                    sendFrame(WsFrame.Error("origin_denied", "WebSocket from unexpected origin"))
-                    close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "origin_denied"))
-                }
-                return false
+        val hostName = host?.substringBefore(':')
+        if (originHost == null || hostName == null || originHost != hostName) {
+            io.github.oshai.kotlinlogging.KotlinLogging.logger {}.warn {
+                "ws origin denied: origin=$origin host=$host — closing"
             }
+            runCatching {
+                sendFrame(WsFrame.Error("origin_denied", "WebSocket from unexpected origin"))
+                close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "origin_denied"))
+            }
+            return false
         }
     }
 

@@ -90,7 +90,9 @@ class GitWriter {
             val pushEnv = mutableMapOf<String, String>()
             pushEnv["GIT_TERMINAL_PROMPT"] = "0"
             pushEnv["GIT_SSH_COMMAND"] = "ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes"
-            val exit = runWithExit(source, listOf("git", "push", "origin", branch), sb, env = pushEnv)
+            // 21차 점검(minor) — push 는 네트워크 I/O 라 30s 고정 timeout 으로는 대용량
+            // first push 가 중도 강제종료(504)될 수 있다. clone(10분)과 균형 맞춰 5분 부여.
+            val exit = runWithExit(source, listOf("git", "push", "origin", branch), sb, env = pushEnv, timeoutSeconds = PUSH_TIMEOUT_SECONDS)
             pushed = exit == 0
             if (!pushed) {
                 sb.appendLine("(push failed — commit kept locally; re-try via UI)")
@@ -131,6 +133,8 @@ class GitWriter {
         log: StringBuilder,
         env: Map<String, String>? = null,
         capture: StringBuilder? = null,
+        /** 21차 점검(minor) — 명령별 timeout. add/commit/status 는 30s, push 처럼 네트워크 I/O 는 길게. */
+        timeoutSeconds: Long = 30,
     ): Int {
         log.appendLine("$ ${cmd.joinToString(" ")}")
         val pb = ProcessBuilder(cmd).directory(source.toFile()).redirectErrorStream(true)
@@ -141,7 +145,7 @@ class GitWriter {
             throw ApiException.localized(500, "spawn_fail", messageKey = "api.gitWriter.spawnFail", args = listOf(e.message ?: ""))
         }
         val output = proc.inputStream.bufferedReader(Charsets.UTF_8).readText()
-        if (!proc.waitFor(30, TimeUnit.SECONDS)) {
+        if (!proc.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
             proc.destroyForcibly()
             throw ApiException.localized(504, "git_timeout",
                 messageKey = "api.gitWriter.timeout", args = listOf(cmd.drop(1).joinToString(" ")))
@@ -153,5 +157,7 @@ class GitWriter {
 
     companion object {
         const val MAX_MESSAGE_LEN = 4000
+        /** 21차 점검(minor) — push 네트워크 I/O timeout (5분). add/commit/status 는 기본 30s. */
+        const val PUSH_TIMEOUT_SECONDS = 300L
     }
 }

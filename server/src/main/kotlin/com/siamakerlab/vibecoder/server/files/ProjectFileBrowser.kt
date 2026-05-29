@@ -122,9 +122,14 @@ class ProjectFileBrowser(
         if (relPath.isBlank()) {
             throw ApiException.localized(400, "empty_path", messageKey = "api.fileBrowser.emptyPath")
         }
-        if (content.length > MAX_VIEW_BYTES) {
+        // 21차 점검(minor) — content.length(UTF-16 char 수) 대신 실제 UTF-8 byte 로 검사.
+        // 이전엔 read()(Files.size, byte)/uploadStream(byte) 과 비대칭이라, 멀티바이트
+        // 텍스트(한글/이모지)는 char 수 < byte 수가 되어 write 가 허용한 ~1MB 콘텐츠가
+        // 직렬화 후 1MB 를 넘겨 read() 에서 file_too_large 로 다시 안 열리는 UX 불일치 발생.
+        val contentBytes = content.toByteArray(Charsets.UTF_8).size
+        if (contentBytes > MAX_VIEW_BYTES) {
             throw ApiException.localized(413, "content_too_large",
-                messageKey = "api.fileBrowser.contentTooLarge", args = listOf(content.length))
+                messageKey = "api.fileBrowser.contentTooLarge", args = listOf(contentBytes))
         }
         val target = PathSafety.normalizeAndCheck(projectRoot, relPath)
         if (Files.isSymbolicLink(target)) {

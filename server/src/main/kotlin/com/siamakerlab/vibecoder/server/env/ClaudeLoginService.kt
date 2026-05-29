@@ -162,15 +162,18 @@ class ClaudeLoginService(
 
     private fun drainOutput(s: Session) {
         try {
-            // pty 출력은 라인 경계가 흐트러질 수 있어 byte 청크로 읽고 ANSI 제거 후 누적.
-            val input = s.process.inputStream
-            val buf = ByteArray(4096)
+            // pty 출력은 라인 경계가 흐트러질 수 있어 char 단위로 읽고 ANSI 제거 후 누적.
+            // 21차 점검(minor) — 이전엔 4096-byte 청크를 독립 UTF-8 디코딩해 청크 경계의
+            // 멀티바이트 문자가 깨질 수 있었다(비-ASCII 진단/오류 메시지 한정). InputStreamReader
+            // 가 미완성 멀티바이트 tail 을 다음 read 로 carry-over.
+            val reader = java.io.InputStreamReader(s.process.inputStream, StandardCharsets.UTF_8)
+            val buf = CharArray(4096)
             val sb = StringBuilder()
             while (true) {
-                val n = input.read(buf)
+                val n = reader.read(buf)
                 if (n < 0) break
                 if (n == 0) continue
-                val chunk = String(buf, 0, n, StandardCharsets.UTF_8)
+                val chunk = String(buf, 0, n)
                 val clean = stripAnsi(chunk)
                 if (clean.isEmpty()) continue
                 sb.append(clean)

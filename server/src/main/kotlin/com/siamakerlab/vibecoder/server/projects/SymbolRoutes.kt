@@ -161,6 +161,21 @@ private fun esc(s: String?): String =
         .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         .replace("\"", "&quot;").replace("'", "&#39;")
 
-private fun escJson(s: String): String =
-    s.replace("\\", "\\\\").replace("\"", "\\\"")
-        .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+// 21차 점검(minor) — 이전엔 \n\r\t 외 0x20 미만 제어문자(\b \f vertical-tab NUL 등)를
+// 미이스케이프해 그런 문자가 포함된 소스 라인을 응답할 때 RFC 8259 위반 JSON 이 됐다.
+private fun escJson(s: String): String {
+    val sb = StringBuilder(s.length + 8)
+    for (c in s) {
+        when (c) {
+            '\\' -> sb.append("\\\\")
+            '"' -> sb.append("\\\"")
+            '\n' -> sb.append("\\n")
+            '\r' -> sb.append("\\r")
+            '\t' -> sb.append("\\t")
+            '\b' -> sb.append("\\b")
+            '\u000C' -> sb.append("\\f")
+            else -> if (c < ' ') sb.append("\\u%04x".format(c.code)) else sb.append(c)
+        }
+    }
+    return sb.toString()
+}

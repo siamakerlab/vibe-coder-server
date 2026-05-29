@@ -4,6 +4,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -201,6 +202,10 @@ class FcmSender {
 
     fun shutdown() {
         // JDK HttpClient 는 close 불요 (Java 21 부터 AutoCloseable 이나 stable 동작).
+        // 21차 점검(minor) — send() 가 scope.launch 로 OAuth 교환 + FCM POST 를 비동기
+        // 실행하므로 graceful shutdown 시 scope 를 cancel 해 in-flight launch + SupervisorJob
+        // 을 정리. EmailNotifier/WebhookNotifier 와 동일(이전엔 fcm 만 누락).
+        scope.cancel()
     }
 
     private data class ServiceAccount(
