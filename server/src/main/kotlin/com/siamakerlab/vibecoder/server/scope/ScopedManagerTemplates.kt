@@ -20,6 +20,15 @@ internal object ScopedManagerTemplates {
             .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             .replace("\"", "&quot;").replace("'", "&#39;")
 
+    // 21차 후속(M2) — JS 문자열 컨텍스트 escape. esc(escJs(x)) 순서로 써야 onclick 같은
+    // 이벤트 핸들러 속성에서 HTML 엔티티 이중디코딩(&#39;→')으로 인한 JS 탈출(XSS)을 막는다.
+    private fun escJs(s: String): String =
+        s.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "\\r")
+
+    // 21차 후속(M3) — URL 경로 세그먼트용. 디스크 스캔 이름의 특수문자로 path param 이 깨지지 않게.
+    private fun encPath(s: String): String =
+        java.net.URLEncoder.encode(s, "UTF-8").replace("+", "%20")
+
     fun listPage(
         username: String,
         currentPath: String,
@@ -65,13 +74,13 @@ internal object ScopedManagerTemplates {
             """<tr><td colspan="3" class="dim" style="text-align:center;padding:10px">${esc(t("scope.empty"))}</td></tr>"""
         else projectItems.joinToString("") { it ->
             """<tr>
-              <td><a href="$editBase/${esc(it.name)}/edit"><code>${esc(it.name)}</code></a> <span class="dim" style="font-size:10px">${esc(it.sizeLabel)}</span></td>
+              <td><a href="$editBase/${encPath(it.name)}/edit"><code>${esc(it.name)}</code></a> <span class="dim" style="font-size:10px">${esc(it.sizeLabel)}</span></td>
               <td>${previewCell(it.preview)}</td>
               <td style="white-space:nowrap">
-                <a href="$editBase/${esc(it.name)}/edit" class="chip chip-link">${esc(t("scope.edit"))}</a>
-                <form method="post" action="$deleteBase/${esc(it.name)}/delete" style="display:inline">
+                <a href="$editBase/${encPath(it.name)}/edit" class="chip chip-link">${esc(t("scope.edit"))}</a>
+                <form method="post" action="$deleteBase/${encPath(it.name)}/delete" style="display:inline">
                   ${CsrfTokens.hiddenInput(csrf)}
-                  <button type="submit" class="chip chip-danger" onclick="return confirm('${esc(it.name)} ${esc(t("scope.delete"))}?')">${esc(t("scope.delete"))}</button>
+                  <button type="submit" class="chip chip-danger" onclick="return confirm('${esc(escJs(it.name))} ${esc(t("scope.delete"))}?')">${esc(t("scope.delete"))}</button>
                 </form>
               </td>
             </tr>"""
@@ -145,13 +154,13 @@ $errHtml
             """<tr><td colspan="3" class="dim" style="text-align:center;padding:10px">${esc(t("scope.empty"))}</td></tr>"""
         else items.joinToString("") { it ->
             """<tr>
-              <td><a href="$editBase/${esc(it.name)}/edit"><code>${esc(it.name)}</code></a> <span class="dim" style="font-size:10px">${esc(it.sizeLabel)}</span></td>
+              <td><a href="$editBase/${encPath(it.name)}/edit"><code>${esc(it.name)}</code></a> <span class="dim" style="font-size:10px">${esc(it.sizeLabel)}</span></td>
               <td><pre style="margin:0;font-size:11px;white-space:pre-wrap;word-break:break-word;max-width:560px;opacity:.7">${esc(it.preview)}</pre></td>
               <td style="white-space:nowrap">
-                <a href="$editBase/${esc(it.name)}/edit" class="chip chip-link">${esc(t("scope.edit"))}</a>
-                <form method="post" action="$deleteBase/${esc(it.name)}/delete" style="display:inline">
+                <a href="$editBase/${encPath(it.name)}/edit" class="chip chip-link">${esc(t("scope.edit"))}</a>
+                <form method="post" action="$deleteBase/${encPath(it.name)}/delete" style="display:inline">
                   ${CsrfTokens.hiddenInput(csrf)}
-                  <button type="submit" class="chip chip-danger" onclick="return confirm('${esc(it.name)} ${esc(t("scope.delete"))}?')">${esc(t("scope.delete"))}</button>
+                  <button type="submit" class="chip chip-danger" onclick="return confirm('${esc(escJs(it.name))} ${esc(t("scope.delete"))}?')">${esc(t("scope.delete"))}</button>
                 </form>
               </td>
             </tr>"""

@@ -65,6 +65,8 @@ class AdbService(
                 val parts = t.split(Regex("\\s+"))
                 val serial = parts.getOrNull(0) ?: return@mapNotNull null
                 val state = parts.getOrNull(1) ?: return@mapNotNull null
+                // 21차 후속(M6 방어심화) — serial 화이트리스트 미통과(비정상/주입 의심) 제외.
+                if (!serialRe.matches(serial)) return@mapNotNull null
                 val model = parts.firstOrNull { it.startsWith("model:") }?.removePrefix("model:")
                 Device(serial, model, state)
             }

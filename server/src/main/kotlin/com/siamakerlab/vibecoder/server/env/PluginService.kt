@@ -7,7 +7,11 @@ import com.siamakerlab.vibecoder.server.ws.LogHub
 import com.siamakerlab.vibecoder.shared.ws.WsFrame
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -88,27 +92,42 @@ class PluginService(
         }
     }
 
-    // ── 변경 (task queue) ────────────────────────────────────────────────────
-    fun addMarketplace(source: String, scope: String = "user"): String =
-        spawn("marketplace add $source", listOf("plugin", "marketplace", "add", source, "--scope", scope), null)
+    // 21차 후속(M5) — 인자 검증. plugin id 는 plugin@marketplace 형태, marketplace name 은
+    // 단순 식별자. dash 시작/빈 값 거부로 CLI flag 주입(--scope 등) 방지(셸 미경유라 쉘 인젝션은
+    // 원래 없으나 짝 모듈 AdbService 의 정규식 검증과 정책 통일).
+    private val pluginIdRe = Regex("^[A-Za-z0-9._-]+(@[A-Za-z0-9._-]+)?$")
+    private val mktNameRe = Regex("^[A-Za-z0-9._-]+$")
+    private fun reqPlugin(p: String): String {
+        require(pluginIdRe.matches(p)) { "invalid plugin id (plugin@marketplace, [A-Za-z0-9._-])" }
+        return p
+    }
 
-    fun removeMarketplace(name: String): String =
-        spawn("marketplace remove $name", listOf("plugin", "marketplace", "remove", name), null)
+    // ── 변경 (task queue) ────────────────────────────────────────────────────
+    fun addMarketplace(source: String, scope: String = "user"): String {
+        // source 는 owner/repo · URL · 경로 — 형태가 다양해 정규식 대신 dash-시작/빈 값만 거부.
+        require(source.isNotBlank() && !source.startsWith("-")) { "invalid marketplace source" }
+        return spawn("marketplace add $source", listOf("plugin", "marketplace", "add", source, "--scope", scope), null)
+    }
+
+    fun removeMarketplace(name: String): String {
+        require(mktNameRe.matches(name)) { "invalid marketplace name" }
+        return spawn("marketplace remove $name", listOf("plugin", "marketplace", "remove", name), null)
+    }
 
     fun install(plugin: String, scope: String = "user", cwd: Path? = null): String =
-        spawn("install $plugin (scope=$scope)", listOf("plugin", "install", plugin, "--scope", scope), cwd)
+        spawn("install ${reqPlugin(plugin)} (scope=$scope)", listOf("plugin", "install", plugin, "--scope", scope), cwd)
 
     fun uninstall(plugin: String, scope: String = "user", cwd: Path? = null): String =
-        spawn("uninstall $plugin", listOf("plugin", "uninstall", plugin, "--scope", scope), cwd)
+        spawn("uninstall ${reqPlugin(plugin)}", listOf("plugin", "uninstall", plugin, "--scope", scope), cwd)
 
     fun enable(plugin: String, scope: String = "user", cwd: Path? = null): String =
-        spawn("enable $plugin", listOf("plugin", "enable", plugin, "--scope", scope), cwd)
+        spawn("enable ${reqPlugin(plugin)}", listOf("plugin", "enable", plugin, "--scope", scope), cwd)
 
     fun disable(plugin: String, scope: String = "user", cwd: Path? = null): String =
-        spawn("disable $plugin", listOf("plugin", "disable", plugin, "--scope", scope), cwd)
+        spawn("disable ${reqPlugin(plugin)}", listOf("plugin", "disable", plugin, "--scope", scope), cwd)
 
     fun update(plugin: String, cwd: Path? = null): String =
-        spawn("update $plugin", listOf("plugin", "update", plugin), cwd)
+        spawn("update ${reqPlugin(plugin)}", listOf("plugin", "update", plugin), cwd)
 
     // ── 내부 ────────────────────────────────────────────────────────────────
     private fun spawn(label: String, args: List<String>, cwd: Path?): String {
@@ -130,29 +149,47 @@ class PluginService(
         return taskId
     }
 
-    private suspend fun runStreaming(taskId: String, cmd: List<String>, cwd: Path?) {
+    // 21차 후속(B1) — read 와 timeout 분리. 이전엔 useLines 가 EOF 까지 block 한 뒤에야
+    // waitFor(timeout) 를 호출해, 자식이 stdout 을 연 채 멈추면 timeout/destroy 가 영영
+    // 도달 못 해 좀비 프로세스 + IO 스레드가 누수됐다. stdin 차단(interactive 대기 방지) +
+    // read 를 별도 코루틴 pump 로, waitFor 는 runInterruptible + withTimeoutOrNull 로 감싼다.
+    private suspend fun runStreaming(taskId: String, cmd: List<String>, cwd: Path?) = coroutineScope {
         val pb = ProcessBuilder(cmd).redirectErrorStream(true)
+            .redirectInput(ProcessBuilder.Redirect.from(java.io.File("/dev/null")))
         cwd?.let { pb.directory(it.toFile()) }
         // CLAUDE_CONFIG_DIR 등은 부모(vibe) env 상속 — Dockerfile ENV.
         val proc = pb.start()
-        proc.inputStream.bufferedReader(Charsets.UTF_8).useLines { lines ->
-            for (line in lines) hub.publisher(taskId).emit(WsFrame.Log(taskId, "STDOUT", line, clock.nowIso()))
+        val pump = launch(Dispatchers.IO) {
+            runCatching {
+                proc.inputStream.bufferedReader(Charsets.UTF_8).useLines { lines ->
+                    for (line in lines) hub.publisher(taskId).emit(WsFrame.Log(taskId, "STDOUT", line, clock.nowIso()))
+                }
+            }
         }
-        if (!proc.waitFor(5, TimeUnit.MINUTES)) {
+        val code = withTimeoutOrNull(5 * 60_000L) { runInterruptible(Dispatchers.IO) { proc.waitFor() } }
+        if (code == null) {
             proc.destroyForcibly()
+            pump.cancel()
             throw RuntimeException("plugin 명령 timeout (5분)")
         }
-        val code = proc.exitValue()
+        pump.join()
         if (code != 0) throw RuntimeException("claude ${cmd.drop(1).joinToString(" ")} → exit $code")
     }
 
     /** `claude … --json` 을 동기 실행하고 JsonArray 로 파싱. 실패 시 null. */
     private fun runJson(args: List<String>, cwd: Path?): JsonArray? = runCatching {
         val pb = ProcessBuilder(listOf(claudeBin) + args).redirectErrorStream(false)
+            .redirectInput(ProcessBuilder.Redirect.from(java.io.File("/dev/null")))
         cwd?.let { pb.directory(it.toFile()) }
         val proc = pb.start()
+        // 21차 후속(M4) — read 가 timeout 보다 선행해 무력화되던 문제. watchdog 데몬이 timeout
+        // 후 destroyForcibly 로 readText block 을 강제 해제. (readText 는 프로세스 종료 시 EOF)
+        val watchdog = Thread {
+            runCatching { if (!proc.waitFor(30, TimeUnit.SECONDS)) proc.destroyForcibly() }
+        }.apply { isDaemon = true; start() }
         val out = proc.inputStream.bufferedReader(Charsets.UTF_8).readText()
-        if (!proc.waitFor(30, TimeUnit.SECONDS)) { proc.destroyForcibly(); return null }
+        proc.waitFor()
+        watchdog.interrupt()
         if (proc.exitValue() != 0) return null
         Json.parseToJsonElement(out.trim()) as? JsonArray
     }.getOrElse { log.warn(it) { "claude ${args.joinToString(" ")} --json 파싱 실패" }; null }

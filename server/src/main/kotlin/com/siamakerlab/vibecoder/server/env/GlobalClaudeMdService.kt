@@ -39,12 +39,15 @@ class GlobalClaudeMdService(
     /** 원자적 저장 + 직전 내용 1단계 백업. 호출 전 byte 한도 검증은 라우트가 수행. */
     fun write(content: String) {
         Files.createDirectories(path.parent)
+        // 21차 후속(M1) — sidecar 이름을 실제 target 파일명에서 파생(env override 로 다른
+        // 파일명을 써도 <name>.bak / <name>.tmp 로 일치).
+        val name = path.fileName.toString()
         if (exists()) {
             runCatching {
-                Files.copy(path, path.resolveSibling("CLAUDE.md.bak"), StandardCopyOption.REPLACE_EXISTING)
+                Files.copy(path, path.resolveSibling("$name.bak"), StandardCopyOption.REPLACE_EXISTING)
             }.onFailure { log.warn(it) { "global CLAUDE.md backup failed (계속 진행)" } }
         }
-        val tmp = path.resolveSibling("CLAUDE.md.tmp")
+        val tmp = path.resolveSibling("$name.tmp")
         Files.write(tmp, content.toByteArray(StandardCharsets.UTF_8))
         Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
         log.info { "global CLAUDE.md saved → $path (${content.toByteArray(StandardCharsets.UTF_8).size}B)" }

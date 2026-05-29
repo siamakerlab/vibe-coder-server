@@ -10,6 +10,10 @@ internal object AdbTemplates {
         s.orEmpty().replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             .replace("\"", "&quot;").replace("'", "&#39;")
 
+    // 21차 후속(M6) — onclick JS 문자열 컨텍스트. esc(escJs(x)) 로 HTML 엔티티 이중디코딩 XSS 방지.
+    private fun escJs(s: String): String =
+        s.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "\\r")
+
     fun page(
         username: String,
         available: Boolean,
@@ -60,7 +64,7 @@ internal object AdbTemplates {
         } else devices.joinToString("") { d ->
             val st = if (d.connected) """<span class="ok">${esc(d.state)}</span>""" else """<span class="warn">${esc(d.state)}</span>"""
             val act = if (d.connected) {
-                """<button type="button" class="chip chip-link" onclick="adbLog('${esc(d.serial)}')">${esc(t("adb.viewLog"))}</button>
+                """<button type="button" class="chip chip-link" onclick="adbLog('${esc(escJs(d.serial))}')">${esc(t("adb.viewLog"))}</button>
                    <form method="post" action="/adb/disconnect" style="display:inline">${CsrfTokens.hiddenInput(csrf)}
                      <input type="hidden" name="hostPort" value="${esc(d.serial)}">
                      <button type="submit" class="chip chip-danger">${esc(t("adb.disconnect"))}</button></form>"""
