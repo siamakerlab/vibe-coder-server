@@ -35,6 +35,7 @@ internal object SettingsTabsTemplate {
         Tab("mcp",           "settings.tab.mcp",           "/env-setup/mcp",            "stab-mcp"),
         Tab("claudeMd",      "settings.tab.claudeMd",      "/settings/claude-md",       "stab-claude-md"),
         Tab("skills",        "settings.tab.skills",        "/settings/skills",          "stab-skills"),
+        Tab("plugins",       "settings.tab.plugins",       "/settings/plugins",         "stab-plugins"),
         Tab("prompts",       "settings.tab.prompts",       "/prompts",                  "stab-prompts"),
         Tab("backup",        "settings.tab.backup",        "/backup",                   "stab-backup"),
         Tab("monitoring",    "settings.tab.monitoring",    "/usage",                    "stab-monitoring"),

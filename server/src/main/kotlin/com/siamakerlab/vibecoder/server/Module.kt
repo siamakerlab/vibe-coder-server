@@ -32,7 +32,9 @@ import com.siamakerlab.vibecoder.server.admin.gitIntegrationsRoutes
 import com.siamakerlab.vibecoder.server.admin.mcpRoutes
 import com.siamakerlab.vibecoder.server.admin.globalClaudeMdRoutes
 import com.siamakerlab.vibecoder.server.admin.skillRoutes
+import com.siamakerlab.vibecoder.server.admin.pluginRoutes
 import com.siamakerlab.vibecoder.server.projects.projectSkillRoutes
+import com.siamakerlab.vibecoder.server.projects.projectPluginRoutes
 import com.siamakerlab.vibecoder.server.admin.webProjectRoutes
 import com.siamakerlab.vibecoder.server.artifacts.ArtifactService
 import com.siamakerlab.vibecoder.server.artifacts.artifactRoutes
@@ -242,6 +244,8 @@ data class ServerContext(
     val gitConfig: com.siamakerlab.vibecoder.server.env.GitConfigService,
     /** v1.35.0 — 전역 CLAUDE.md (user-memory, 모든 프로젝트 공통). /settings/claude-md 탭. */
     val globalClaudeMd: com.siamakerlab.vibecoder.server.env.GlobalClaudeMdService,
+    /** v1.38.0 — Claude Code 플러그인/마켓플레이스 관리 (전역 /settings/plugins + 프로젝트 탭). */
+    val plugins: com.siamakerlab.vibecoder.server.env.PluginService,
     /**
      * v1.27.0 — Workspace bash PTY 등록부. 사이드바 글로벌 `/terminal` 메뉴 +
      * `/ws/terminal/{id}` WebSocket 가 공유. lifecycle 은 [ServerMain] 에서
@@ -375,6 +379,7 @@ fun Application.module(ctx: ServerContext) {
         mcpRoutes(adminDeps, ctx.mcp)
         globalClaudeMdRoutes(adminDeps, ctx.globalClaudeMd)
         skillRoutes(adminDeps, globalSkillRegistry)
+        pluginRoutes(adminDeps, ctx.plugins)
         gitIntegrationsRoutes(adminDeps, ctx.gitCredentials, ctx.gitClone, ctx.clock)
         corsSettingsRoutes(adminDeps)
         // v1.2.0 — SSH key 관리 (자동 발급은 entrypoint, 본 routes 는 열람 + 재생성).
@@ -447,6 +452,7 @@ fun Application.module(ctx: ServerContext) {
         projectAgentRoutes(adminDeps, ctx.projects, ctx.workspace, ctx.agentRegistry)
         projectMcpRoutes(adminDeps, ctx.projects, ctx.workspace, ctx.mcp)
         projectSkillRoutes(adminDeps, ctx.projects, ctx.workspace, globalSkillRegistry)
+        projectPluginRoutes(adminDeps, ctx.projects, ctx.workspace, ctx.plugins)
         dependencyAuditRoutes(adminDeps, ctx.projects, ctx.dependencyAudit)
         logSearchRoutes(adminDeps, ctx.logSearchService)
         // v0.33.0 — Cron 빌드 + webhook trigger.

@@ -83,6 +83,7 @@ internal object SettingsNav {
             Triple("mcp", t("settings.tab.mcp"), "/env-setup/mcp"),
             Triple("claude-md", t("settings.tab.claudeMd"), "/settings/claude-md"),
             Triple("skills", t("settings.tab.skills"), "/settings/skills"),
+            Triple("plugins", t("settings.tab.plugins"), "/settings/plugins"),
             Triple("prompts", t("settings.tab.prompts"), "/prompts"),
             Triple("backup", t("settings.tab.backup"), "/backup"),
             Triple("monitoring", t("settings.tab.monitoring"), "/usage"),
@@ -113,6 +114,7 @@ internal object SettingsNav {
             p == "/env-setup/mcp" || p.startsWith("/env-setup/mcp") -> "mcp"
             p == "/settings/claude-md" -> "claude-md"
             p.startsWith("/settings/skills") -> "skills"
+            p.startsWith("/settings/plugins") -> "plugins"
             p.startsWith("/env-setup") -> "build-env"
             p == "/settings/git-integrations" -> "build-env"
             p == "/settings/cache" -> "build-env"
