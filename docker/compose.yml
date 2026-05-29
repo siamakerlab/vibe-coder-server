@@ -102,6 +102,8 @@ services:
       VIBECODER_LOG_DIR: ${VIBECODER_LOG_DIR:-/data/logs}
 
     # LAN 페어링 / admin 웹 / API 모두 같은 포트
+    # v1.40.0 — 무선 ADB(/adb) 자동 탐지(mDNS)가 필요하면 compose.host.yml 오버레이로
+    #   HOST 네트워크 사용: docker compose -f compose.yml -f compose.host.yml up -d
     ports:
       - "${VIBE_PORT:-17880}:17880"
 

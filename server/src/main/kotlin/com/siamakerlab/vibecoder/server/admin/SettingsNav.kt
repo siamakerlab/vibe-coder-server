@@ -41,6 +41,7 @@ internal object SettingsNav {
             p.startsWith("/chat") -> "chat"
             p == "/tools" || p.startsWith("/tools/") -> "tools"
             p.startsWith("/multi-console") -> "tools"
+            p == "/adb" || p.startsWith("/adb/") -> "tools"
             p == "/logs" || p.startsWith("/logs/") -> "tools"
             p.startsWith("/code-search") -> "tools"
             p == "/history" || p.startsWith("/history/") -> "tools"

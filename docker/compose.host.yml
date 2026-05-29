@@ -1,0 +1,31 @@
+name: vibe-coder-host
+
+# ──────────────────────────────────────────────────────────────────────────
+# v1.40.0 — HOST 네트워크 변형.
+#
+# 무선 ADB(`/adb` 기기 로그)의 **자동 탐지(mDNS)** 는 멀티캐스트라 기본 bridge
+# 컨테이너에선 동작하지 않는다. 컨테이너를 호스트 네트워크 스택에 붙이면 같은
+# 공유기의 폰을 자동 탐지/연결할 수 있다. (수동 IP:포트 연결은 bridge 에서도 됨.)
+#
+# 적용:
+#   docker compose -f compose.yml -f compose.host.yml up -d --force-recreate
+#
+# 주의:
+#   - **Linux 전용** (Docker Desktop macOS/Windows 의 host 모드는 동작 방식이 다름).
+#   - host 모드에선 `ports:` 매핑이 무시되고 서버가 호스트 17880 에 직접 바인드.
+#     (리버스 프록시는 그대로 localhost:17880 로 forward.)
+#   - host 모드는 docker DNS(service 이름 `postgres`)를 못 쓰므로 DB host 를
+#     127.0.0.1 로 바꾸고, postgres 를 호스트 루프백 5432 에 노출한다.
+#   - 공유기의 AP isolation(기기 간 격리)이 켜져 있으면 폰↔서버가 막힌다(off 필요).
+# ──────────────────────────────────────────────────────────────────────────
+services:
+  vibe-coder-server:
+    network_mode: host
+    environment:
+      # host 네트워크 → service 이름 미해결. 루프백으로 postgres 접근.
+      VIBECODER_DB_HOST: "127.0.0.1"
+
+  postgres:
+    # host 네트워크의 서버가 127.0.0.1:5432 로 닿도록 루프백에만 노출.
+    ports:
+      - "127.0.0.1:5432:5432"

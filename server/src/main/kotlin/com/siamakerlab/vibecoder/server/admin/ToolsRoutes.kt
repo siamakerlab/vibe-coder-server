@@ -47,6 +47,7 @@ fun Routing.toolsRoutes(authDeps: AdminRoutesDeps) {
 
 <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px">
   ${toolCard("Multi-console", t("tools.card.multiConsole.desc"), "/multi-console", "📺")}
+  ${toolCard(t("tools.card.adb.title"), t("tools.card.adb.desc"), "/adb", "📱")}
   ${toolCard(t("tools.card.codeSearch.title"), t("tools.card.codeSearch.desc"), "/code-search", "🔎")}
   ${toolCard(t("tools.card.buildLogs.title"), t("tools.card.buildLogs.desc"), "/logs", "📜")}
   ${toolCard(t("tools.card.history.title"), t("tools.card.history.desc"), "/history", "💬")}

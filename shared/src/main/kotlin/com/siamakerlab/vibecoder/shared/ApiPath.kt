@@ -40,6 +40,10 @@ object ApiPath {
     fun terminalSession(id: String) = "/api/terminal/sessions/$id"
     fun wsTerminal(id: String) = "/ws/terminal/$id"
 
+    // v1.40.0 — 무선 ADB 기기 로그(logcat). admin 전용. server-internal (Android client 미사용).
+    const val ADB_STATUS = "/api/adb/status"
+    const val WS_ADB_LOGCAT = "/ws/adb/logcat"
+
     // Projects
     const val PROJECTS = "/api/projects"
     const val PROJECTS_REGISTER = "/api/projects/register"

@@ -388,6 +388,8 @@ fun main(args: Array<String>) {
     val terminalManager = com.siamakerlab.vibecoder.server.terminal.TerminalSessionManager(
         workspaceRoot = workspaceRoot.toString(),
     )
+    // v1.40.0 — 무선 ADB 기기 logcat (admin). adb 없으면 기능 페이지가 안내.
+    val adbService = com.siamakerlab.vibecoder.server.device.AdbService()
     val diskMonitor = com.siamakerlab.vibecoder.server.disk.DiskMonitor(
         rootProvider = { workspace.root },
         notifiers = notifiers,
@@ -476,6 +478,7 @@ fun main(args: Array<String>) {
         globalClaudeMd = globalClaudeMd,
         plugins = pluginService,
         terminalManager = terminalManager,
+        adb = adbService,
     )
 
     Runtime.getRuntime().addShutdownHook(Thread {

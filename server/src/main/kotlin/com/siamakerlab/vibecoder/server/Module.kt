@@ -35,6 +35,7 @@ import com.siamakerlab.vibecoder.server.admin.skillRoutes
 import com.siamakerlab.vibecoder.server.admin.pluginRoutes
 import com.siamakerlab.vibecoder.server.projects.projectSkillRoutes
 import com.siamakerlab.vibecoder.server.projects.projectPluginRoutes
+import com.siamakerlab.vibecoder.server.device.adbRoutes
 import com.siamakerlab.vibecoder.server.admin.webProjectRoutes
 import com.siamakerlab.vibecoder.server.artifacts.ArtifactService
 import com.siamakerlab.vibecoder.server.artifacts.artifactRoutes
@@ -249,6 +250,8 @@ data class ServerContext(
      * `ApplicationStopping` 후크로 graceful 종료.
      */
     val terminalManager: TerminalSessionManager,
+    /** v1.40.0 — 무선 ADB 기기 logcat (admin). */
+    val adb: com.siamakerlab.vibecoder.server.device.AdbService,
 )
 
 fun Application.module(ctx: ServerContext) {
@@ -391,6 +394,7 @@ fun Application.module(ctx: ServerContext) {
         // 에서 hoist + ApplicationStopping 후크로 graceful 종료. admin role 가드 +
         // owner-only ACL + idle reaper + per-user 한도 (자세히 TerminalSessionManager).
         terminalRoutes(adminDeps, ctx.terminalManager, ctx.deviceRepo, ctx.tokens, ctx.adminUserRepo)
+        adbRoutes(adminDeps, ctx.adb, ctx.deviceRepo, ctx.adminUserRepo)
         // v0.10.0 — admin SSR 라우트들의 JSON API 이중 노출 (vibe-coder-android wire)
         envSetupApiRoutes(
             envSetup = ctx.envSetup,

@@ -178,6 +178,9 @@ object AdminTemplates {
   </div>
   <!-- v1.3.2 — 전역 Claude 쿼타 pill. v1.6.2 — header 에 refresh 버튼 + 타임존 제거. -->
   <div id="quota-pill" class="quota-pill" hidden></div>
+  <!-- v1.40.0 — 무선 ADB 연결 기기 뱃지. 연결 0대면 hidden. 클릭 시 /adb. -->
+  <a id="adb-badge" href="/adb" title="ADB" hidden
+     style="display:flex;align-items:center;gap:6px;margin:4px 10px 0;padding:4px 8px;border-radius:6px;background:rgba(105,219,124,0.12);color:var(--ok);font-size:12px;text-decoration:none">📱 <span id="adb-badge-n">0</span></a>
   <div class="user-box">
     $userBoxHtml
     <form method="post" action="/logout">
@@ -255,6 +258,23 @@ object AdminTemplates {
   }
   tick();
   setInterval(tick, 60000);
+
+  // v1.40.0 — ADB 연결 기기 뱃지 폴링.
+  var adbEl = document.getElementById('adb-badge');
+  var adbN = document.getElementById('adb-badge-n');
+  if (adbEl && adbN) {
+    function adbTick() {
+      fetch('/api/adb/status', { credentials: 'same-origin' })
+        .then(function(r){ return r.ok ? r.json() : null; })
+        .then(function(s){
+          if (s && s.connected > 0) { adbN.textContent = s.connected; adbEl.hidden = false; }
+          else { adbEl.hidden = true; }
+        })
+        .catch(function(){ adbEl.hidden = true; });
+    }
+    adbTick();
+    setInterval(adbTick, 30000);
+  }
 })();
 </script>
 """

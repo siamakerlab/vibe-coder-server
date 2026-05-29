@@ -20,6 +20,7 @@ internal object ToolsTabsTemplate {
     private val TABS = listOf(
         Tab("tools",         "tools.tab.overview",   "/tools",         "ttab-tools"),
         Tab("multiConsole",  "tools.tab.multi",      "/multi-console", "ttab-multi"),
+        Tab("adb",           "tools.tab.adb",        "/adb",           "ttab-adb"),
         Tab("codeSearch",    "tools.tab.codeSearch", "/code-search",   "ttab-code-search"),
         Tab("logs",          "tools.tab.logs",       "/logs",          "ttab-logs"),
         Tab("history",       "tools.tab.history",    "/history",       "ttab-history"),
