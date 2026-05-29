@@ -104,8 +104,15 @@ class GradleBuilder(private val config: ServerConfig) {
                 .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                 .redirectError(ProcessBuilder.Redirect.DISCARD)
                 .start()
-            if (!p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) p.destroyForcibly()
-            p.exitValue() == 0
+            // v1.44.0 — waitFor 성공(=종료됨)일 때만 exitValue() 호출. timeout 분기는
+            // destroyForcibly 후 false — destroyForcibly() 는 즉시 종료를 보장 안 해
+            // 직후 exitValue() 가 IllegalThreadStateException 을 던질 수 있어 분리.
+            if (p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) {
+                p.exitValue() == 0
+            } else {
+                p.destroyForcibly()
+                false
+            }
         } catch (_: Throwable) { false }
         if (!probe) {
             logger.info("system gradle 미설치 → wrapper bootstrap 불가")

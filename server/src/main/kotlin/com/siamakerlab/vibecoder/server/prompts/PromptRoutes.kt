@@ -2,6 +2,7 @@ package com.siamakerlab.vibecoder.server.prompts
 
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
+import com.siamakerlab.vibecoder.server.admin.requireWriteAccessOrRedirect
 import com.siamakerlab.vibecoder.server.auth.AUTH_BEARER
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens.requireCsrf
 import com.siamakerlab.vibecoder.server.error.ApiException
@@ -49,6 +50,7 @@ fun Routing.promptRoutes(
 
     post("/prompts") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireWriteAccessOrRedirect(sess)) return@post // v1.44.0 — viewer 차단(prompt 템플릿은 workspace 전역)
         val params = requireCsrf()
         try {
             val t = store.create(
@@ -65,6 +67,7 @@ fun Routing.promptRoutes(
 
     post("/prompts/{id}/update") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireWriteAccessOrRedirect(sess)) return@post // v1.44.0 — viewer 차단
         val params = requireCsrf()
         val id = call.parameters["id"]!!
         try {
@@ -83,6 +86,7 @@ fun Routing.promptRoutes(
 
     post("/prompts/{id}/delete") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireWriteAccessOrRedirect(sess)) return@post // v1.44.0 — viewer 차단
         requireCsrf()
         val id = call.parameters["id"]!!
         val removed = store.delete(id)

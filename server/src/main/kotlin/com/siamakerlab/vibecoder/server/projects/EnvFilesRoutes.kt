@@ -65,7 +65,9 @@ fun Routing.envFilesRoutes(authDeps: AdminRoutesDeps, projects: ProjectService, 
             call.respondRedirect("/projects/$id/env-files?err=${enc("invalid file: $rel")}")
             return@post
         }
-        if (body.length > MAX_BODY_BYTES) {
+        // v1.44.0 — char/byte 혼동 회수: String.length(UTF-16 char) 가 아니라 UTF-8 byte 로 검증.
+        // (동종 핸들러 ProjectFileBrowser.write / AgentRegistry / SkillRegistry 와 정렬.)
+        if (body.toByteArray(Charsets.UTF_8).size > MAX_BODY_BYTES) {
             call.respondRedirect("/projects/$id/env-files?err=${enc("file too large (max $MAX_BODY_BYTES bytes)")}")
             return@post
         }

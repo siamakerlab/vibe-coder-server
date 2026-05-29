@@ -488,7 +488,13 @@ class McpService(
             Charsets.UTF_8,
             StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
         )
-        Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING)
+        // v1.44.0 — 메서드명("Atomic")과 동작 일치: ATOMIC_MOVE + 미지원 FS fallback
+        // (ConfigPersistence gold-standard 패턴과 정렬).
+        try {
+            Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+        } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
+            Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING)
+        }
     }
 
     private fun mcpJsonPath(): Path = claudeConfigDir().resolve(".mcp.json")
