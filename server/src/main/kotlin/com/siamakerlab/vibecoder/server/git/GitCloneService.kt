@@ -103,7 +103,9 @@ class GitCloneService(
         toScan.forEach { host ->
             runCatching {
                 val cmd = listOf("ssh-keyscan", "-T", "5", host)
-                val proc = ProcessBuilder(cmd).redirectErrorStream(false).start()
+                // v1.43.0 — stderr DISCARD. ssh-keyscan 진단은 stderr 로 나가는데 미배수 시
+                // (stdout 만 readText) 파이프 포화로 데드락 가능. 호스트키는 stdout 이므로 merge 대신 버림.
+                val proc = ProcessBuilder(cmd).redirectError(ProcessBuilder.Redirect.DISCARD).start()
                 val out = proc.inputStream.bufferedReader().readText()
                 if (proc.waitFor(8, TimeUnit.SECONDS) && proc.exitValue() == 0 && out.isNotBlank()) {
                     Files.writeString(knownHostsFile, out,

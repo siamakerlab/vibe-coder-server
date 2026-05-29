@@ -76,8 +76,10 @@ class McpService(
     fun globalMcpJsonPath(): Path = mcpJsonPath()
 
     /**
-     * v1.37.0 — 도커 **첫 설치(first-run)** 시 기본 MCP(fetch/memory/sequential-thinking)를
-     * 자동 등록. 영속 볼륨(`~/.claude`)에 marker 파일을 두어 **딱 한 번만** 수행한다.
+     * v1.37.0 — 도커 **첫 설치(first-run)** 시 기본 MCP 를 자동 등록. 영속 볼륨(`~/.claude`)에
+     * marker 파일을 두어 **딱 한 번만** 수행한다. 기본 대상은 [McpCatalog.defaultInstallIds]
+     * 가 단일 출처 — v1.40.2 기준 fetch/memory/sequential-thinking/context7/playwright 5개
+     * (모두 zero-config: 인증/필수 configField 없음).
      *
      * - marker 존재(= 이미지 업데이트 등 재부팅) → no-op. **사용자 선택 절대 변경 안 함.**
      * - 기존 `.mcp.json` 에 server 가 이미 있으면(구버전에서 업그레이드) → 등록 skip + marker 만

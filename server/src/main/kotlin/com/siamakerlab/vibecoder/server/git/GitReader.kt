@@ -46,7 +46,12 @@ class GitReader {
     }
 
     private fun run(source: Path, cmd: List<String>): String {
-        val pb = ProcessBuilder(cmd).directory(source.toFile()).redirectErrorStream(false)
+        // v1.43.0 — stderr 를 DISCARD 로 버린다. 이전엔 redirectErrorStream(false) 인데
+        // stdout 만 readText 로 EOF 까지 읽고 stderr 는 배수하지 않아, git 이 stderr 로
+        // 64KB 이상 출력하면 파이프 버퍼 포화 → 상호 데드락(waitFor 도달 불가, 좀비+스레드 누수).
+        // stderr 를 merge 하면 status/log/diff 파싱이 오염되므로 merge 대신 DISCARD.
+        val pb = ProcessBuilder(cmd).directory(source.toFile())
+            .redirectError(ProcessBuilder.Redirect.DISCARD)
         val p = pb.start()
         val out = p.inputStream.bufferedReader(Charsets.UTF_8).readText()
         if (!p.waitFor(15, TimeUnit.SECONDS)) {

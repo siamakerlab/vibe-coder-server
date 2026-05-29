@@ -96,7 +96,14 @@ class GradleBuilder(private val config: ServerConfig) {
     private suspend fun bootstrapWrapper(source: Path, logger: TaskLogger): Boolean {
         // 1. system gradle 가용 여부
         val probe = try {
-            val p = ProcessBuilder("gradle", "--version").redirectErrorStream(true).start()
+            // v1.43.0 — 출력은 불필요(종료코드만). 이전엔 redirectErrorStream(true) 인데
+            // 합쳐진 출력을 읽지 않아 `gradle --version` 의 수십 줄이 파이프를 채우면 자식이
+            // write 에서 block → 매번 5초 timeout + destroyForcibly 로 gradle 설치본을 "미설치"
+            // 오판 가능. stdout/stderr 모두 DISCARD 로 파이프 포화 자체를 제거.
+            val p = ProcessBuilder("gradle", "--version")
+                .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                .redirectError(ProcessBuilder.Redirect.DISCARD)
+                .start()
             if (!p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) p.destroyForcibly()
             p.exitValue() == 0
         } catch (_: Throwable) { false }

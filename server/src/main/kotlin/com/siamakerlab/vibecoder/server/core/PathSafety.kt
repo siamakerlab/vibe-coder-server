@@ -40,6 +40,35 @@ object PathSafety {
     }
 
     /**
+     * v1.43.0 — 22차 정밀점검 회수: symlink escape 방어.
+     *
+     * [normalizeAndCheck] 는 **어휘적(lexical)** 검증만 한다(`toRealPath` 미수행). 따라서
+     * 워크스페이스 안에 워크스페이스 **밖**을 가리키는 디렉토리 symlink(`<root>/evil -> /etc`)
+     * 가 있으면 `evil/passwd` 가 lexical 로는 root 안이라 통과하지만 실제로는 `/etc/passwd`
+     * 를 읽게 된다. (Claude 자식 프로세스 / 신뢰불가 git clone 이 그런 symlink 를 심을 수 있음.)
+     *
+     * 이 함수는 [target] 의 **실제 경로**(symlink 해석)가 여전히 [root] 안인지 확인한다.
+     * 미존재 경로(신규 파일 생성)는 가장 가까운 존재 조상으로 검사한다. root **내부**를 가리키는
+     * symlink(gradle 캐시 등)는 그대로 허용된다(real path 가 root 안이므로).
+     *
+     * 호출 전 [normalizeAndCheck] 로 lexical 검증을 끝낸 [target] 에 대해 사용한다.
+     *
+     * @throws ApiException("path_traversal") real path 가 root 밖이면.
+     */
+    fun assertRealInside(root: Path, target: Path) {
+        val realRoot = runCatching { root.toRealPath() }.getOrElse { root.toAbsolutePath().normalize() }
+        // 존재하는 가장 가까운 조상까지 거슬러 올라간다(신규 파일 대응).
+        var probe: Path? = target.toAbsolutePath().normalize()
+        while (probe != null && probe.notExists()) probe = probe.parent
+        if (probe == null) return // 존재 조상 없음(비정상) — lexical 검증에 위임
+        val real = runCatching { probe.toRealPath() }.getOrElse { probe.toAbsolutePath().normalize() }
+        if (!real.startsWith(realRoot)) {
+            throw ApiException.localized(403, "path_traversal",
+                messageKey = "api.pathSafety.escapeWorkspace", args = listOf(target.fileName?.toString() ?: ""))
+        }
+    }
+
+    /**
      * Test whether [candidate] sits underneath [root] (both pre-normalized acceptable).
      */
     fun isInside(root: Path, candidate: Path): Boolean {

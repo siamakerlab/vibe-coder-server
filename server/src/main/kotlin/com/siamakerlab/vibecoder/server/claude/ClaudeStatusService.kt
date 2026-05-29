@@ -173,7 +173,10 @@ class ClaudeStatusService(
         if (!java.nio.file.Files.exists(java.nio.file.Path.of(expectBin))) return ""
         val projectRoot = workspace.projectRoot(projectId).toFile()
         val workDir = if (projectRoot.isDirectory) projectRoot.toString() else workspace.root.toString()
-        val pb = ProcessBuilder(expectBin, "-f", scriptPath, workDir).redirectErrorStream(false)
+        // v1.43.0 — stdout(usage capture 결과)은 읽고 stderr 는 DISCARD. 이전엔 stderr 미배수로
+        // expect 진단 출력이 파이프를 채우면 readText 데드락 가능(25초 상한이 있으나 매번 timeout).
+        val pb = ProcessBuilder(expectBin, "-f", scriptPath, workDir)
+            .redirectError(ProcessBuilder.Redirect.DISCARD)
         com.siamakerlab.vibecoder.server.env.ClaudeProcessEnv.applyApiKey(pb.environment())
         return runCatching {
             val proc = pb.start()

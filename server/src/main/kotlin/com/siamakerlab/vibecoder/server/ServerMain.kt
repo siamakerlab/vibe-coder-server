@@ -190,11 +190,17 @@ fun main(args: Array<String>) {
     val sessionManager = ClaudeSessionManager(config, workspace, hub, history = conversationHistory)
     // v1.1.0 — ProjectDto.busy 필드를 위해 sessionManager 를 lambda 로 주입.
     // 구성 순서: sessionManager 가 먼저 생성되어야 lambda 가 안전하게 호출 가능.
+    // v0.33.0 — Cron 빌드 schedule + webhook secret. v1.43.0 — ProjectService 삭제 cascade
+    // 정리에 필요해 생성 순서를 ProjectService 앞으로 이동.
+    val buildScheduleRepo = com.siamakerlab.vibecoder.server.repo.BuildScheduleRepository(clock)
+    val buildWebhookSecretRepo = com.siamakerlab.vibecoder.server.repo.BuildWebhookSecretRepository(clock)
     val projects = ProjectService(
         workspace, projectRepo, buildRepo, keystoreGen, gitClone,
         artifactRepo = artifactRepo, uploadedFileRepo = uploadedRepo,
         conversationRepo = conversationRepo,
         projectAclRepo = projectAclRepo,
+        buildScheduleRepo = buildScheduleRepo,
+        buildWebhookSecretRepo = buildWebhookSecretRepo,
         isBusyOf = sessionManager::isBusy,
     )
     // v1.7.2 — SCRATCH 프로젝트 (__scratch__) 를 server startup 시 자동 ensure.
@@ -287,9 +293,7 @@ fun main(args: Array<String>) {
     val promptSuggestionService = com.siamakerlab.vibecoder.server.claude.PromptSuggestionService()
     // v0.32.0 — Gradle 의존성 audit.
     val dependencyAudit = com.siamakerlab.vibecoder.server.build.DependencyAudit(workspace)
-    // v0.33.0 — Cron 빌드 schedule + webhook secret + conversation archive.
-    val buildScheduleRepo = com.siamakerlab.vibecoder.server.repo.BuildScheduleRepository(clock)
-    val buildWebhookSecretRepo = com.siamakerlab.vibecoder.server.repo.BuildWebhookSecretRepository(clock)
+    // v0.33.0 — Cron 빌드 scheduler (buildScheduleRepo/buildWebhookSecretRepo 는 위에서 생성).
     val buildScheduler = com.siamakerlab.vibecoder.server.build.BuildScheduler(buildScheduleRepo, build, hub)
     buildScheduler.start()
     val conversationArchiver = com.siamakerlab.vibecoder.server.claude.ConversationArchiver(workspace)

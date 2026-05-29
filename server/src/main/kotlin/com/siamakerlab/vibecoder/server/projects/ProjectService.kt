@@ -11,6 +11,7 @@ import com.siamakerlab.vibecoder.server.repo.UploadedFileRepository
 import com.siamakerlab.vibecoder.shared.dto.ProjectDto
 import com.siamakerlab.vibecoder.shared.dto.RegisterProjectRequestDto
 import io.github.oshai.kotlinlogging.KotlinLogging
+import org.jetbrains.exposed.sql.transactions.transaction
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
@@ -41,6 +42,13 @@ class ProjectService(
      * 운영 환경에선 항상 주입.
      */
     private val projectAclRepo: com.siamakerlab.vibecoder.server.repo.ProjectAclRepository? = null,
+    /**
+     * v1.43.0 — 프로젝트 삭제 시 FK cascade 정리. BuildSchedules/BuildWebhookSecrets 가
+     * Projects.id 를 참조(onDelete CASCADE 미설정)하므로 명시적 정리 없으면 repo.delete 가
+     * FK violation 으로 실패. 테스트에선 null 허용(자식 row 없는 환경).
+     */
+    private val buildScheduleRepo: com.siamakerlab.vibecoder.server.repo.BuildScheduleRepository? = null,
+    private val buildWebhookSecretRepo: com.siamakerlab.vibecoder.server.repo.BuildWebhookSecretRepository? = null,
     /**
      * v1.1.0 — `ClaudeSessionManager.isBusy(projectId)` 콜백. ProjectDto.busy 필드 채움.
      * Construction-order 문제 회피 위해 lambda. null 이면 항상 false (테스트 / dev 환경).
@@ -336,17 +344,27 @@ class ProjectService(
      *
      * v0.12.4 — PostgreSQL foreign_keys 가 cascade 정리 필수.
      * v0.16.0 — conversation_turns 도 같이 정리.
+     * v1.43.0 — (1) BuildSchedules/BuildWebhookSecrets/ProjectAcls 정리 누락 회수
+     *   (이전엔 해당 row 가 있으면 repo.delete 가 FK violation 으로 실패).
+     *   (2) 전체를 단일 transaction 으로 묶어 원자성 확보 (부분 실패 시 데이터 유실 방지).
+     *   Exposed 의 중첩 transaction 은 같은 스레드의 바깥 transaction 을 재사용한다.
      */
     fun delete(id: String): Boolean {
         // v0.13.0 — scratch ghost 프로젝트는 삭제 거부.
         if (id == SCRATCH_ID) {
             throw ApiException.localized(403, "scratch_protected", messageKey = "api.project.scratchProtected")
         }
-        conversationRepo?.deleteForProject(id)
-        uploadedFileRepo?.deleteForProject(id)
-        artifactRepo?.deleteForProject(id)
-        buildRepo.deleteForProject(id)
-        return repo.delete(id) > 0
+        return transaction {
+            // 자식(참조) 테이블을 부모(projects) 보다 먼저 정리.
+            conversationRepo?.deleteForProject(id)
+            uploadedFileRepo?.deleteForProject(id)
+            artifactRepo?.deleteForProject(id)
+            buildScheduleRepo?.deleteForProject(id)
+            buildWebhookSecretRepo?.deleteForProject(id)
+            projectAclRepo?.deleteAllForProject(id)
+            buildRepo.deleteForProject(id)
+            repo.delete(id) > 0
+        }
     }
 
     private fun buildProjectYml(

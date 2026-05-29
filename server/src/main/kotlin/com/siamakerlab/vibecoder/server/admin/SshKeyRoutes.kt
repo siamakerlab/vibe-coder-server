@@ -1,5 +1,7 @@
 package com.siamakerlab.vibecoder.server.admin
 
+import com.siamakerlab.vibecoder.server.auth.AUTH_BEARER
+import com.siamakerlab.vibecoder.server.auth.requireApiAdmin
 import com.siamakerlab.vibecoder.server.i18n.Messages
 import com.siamakerlab.vibecoder.shared.ApiPath
 import com.siamakerlab.vibecoder.shared.dto.SshKeyDto
@@ -7,6 +9,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
+import io.ktor.server.auth.authenticate
 import io.ktor.server.request.receiveParameters
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondRedirect
@@ -57,22 +60,29 @@ fun Routing.sshKeyRoutes(authDeps: AdminRoutesDeps, sshKey: SshKeyService) {
     }
 
     // ── JSON API ────────────────────────────────────────────────────────
-    get(ApiPath.SERVER_SSH_KEY) {
-        val snap = sshKey.snapshot()
-        if (snap == null) {
-            call.respond(HttpStatusCode.NotFound, mapOf("error" to "ssh_key_not_found"))
-            return@get
-        }
-        call.respond(snap.toDto())
-    }
-
-    post(ApiPath.SERVER_SSH_KEY_REGENERATE) {
-        try {
-            val snap = sshKey.regenerate()
+    // v1.43.0 — 22차 정밀점검 회수: 두 endpoint 가 무인증이었음(외부에서 POST 한 번으로
+    // deploy key 재생성 → git remote 연동 무력화 DoS 가능). Bearer 인증 + admin 강제.
+    // SSR 짝(/settings/ssh-key/*)은 cookie session + admin + CSRF 적용 — 비대칭 해소.
+    authenticate(AUTH_BEARER) {
+        get(ApiPath.SERVER_SSH_KEY) {
+            call.requireApiAdmin()
+            val snap = sshKey.snapshot()
+            if (snap == null) {
+                call.respond(HttpStatusCode.NotFound, mapOf("error" to "ssh_key_not_found"))
+                return@get
+            }
             call.respond(snap.toDto())
-        } catch (e: Exception) {
-            log.warn(e) { "SSH key regenerate failed via API" }
-            call.respond(HttpStatusCode.InternalServerError, mapOf("error" to (e.message ?: "regenerate_failed")))
+        }
+
+        post(ApiPath.SERVER_SSH_KEY_REGENERATE) {
+            call.requireApiAdmin()
+            try {
+                val snap = sshKey.regenerate()
+                call.respond(snap.toDto())
+            } catch (e: Exception) {
+                log.warn(e) { "SSH key regenerate failed via API" }
+                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to (e.message ?: "regenerate_failed")))
+            }
         }
     }
 }

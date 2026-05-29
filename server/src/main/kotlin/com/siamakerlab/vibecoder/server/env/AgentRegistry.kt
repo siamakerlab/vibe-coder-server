@@ -67,17 +67,20 @@ class AgentRegistry(
      */
     fun write(name: String, body: String) {
         val safe = sanitize(name) ?: throw IllegalArgumentException("invalid agent name (use [A-Za-z0-9._-]{1,64})")
-        val cleanBody = body.take(MAX_BODY_BYTES)
-        if (cleanBody.length > MAX_BODY_BYTES) {
+        // v1.43.0 — 22차 정밀점검 회수: char/byte 혼동 + 무효 분기. 이전엔 take(MAX_BODY_BYTES)
+        // 로 char 기준 자른 뒤 length 검사라 검증이 항상 false(무truncation) + 멀티바이트
+        // 본문은 실제 UTF-8 byte 가 한도 초과 가능. UTF-8 byte 기준 검증, 자르지 않고 거부.
+        val bytes = body.toByteArray(Charsets.UTF_8)
+        if (bytes.size > MAX_BODY_BYTES) {
             throw IllegalArgumentException("body too large (max $MAX_BODY_BYTES bytes)")
         }
         val dir = rootProvider()
         if (dir.notExists()) Files.createDirectories(dir)
         val target = dir.resolve("$safe.md")
         val tmp = dir.resolve("$safe.md.tmp")
-        Files.writeString(tmp, cleanBody)
+        Files.writeString(tmp, body)
         Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-        log.info { "agent saved: $safe (${cleanBody.length}B)" }
+        log.info { "agent saved: $safe (${bytes.size}B)" }
     }
 
     fun delete(name: String): Boolean {

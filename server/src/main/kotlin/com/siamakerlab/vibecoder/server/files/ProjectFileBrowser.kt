@@ -55,6 +55,7 @@ class ProjectFileBrowser(
             throw ApiException.localized(404, "project_root_not_found", messageKey = "api.fileBrowser.projectRootNotFound")
         }
         val target = if (subPath.isBlank()) projectRoot else PathSafety.normalizeAndCheck(projectRoot, subPath)
+        PathSafety.assertRealInside(projectRoot, target) // v1.43.0 — 중간 디렉토리 symlink escape 차단
         if (!Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
             throw ApiException.localized(404, "path_not_found", messageKey = "api.fileBrowser.pathNotFound", args = listOf(subPath))
         }
@@ -90,6 +91,7 @@ class ProjectFileBrowser(
             throw ApiException.localized(400, "empty_path", messageKey = "api.fileBrowser.emptyPath")
         }
         val target = PathSafety.normalizeAndCheck(projectRoot, relPath)
+        PathSafety.assertRealInside(projectRoot, target) // v1.43.0 — 중간 디렉토리 symlink escape 차단
         if (!Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
             throw ApiException.localized(404, "file_not_found", messageKey = "api.fileBrowser.fileNotFound", args = listOf(relPath))
         }
@@ -284,6 +286,7 @@ class ProjectFileBrowser(
         // 부모 디렉토리 검증.
         val parent = if (parentRelPath.isBlank()) projectRoot
             else PathSafety.normalizeAndCheck(projectRoot, parentRelPath)
+        PathSafety.assertRealInside(projectRoot, parent) // v1.43.0 — 중간 디렉토리 symlink escape 차단
         if (!Files.exists(parent) || !parent.isDirectory()) {
             throw ApiException.localized(400, "parent_missing",
                 messageKey = "api.fileBrowser.parentMissing", args = listOf(parentRelPath))
@@ -291,6 +294,7 @@ class ProjectFileBrowser(
         // 합쳐서 target.
         val targetRel = (if (parentRelPath.isBlank()) fileName else "$parentRelPath/$fileName")
         val target = PathSafety.normalizeAndCheck(projectRoot, targetRel)
+        PathSafety.assertRealInside(projectRoot, target) // v1.43.0 — 동상
         if (Files.isSymbolicLink(target)) {
             throw ApiException.localized(403, "symlink_blocked", messageKey = "api.fileBrowser.symlinkBlockedEdit")
         }
@@ -332,6 +336,7 @@ class ProjectFileBrowser(
             throw ApiException.localized(404, "project_root_not_found", messageKey = "api.fileBrowser.projectRootNotFound")
         }
         val target = PathSafety.normalizeAndCheck(projectRoot, relPath)
+        PathSafety.assertRealInside(projectRoot, target) // v1.43.0 — 중간 디렉토리 symlink escape 차단
         return projectRoot to target
     }
 
@@ -473,6 +478,7 @@ class ProjectFileBrowser(
             throw ApiException.localized(404, "project_root_not_found", messageKey = "api.fileBrowser.projectRootNotFound")
         }
         val target = PathSafety.normalizeAndCheck(projectRoot, relPath)
+        PathSafety.assertRealInside(projectRoot, target) // v1.43.0 — 중간 디렉토리 symlink escape 차단
         if (!Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
             throw ApiException.localized(404, "file_not_found", messageKey = "api.fileBrowser.fileNotFound", args = listOf(relPath))
         }

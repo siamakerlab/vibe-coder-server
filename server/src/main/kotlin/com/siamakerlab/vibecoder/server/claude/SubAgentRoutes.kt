@@ -298,6 +298,13 @@ private suspend fun io.ktor.server.routing.RoutingContext.authorizeAgentJson(
             call.respond(HttpStatusCode.Forbidden, "project_forbidden")
             return null
         }
+        // v1.43.0 — 22차 정밀점검 회수: Bearer 분기가 requireWrite 를 무시해 viewer 토큰으로
+        // 콘솔 prompt/cancel/new 같은 mutation 이 통과되던 권한 상승. cookie 분기
+        // (requireWriteAccessOrRedirect) 와 정렬 — viewer 는 403.
+        if (requireWrite && userId != null && authDeps.userRepo.findById(userId)?.canWrite != true) {
+            call.respond(HttpStatusCode.Forbidden, "viewer_readonly")
+            return null
+        }
         return AgentJsonAuth(userId = userId, isAdmin = userId == null)
     }
 

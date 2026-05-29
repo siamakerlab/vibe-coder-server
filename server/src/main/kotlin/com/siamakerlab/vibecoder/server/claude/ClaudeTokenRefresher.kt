@@ -122,9 +122,13 @@ class ClaudeTokenRefresher(
     private fun triggerRefresh(): Boolean {
         val cmd = listOf(resolveClaudeCmd(), "--print", "--output-format", "json", "ok")
         return try {
+            // v1.43.0 — 출력 불필요(refresh 성공 여부는 종료코드). 이전엔 merge 출력을
+            // 읽지 않아 응답 JSON 이 파이프 버퍼 초과 시 자식 block → 매번 timeout 실패 가능.
+            // stdout/stderr DISCARD 로 파이프 포화 제거.
             val pb = ProcessBuilder(cmd)
                 .directory(cwd.toFile())
-                .redirectErrorStream(true)
+                .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                .redirectError(ProcessBuilder.Redirect.DISCARD)
             val process = pb.start()
             val finished = process.waitFor(REFRESH_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             if (!finished) {

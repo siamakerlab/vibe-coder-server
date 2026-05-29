@@ -238,6 +238,7 @@ fun Routing.envSetupApiRoutes(
 
         // ── Git 통합 ────────────────────────────────────────────
         get(ApiPath.GIT_INTEGRATIONS) {
+            call.requireApiAdmin() // v1.43.0 — 같은 라우터의 mutation 들과 정렬(admin 전용 메타데이터).
             val tokens = credentials.list().map {
                 GitTokenViewDto(it.provider, it.host, it.username, it.tokenMasked, it.createdAt, it.note)
             }
