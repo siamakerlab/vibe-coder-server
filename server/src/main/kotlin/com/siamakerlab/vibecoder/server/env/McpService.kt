@@ -75,6 +75,43 @@ class McpService(
     /** v1.35.0 — 전역 `.mcp.json` 경로 (UI 표시용). */
     fun globalMcpJsonPath(): Path = mcpJsonPath()
 
+    /**
+     * v1.37.0 — 도커 **첫 설치(first-run)** 시 기본 MCP(fetch/memory/sequential-thinking)를
+     * 자동 등록. 영속 볼륨(`~/.claude`)에 marker 파일을 두어 **딱 한 번만** 수행한다.
+     *
+     * - marker 존재(= 이미지 업데이트 등 재부팅) → no-op. **사용자 선택 절대 변경 안 함.**
+     * - 기존 `.mcp.json` 에 server 가 이미 있으면(구버전에서 업그레이드) → 등록 skip + marker 만
+     *   기록(사용자 선택 보존).
+     * - 진짜 fresh(볼륨 비어있음) → 기본 MCP 를 `.mcp.json` 에 등록 + marker.
+     *
+     * npm install 은 하지 않는다 — argsTemplate 이 `npx -y <pkg>` 라 Claude 가 첫 사용 시
+     * 자동 fetch. 따라서 부팅 시 네트워크 의존/실패 위험 없음(파일 쓰기만).
+     */
+    fun bootstrapDefaultsIfFirstRun() {
+        val marker = claudeConfigDir().resolve(".vibecoder-mcp-bootstrapped")
+        if (Files.exists(marker)) return
+        try {
+            val current = readMcpJson()
+            val existing = current?.get("mcpServers") as? JsonObject
+            if (existing != null && existing.isNotEmpty()) {
+                log.info { "MCP bootstrap: 기존 .mcp.json server ${existing.keys} 존재 → 자동 등록 skip (사용자 선택 보존)" }
+            } else {
+                var obj: JsonObject = current ?: buildJsonObject { put("mcpServers", buildJsonObject {}) }
+                val ids = McpCatalog.defaultInstallIds
+                for (id in ids) {
+                    val entry = McpCatalog.get(id) ?: continue
+                    obj = registerInMcpJson(obj, entry, emptyMap())
+                }
+                writeMcpJsonAtomic(mcpJsonPath(), obj)
+                log.info { "MCP bootstrap (first-run): 기본 MCP 등록 $ids → ${mcpJsonPath()}" }
+            }
+            Files.createDirectories(marker.parent)
+            Files.writeString(marker, clock.nowIso())
+        } catch (e: Throwable) {
+            log.warn(e) { "MCP 기본 부트스트랩 실패 (무시 — 카탈로그에서 수동 설치 가능)" }
+        }
+    }
+
     fun detect(id: String): EntryState {
         val e = McpCatalog.get(id) ?: return EntryState(id, Status.UNKNOWN, "카탈로그에 없음")
         val installed = isPackageInstalled(e.pkg)

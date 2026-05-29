@@ -855,6 +855,8 @@ internal object MessagesKo {
         "mcp.entry.installed" to "✓ 설치됨",
         "mcp.entry.registeredOnly" to "△ 등록만",
         "mcp.entry.recommendedTitle" to "추천",
+        "mcp.entry.default" to "기본",
+        "mcp.entry.defaultTitle" to "무인증·무설정 기본 설치 대상 — 도커 첫 설치 시 자동 등록되며 카탈로그에서도 기본 선택됩니다.",
         "mcp.entry.docsLink" to "↗ 문서",
         "mcp.entry.comingSoon" to "⏳ 준비중",
         "mcp.entry.comingSoonTitle" to "브라우저 OAuth 콜백이 필수라 현재 환경에서 미지원",

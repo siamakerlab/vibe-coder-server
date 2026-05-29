@@ -241,6 +241,9 @@ fun main(args: Array<String>) {
     // v1.35.0 — 전역 CLAUDE.md (user-memory `~/.claude/CLAUDE.md`, 모든 프로젝트 공통 적용).
     val globalClaudeMd = com.siamakerlab.vibecoder.server.env.GlobalClaudeMdService()
     val mcp = McpService(clock, queue, hub)
+    // v1.37.0 — 도커 첫 설치 시 기본 MCP(fetch/memory/sequential-thinking) 자동 등록.
+    // marker 기반 first-run only — 이미지 업데이트(재부팅) 시 사용자 선택 변경 안 함.
+    mcp.bootstrapDefaultsIfFirstRun()
     val status = StatusService(config, projectRepo, buildRepo, env)
     val actionRegistry = ProjectActionRegistry(workspace)
     val actionHandler = ServerActionHandler(projects, build, git, hub, sessionManager)

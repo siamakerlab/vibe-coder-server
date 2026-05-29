@@ -65,6 +65,12 @@ object McpCatalog {
         val category: Category,
         val trust: Trust,
         val recommended: Boolean = false,
+        /**
+         * v1.37.0 — 무인증·무설정(zero-config)이라 설치 즉시 사용 가능한 "기본 설치 대상".
+         * MCP 카탈로그에서 체크박스가 기본 선택되어, 사용자가 [설치] 한 번이면 바로 적용.
+         * fetch / memory / sequential-thinking 처럼 API 키·필수 config 가 없는 항목만 true.
+         */
+        val defaultInstall: Boolean = false,
         val homepage: String? = null,
         val configFields: List<ConfigField> = emptyList(),
         /** Claude 의 .mcp.json 에 들어가는 args (env 는 별도). 기본은 `npx -y <pkg>` 패턴. */
@@ -101,7 +107,7 @@ object McpCatalog {
             displayName = "Fetch",
             pkg = "@modelcontextprotocol/server-fetch",
             description = "URL 페치 + Markdown 변환. 외부 자료 참조에 필수.",
-            category = Category.DEV_TOOLS, trust = Trust.VERIFIED, recommended = true,
+            category = Category.DEV_TOOLS, trust = Trust.VERIFIED, recommended = true, defaultInstall = true,
             homepage = "https://github.com/modelcontextprotocol/servers/tree/main/src/fetch",
         ))
         add(McpEntry(
@@ -122,14 +128,14 @@ object McpCatalog {
             displayName = "Memory",
             pkg = "@modelcontextprotocol/server-memory",
             description = "세션 간 지식 그래프 저장 (entities/relations). 장기 컨텍스트 보조.",
-            category = Category.AI_ASSIST, trust = Trust.VERIFIED, recommended = true,
+            category = Category.AI_ASSIST, trust = Trust.VERIFIED, recommended = true, defaultInstall = true,
         ))
         add(McpEntry(
             id = "sequentialthinking",
             displayName = "Sequential Thinking",
             pkg = "@modelcontextprotocol/server-sequential-thinking",
             description = "복잡한 문제를 단계별로 분해해 추론. 어려운 알고리즘 작업에 도움.",
-            category = Category.AI_ASSIST, trust = Trust.VERIFIED,
+            category = Category.AI_ASSIST, trust = Trust.VERIFIED, recommended = true, defaultInstall = true,
         ))
         add(McpEntry(
             id = "time",
@@ -747,6 +753,9 @@ object McpCatalog {
 
     /** 추천 MCP 만 — 첫 사용자 onboarding 시 "추천 묶음 한번에 설치" 옵션. */
     val recommendedIds: List<String> = all.filter { it.recommended }.map { it.id }
+
+    /** v1.37.0 — zero-config 기본 설치 대상 (fetch / memory / sequential-thinking). 카탈로그 기본 선택. */
+    val defaultInstallIds: List<String> = all.filter { it.defaultInstall }.map { it.id }
 
     /** 카탈로그 크기 보고용. */
     val size: Int = all.size

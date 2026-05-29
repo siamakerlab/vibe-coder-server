@@ -878,6 +878,8 @@ internal object MessagesEn {
         "mcp.entry.installed" to "✓ Installed",
         "mcp.entry.registeredOnly" to "△ Registered only",
         "mcp.entry.recommendedTitle" to "Recommended",
+        "mcp.entry.default" to "default",
+        "mcp.entry.defaultTitle" to "Zero-config default — auto-registered on first Docker install and pre-selected in the catalog.",
         "mcp.entry.docsLink" to "↗ Docs",
         "mcp.entry.comingSoon" to "⏳ Coming soon",
         "mcp.entry.comingSoonTitle" to "Requires a browser OAuth callback — not supported in the current environment",

@@ -296,8 +296,11 @@ JSON</pre>
 
     private fun renderEntry(entry: McpCatalog.McpEntry, state: McpService.EntryState?, csrf: String?, lang: String): String {
         val t = { key: String -> Messages.t(lang, key) }
+        // v1.37.0 — 이미 설치/등록됐거나, zero-config 기본 설치 대상(fetch/memory/seq)이면
+        // 기본 선택 → 미설치 상태에서도 [설치] 한 번이면 바로 적용.
         val checked = state?.status == McpService.Status.INSTALLED ||
-                      state?.status == McpService.Status.REGISTERED_ONLY
+                      state?.status == McpService.Status.REGISTERED_ONLY ||
+                      (entry.defaultInstall && !entry.comingSoon)
         val recClass = if (entry.recommended) "recommended" else ""
         val (badgeCls, badgeText) = when (entry.trust) {
             McpCatalog.Trust.VERIFIED -> "ok" to "VERIFIED"
@@ -311,6 +314,7 @@ JSON</pre>
             else -> ""
         }
         val starHtml = if (entry.recommended) """<span title="${esc(t("mcp.entry.recommendedTitle"))}" style="color:#ffd700">★</span>""" else ""
+        val defaultBadge = if (entry.defaultInstall) """ <span class="ok" style="font-size:10px;padding:1px 6px;border-radius:3px;border:1px solid var(--ok)" title="${esc(t("mcp.entry.defaultTitle"))}">${esc(t("mcp.entry.default"))}</span>""" else ""
         val configHtml = if (entry.comingSoon) "" else renderConfigFields(entry, state?.configValues.orEmpty(), lang)
         val homepageLink = entry.homepage?.let {
             """<a href="${esc(it)}" target="_blank" rel="noreferrer" class="dim" style="font-size:11px">${esc(t("mcp.entry.docsLink"))}</a>"""
@@ -333,7 +337,7 @@ JSON</pre>
            style="margin-top:4px;width:18px;height:18px;flex-shrink:0">
     <div style="flex:1;min-width:0">
       <div style="display:flex;justify-content:space-between;gap:6px;align-items:start;flex-wrap:wrap">
-        <strong style="font-size:14px">$starHtml ${esc(entry.displayName)}</strong>
+        <strong style="font-size:14px">$starHtml ${esc(entry.displayName)}</strong>$defaultBadge
         <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
           <span class="$badgeCls" style="font-size:10px;padding:2px 6px;border-radius:3px">${esc(badgeText)}</span>
           $comingSoonChip
