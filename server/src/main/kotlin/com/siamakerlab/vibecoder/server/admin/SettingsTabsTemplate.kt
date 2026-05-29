@@ -34,6 +34,7 @@ internal object SettingsTabsTemplate {
         Tab("buildEnv",      "settings.tab.buildEnv",      "/env-setup",                "stab-buildenv"),
         Tab("mcp",           "settings.tab.mcp",           "/env-setup/mcp",            "stab-mcp"),
         Tab("claudeMd",      "settings.tab.claudeMd",      "/settings/claude-md",       "stab-claude-md"),
+        Tab("skills",        "settings.tab.skills",        "/settings/skills",          "stab-skills"),
         Tab("prompts",       "settings.tab.prompts",       "/prompts",                  "stab-prompts"),
         Tab("backup",        "settings.tab.backup",        "/backup",                   "stab-backup"),
         Tab("monitoring",    "settings.tab.monitoring",    "/usage",                    "stab-monitoring"),

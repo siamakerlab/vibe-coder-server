@@ -82,6 +82,7 @@ internal object SettingsNav {
             Triple("build-env", t("settings.tab.buildEnv"), "/env-setup"),
             Triple("mcp", t("settings.tab.mcp"), "/env-setup/mcp"),
             Triple("claude-md", t("settings.tab.claudeMd"), "/settings/claude-md"),
+            Triple("skills", t("settings.tab.skills"), "/settings/skills"),
             Triple("prompts", t("settings.tab.prompts"), "/prompts"),
             Triple("backup", t("settings.tab.backup"), "/backup"),
             Triple("monitoring", t("settings.tab.monitoring"), "/usage"),
@@ -111,6 +112,7 @@ internal object SettingsNav {
             // /env-setup prefix 보다 먼저 매칭해야 build-env 가 아닌 mcp 탭으로 간다.
             p == "/env-setup/mcp" || p.startsWith("/env-setup/mcp") -> "mcp"
             p == "/settings/claude-md" -> "claude-md"
+            p.startsWith("/settings/skills") -> "skills"
             p.startsWith("/env-setup") -> "build-env"
             p == "/settings/git-integrations" -> "build-env"
             p == "/settings/cache" -> "build-env"

@@ -65,6 +65,16 @@ class McpService(
 
     fun detectAll(): List<EntryState> = McpCatalog.all.map { detect(it.id) }
 
+    /**
+     * v1.35.0 — 전역 `.mcp.json` 의 `mcpServers` 에 실제 등록된 **모든** server 이름.
+     * 카탈로그 항목 + 터미널/Claude 가 직접 추가한 비-카탈로그 server 도 포함(감지용).
+     */
+    fun registeredServerNames(): List<String> =
+        (readMcpJson()?.get("mcpServers") as? JsonObject)?.keys?.sorted().orEmpty()
+
+    /** v1.35.0 — 전역 `.mcp.json` 경로 (UI 표시용). */
+    fun globalMcpJsonPath(): Path = mcpJsonPath()
+
     fun detect(id: String): EntryState {
         val e = McpCatalog.get(id) ?: return EntryState(id, Status.UNKNOWN, "카탈로그에 없음")
         val installed = isPackageInstalled(e.pkg)

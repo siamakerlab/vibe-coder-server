@@ -43,6 +43,8 @@ object McpTemplates {
         flash: String?,
         csrf: String? = null,
         lang: String,
+        /** v1.35.0 — 카탈로그에 없지만 .mcp.json 에 등록된 server (터미널/Claude 직접 추가) — 감지 표시용. */
+        detectedCustom: List<String> = emptyList(),
     ): String {
         val t = { key: String -> Messages.t(lang, key) }
         val total = McpCatalog.size
@@ -50,6 +52,12 @@ object McpTemplates {
         val installedCount = states.values.count { it.status == McpService.Status.INSTALLED }
 
         val flashHtml = flashBlurb(flash, lang)
+        val detectedHtml = if (detectedCustom.isEmpty()) "" else """
+<div class="card" style="margin-bottom:16px;border-color:var(--warn)">
+  <h2 style="margin:0 0 4px;font-size:15px">${esc(t("mcp.detected.title"))} (${detectedCustom.size})</h2>
+  <p class="dim" style="font-size:12px;margin:0 0 10px">${esc(t("mcp.detected.hint"))}</p>
+  <div style="display:flex;flex-wrap:wrap;gap:6px">${detectedCustom.joinToString(" ") { """<span class="chip">${esc(it)}</span>""" }}</div>
+</div>"""
         val categoriesHtml = McpCatalog.byCategory.entries.joinToString("\n") { (cat, list) ->
             renderCategory(cat, list, states, csrf, lang)
         }
@@ -84,6 +92,7 @@ object McpTemplates {
 </header>
 
 $flashHtml
+$detectedHtml
 
 <div class="card" style="margin-bottom:16px">
   <h2 style="margin-top:0">${esc(t("mcp.howto.title"))}</h2>

@@ -16,6 +16,8 @@ import com.siamakerlab.vibecoder.server.build.dependencyAuditRoutes
 import com.siamakerlab.vibecoder.server.projects.codeAnalysisRoutes
 import com.siamakerlab.vibecoder.server.projects.envFilesRoutes
 import com.siamakerlab.vibecoder.server.projects.projectClaudeMdRoutes
+import com.siamakerlab.vibecoder.server.projects.projectAgentRoutes
+import com.siamakerlab.vibecoder.server.projects.projectMcpRoutes
 import com.siamakerlab.vibecoder.server.admin.twoFactorRoutes
 import com.siamakerlab.vibecoder.server.admin.corsSettingsRoutes
 import com.siamakerlab.vibecoder.server.admin.SshKeyService
@@ -29,6 +31,8 @@ import com.siamakerlab.vibecoder.server.admin.envSetupRoutes
 import com.siamakerlab.vibecoder.server.admin.gitIntegrationsRoutes
 import com.siamakerlab.vibecoder.server.admin.mcpRoutes
 import com.siamakerlab.vibecoder.server.admin.globalClaudeMdRoutes
+import com.siamakerlab.vibecoder.server.admin.skillRoutes
+import com.siamakerlab.vibecoder.server.projects.projectSkillRoutes
 import com.siamakerlab.vibecoder.server.admin.webProjectRoutes
 import com.siamakerlab.vibecoder.server.artifacts.ArtifactService
 import com.siamakerlab.vibecoder.server.artifacts.artifactRoutes
@@ -360,12 +364,17 @@ fun Application.module(ctx: ServerContext) {
             webauthnService = ctx.webauthnService,
             gitConfig = ctx.gitConfig,
         )
+        // v1.35.0 — 전역 스킬 레지스트리 (~/.claude/skills). 전역 탭 + 프로젝트 탭 공용.
+        val globalSkillRegistry = com.siamakerlab.vibecoder.server.env.SkillRegistry(
+            com.siamakerlab.vibecoder.server.env.SkillRegistry.Companion::globalRoot,
+        )
         adminRoutes(adminDeps)
         // v0.26.0 — 2FA SSR routes.
         twoFactorRoutes(adminDeps, ctx.adminUserRepo)
         envSetupRoutes(adminDeps, ctx.envSetup, ctx.claudeAuth, ctx.claudeLogin, ctx.gitConfig)
         mcpRoutes(adminDeps, ctx.mcp)
         globalClaudeMdRoutes(adminDeps, ctx.globalClaudeMd)
+        skillRoutes(adminDeps, globalSkillRegistry)
         gitIntegrationsRoutes(adminDeps, ctx.gitCredentials, ctx.gitClone, ctx.clock)
         corsSettingsRoutes(adminDeps)
         // v1.2.0 — SSH key 관리 (자동 발급은 entrypoint, 본 routes 는 열람 + 재생성).
@@ -435,6 +444,9 @@ fun Application.module(ctx: ServerContext) {
         // v0.32.0 — Env files + 의존성 audit + 로그 검색.
         envFilesRoutes(adminDeps, ctx.projects, ctx.workspace)
         projectClaudeMdRoutes(adminDeps, ctx.projects, ctx.workspace)
+        projectAgentRoutes(adminDeps, ctx.projects, ctx.workspace, ctx.agentRegistry)
+        projectMcpRoutes(adminDeps, ctx.projects, ctx.workspace, ctx.mcp)
+        projectSkillRoutes(adminDeps, ctx.projects, ctx.workspace, globalSkillRegistry)
         dependencyAuditRoutes(adminDeps, ctx.projects, ctx.dependencyAudit)
         logSearchRoutes(adminDeps, ctx.logSearchService)
         // v0.33.0 — Cron 빌드 + webhook trigger.

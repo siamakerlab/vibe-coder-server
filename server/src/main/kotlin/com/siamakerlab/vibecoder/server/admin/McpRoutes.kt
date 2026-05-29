@@ -42,8 +42,11 @@ fun Routing.mcpRoutes(
         if (!requireAdminOrRedirect(sess)) return@get
         val states = mcp.detectAll().associateBy { it.id }
         val flash = call.request.queryParameters["flash"]
+        // v1.35.0 — 카탈로그 외(터미널/Claude 가 직접 .mcp.json 에 추가) server 감지.
+        val detectedCustom = runCatching { mcp.registeredServerNames() }.getOrElse { emptyList() }
+            .filter { com.siamakerlab.vibecoder.server.env.McpCatalog.get(it) == null }
         call.respondText(
-            McpTemplates.catalogPage(sess.username, states, flash, csrf = sess.csrf, lang = sess.language),
+            McpTemplates.catalogPage(sess.username, states, flash, csrf = sess.csrf, lang = sess.language, detectedCustom = detectedCustom),
             ContentType.Text.Html,
         )
     }

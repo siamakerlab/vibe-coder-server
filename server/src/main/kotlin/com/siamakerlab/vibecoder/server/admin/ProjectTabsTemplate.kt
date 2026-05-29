@@ -64,6 +64,9 @@ internal object ProjectTabsTemplate {
         Tab("automation", "tabs.automation", "/automation", "tab-automation"),
         Tab("envFiles", "tabs.envFiles", "/env-files", "tab-env-files"),
         Tab("claudeMd", "tabs.claudeMd", "/claude-md", "tab-claude-md"),
+        Tab("agentDefs", "tabs.agentDefs", "/agent-defs", "tab-agent-defs"),
+        Tab("mcpProject", "tabs.mcpProject", "/mcp", "tab-mcp-project"),
+        Tab("skills", "tabs.skills", "/skills", "tab-skills"),
     )
     private val TABS = PRIMARY_TABS + OVERFLOW_TABS
 
