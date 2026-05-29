@@ -67,7 +67,9 @@ object McpTemplates {
         return AdminTemplates.shell(
             title = t("mcp.title"),
             username = username,
-            currentPath = "/env-setup",
+            // v1.34.6 — MCP 를 build-env 에서 별도 탭으로 분리. currentPath 를 /env-setup/mcp
+            // 로 넘겨 settings 탭바에서 build-env 대신 MCP 탭이 active 가 되게 한다.
+            currentPath = "/env-setup/mcp",
             csrf = csrf,
             lang = lang,
             body = """

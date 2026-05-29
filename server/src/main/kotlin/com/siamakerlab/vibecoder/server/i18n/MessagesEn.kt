@@ -97,6 +97,7 @@ internal object MessagesEn {
         "settings.tab.backup" to "Backup",
         "settings.tab.users" to "Users",
         "settings.tab.buildEnv" to "Build environment",
+        "settings.tab.mcp" to "MCP",
         "settings.tab.prompts" to "Prompts & Agents",
         "settings.tab.monitoring" to "Monitoring",
         // v1.31.3 — 카테고리 sub-nav chip 라벨 (대표 페이지 + audit). 나머지는 기존

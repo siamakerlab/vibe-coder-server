@@ -44,7 +44,10 @@ object EnvSetupTemplates {
         // preserved → git → grid(JDK/Git/Node 가 맨 앞) 순이라 정작 중요한 Claude 인증/Android SDK
         // 가 한참 아래에 묻혔다. 이제 ① 핵심(설치/인증 필요, 우선순위순) → ② Git → ③ 이미지 내장
         // (접힘, 문제 있을 때만 자동 펼침) → ④ 관련 설정 링크 → ⑤ 안내·데이터보존(접힘) 순.
+        // v1.34.6 — MCP 카탈로그는 별도 settings 탭(/env-setup/mcp)으로 분리. 빌드환경
+        // 페이지의 컴포넌트 grid·quick-link 에선 제외(install-all/진단에는 그대로 포함).
         val ordered = states.sortedBy { priorityRank(it.component) }
+            .filterNot { it.component == SetupComponent.MCP_DEFAULTS }
         val (coreStates, builtinStates) = ordered.partition { it.component.doctorCmd != null }
         val coreCards = coreStates.joinToString("\n") { renderCard(it, csrf, lang) }
         val builtinCards = builtinStates.joinToString("\n") { renderCard(it, csrf, lang) }
@@ -99,7 +102,6 @@ $gitCard
     <a href="/settings/ssh-key" class="chip chip-link">${esc(t("env.subsettings.sshKey"))}</a>
     <a href="/settings/cache" class="chip chip-link">${esc(t("env.subsettings.cache"))}</a>
     <a href="/settings/git-integrations" class="chip chip-link">${esc(t("env.subsettings.gitIntegrations"))}</a>
-    <a href="/env-setup/mcp" class="chip chip-link">${esc(t("env.subsettings.mcp"))}</a>
   </div>
 </div>
 

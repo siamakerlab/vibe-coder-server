@@ -75,6 +75,7 @@ internal object MessagesKo {
         "settings.tab.backup" to "백업",
         "settings.tab.users" to "사용자",
         "settings.tab.buildEnv" to "빌드 환경",
+        "settings.tab.mcp" to "MCP",
         "settings.tab.prompts" to "프롬프트 & 에이전트",
         "settings.tab.monitoring" to "모니터링",
         // v1.31.3 — 카테고리 sub-nav chip 라벨 (대표 페이지 + audit).
