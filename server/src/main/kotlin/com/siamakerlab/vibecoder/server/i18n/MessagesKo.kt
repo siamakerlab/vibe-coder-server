@@ -76,6 +76,18 @@ internal object MessagesKo {
         "settings.tab.users" to "사용자",
         "settings.tab.buildEnv" to "빌드 환경",
         "settings.tab.mcp" to "MCP",
+        "settings.tab.claudeMd" to "CLAUDE.md",
+        // v1.35.0 — CLAUDE.md 편집기 (전역/프로젝트 공용)
+        "claudeMd.global.title" to "전역 CLAUDE.md",
+        "claudeMd.global.intro" to "모든 프로젝트의 Claude 세션에 공통 적용되는 전역 규칙(user-memory)입니다. 프로젝트별 CLAUDE.md 와 병합되어 Claude 가 매 세션 첫머리에 읽습니다. 코딩 컨벤션·응답 언어·금지사항 등 전 프로젝트 공통 지침을 여기에.",
+        "claudeMd.project.title" to "프로젝트 CLAUDE.md",
+        "claudeMd.project.intro" to "이 프로젝트에만 적용되는 규칙입니다. 전역 CLAUDE.md 위에 병합되어 프로젝트 특화 지침(패키지명·아키텍처·도메인 용어 등)을 추가합니다. 비워두면 전역 규칙만 적용됩니다.",
+        "claudeMd.save" to "저장",
+        "claudeMd.saveHint" to "Ctrl/Cmd+S 로도 저장",
+        "claudeMd.pathLabel" to "경로",
+        "claudeMd.empty" to "(파일 없음 — 저장 시 생성됨)",
+        "claudeMd.tooLarge" to "파일이 너무 큽니다 (최대 256KB).",
+        "claudeMd.flash.saved" to "CLAUDE.md 가 저장되었습니다.",
         "settings.tab.prompts" to "프롬프트 & 에이전트",
         "settings.tab.monitoring" to "모니터링",
         // v1.31.3 — 카테고리 sub-nav chip 라벨 (대표 페이지 + audit).
@@ -1473,6 +1485,7 @@ internal object MessagesKo {
         "tabs.wrapper" to "Wrapper",
         "tabs.automation" to "자동화",
         "tabs.envFiles" to "환경 파일",
+        "tabs.claudeMd" to "CLAUDE.md",
         "tabs.more.label" to "더보기",
         // v1.12.0 — /projects/X/usage 는 없음 (global /usage 만 존재). 외부 link 로만.
         "tabs.more.usage" to "Claude 사용량 (글로벌)",

@@ -26,13 +26,14 @@ internal object SettingsTabsTemplate {
         val frameName: String,
     )
 
-    // SettingsNav.tabBar 의 9개 카테고리와 1:1. (v1.34.6 — MCP 별도 탭 분리)
+    // SettingsNav.tabBar 의 10개 카테고리와 1:1. (v1.34.6 MCP 분리 + v1.35.0 CLAUDE.md 분리)
     private val TABS = listOf(
         Tab("general",       "settings.tab.general",       "/settings",                 "stab-general"),
         Tab("security",      "settings.tab.security",      "/password",                 "stab-security"),
         Tab("notifications", "settings.tab.notifications", "/settings/email",           "stab-notifications"),
         Tab("buildEnv",      "settings.tab.buildEnv",      "/env-setup",                "stab-buildenv"),
         Tab("mcp",           "settings.tab.mcp",           "/env-setup/mcp",            "stab-mcp"),
+        Tab("claudeMd",      "settings.tab.claudeMd",      "/settings/claude-md",       "stab-claude-md"),
         Tab("prompts",       "settings.tab.prompts",       "/prompts",                  "stab-prompts"),
         Tab("backup",        "settings.tab.backup",        "/backup",                   "stab-backup"),
         Tab("monitoring",    "settings.tab.monitoring",    "/usage",                    "stab-monitoring"),

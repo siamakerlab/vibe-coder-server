@@ -15,6 +15,7 @@ import com.siamakerlab.vibecoder.server.build.buildCacheRoutes
 import com.siamakerlab.vibecoder.server.build.dependencyAuditRoutes
 import com.siamakerlab.vibecoder.server.projects.codeAnalysisRoutes
 import com.siamakerlab.vibecoder.server.projects.envFilesRoutes
+import com.siamakerlab.vibecoder.server.projects.projectClaudeMdRoutes
 import com.siamakerlab.vibecoder.server.admin.twoFactorRoutes
 import com.siamakerlab.vibecoder.server.admin.corsSettingsRoutes
 import com.siamakerlab.vibecoder.server.admin.SshKeyService
@@ -27,6 +28,7 @@ import com.siamakerlab.vibecoder.server.terminal.TerminalSessionManager
 import com.siamakerlab.vibecoder.server.admin.envSetupRoutes
 import com.siamakerlab.vibecoder.server.admin.gitIntegrationsRoutes
 import com.siamakerlab.vibecoder.server.admin.mcpRoutes
+import com.siamakerlab.vibecoder.server.admin.globalClaudeMdRoutes
 import com.siamakerlab.vibecoder.server.admin.webProjectRoutes
 import com.siamakerlab.vibecoder.server.artifacts.ArtifactService
 import com.siamakerlab.vibecoder.server.artifacts.artifactRoutes
@@ -234,6 +236,8 @@ data class ServerContext(
      * GIT_CONFIG_GLOBAL=/home/vibe/.config/git/config 파일을 통해 영속화.
      */
     val gitConfig: com.siamakerlab.vibecoder.server.env.GitConfigService,
+    /** v1.35.0 — 전역 CLAUDE.md (user-memory, 모든 프로젝트 공통). /settings/claude-md 탭. */
+    val globalClaudeMd: com.siamakerlab.vibecoder.server.env.GlobalClaudeMdService,
     /**
      * v1.27.0 — Workspace bash PTY 등록부. 사이드바 글로벌 `/terminal` 메뉴 +
      * `/ws/terminal/{id}` WebSocket 가 공유. lifecycle 은 [ServerMain] 에서
@@ -361,6 +365,7 @@ fun Application.module(ctx: ServerContext) {
         twoFactorRoutes(adminDeps, ctx.adminUserRepo)
         envSetupRoutes(adminDeps, ctx.envSetup, ctx.claudeAuth, ctx.claudeLogin, ctx.gitConfig)
         mcpRoutes(adminDeps, ctx.mcp)
+        globalClaudeMdRoutes(adminDeps, ctx.globalClaudeMd)
         gitIntegrationsRoutes(adminDeps, ctx.gitCredentials, ctx.gitClone, ctx.clock)
         corsSettingsRoutes(adminDeps)
         // v1.2.0 — SSH key 관리 (자동 발급은 entrypoint, 본 routes 는 열람 + 재생성).
@@ -429,6 +434,7 @@ fun Application.module(ctx: ServerContext) {
         agentRoutes(adminDeps, ctx.agentRegistry)
         // v0.32.0 — Env files + 의존성 audit + 로그 검색.
         envFilesRoutes(adminDeps, ctx.projects, ctx.workspace)
+        projectClaudeMdRoutes(adminDeps, ctx.projects, ctx.workspace)
         dependencyAuditRoutes(adminDeps, ctx.projects, ctx.dependencyAudit)
         logSearchRoutes(adminDeps, ctx.logSearchService)
         // v0.33.0 — Cron 빌드 + webhook trigger.

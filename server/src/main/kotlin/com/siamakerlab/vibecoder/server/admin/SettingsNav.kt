@@ -81,6 +81,7 @@ internal object SettingsNav {
             Triple("notifications", t("settings.tab.notifications"), "/settings/email"),
             Triple("build-env", t("settings.tab.buildEnv"), "/env-setup"),
             Triple("mcp", t("settings.tab.mcp"), "/env-setup/mcp"),
+            Triple("claude-md", t("settings.tab.claudeMd"), "/settings/claude-md"),
             Triple("prompts", t("settings.tab.prompts"), "/prompts"),
             Triple("backup", t("settings.tab.backup"), "/backup"),
             Triple("monitoring", t("settings.tab.monitoring"), "/usage"),
@@ -109,6 +110,7 @@ internal object SettingsNav {
             // v1.34.6 — MCP 카탈로그를 build-env 에서 별도 탭으로 분리. /env-setup/mcp 는
             // /env-setup prefix 보다 먼저 매칭해야 build-env 가 아닌 mcp 탭으로 간다.
             p == "/env-setup/mcp" || p.startsWith("/env-setup/mcp") -> "mcp"
+            p == "/settings/claude-md" -> "claude-md"
             p.startsWith("/env-setup") -> "build-env"
             p == "/settings/git-integrations" -> "build-env"
             p == "/settings/cache" -> "build-env"

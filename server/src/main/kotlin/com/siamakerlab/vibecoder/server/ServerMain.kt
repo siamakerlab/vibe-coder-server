@@ -238,6 +238,8 @@ fun main(args: Array<String>) {
     // (clone / commit / log) 가 GIT_CONFIG_GLOBAL=/home/vibe/.config/git/config 를
     // 자동 인식. 본 service 는 그 파일을 `git config --global` CLI 로 read/write.
     val gitConfig = com.siamakerlab.vibecoder.server.env.GitConfigService()
+    // v1.35.0 — 전역 CLAUDE.md (user-memory `~/.claude/CLAUDE.md`, 모든 프로젝트 공통 적용).
+    val globalClaudeMd = com.siamakerlab.vibecoder.server.env.GlobalClaudeMdService()
     val mcp = McpService(clock, queue, hub)
     val status = StatusService(config, projectRepo, buildRepo, env)
     val actionRegistry = ProjectActionRegistry(workspace)
@@ -468,6 +470,7 @@ fun main(args: Array<String>) {
         kotlinLspService = kotlinLspService,
         keystoreService = keystoreService,
         gitConfig = gitConfig,
+        globalClaudeMd = globalClaudeMd,
         terminalManager = terminalManager,
     )
 

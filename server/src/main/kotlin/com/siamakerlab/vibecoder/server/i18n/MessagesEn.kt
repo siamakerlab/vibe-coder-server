@@ -98,6 +98,18 @@ internal object MessagesEn {
         "settings.tab.users" to "Users",
         "settings.tab.buildEnv" to "Build environment",
         "settings.tab.mcp" to "MCP",
+        "settings.tab.claudeMd" to "CLAUDE.md",
+        // v1.35.0 — CLAUDE.md editor (global / project)
+        "claudeMd.global.title" to "Global CLAUDE.md",
+        "claudeMd.global.intro" to "Global rules (user-memory) applied to Claude sessions across every project. Merged with each project's CLAUDE.md and read by Claude at the start of every session. Put cross-project guidance here — coding conventions, response language, hard rules.",
+        "claudeMd.project.title" to "Project CLAUDE.md",
+        "claudeMd.project.intro" to "Rules that apply only to this project. Merged on top of the global CLAUDE.md to add project-specific guidance (package name, architecture, domain terms). Leave empty to use the global rules only.",
+        "claudeMd.save" to "Save",
+        "claudeMd.saveHint" to "Ctrl/Cmd+S also saves",
+        "claudeMd.pathLabel" to "Path",
+        "claudeMd.empty" to "(no file — created on save)",
+        "claudeMd.tooLarge" to "File too large (max 256KB).",
+        "claudeMd.flash.saved" to "CLAUDE.md saved.",
         "settings.tab.prompts" to "Prompts & Agents",
         "settings.tab.monitoring" to "Monitoring",
         // v1.31.3 — 카테고리 sub-nav chip 라벨 (대표 페이지 + audit). 나머지는 기존
@@ -1497,6 +1509,7 @@ internal object MessagesEn {
         "tabs.wrapper" to "Wrapper",
         "tabs.automation" to "Automation",
         "tabs.envFiles" to "Env files",
+        "tabs.claudeMd" to "CLAUDE.md",
         "tabs.more.label" to "More",
         // v1.12.0 — /projects/X/usage doesn't exist (only the global /usage). Keep as external link.
         "tabs.more.usage" to "Claude usage (global)",
