@@ -1,10 +1,17 @@
 package com.siamakerlab.vibecoder.server.ws
 
 import com.siamakerlab.vibecoder.shared.ws.WsFrame
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import java.util.ArrayDeque
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
@@ -31,21 +38,55 @@ class LogHub(
     // region Legacy task/build streams
 
     private val legacyTopics = ConcurrentHashMap<String, MutableSharedFlow<WsFrame>>()
+    // v1.34.2 (20차 BUG-2) — 레거시 토픽(build/task/mcp/env-setup id 별)은 한 번 만들면
+    // computeIfAbsent 로 영구 잔존했고 close() 호출자가 0건이라 서버 수명 동안 단조 증가
+    // (토픽당 replay 64 frame retain). publisher 호출마다 활동 시각을 기록하고, idle
+    // reaper 가 구독자 0 + IDLE 초과 토픽만 정리 — 진행 중 빌드(구독자>0)는 안전 보존.
+    private val legacyLastActivity = ConcurrentHashMap<String, Long>()
+    private val reaperScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    fun publisher(topic: String): MutableSharedFlow<WsFrame> =
-        legacyTopics.computeIfAbsent(topic) {
+    init {
+        reaperScope.launch {
+            while (isActive) {
+                delay(LEGACY_REAP_INTERVAL_MS)
+                runCatching { reapIdleLegacyTopics() }
+            }
+        }
+    }
+
+    fun publisher(topic: String): MutableSharedFlow<WsFrame> {
+        legacyLastActivity[topic] = System.currentTimeMillis()
+        return legacyTopics.computeIfAbsent(topic) {
             MutableSharedFlow(
                 replay = 64,
                 extraBufferCapacity = 256,
                 onBufferOverflow = BufferOverflow.DROP_OLDEST,
             )
         }
+    }
 
     fun subscribe(topic: String): SharedFlow<WsFrame> = publisher(topic).asSharedFlow()
 
     fun close(topic: String) {
         legacyTopics.remove(topic)
+        legacyLastActivity.remove(topic)
         consoleTopics.remove(topic)
+    }
+
+    private fun reapIdleLegacyTopics() {
+        val now = System.currentTimeMillis()
+        legacyTopics.forEach { (topic, flow) ->
+            val idleMs = now - (legacyLastActivity[topic] ?: now)
+            if (idleMs > LEGACY_IDLE_TIMEOUT_MS && flow.subscriptionCount.value == 0) {
+                legacyTopics.remove(topic)
+                legacyLastActivity.remove(topic)
+            }
+        }
+    }
+
+    /** v1.34.2 — JVM shutdown hook 에서 reaper coroutine 정리. */
+    fun shutdown() {
+        reaperScope.cancel()
     }
 
     // endregion
@@ -72,8 +113,14 @@ class LogHub(
     )
 
     private data class ConsoleTopic(
+        // v1.34.2 (20차 BUG-1) — replay 0 → CONSOLE_PUBLISHER_REPLAY. subscribeConsole 의
+        // ring snapshot 과 view.live.collect 구독 등록 사이 microsecond gap 에 emit 된
+        // frame 이 replay=0 이라 영구 유실되던 race 완화. publisher replay 버퍼가 그
+        // 직전 frame 들을 보유해 collect 시작 시 전달 → gap 복구. 핸들러의 기존 dedup
+        // (`sf.seq <= since` + `view.replay.any{ it.seq==sf.seq }`)이 ring-replay 와의
+        // 중복을 완전 제거하므로 중복 전송 없음.
         val publisher: MutableSharedFlow<SeqFrame> = MutableSharedFlow(
-            replay = 0,
+            replay = CONSOLE_PUBLISHER_REPLAY,
             extraBufferCapacity = 256,
             onBufferOverflow = BufferOverflow.DROP_OLDEST,
         ),
@@ -128,6 +175,15 @@ class LogHub(
 
     companion object {
         const val DEFAULT_RING_CAPACITY = 200
+
+        // v1.34.2 (20차 BUG-1) — console publisher replay 버퍼 깊이. snapshot~collect
+        // gap 복구용. 32 면 일반 재연결 race window 를 충분히 덮음(중복은 핸들러 dedup).
+        const val CONSOLE_PUBLISHER_REPLAY = 32
+
+        // v1.34.2 (20차 BUG-2) — 레거시 토픽 idle 정리 주기/임계. 구독자 0 + 10분 무활동
+        // 토픽만 제거(끝난 빌드/설치). 진행 중(구독자>0)은 보존.
+        const val LEGACY_REAP_INTERVAL_MS = 5 * 60 * 1000L
+        const val LEGACY_IDLE_TIMEOUT_MS = 10 * 60 * 1000L
 
         /** Build a console topic key for a given project id. */
         fun consoleTopic(projectId: String): String = "console-$projectId"

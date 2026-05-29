@@ -385,7 +385,16 @@ class McpService(
         return try {
             val txt = Files.readString(p, Charsets.UTF_8)
             Json.parseToJsonElement(txt) as? JsonObject
-        } catch (_: Throwable) {
+        } catch (e: Throwable) {
+            // v1.34.2 (20차 BUG-3) — 파일은 존재하나 파싱 실패(사용자 수동 편집의 주석/
+            // trailing comma 등). 이전엔 null 반환 → 호출측이 빈 객체로 출발해 writeMcpJsonAtomic
+            // 이 손상 파일을 덮어써 기존 mcpServers(타 도구/수동 등록분) 전체 소실.
+            // 원본을 .corrupt-<ts> 로 백업해 데이터 보존 후 null. (claude CLI 가 동시
+            // 편집하는 파일이라 현실적 위험.)
+            val backup = p.resolveSibling("${p.fileName}.corrupt-${System.currentTimeMillis()}")
+            runCatching { Files.copy(p, backup) }
+                .onSuccess { log.warn(e) { ".mcp.json 파싱 실패 → 원본 백업: $backup (덮어쓰기 전 보존)" } }
+                .onFailure { log.warn(e) { ".mcp.json 파싱 실패 + 백업도 실패: $p" } }
             null
         }
     }

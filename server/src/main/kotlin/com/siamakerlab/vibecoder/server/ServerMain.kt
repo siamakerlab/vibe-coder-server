@@ -495,6 +495,11 @@ fun main(args: Array<String>) {
         runCatching { claudeLogin.shutdown() }
         // v1.31.1 (B-Q1) — TaskQueue 내부 scope cancel (진행 중 빌드 job 정리 신호).
         runCatching { queue.shutdown() }
+        // v1.34.2 (20차 Q2) — Claude OAuth 토큰 자동 갱신 폴링 코루틴 정리. 다른
+        // start 매니저와 비대칭으로 hook 에서 누락돼 있었음(graceful-restart 시 leak).
+        runCatching { claudeTokenRefresher.shutdown() }
+        // v1.34.2 (20차 BUG-2) — LogHub 레거시 토픽 idle reaper coroutine 정리.
+        runCatching { hub.shutdown() }
     })
 
     printBanner(config, workspaceRoot, pairing, authService.adminExists())
