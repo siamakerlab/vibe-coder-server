@@ -367,6 +367,7 @@ fun Application.module(ctx: ServerContext) {
             diskMonitor = ctx.diskMonitor,
             webauthnService = ctx.webauthnService,
             gitConfig = ctx.gitConfig,
+            globalClaudeMd = ctx.globalClaudeMd,
         )
         // v1.35.0 — 전역 스킬 레지스트리 (~/.claude/skills). 전역 탭 + 프로젝트 탭 공용.
         val globalSkillRegistry = com.siamakerlab.vibecoder.server.env.SkillRegistry(

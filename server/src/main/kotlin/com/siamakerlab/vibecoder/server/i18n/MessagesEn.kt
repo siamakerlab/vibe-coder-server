@@ -362,6 +362,7 @@ internal object MessagesEn {
         "settings.general.language.option.ko" to "한국어 (Korean)",
         "settings.general.language.save" to "Save language",
         "settings.general.language.saved" to "Language saved — please refresh the page.",
+        "settings.general.language.claudemdEdited" to "global CLAUDE.md was hand-edited, so language auto-switch was skipped",
 
         // ─────────────────────────────────────────────── home / dashboard
         "home.greeting" to "Welcome to %s",

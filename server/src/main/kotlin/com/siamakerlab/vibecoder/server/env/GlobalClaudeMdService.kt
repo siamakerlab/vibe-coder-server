@@ -55,27 +55,68 @@ class GlobalClaudeMdService(
 
     /**
      * v1.41.0 — 도커 first-run 시 전역 CLAUDE.md 가 없으면 번들 시드 템플릿으로 생성.
-     * **파일이 이미 있으면 절대 덮어쓰지 않는다**(운영자/사용자 편집본 보존). 리소스가
-     * 없거나 쓰기 실패해도 startup 비차단(무시 — /settings/claude-md 에서 직접 작성 가능).
+     * v1.42.0 — 언어별(en/ko) 템플릿. **파일이 이미 있으면 절대 덮어쓰지 않는다**
+     * (운영자/사용자 편집본 보존). 리소스가 없거나 쓰기 실패해도 startup 비차단
+     * (무시 — /settings/claude-md 에서 직접 작성 가능).
      */
-    fun seedDefaultIfAbsent() {
+    fun seedDefaultIfAbsent(lang: String) {
         if (exists()) return
-        val seed = runCatching {
-            javaClass.getResourceAsStream("/templates/container-global-claude.md")
-                ?.bufferedReader(StandardCharsets.UTF_8)?.use { it.readText() }
-        }.getOrNull()
+        val seed = seedFor(lang)
         if (seed.isNullOrBlank()) {
-            log.warn { "global CLAUDE.md 시드 리소스를 찾을 수 없음 — skip" }
+            log.warn { "global CLAUDE.md 시드 리소스를 찾을 수 없음 (lang=$lang) — skip" }
             return
         }
-        runCatching {
-            Files.createDirectories(path.parent)
-            val tmp = path.resolveSibling("${path.fileName}.seed.tmp")
-            Files.write(tmp, seed.toByteArray(StandardCharsets.UTF_8))
-            Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-            log.info { "global CLAUDE.md first-run 시드 생성 → $path (${seed.toByteArray(StandardCharsets.UTF_8).size}B)" }
-        }.onFailure { log.warn(it) { "global CLAUDE.md 시드 실패 (무시)" } }
+        atomicWrite(seed, ".seed.tmp")
+        log.info { "global CLAUDE.md first-run 시드 생성 → $path (lang=$lang, ${seed.toByteArray(StandardCharsets.UTF_8).size}B)" }
     }
+
+    /**
+     * v1.42.0 — 설정 언어 변경 시 해당 언어 템플릿 적용.
+     *
+     * 단, **현재 파일이 미편집 시드 상태(en/ko 어느 쪽 시드와도 내용이 정확히 일치)일 때만**
+     * 교체한다. 사용자가 직접 편집한 내용은 [SKIPPED_EDITED] 로 보존(절대 덮어쓰지 않음).
+     * 파일이 없으면 그냥 시드한다([SEEDED]). [write] 가 직전 내용을 `.bak` 로 남기므로 교체는
+     * 되돌릴 수 있다.
+     */
+    fun applyLanguage(lang: String): LanguageApply {
+        val seed = seedFor(lang) ?: return LanguageApply.FAILED
+        if (!exists()) {
+            return runCatching { atomicWrite(seed, ".seed.tmp"); LanguageApply.SEEDED }
+                .getOrElse { log.warn(it) { "global CLAUDE.md 언어 시드 실패" }; LanguageApply.FAILED }
+        }
+        val current = read().trim()
+        if (current == seed.trim()) return LanguageApply.NOOP // 이미 해당 언어 시드
+        val isUnmodifiedSeed = knownSeeds().any { it.trim() == current }
+        if (!isUnmodifiedSeed) return LanguageApply.SKIPPED_EDITED // 사용자 편집본 보존
+        return runCatching { write(seed); LanguageApply.SWAPPED }
+            .getOrElse { log.warn(it) { "global CLAUDE.md 언어 교체 실패" }; LanguageApply.FAILED }
+    }
+
+    /** 언어별 번들 시드 템플릿 로드. 미지원 언어/누락 시 en fallback. */
+    private fun seedFor(lang: String): String? {
+        val normalized = lang.trim().lowercase().ifEmpty { "en" }
+        return loadResource("/templates/container-global-claude.$normalized.md")
+            ?: loadResource("/templates/container-global-claude.en.md")
+    }
+
+    /** 미편집 판정용 — 모든 언어 시드 내용. */
+    private fun knownSeeds(): List<String> =
+        listOf("en", "ko").mapNotNull { loadResource("/templates/container-global-claude.$it.md") }
+
+    private fun loadResource(name: String): String? = runCatching {
+        javaClass.getResourceAsStream(name)
+            ?.bufferedReader(StandardCharsets.UTF_8)?.use { it.readText() }
+    }.getOrNull()
+
+    private fun atomicWrite(content: String, tmpSuffix: String) {
+        Files.createDirectories(path.parent)
+        val tmp = path.resolveSibling("${path.fileName}$tmpSuffix")
+        Files.write(tmp, content.toByteArray(StandardCharsets.UTF_8))
+        Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+    }
+
+    /** v1.42.0 — [applyLanguage] 결과. */
+    enum class LanguageApply { SEEDED, SWAPPED, NOOP, SKIPPED_EDITED, FAILED }
 
     companion object {
         /** 256KB — CLAUDE.md 는 보통 수~수십 KB. 비정상적 대용량 차단. */

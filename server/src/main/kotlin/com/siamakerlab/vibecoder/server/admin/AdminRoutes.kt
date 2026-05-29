@@ -52,6 +52,8 @@ data class AdminRoutesDeps(
     val webauthnService: com.siamakerlab.vibecoder.server.auth.WebauthnService,
     /** v1.9.0 — dashboard "Git Identity 미설정" banner 판정 + 빌드환경 카드 공유. */
     val gitConfig: com.siamakerlab.vibecoder.server.env.GitConfigService,
+    /** v1.42.0 — 언어 변경 시 전역 CLAUDE.md 를 해당 언어 시드로 적용(미편집 시에만). */
+    val globalClaudeMd: com.siamakerlab.vibecoder.server.env.GlobalClaudeMdService,
 )
 
 /**
@@ -305,10 +307,16 @@ fun Routing.adminRoutes(deps: AdminRoutesDeps) {
             return@post
         }
         deps.userRepo.setLanguage(sess.userId, raw)
-        val msg = com.siamakerlab.vibecoder.server.i18n.Messages.t(
-            com.siamakerlab.vibecoder.server.i18n.Messages.resolve(raw, deps.config.i18n.defaultLanguage),
-            "settings.general.language.saved",
-        )
+        val effective = com.siamakerlab.vibecoder.server.i18n.Messages.resolve(raw, deps.config.i18n.defaultLanguage)
+        // v1.42.0 — 전역 CLAUDE.md 를 선택 언어 시드로 적용(미편집 시드 상태일 때만, 편집본은 보존).
+        val applied = runCatching { deps.globalClaudeMd.applyLanguage(effective) }
+            .getOrDefault(com.siamakerlab.vibecoder.server.env.GlobalClaudeMdService.LanguageApply.FAILED)
+        var msg = com.siamakerlab.vibecoder.server.i18n.Messages.t(effective, "settings.general.language.saved")
+        if (applied == com.siamakerlab.vibecoder.server.env.GlobalClaudeMdService.LanguageApply.SKIPPED_EDITED) {
+            // 사용자가 전역 CLAUDE.md 를 직접 편집한 상태 → 자동 언어 교체를 건너뛴 사실 고지.
+            val note = com.siamakerlab.vibecoder.server.i18n.Messages.t(effective, "settings.general.language.claudemdEdited")
+            msg = "$msg ($note)"
+        }
         call.respondRedirect("/settings?ok=${java.net.URLEncoder.encode(msg, "UTF-8")}")
     }
 

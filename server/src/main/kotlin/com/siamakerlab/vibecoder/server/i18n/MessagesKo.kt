@@ -339,6 +339,7 @@ internal object MessagesKo {
         "settings.general.language.option.ko" to "한국어",
         "settings.general.language.save" to "언어 저장",
         "settings.general.language.saved" to "언어가 저장되었습니다 — 페이지를 새로고침해 주세요.",
+        "settings.general.language.claudemdEdited" to "전역 CLAUDE.md 는 직접 편집된 상태라 언어 자동 전환을 건너뜀",
 
         // ─────────────────────────────────────────────── home / dashboard
         "home.greeting" to "%s 에 오신 것을 환영합니다",

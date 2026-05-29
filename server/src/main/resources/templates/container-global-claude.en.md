@@ -1,0 +1,88 @@
+# vibe-coder-server Container Global Rules
+
+This file is mounted as `/home/vibe/.claude/CLAUDE.md` inside the container and applies globally to every Claude Code session that runs there. The host path is `./vibe-coder-data/claude/CLAUDE.md`.
+
+> This is the default template auto-seeded on first server start. Feel free to edit it;
+> once it exists the server never overwrites it. (Global CLAUDE.md tab: `/settings/claude-md`)
+> Switching the UI language between English/Korean re-seeds this file in that language
+> **only while it is still the unmodified seed** — your own edits are always preserved.
+
+## Response language
+
+- Always respond to the user in **English**.
+- Keep code, commands, identifiers, and proper nouns verbatim (do not translate them).
+
+## ⚠ Build environment — pre-installed tools (do NOT re-download)
+
+vibe-coder-server's `/env-setup` (or `vibe-doctor install`) has already installed the tools below. **Do not download new copies — always use the pre-installed binaries at these paths.**
+
+| Tool | Path | Env var | Notes |
+|---|---|---|---|
+| **Gradle (system install)** | `/home/vibe/.local/gradle/` | on PATH (`gradle` = `/home/vibe/.local/bin/gradle`) | Persistent volume. **Version not pinned — run `gradle --version` before building** |
+| **Gradle wrapper cache** | `/home/vibe/.gradle/wrapper/dists/` | — | Pre-cached dists; `ls` to confirm and reuse (never hardcode a version) |
+| **Gradle dependency cache** | `/home/vibe/.gradle/caches/` | — | Maven Central / Google dependencies |
+| **Android SDK** | `/opt/android-sdk` | `ANDROID_HOME`, `ANDROID_SDK_ROOT` | |
+| **Android cmdline-tools** | `/opt/android-sdk/cmdline-tools/latest/bin/` | on PATH (`sdkmanager`, `avdmanager`) | |
+| **Android platform-tools** | `/opt/android-sdk/platform-tools/` | on PATH (`adb`) | |
+| **JDK 17** | `/opt/java/openjdk` | `JAVA_HOME` | OpenJDK 17 |
+| **Node 20 LTS** | `/usr/bin/node`, `/usr/bin/npm`, `/usr/bin/npx` | — | |
+| **npm global prefix** | `/home/vibe/.local/` (`bin/`, `lib/node_modules/`) | — | MCP `npm install -g` lands here |
+| **Playwright browsers** | `/home/vibe/.cache/ms-playwright/` | — | When using the Playwright MCP |
+
+## Gradle policy (important)
+
+**Never hardcode a Gradle version in docs or commands.** The system install and the pre-cached wrapper dists change over time (upgrades), so **query the actual state first** and match it before building. This way an upgraded Gradle is handled automatically with no doc edits.
+
+```bash
+# 1) Check the installed gradle version
+gradle --version            # e.g. "Gradle 9.5.1" -> INSTALLED_VER=9.5.1
+# 2) Check pre-cached wrapper dists (versions already downloaded)
+ls /home/vibe/.gradle/wrapper/dists/   # e.g. gradle-9.5.1-bin
+```
+
+If a project's `gradle/wrapper/gradle-wrapper.properties` points at **a version not present in the install/cache, do not silently download it.** Resolve in this priority order:
+
+1. **Reuse the installed/cached version (preferred)** — set `distributionUrl` to the version (`<VER>`) you found above (replace `<VER>` with the actual queried value):
+   ```properties
+   distributionUrl=https\://services.gradle.org/distributions/gradle-<VER>-bin.zip
+   ```
+   Leave a one-line comment explaining the change. (If it already matches, leave it as is.)
+
+2. **Bypass the wrapper** — invoke the system `gradle` instead of `./gradlew`.
+   ```bash
+   gradle --no-daemon assembleDebug
+   ```
+   Check compatibility first (e.g. `org.gradle.java.home` in `gradle.properties`).
+
+3. **If a different version is truly required** — state the reason (a specific plugin requirement, etc.), confirm with the user, then download. No silent downloads.
+
+## Android SDK policy
+
+A project's `local.properties` may have `sdk.dir` hardcoded to a host path. Inside the container, **do not create or edit `local.properties`** — leave it or delete it. The `ANDROID_HOME` env var takes precedence, so the SDK location is detected automatically.
+
+Install missing platforms / build-tools with `sdkmanager`, but **confirm with the user before any non-major (minor) version change.**
+
+```bash
+# List installed packages
+sdkmanager --list_installed
+# Install only what's missing (match the project's required versions)
+sdkmanager "platforms;android-35" "build-tools;35.0.0"
+```
+
+## Environment variables (already set by the container entrypoint)
+
+```
+ANDROID_HOME=/opt/android-sdk
+ANDROID_SDK_ROOT=/opt/android-sdk
+JAVA_HOME=/opt/java/openjdk
+PATH=/home/vibe/.local/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/opt/java/openjdk/bin:...
+```
+
+**Do not override these** in build scripts or IDE settings.
+
+## Never do
+
+- Ignore the pre-installed tools and re-download a different path/version
+- Arbitrarily delete `/opt/*` or `/home/vibe/.gradle/`, `/home/vibe/.local/`
+- Hardcode a host path in `local.properties`
+- Change the wrapper version without recording the reason
