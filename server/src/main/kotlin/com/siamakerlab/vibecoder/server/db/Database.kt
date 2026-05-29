@@ -60,9 +60,11 @@ object VibeDb {
 
         var lastError: Throwable? = null
         repeat(STARTUP_RETRY) { attempt ->
+            var ds: HikariDataSource? = null
             try {
-                dataSource = HikariDataSource(cfg)
-                val database = Database.connect(dataSource)
+                ds = HikariDataSource(cfg)
+                dataSource = ds
+                val database = Database.connect(ds)
                 transaction(database) {
                     SchemaUtils.createMissingTablesAndColumns(*AllTables)
                     // v0.53.0 — Phase 32 풀텍스트 검색 (tsvector + GIN).
@@ -98,6 +100,11 @@ object VibeDb {
                 }
                 return database
             } catch (e: Throwable) {
+                // B9 (21차 점검) — 풀 생성 성공 후 마이그레이션(예: pg_trgm CREATE EXTENSION
+                // 권한 부족)이 실패하면, 이전엔 직전 풀을 close 하지 않아 connection +
+                // housekeeping 스레드가 누수됐다(최대 STARTUP_RETRY 개 orphan 풀이 startup
+                // window 동안 누적). 다음 시도 전에 닫는다.
+                runCatching { ds?.close() }
                 lastError = e
                 log.warn { "DB connect attempt ${attempt + 1}/$STARTUP_RETRY failed: ${e.message}" }
                 if (attempt + 1 < STARTUP_RETRY) {

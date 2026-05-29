@@ -2,7 +2,9 @@ package com.siamakerlab.vibecoder.server.projects
 
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.AdminTemplates
+import com.siamakerlab.vibecoder.server.admin.requireProjectAccessOrThrow
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
+import com.siamakerlab.vibecoder.server.admin.requireWriteAccessOrRedirect
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens.requireCsrf
 import com.siamakerlab.vibecoder.server.core.WorkspacePath
@@ -32,6 +34,7 @@ fun Routing.envFilesRoutes(authDeps: AdminRoutesDeps, projects: ProjectService, 
     get("/projects/{id}/env-files") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val p = runCatching { projects.get(id) }.getOrElse {
             call.respondRedirect("/projects?err=${enc("프로젝트 '$id' 를 찾을 수 없습니다.")}")
             return@get
@@ -51,8 +54,10 @@ fun Routing.envFilesRoutes(authDeps: AdminRoutesDeps, projects: ProjectService, 
 
     post("/projects/{id}/env-files/save") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireWriteAccessOrRedirect(sess)) return@post
         requireCsrf()
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val params = call.receiveParameters()
         val rel = params["rel"]?.trim().orEmpty()
         val body = params["body"].orEmpty()

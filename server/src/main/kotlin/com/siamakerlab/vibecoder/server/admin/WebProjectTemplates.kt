@@ -2454,8 +2454,14 @@ ${if (status != null && !unavailable) """
                 val renameJsLit = "'" + e.name.replace("\\", "\\\\").replace("'", "\\'") + "'"
                 val confirmDelete = t("fileTree.confirm.delete").replace("{0}", e.name)
                 val renamePrompt = t("fileTree.prompt.rename")
+                // C4 (21차 점검) — renameJsLit 은 backslash·single-quote 만 escape 하므로
+                // double-quote HTML 속성(onsubmit="...") 안에 raw 보간하면 파일명에 포함된
+                // `"`·`<`·`>` 로 속성을 breakout 해 이벤트 핸들러를 주입할 수 있었다(stored XSS).
+                // 파일명은 디스크 listing 에서 무검증으로 옴(Claude Write/git clone/upload).
+                // delete 폼처럼 esc() 로 감싸 속성 컨텍스트를 안전화(브라우저가 attr decode 후
+                // JS literal 로 복원되므로 JS 도 유효 유지).
                 val actions = """<form method="post" action="/projects/${esc(p.id)}/files/rename"
-                          style="display:inline" onsubmit="var v=prompt('${esc(renamePrompt)}',$renameJsLit); if(!v||v===$renameJsLit){return false;} this.newName.value=v;">
+                          style="display:inline" onsubmit="var v=prompt('${esc(renamePrompt)}',${esc(renameJsLit)}); if(!v||v===${esc(renameJsLit)}){return false;} this.newName.value=v;">
                       $csrfHidden
                       <input type="hidden" name="path" value="${esc(e.relPath)}">
                       <input type="hidden" name="newName" value="">

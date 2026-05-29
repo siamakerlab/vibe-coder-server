@@ -2,6 +2,7 @@ package com.siamakerlab.vibecoder.server.emulator
 
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.AdminTemplates
+import com.siamakerlab.vibecoder.server.admin.requireAdminOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens.requireCsrf
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -30,6 +31,7 @@ private val log = KotlinLogging.logger {}
 fun Routing.emulatorRoutes(authDeps: AdminRoutesDeps, svc: EmulatorService) {
     get("/emulator") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
+        if (!requireAdminOrRedirect(sess)) return@get
         val d = svc.diagnose()
         val ok = call.request.queryParameters["ok"]
         val err = call.request.queryParameters["err"]
@@ -39,6 +41,7 @@ fun Routing.emulatorRoutes(authDeps: AdminRoutesDeps, svc: EmulatorService) {
     /** v0.24.0 — 디폴트 AVD 자동 생성 (vibe-default). 한 번만 호출하면 됨. */
     post("/emulator/avd/create-default") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireAdminOrRedirect(sess)) return@post
         requireCsrf()
         val r = svc.createDefaultAvd()
         log.info { "create-default AVD by ${sess.username}: ok=${r.ok} msg=${r.message.take(120)}" }
@@ -50,6 +53,7 @@ fun Routing.emulatorRoutes(authDeps: AdminRoutesDeps, svc: EmulatorService) {
     /** v0.24.0 — AVD 백그라운드 launch. headless (no-window). */
     post("/emulator/avd/launch") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireAdminOrRedirect(sess)) return@post
         requireCsrf()
         val form = call.receiveParameters()
         val name = form["name"]?.trim().orEmpty().ifBlank { "vibe-default" }
@@ -63,6 +67,7 @@ fun Routing.emulatorRoutes(authDeps: AdminRoutesDeps, svc: EmulatorService) {
     /** v0.24.0 — 실행 중인 emulator 종료. deviceSerial (예: emulator-5554) 인자. */
     post("/emulator/avd/stop") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireAdminOrRedirect(sess)) return@post
         requireCsrf()
         val form = call.receiveParameters()
         val serial = form["serial"]?.trim().orEmpty()

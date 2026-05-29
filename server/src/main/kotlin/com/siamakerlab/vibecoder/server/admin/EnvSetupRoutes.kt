@@ -48,6 +48,7 @@ fun Routing.envSetupRoutes(
 ) {
     get("/env-setup") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
+        if (!requireAdminOrRedirect(sess)) return@get
         val states = setupService.detectAll(sess.language)
         val claudeFlash = call.request.queryParameters["claude"]
         val gitFlash = call.request.queryParameters["git"]
@@ -70,6 +71,7 @@ fun Routing.envSetupRoutes(
     // v1.9.0 — Git global identity 등록 / 갱신. 미설정 / 빈 입력 시 ApiException → flash err.
     post("/env-setup/git-config") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireAdminOrRedirect(sess)) return@post
         val form = requireCsrf()
         val name = form["name"].orEmpty()
         val email = form["email"].orEmpty()
@@ -87,6 +89,7 @@ fun Routing.envSetupRoutes(
     // 사용자가 잘못 입력 후 초기화 원할 때.
     post("/env-setup/git-config/clear") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireAdminOrRedirect(sess)) return@post
         requireCsrf()
         runCatching { gitConfig.clear() }
             .onFailure { log.warn(it) { "git config clear failed" } }
@@ -95,6 +98,7 @@ fun Routing.envSetupRoutes(
 
     post("/env-setup/install-all") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireAdminOrRedirect(sess)) return@post
         requireCsrf()
         val taskId = setupService.spawnInstallAll()
         log.info { "env-setup install-all: $taskId by ${sess.username}" }
@@ -103,6 +107,7 @@ fun Routing.envSetupRoutes(
 
     post("/env-setup/{componentId}/install") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireAdminOrRedirect(sess)) return@post
         requireCsrf()
         val id = call.parameters["componentId"]!!
         val comp = SetupComponent.byId(id)
@@ -122,6 +127,7 @@ fun Routing.envSetupRoutes(
 
     get("/env-setup/tasks/{taskId}") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
+        if (!requireAdminOrRedirect(sess)) return@get
         val taskId = call.parameters["taskId"]!!
         call.respondText(
             EnvSetupTemplates.taskProgressPage(sess.username, taskId, lang = sess.language),
@@ -139,6 +145,7 @@ fun Routing.envSetupRoutes(
      */
     post("/env-setup/claude-auth/upload") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireAdminOrRedirect(sess)) return@post
         CsrfTokens.verifyCsrfFromQueryOrHeader(call)
         val multipart = call.receiveMultipart()
         var bytes: ByteArray? = null
@@ -196,6 +203,7 @@ fun Routing.envSetupRoutes(
      */
     post("/env-setup/claude-auth/api-key") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireAdminOrRedirect(sess)) return@post
         val form = requireCsrf()
         val key = form["apiKey"].orEmpty()
         try {
@@ -221,6 +229,7 @@ fun Routing.envSetupRoutes(
     /** API 키 모드 해제 → OAuth 자격증명 모드로 복귀. */
     post("/env-setup/claude-auth/api-key/delete") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireAdminOrRedirect(sess)) return@post
         requireCsrf()
         claudeAuth.deleteApiKey()
         log.info { "API key deleted by ${sess.username}" }
@@ -237,6 +246,7 @@ fun Routing.envSetupRoutes(
 
     get("/env-setup/claude-login") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
+        if (!requireAdminOrRedirect(sess)) return@get
         val state = claudeLogin.status()
         call.respondText(
             EnvSetupTemplates.claudeLoginPage(sess.username, state, csrf = sess.csrf, lang = sess.language),
@@ -246,6 +256,7 @@ fun Routing.envSetupRoutes(
 
     post("/env-setup/claude-login/start") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireAdminOrRedirect(sess)) return@post
         requireCsrf()
         try {
             val s = claudeLogin.start()
@@ -262,6 +273,7 @@ fun Routing.envSetupRoutes(
 
     post("/env-setup/claude-login/submit") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireAdminOrRedirect(sess)) return@post
         val form = requireCsrf()
         val code = form["code"].orEmpty()
         try {
@@ -279,6 +291,7 @@ fun Routing.envSetupRoutes(
 
     post("/env-setup/claude-login/cancel") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireAdminOrRedirect(sess)) return@post
         requireCsrf()
         claudeLogin.cancel()
         log.info { "claude login canceled by ${sess.username}" }
@@ -287,7 +300,8 @@ fun Routing.envSetupRoutes(
 
     /** 진행 페이지가 1초 폴링하는 JSON 상태 엔드포인트. */
     get("/env-setup/claude-login/status.json") {
-        requireSessionOrRedirect(authDeps) ?: return@get
+        val sess = requireSessionOrRedirect(authDeps) ?: return@get
+        if (!requireAdminOrRedirect(sess)) return@get
         val state = claudeLogin.status()
         val body = if (state == null) "null" else Json.encodeToString(state)
         call.respondText(body, ContentType.Application.Json)

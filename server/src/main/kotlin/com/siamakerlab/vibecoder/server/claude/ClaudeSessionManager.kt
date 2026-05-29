@@ -383,7 +383,11 @@ class ClaudeSessionManager(
         // v0.98.0 — process exit 시 항상 busy 해제. setBusy 가 suspend 라
         // launch 안에서 호출 (onProcessExit 자체는 비-suspend).
         scope.launch { setBusy(projectId, false) }
-        if (crashed) {
+        if (session.intentionalKill) {
+            // B1 (21차 점검) — 의도된 종료(cancel/startNew/idle reap/shutdown). SIGTERM 의
+            // 비정상 종료코드를 crash 로 보지 않음 → session-id 보존, 오메시지 미emit.
+            log.info { "[$projectId] claude terminated intentionally (code=$exit)" }
+        } else if (crashed) {
             log.warn { "[$projectId] claude exited with code $exit" }
             val resumeFailed = looksLikeResumeFailure(session)
             scope.launch {
@@ -412,6 +416,9 @@ class ClaudeSessionManager(
 
     private suspend fun terminateSession(projectId: String) {
         val session = sessions.remove(projectId) ?: return
+        // B1 (21차 점검) — SIGTERM 전에 의도된 종료임을 표식. onProcessExit(readerJob
+        // finally) 이 이 session 참조를 그대로 보므로 resume-failure 오판을 차단.
+        session.intentionalKill = true
         runCatching { session.stdin.close() }
         if (session.process.isAlive) {
             session.process.destroy()
@@ -486,6 +493,13 @@ class ClaudeSessionManager(
         val startedAt: Instant = Instant.now(),
         /** Flips true once a `system/init` frame arrives, proving the CLI accepted the resume. */
         @Volatile var sawSessionStarted: Boolean = false,
+        /**
+         * B1 (21차 점검) — 의도된 종료(cancelTurn / startNew / idle reap / shutdown) 표식.
+         * terminateSession 이 SIGTERM 전에 true 로 세팅 → onProcessExit 이 SIGTERM 의
+         * 비정상 종료코드(143)를 resume-failure 로 오판해 보존돼야 할 session-id 를
+         * 삭제하거나 process_crashed 오메시지를 emit 하지 않도록 한다.
+         */
+        @Volatile var intentionalKill: Boolean = false,
         /** Last N stderr lines for resume-failure heuristics. */
         val stderrTail: java.util.ArrayDeque<String> = java.util.ArrayDeque(),
     )

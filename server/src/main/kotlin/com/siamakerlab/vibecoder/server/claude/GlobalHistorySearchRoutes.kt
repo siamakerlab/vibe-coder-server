@@ -2,6 +2,7 @@ package com.siamakerlab.vibecoder.server.claude
 
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.AdminTemplates
+import com.siamakerlab.vibecoder.server.admin.requireAdminOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import com.siamakerlab.vibecoder.server.db.ConversationTurns
 import com.siamakerlab.vibecoder.server.repo.ConversationTurnRow
@@ -33,6 +34,9 @@ import org.jetbrains.exposed.sql.transactions.transaction
 fun Routing.globalHistorySearchRoutes(authDeps: AdminRoutesDeps) {
     get("/history") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
+        // B3 (21차 점검) — cross-project 대화 검색은 JSON twin(/api/history/search)
+        // 과 동일하게 admin 전용. 비-admin 은 프로젝트별 /projects/{id}/history 사용.
+        if (!requireAdminOrRedirect(sess)) return@get
         val q = call.request.queryParameters["q"]?.trim()?.ifBlank { null }
         val role = call.request.queryParameters["role"]?.trim()?.ifBlank { null }
         val rows = if (q == null) emptyList() else searchAll(q, role, limit = 200)

@@ -138,7 +138,7 @@ fun Routing.webauthnRoutes(
             )
             authDeps.audit.passkeyRegister(sess.userId, row.id, call.request.origin.remoteHost)
             call.respondText(
-                """{"id":"${row.id}","name":"${esc(row.name)}","ok":true}""",
+                """{"id":"${escJson(row.id)}","name":"${escJson(row.name)}","ok":true}""",
                 ContentType.Application.Json,
             )
         } catch (e: Throwable) {
@@ -217,7 +217,7 @@ fun Routing.webauthnRoutes(
             path = "/", extensions = mapOf("SameSite" to "Lax"),
         ))
         call.respondText(
-            """{"token":"$token","deviceId":"${device.id}","username":"${esc(user.username)}"}""",
+            """{"token":"${escJson(token)}","deviceId":"${escJson(device.id)}","username":"${escJson(user.username)}"}""",
             ContentType.Application.Json,
         )
     }
@@ -397,3 +397,26 @@ private fun esc(s: String?): String =
     s.orEmpty()
         .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         .replace("\"", "&quot;").replace("'", "&#39;")
+
+/**
+ * B14 (21차 점검) — JSON 문자열 컨텍스트 전용 이스케이프. esc() 는 HTML 전용이라
+ * 백슬래시·제어문자를 처리하지 않아, 사용자 제어 값(passkey name 등)을 수기 JSON
+ * 보간에 넣으면 백슬래시로 끝나는 이름이나 개행/탭 포함 시 malformed JSON 이 됐다.
+ */
+private fun escJson(s: String?): String {
+    val v = s.orEmpty()
+    val sb = StringBuilder(v.length + 8)
+    for (c in v) {
+        when (c) {
+            '\\' -> sb.append("\\\\")
+            '"' -> sb.append("\\\"")
+            '\n' -> sb.append("\\n")
+            '\r' -> sb.append("\\r")
+            '\t' -> sb.append("\\t")
+            '\b' -> sb.append("\\b")
+            '\u000C' -> sb.append("\\f")
+            else -> if (c < ' ') sb.append("\\u%04x".format(c.code)) else sb.append(c)
+        }
+    }
+    return sb.toString()
+}

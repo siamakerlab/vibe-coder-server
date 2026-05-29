@@ -434,6 +434,7 @@ fun Routing.webProjectRoutes(
      */
     post("/projects/{id}/builds/{buildId}/play-upload") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireWriteAccessOrRedirect(sess)) return@post
         requireCsrf()
         val id = call.parameters["id"]!!
         requireProjectAccessOrThrow(sess, projects, id)
@@ -474,6 +475,7 @@ fun Routing.webProjectRoutes(
      */
     post("/projects/{id}/builds/{buildId}/testflight-upload") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireWriteAccessOrRedirect(sess)) return@post
         requireCsrf()
         val id = call.parameters["id"]!!
         requireProjectAccessOrThrow(sess, projects, id)
@@ -510,6 +512,7 @@ fun Routing.webProjectRoutes(
 
     post("/projects/{id}/builds/{buildId}/cancel") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireWriteAccessOrRedirect(sess)) return@post
         requireCsrf()
         val id = call.parameters["id"]!!
         requireProjectAccessOrThrow(sess, projects, id)

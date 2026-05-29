@@ -39,6 +39,7 @@ fun Routing.mcpRoutes(
 ) {
     get("/env-setup/mcp") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
+        if (!requireAdminOrRedirect(sess)) return@get
         val states = mcp.detectAll().associateBy { it.id }
         val flash = call.request.queryParameters["flash"]
         call.respondText(
@@ -49,6 +50,7 @@ fun Routing.mcpRoutes(
 
     post("/env-setup/mcp/install") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireAdminOrRedirect(sess)) return@post
         val form = requireCsrf()
         // 체크박스: name="select" value="<id>" (multiple)
         val selectedIds = form.getAll("select").orEmpty().distinct()
@@ -80,6 +82,7 @@ fun Routing.mcpRoutes(
 
     post("/env-setup/mcp/unregister") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireAdminOrRedirect(sess)) return@post
         val form = requireCsrf()
         val ids = form.getAll("select").orEmpty().distinct()
         if (ids.isEmpty()) {
@@ -99,6 +102,7 @@ fun Routing.mcpRoutes(
      */
     post("/env-setup/mcp/{mcpId}/file/{fieldKey}") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireAdminOrRedirect(sess)) return@post
         // multipart — _csrf 는 query string 또는 X-CSRF-Token 헤더로 받음.
         CsrfTokens.verifyCsrfFromQueryOrHeader(call)
         val mcpId = call.parameters["mcpId"]!!

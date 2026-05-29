@@ -106,8 +106,12 @@ fun Routing.envSetupApiRoutes(
             // v0.64.0 — Android v0.7.x 가 `path` / `expiresAtIso: String` 을 기대.
             // 기존 SSR/외부 콜러가 사용하는 `targetPath` / `expiresAt:Long` 은 그대로 둔 채
             // 추가 필드로 같은 값을 emit (dual emit).
+            // B6 (21차 점검) — result.expiresAt 은 epoch **밀리초** (ClaudeAuthService 가
+            // System.currentTimeMillis() 와 직접 비교). ofEpochSecond 로 변환하면 ~1000배
+            // 미래 시각이 돼 Android 클라이언트의 만료 표시/판정이 깨졌다. EnvDiagnostics /
+            // ClaudeTokenRefresher 의 formatInstant 와 동일하게 ofEpochMilli 사용.
             val expiresAtIso = runCatching {
-                java.time.Instant.ofEpochSecond(result.expiresAt).toString()
+                java.time.Instant.ofEpochMilli(result.expiresAt).toString()
             }.getOrNull()
             call.respond(ClaudeCredentialsUploadResponseDto(
                 targetPath = result.targetPath,

@@ -2,7 +2,9 @@ package com.siamakerlab.vibecoder.server.projects
 
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.AdminTemplates
+import com.siamakerlab.vibecoder.server.admin.requireProjectAccessOrThrow
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
+import com.siamakerlab.vibecoder.server.admin.requireWriteAccessOrRedirect
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens.requireCsrf
 import com.siamakerlab.vibecoder.server.build.GradleWrapperService
@@ -36,6 +38,7 @@ fun Routing.codeAnalysisRoutes(
     get("/projects/{id}/wrapper") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val p = runCatching { projects.get(id) }.getOrElse {
             call.respondRedirect("/projects?err=${enc("프로젝트 '$id' 를 찾을 수 없습니다.")}")
             return@get
@@ -51,8 +54,10 @@ fun Routing.codeAnalysisRoutes(
 
     post("/projects/{id}/wrapper") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireWriteAccessOrRedirect(sess)) return@post
         requireCsrf()
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val form = call.receiveParameters()
         val version = form["version"]?.trim().orEmpty()
         val type = form["distributionType"]?.trim()?.ifBlank { "bin" } ?: "bin"
@@ -71,6 +76,7 @@ fun Routing.codeAnalysisRoutes(
     get("/projects/{id}/stats") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val p = runCatching { projects.get(id) }.getOrElse {
             call.respondRedirect("/projects?err=${enc("프로젝트 '$id' 를 찾을 수 없습니다.")}")
             return@get

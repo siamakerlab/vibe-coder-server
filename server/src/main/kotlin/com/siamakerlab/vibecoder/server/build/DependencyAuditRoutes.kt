@@ -2,7 +2,9 @@ package com.siamakerlab.vibecoder.server.build
 
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.AdminTemplates
+import com.siamakerlab.vibecoder.server.admin.requireProjectAccessOrThrow
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
+import com.siamakerlab.vibecoder.server.admin.requireWriteAccessOrRedirect
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens.requireCsrf
 import com.siamakerlab.vibecoder.server.projects.ProjectService
@@ -28,6 +30,7 @@ fun Routing.dependencyAuditRoutes(authDeps: AdminRoutesDeps, projects: ProjectSe
     get("/projects/{id}/deps") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val p = runCatching { projects.get(id) }.getOrElse {
             call.respondRedirect("/projects?err=${enc("프로젝트 '$id' 를 찾을 수 없습니다.")}")
             return@get
@@ -35,6 +38,9 @@ fun Routing.dependencyAuditRoutes(authDeps: AdminRoutesDeps, projects: ProjectSe
         val moduleName = call.request.queryParameters["module"]?.ifBlank { null } ?: p.moduleName
         val configuration = call.request.queryParameters["config"]?.ifBlank { null } ?: "releaseRuntimeClasspath"
         val run = call.request.queryParameters["run"] == "1"
+        // B5 (21차 점검) — run=1 은 Gradle 자식 프로세스를 spawn 하는 write 성 작업.
+        // viewer(read-only) 가 트리거하지 못하도록 가드.
+        if (run && !requireWriteAccessOrRedirect(sess)) return@get
         val result = if (run) svc.audit(id, moduleName, configuration) else null
         call.respondText(
             DependencyAuditTemplates.page(sess.username, p, moduleName, configuration, result, sess.csrf, lang = sess.language),
@@ -44,8 +50,10 @@ fun Routing.dependencyAuditRoutes(authDeps: AdminRoutesDeps, projects: ProjectSe
 
     post("/projects/{id}/deps") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireWriteAccessOrRedirect(sess)) return@post
         requireCsrf()
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val form = call.receiveParameters()
         val moduleName = form["module"]?.trim()?.ifBlank { null } ?: "app"
         val configuration = form["config"]?.trim()?.ifBlank { null } ?: "releaseRuntimeClasspath"

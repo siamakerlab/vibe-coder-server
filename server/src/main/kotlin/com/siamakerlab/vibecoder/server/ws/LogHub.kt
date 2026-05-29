@@ -140,10 +140,17 @@ class LogHub(
      */
     suspend fun emitConsole(topic: String, factory: (seq: Long) -> WsFrame): Long {
         val state = stateOf(topic)
-        val next = state.seq.incrementAndGet()
-        val frame = factory(next)
-        val sf = SeqFrame(next, frame)
+        // B2 (21차 점검) — seq 할당과 ring 삽입을 단일 임계영역으로 원자화.
+        // 이전엔 incrementAndGet() 이 락 밖에 있어, 같은 topic(특히 multi-producer
+        // 인 PROJECTS_TOPIC)에 두 코루틴이 동시 emit 하면 (A:seq=1 → B:seq=2 →
+        // B 가 먼저 락 잡아 addLast → A addLast) ring 이 seq 내림차순으로 들어가
+        // subscribeConsole 의 ringFloor(firstOrNull)·eviction(pollFirst)·replay 순서가
+        // 깨질 수 있었다. publisher.emit 만 락 밖에서 수행(suspend·구독자 호출 격리).
+        val next: Long
+        val sf: SeqFrame
         synchronized(state.ringLock) {
+            next = state.seq.incrementAndGet()
+            sf = SeqFrame(next, factory(next))
             state.ring.addLast(sf)
             while (state.ring.size > consoleRingCapacity) state.ring.pollFirst()
         }

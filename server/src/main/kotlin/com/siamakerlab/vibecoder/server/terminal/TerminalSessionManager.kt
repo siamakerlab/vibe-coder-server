@@ -100,13 +100,19 @@ class TerminalSession(
 
     fun start() {
         readJob = scope.launch(Dispatchers.IO) {
-            val buf = ByteArray(8192)
+            // B4 (21차 점검) — 이전엔 8192-byte chunk 를 매 read 마다 독립 UTF-8 디코딩해서,
+            // 멀티바이트 시퀀스(CJK 3B / 이모지 4B)가 두 read() 경계에 걸치면 양쪽 chunk 가
+            // 불완전 시퀀스로 깨져 영구 U+FFFD 가 됐다(v1.34.1 surrogate 가드의 상류 결함).
+            // InputStreamReader 는 미완성 멀티바이트 tail 을 내부 StreamDecoder 가 다음 read 로
+            // carry-over 하므로 경계 분할이 사라진다.
+            val reader = java.io.InputStreamReader(inStream, StandardCharsets.UTF_8)
+            val cbuf = CharArray(8192)
             try {
                 while (isActive) {
-                    val n = runCatching { inStream.read(buf) }.getOrNull() ?: -1
+                    val n = runCatching { reader.read(cbuf) }.getOrNull() ?: -1
                     if (n < 0) break
                     if (n > 0) {
-                        val s = String(buf, 0, n, StandardCharsets.UTF_8)
+                        val s = String(cbuf, 0, n)
                         // v1.27.0 — output 발생 = 세션 활성. idle 시계 갱신.
                         touch()
                         // v1.34.0 — scrollback 누적(재연결 replay 용) 후 emit.

@@ -2,7 +2,9 @@ package com.siamakerlab.vibecoder.server.build
 
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.AdminTemplates
+import com.siamakerlab.vibecoder.server.admin.requireProjectAccessOrThrow
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
+import com.siamakerlab.vibecoder.server.admin.requireWriteAccessOrRedirect
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens.requireCsrf
 import com.siamakerlab.vibecoder.server.projects.ProjectService
@@ -56,6 +58,7 @@ fun Routing.buildAutomationRoutes(
     get("/projects/{id}/automation") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val p = runCatching { projects.get(id) }.getOrElse {
             call.respondRedirect("/projects?err=${enc("프로젝트 '$id' 를 찾을 수 없습니다.")}")
             return@get
@@ -73,8 +76,10 @@ fun Routing.buildAutomationRoutes(
 
     post("/projects/{id}/automation/schedules") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireWriteAccessOrRedirect(sess)) return@post
         requireCsrf()
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val form = call.receiveParameters()
         val cronExpr = form["cronExpr"]?.trim().orEmpty()
         val description = form["description"]?.trim()?.ifBlank { null }
@@ -91,9 +96,18 @@ fun Routing.buildAutomationRoutes(
 
     post("/projects/{id}/automation/schedules/{scheduleId}/toggle") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireWriteAccessOrRedirect(sess)) return@post
         requireCsrf()
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val scheduleId = call.parameters["scheduleId"]!!
+        // C2 (21차 점검) — row 의 projectId 가 path {id} 와 일치하는지 검증.
+        // repo.toggleEnabled/delete 가 id 만으로 동작하므로 소속 확인이 없으면
+        // scheduleId 만 알면 임의 프로젝트의 schedule 을 조작할 수 있다.
+        if (scheduleRepo.listAll().find { it.id == scheduleId }?.projectId != id) {
+            call.respondRedirect("/projects/$id/automation?err=${enc("schedule not found")}")
+            return@post
+        }
         val form = call.receiveParameters()
         val enabled = form["enabled"]?.equals("true", ignoreCase = true) ?: false
         scheduleRepo.toggleEnabled(scheduleId, enabled)
@@ -102,9 +116,15 @@ fun Routing.buildAutomationRoutes(
 
     post("/projects/{id}/automation/schedules/{scheduleId}/delete") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireWriteAccessOrRedirect(sess)) return@post
         requireCsrf()
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val scheduleId = call.parameters["scheduleId"]!!
+        if (scheduleRepo.listAll().find { it.id == scheduleId }?.projectId != id) {
+            call.respondRedirect("/projects/$id/automation?err=${enc("schedule not found")}")
+            return@post
+        }
         scheduleRepo.delete(scheduleId)
         authDeps.audit.scheduleDelete(sess.userId, call.request.origin.remoteHost, scheduleId)
         call.respondRedirect("/projects/$id/automation?ok=${enc("schedule 삭제됨")}")
@@ -112,8 +132,10 @@ fun Routing.buildAutomationRoutes(
 
     post("/projects/{id}/automation/secrets") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireWriteAccessOrRedirect(sess)) return@post
         requireCsrf()
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val form = call.receiveParameters()
         val name = form["name"]?.trim().orEmpty().ifBlank { "external" }
         // 32-byte URL-safe random secret. 1회만 사용자에게 노출.
@@ -129,9 +151,15 @@ fun Routing.buildAutomationRoutes(
 
     post("/projects/{id}/automation/secrets/{secretId}/delete") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireWriteAccessOrRedirect(sess)) return@post
         requireCsrf()
         val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
         val secretId = call.parameters["secretId"]!!
+        if (secretRepo.listForProject(id).none { it.id == secretId }) {
+            call.respondRedirect("/projects/$id/automation?err=${enc("secret not found")}")
+            return@post
+        }
         secretRepo.delete(secretId)
         authDeps.audit.webhookSecretDelete(sess.userId, call.request.origin.remoteHost, secretId)
         call.respondRedirect("/projects/$id/automation?ok=${enc("secret 삭제됨")}")
