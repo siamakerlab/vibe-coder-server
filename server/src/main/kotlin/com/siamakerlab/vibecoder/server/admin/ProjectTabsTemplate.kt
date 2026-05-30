@@ -83,9 +83,51 @@ internal object ProjectTabsTemplate {
         lang: String,
         /** v1.49.0 — 헤더 프로젝트명 콤보박스(빠른 전환)용 전체 프로젝트 목록. */
         allProjects: List<ProjectDto> = emptyList(),
+        /** v1.50.0 — 우측 overview rail 데이터. */
+        keystoreReady: Boolean = false,
+        tokensTotal: Long = 0,
+        cacheHitRate: Double? = null,
+        promptCount: Long = 0,
+        /** 최신순(latest-first) user 프롬프트 본문 — 최대 7개. */
+        recentPrompts: List<String> = emptyList(),
     ): String {
         val t = { key: String -> Messages.t(lang, key) }
         val esc = ::escapeHtml
+
+        // v1.50.0 — 우측 고정 overview rail (모든 탭 공통, 부모 레이어라 iframe 스크롤과 무관).
+        val keystoreHtml = if (keystoreReady)
+            """<span class="pt-ks ok">✓ ${esc(t("tabs.rail.keystore.ready"))}</span>"""
+        else """<span class="pt-ks miss">✗ ${esc(t("tabs.rail.keystore.missing"))}</span>"""
+        val tokensHtml = fmtTokens(tokensTotal) +
+            (cacheHitRate?.let { """ <span class="dim" style="font-size:10px">· ${esc(t("tabs.rail.cacheHit"))} ${"%.0f".format(it)}%</span>""" } ?: "")
+        val historyHtml = if (recentPrompts.isEmpty())
+            """<div class="pt-hist-empty">${esc(t("tabs.rail.history.empty"))}</div>"""
+        else recentPrompts.take(7).mapIndexed { i, content ->
+            // 0~4 = 불투명, 5번째부터 점점 흐리게.
+            val opacity = when (i) { in 0..4 -> "1"; 5 -> "0.55"; else -> "0.32" }
+            """<button type="button" class="pt-hist-item" style="opacity:$opacity"
+                       data-prompt="${esc(content)}" title="${esc(t("tabs.rail.history.hint"))}"
+                >${esc(content)}</button>"""
+        }.joinToString("")
+        val railHtml = """
+  <aside class="pt-rail" aria-label="${esc(t("tabs.rail.overview"))}">
+    <div class="pt-rail-card">
+      <div class="pt-rail-h">${esc(t("tabs.rail.overview"))}</div>
+      <div class="pt-ov">
+        <div class="pt-ov-row"><span class="k">${esc(t("tabs.title"))}</span><span class="v">${esc(project.name)}</span></div>
+        <div class="pt-ov-row"><span class="k">${esc(t("tabs.rail.package"))}</span><span class="v mono">${esc(project.packageName)}</span></div>
+        <div class="pt-ov-row"><span class="k">${esc(t("tabs.rail.keystore"))}</span><span class="v">$keystoreHtml</span></div>
+        <div class="pt-ov-row"><span class="k">${esc(t("tabs.rail.tokens"))}</span><span class="v">$tokensHtml</span></div>
+        <div class="pt-ov-row"><span class="k">${esc(t("tabs.rail.prompts"))}</span><span class="v">${promptCount}</span></div>
+      </div>
+    </div>
+    <div class="pt-rail-card pt-hist-card">
+      <div class="pt-rail-h">${esc(t("tabs.rail.history"))}</div>
+      <div class="pt-hist-list">$historyHtml</div>
+    </div>
+  </aside>
+  <button type="button" class="pt-rail-toggle" id="pt-rail-toggle"
+          title="${esc(t("tabs.rail.hide"))}" data-hide="${esc(t("tabs.rail.hide"))}" data-show="${esc(t("tabs.rail.show"))}">⟩</button>"""
 
         // v1.49.0 — 상단 프로젝트명을 <details> 콤보박스로: 클릭 → 다른 프로젝트로 즉시 이동.
         // 현재 프로젝트는 active 표시. 항목이 많으면 상단 필터 input 으로 즉시 검색(project-tabs.js).
@@ -331,9 +373,66 @@ internal object ProjectTabsTemplate {
   }
   #project-tabs-root .flash.ok { background: rgba(105,219,124,0.08); color: var(--ok, #69db7c); }
   #project-tabs-root .flash.err { background: rgba(255,107,107,0.08); color: var(--err, #ff6b6b); }
+
+  /* v1.50.0 — 우측 고정 overview rail. tab-content(position:relative) 안에서 우측 오버레이.
+     폭은 디스플레이 크기에 따라 동적(clamp). iframe 은 풀폭 유지(스크롤바 최우측) + JS 가
+     실제 rail 폭만큼 .content padding-right 주입 → 콘텐츠가 rail 뒤로 가려지지 않음. */
+  #project-tabs-root .pt-rail {
+    position: absolute; top: 0; right: 0; bottom: 0; z-index: 6;
+    width: clamp(248px, 22vw, 360px);
+    background: #0d1018; border-left: 1px solid #1f2330;
+    overflow-y: auto; overflow-x: hidden;
+    padding: 12px; box-sizing: border-box;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  #project-tabs-root[data-rail="hidden"] .pt-rail { display: none; }
+  #project-tabs-root .pt-rail-card {
+    background: #131722; border: 1px solid #1f2330; border-radius: 8px;
+    padding: 10px 12px;
+  }
+  #project-tabs-root .pt-rail-h {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+    color: #5a6175; margin-bottom: 8px;
+  }
+  #project-tabs-root .pt-ov-row {
+    display: flex; justify-content: space-between; gap: 10px; align-items: baseline;
+    padding: 4px 0; font-size: 12px; border-top: 1px solid #161b26;
+  }
+  #project-tabs-root .pt-ov-row:first-child { border-top: 0; }
+  #project-tabs-root .pt-ov-row .k { color: #5a6175; flex-shrink: 0; }
+  #project-tabs-root .pt-ov-row .v { color: var(--text, #ddd); text-align: right; word-break: break-all; }
+  #project-tabs-root .pt-ov-row .v.mono { font-family: ui-monospace, Menlo, monospace; font-size: 11px; }
+  #project-tabs-root .pt-ks.ok { color: var(--ok, #69db7c); }
+  #project-tabs-root .pt-ks.miss { color: var(--text-dim, #888); }
+  /* 프롬프트 히스토리 카드 — 최신 위, 2줄 축약, 5개 밑으로 점점 흐리게(inline opacity). */
+  #project-tabs-root .pt-hist-card { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  #project-tabs-root .pt-hist-list { overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+  #project-tabs-root .pt-hist-item {
+    text-align: left; background: #0c0f17; border: 1px solid #1f2330; border-radius: 6px;
+    color: var(--text, #ddd); font: inherit; font-size: 12px; line-height: 1.35;
+    padding: 7px 9px; cursor: pointer; width: 100%;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  #project-tabs-root .pt-hist-item:hover { background: #1a1f2c; border-color: #2a3145; opacity: 1 !important; }
+  #project-tabs-root .pt-hist-empty { color: #5a6175; font-size: 12px; padding: 6px 2px; }
+  /* rail 접기/펼치기 토글 — rail 좌측 가장자리 손잡이. */
+  #project-tabs-root .pt-rail-toggle {
+    position: absolute; top: 8px; z-index: 7;
+    right: clamp(248px, 22vw, 360px);
+    background: #131722; color: var(--text-dim, #888);
+    border: 1px solid #1f2330; border-right: 0; border-radius: 6px 0 0 6px;
+    width: 20px; height: 34px; cursor: pointer; font-size: 12px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #project-tabs-root .pt-rail-toggle:hover { color: var(--text, #ddd); background: #1a1f2c; }
+  #project-tabs-root[data-rail="hidden"] .pt-rail-toggle { right: 0; border-right: 1px solid #1f2330; border-radius: 6px 0 0 6px; }
+  /* 좁은 화면: rail 자동 숨김(JS 가 measured width 0 으로 패딩 제거). */
+  @media (max-width: 760px) {
+    #project-tabs-root .pt-rail, #project-tabs-root .pt-rail-toggle { display: none; }
+  }
 </style>
 
-<div id="project-tabs-root" data-project-id="${esc(project.id)}">
+<div id="project-tabs-root" data-project-id="${esc(project.id)}" data-rail="shown">
   <div class="pt-header">
     <a href="/projects" style="color:var(--text-dim);text-decoration:none;font-size:12px">← ${esc(t("tabs.backToList"))}</a>
     $projectSwitcher
@@ -375,12 +474,21 @@ internal object ProjectTabsTemplate {
   </div>
   <div class="tab-content">
 $tabPanes
+$railHtml
   </div>
 </div>
 
-<script src="/static/project-tabs.js?v=1.49.0" defer></script>
+<script src="/static/project-tabs.js?v=1.50.0" defer></script>
 """,
         )
+    }
+
+    /** v1.50.0 — 토큰 수 사람이 읽기 쉬운 단위(K/M)로. */
+    private fun fmtTokens(n: Long): String = when {
+        n <= 0L -> "0"
+        n >= 1_000_000L -> "%.1fM".format(n / 1_000_000.0)
+        n >= 1_000L -> "%.1fK".format(n / 1_000.0)
+        else -> n.toString()
     }
 
     private fun escapeHtml(s: String): String =

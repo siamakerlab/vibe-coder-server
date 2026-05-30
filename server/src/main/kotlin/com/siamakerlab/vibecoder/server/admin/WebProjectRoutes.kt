@@ -183,11 +183,25 @@ fun Routing.webProjectRoutes(
         // v1.49.0 — 헤더 프로젝트명 콤보박스(빠른 프로젝트 전환)용 전체 목록.
         val allProjects = runCatching { projects.listForUser(sess.userId, sess.isAdmin) }
             .getOrDefault(listOf(p))
+        // v1.50.0 — 우측 overview rail 데이터.
+        val keystoreReady = runCatching { keystoreService.get(p.packageName) != null }.getOrDefault(false)
+        val usage = runCatching { conversationRepo.usageSummary(id) }.getOrNull()
+        val promptFilter = ConversationTurnRepository.Filter(projectId = id, role = "user")
+        val promptCount = runCatching { conversationRepo.count(promptFilter) }.getOrDefault(0L)
+        val recentPrompts = runCatching {
+            val off = (promptCount - 7).coerceAtLeast(0)
+            conversationRepo.list(promptFilter, limit = 7, offset = off).asReversed().map { it.content }
+        }.getOrDefault(emptyList())
         call.respondText(
             ProjectTabsTemplate.page(
                 username = sess.username,
                 project = p,
                 allProjects = allProjects,
+                keystoreReady = keystoreReady,
+                tokensTotal = (usage?.let { it.inputTokens + it.outputTokens }) ?: 0L,
+                cacheHitRate = usage?.cacheHitRate,
+                promptCount = promptCount,
+                recentPrompts = recentPrompts,
                 flashErr = err, flashOk = ok,
                 csrf = sess.csrf, lang = sess.language,
             ),

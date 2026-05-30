@@ -47,6 +47,32 @@
       }
     }
 
+    // ── v1.50.0 — overview rail (fixed right; width dynamic by display) ──
+    var railEl = root.querySelector('.pt-rail');
+    function railWidthPx() {
+      // display:none (toggle hidden OR media-query) → offsetParent null → 0.
+      if (!railEl || root.getAttribute('data-rail') === 'hidden' || railEl.offsetParent === null) return 0;
+      return Math.round(railEl.getBoundingClientRect().width);
+    }
+    // Inside each (same-origin) iframe: left-align .content + reserve rail width on the right
+    // so the page content isn't hidden behind the fixed rail. iframe stays full-width so its
+    // scrollbar is at the display's far right.
+    function applyRailToFrame(iframe) {
+      try {
+        var doc = iframe && iframe.contentDocument;
+        if (!doc) return;
+        var w = railWidthPx();
+        doc.querySelectorAll('.content').forEach(function (c) {
+          c.style.justifySelf = 'start';      // was center → left-align
+          c.style.maxWidth = 'none';
+          c.style.paddingRight = (w > 0 ? (w + 24) : 32) + 'px';
+        });
+      } catch (e) { /* same-origin SSR → unreachable */ }
+    }
+    function applyRailAll() {
+      root.querySelectorAll('iframe.tab-frame').forEach(applyRailToFrame);
+    }
+
     function resolveInitialTab() {
       const hash = (window.location.hash || '').replace('#', '');
       if (validTabs.indexOf(hash) >= 0) return hash;
@@ -157,6 +183,8 @@
             doc.body.style.margin = '0';
             doc.body.style.minWidth = '0';
           }
+          // 4. v1.50.0 — left-align .content + reserve fixed-rail width on the right.
+          applyRailToFrame(iframe);
         } catch (e) {
           // cross-origin fallback — should not happen for same-origin SSR.
           console && console.debug && console.debug('iframe cleanup failed', e);
@@ -198,6 +226,56 @@
       if (window.requestIdleCallback) window.requestIdleCallback(fn, { timeout: 1500 });
       else setTimeout(fn, 300);
     }
+
+    // ── v1.50.0 — rail toggle (hide/show, global pref) + resize + history click ──
+    (function () {
+      var toggle = document.getElementById('pt-rail-toggle');
+      var RAIL_KEY = 'vibe.projectRail'; // 전역(프로젝트 공통) 선호.
+      try { if (localStorage.getItem(RAIL_KEY) === 'hidden') root.setAttribute('data-rail', 'hidden'); } catch (e) {}
+      function syncToggle() {
+        if (!toggle) return;
+        var hidden = root.getAttribute('data-rail') === 'hidden';
+        toggle.textContent = hidden ? '⟨' : '⟩';
+        toggle.title = hidden ? (toggle.getAttribute('data-show') || '') : (toggle.getAttribute('data-hide') || '');
+      }
+      if (toggle) {
+        toggle.addEventListener('click', function () {
+          var hidden = root.getAttribute('data-rail') === 'hidden';
+          root.setAttribute('data-rail', hidden ? 'shown' : 'hidden');
+          try { localStorage.setItem(RAIL_KEY, hidden ? 'shown' : 'hidden'); } catch (e) {}
+          syncToggle();
+          applyRailAll();
+        });
+        syncToggle();
+      }
+      var rzTimer = null;
+      window.addEventListener('resize', function () {
+        clearTimeout(rzTimer);
+        rzTimer = setTimeout(applyRailAll, 150);
+      });
+      // 프롬프트 히스토리 항목 클릭 → 콘솔 탭으로 전환 + 프롬프트 입력창에 채움.
+      root.addEventListener('click', function (e) {
+        var item = e.target && e.target.closest ? e.target.closest('.pt-hist-item') : null;
+        if (!item) return;
+        var txt = item.getAttribute('data-prompt') || '';
+        activate('console');
+        var tries = 0;
+        (function fill() {
+          var input = null;
+          try {
+            var cf = frameOf('console');
+            input = cf && cf.contentDocument && cf.contentDocument.getElementById('prompt-input');
+          } catch (e2) {}
+          if (input) {
+            input.value = txt;
+            input.focus();
+            try { input.dispatchEvent(new Event('input', { bubbles: true })); } catch (e3) {}
+          } else if (tries++ < 50) {
+            setTimeout(fill, 100);
+          }
+        })();
+      });
+    })();
 
     activate(resolveInitialTab());
 
