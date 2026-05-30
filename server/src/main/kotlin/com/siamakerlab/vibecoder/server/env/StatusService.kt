@@ -58,7 +58,8 @@ class StatusService(
             // 옵션이지만 buildRepo.lastForProject 가 N번 호출되어 비효율 → 직접
             // ProjectRepository.list() 의 raw row 만 필터.
             projectCount = projectRepo.list().count {
-                it.id != com.siamakerlab.vibecoder.server.projects.ProjectService.SCRATCH_ID
+                // v1.54.0 — ghost(scratch + chat 세션) 모두 제외.
+                !com.siamakerlab.vibecoder.server.projects.ProjectService.isGhost(it.id)
             },
             runningTaskCount = buildRepo.countRunning(),
             claudeAvailable = envSnap.claude.status == com.siamakerlab.vibecoder.shared.dto.CheckStatus.OK,

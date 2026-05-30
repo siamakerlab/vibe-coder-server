@@ -58,7 +58,7 @@ fun Routing.subAgentRoutes(
     get("/projects/{id}/agents") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
         val id = call.parameters["id"] ?: return@get call.respondRedirect("/projects")
-        if (id == ProjectService.SCRATCH_ID) return@get call.respondRedirect("/chat")
+        if (ProjectService.isGhost(id)) return@get call.respondRedirect("/chat")
         if (!requireProjectAccessOrRedirect(sess, projects, id)) return@get
         val p = projects.get(id) ?: return@get call.respondRedirect("/projects?err=not_found")
 
@@ -137,7 +137,7 @@ $rowsHtml
         if (!AGENT_NAME_PATTERN.matches(agentName)) {
             return@get call.respondRedirect("/projects/$id/agents?err=bad_name")
         }
-        if (id == ProjectService.SCRATCH_ID) return@get call.respondRedirect("/chat")
+        if (ProjectService.isGhost(id)) return@get call.respondRedirect("/chat")
         if (!requireProjectAccessOrRedirect(sess, projects, id)) return@get
         val p = projects.get(id) ?: return@get call.respondRedirect("/projects?err=not_found")
         // 등록된 agent 인지 확인 (없으면 dispatch 무의미).

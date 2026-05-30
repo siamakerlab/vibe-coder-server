@@ -64,9 +64,12 @@ vibe-coder-server/
   semi-automatic web OAuth (`script -q` PTY wrap, no xterm.js).
 - **Prompt template library** (v0.13.0+) — save reusable prompts at `/prompts`,
   pull them into any console via the ▼ dropdown. JSON-backed, max 500.
-- **General Chat** (v0.13.0+) — `/chat` page runs a project-less Claude
-  session in a synthetic `__scratch__` workspace. Full multi-turn conversation
-  with `--resume`, identical UX to the project console.
+- **General Chat** (v0.13.0+, multi-session since **v1.54.0**) — `/chat` hosts
+  multiple independent ChatGPT-style chat sessions. A left sidebar lists every
+  chat (auto-titled from the first prompt, rename/delete per item); pick one to
+  continue its conversation or hit "＋ New chat" to start fresh. Each chat is a
+  `__chat_<id>__` ghost project with its own Claude session (`--resume`) and
+  persistent history, reusing the project console UX verbatim.
 
 ### Build & deploy
 - **MCP catalog** — 60+ Model Context Protocol servers in 10 categories,
@@ -733,7 +736,8 @@ carries a CSRF `_csrf` token (v0.12.4+).
 | `/projects/{id}/files` | Upload / download / delete (the upload area) |
 | `/projects/{id}/git` | git status / diff / log (read-only) + **v0.18.0** commit & push form |
 | `/projects/{id}/history` | **v0.16.0** Persistent prompt/response history (filter / paginate) |
-| `/chat` | **v0.13.0** General Chat — project-less Claude session (`__scratch__` workspace) |
+| `/chat`, `/chat?c=<id>` | **v0.13.0** General Chat; **v1.54.0** multi-session sidebar (each chat = `__chat_<id>__` ghost) |
+| `POST /chat/new`, `/chat/{id}/rename`, `/chat/{id}/delete` | **v1.54.0** create / rename / delete a chat session |
 | `/chat/history` | **v0.16.0** Scratch-project persistent history |
 | `/prompts` | **v0.13.0** Prompt template CRUD (used by the ▼ dropdown) |
 | `/env-setup` | Build-environment status + one-click installers |

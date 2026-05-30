@@ -340,8 +340,8 @@ fun main(args: Array<String>) {
             Thread.activeCount()
         }
         // Domain state — re-read on every scrape, so values are always live.
-        r.gauge("vibe_projects_total", "Registered projects (excluding __scratch__)") {
-            runCatching { projectRepo.list().count { it.id != com.siamakerlab.vibecoder.server.projects.ProjectService.SCRATCH_ID } }
+        r.gauge("vibe_projects_total", "Registered projects (excluding ghost: __scratch__ / __chat_*)") {
+            runCatching { projectRepo.list().count { !com.siamakerlab.vibecoder.server.projects.ProjectService.isGhost(it.id) } }
                 .getOrDefault(0)
         }
         r.gauge("vibe_users_total", "Total admin/member/viewer users") {

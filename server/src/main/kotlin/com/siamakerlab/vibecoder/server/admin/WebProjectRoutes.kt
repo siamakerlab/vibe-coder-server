@@ -310,8 +310,12 @@ fun Routing.webProjectRoutes(
             .onFailure { log.warn(it) { "console reset failed for $id" } }
         log.info { "console reset: $id by ${sess.username}" }
         authDeps.audit.consoleNew(sess.userId, id, call.request.origin.remoteHost)
-        // v0.13.0 — scratch 는 /chat 으로 redirect (전용 페이지 유지).
-        val target = if (id == ProjectService.SCRATCH_ID) "/chat" else "/projects/$id/console"
+        // v0.13.0 — scratch 는 /chat. v1.54.0 — chat 세션은 /chat?c=<id> (사이드바 유지).
+        val target = when {
+            id == ProjectService.SCRATCH_ID -> "/chat"
+            ProjectService.isChatGhost(id) -> "/chat?c=${id.encodeUrl()}"
+            else -> "/projects/$id/console"
+        }
         call.respondRedirect(target)
     }
 
@@ -1074,14 +1078,25 @@ fun Routing.webProjectRoutes(
         call.respondRedirect("/projects/$id/git?flash=${flashMsg.encodeUrl()}")
     }
 
-    // ── /chat — General Chat (프로젝트 무관, ghost project) v0.13.0 ───
+    // ── /chat — General Chat (ChatGPT 스타일 다중 세션) v1.54.0 ───
+    // 각 채팅 = `__chat_<id>__` ghost 프로젝트. 좌측 사이드바에 채팅 목록, 우측에 콘솔.
+    // 기존 단일 /chat (v0.13.0 __scratch__) 에서 확장 — prompt/cancel/new API 는 그대로
+    // 재사용(projectId = 활성 chat ghost id). 채팅 없으면 자동으로 1개 생성.
     get("/chat") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
-        val p = projects.ensureScratchProject()
+        var chats = projects.listChats()
+        if (chats.isEmpty()) {
+            projects.createChat()
+            chats = projects.listChats()
+        }
+        val requested = call.request.queryParameters["c"]?.trim()?.ifBlank { null }
+        val activeId = requested?.takeIf { reqId -> chats.any { it.id == reqId } }
+            ?: chats.first().id
+        val p = projects.ensureChat(activeId)
         val alive = sessionManager.isAlive(p.id)
         val sid = sessionManager.currentSessionId(p.id)
         val env = authDeps.envDiagnostics.run(sess.language)
-        // v1.7.3 — General Chat 도 동일하게 history 영속 복원.
+        // v1.7.3 — Chat 도 동일하게 history 영속 복원.
         val history = if (sid != null) {
             runCatching {
                 conversationRepo.list(
@@ -1090,6 +1105,8 @@ fun Routing.webProjectRoutes(
                 )
             }.getOrDefault(emptyList())
         } else emptyList()
+        val activeTitle = chats.firstOrNull { it.id == activeId }?.title
+        val sidebar = WebProjectTemplates.chatSidebar(chats, activeId, sess.csrf, sess.language)
         call.respondText(
             WebProjectTemplates.consolePage(
                 sess.username, p, sid, alive,
@@ -1098,10 +1115,51 @@ fun Routing.webProjectRoutes(
                 csrf = sess.csrf,
                 isChat = true,
                 initialHistory = history,
+                chatSidebar = sidebar,
+                chatTitle = activeTitle,
                 lang = sess.language,
             ),
             ContentType.Text.Html,
         )
+    }
+
+    // ── 새 채팅 생성 → 새 채팅 콘솔로 이동 ──────────────────────────
+    post("/chat/new") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireWriteAccessOrRedirect(sess)) return@post
+        requireCsrf()
+        val id = projects.createChat()
+        call.respondRedirect("/chat?c=${id.encodeUrl()}")
+    }
+
+    // ── 채팅 제목 변경 ─────────────────────────────────────────────
+    post("/chat/{id}/rename") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireWriteAccessOrRedirect(sess)) return@post
+        val params = requireCsrf()
+        val id = call.parameters["id"].orEmpty()
+        if (!ProjectService.isChatGhost(id)) {
+            call.respondRedirect("/chat"); return@post
+        }
+        val title = params["title"]?.trim().orEmpty()
+        runCatching { projects.renameChat(id, title) }
+            .onFailure { log.warn(it) { "chat rename failed: $id" } }
+        call.respondRedirect("/chat?c=${id.encodeUrl()}")
+    }
+
+    // ── 채팅 삭제 (살아있는 세션 종료 + cascade 정리) ──────────────
+    post("/chat/{id}/delete") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireWriteAccessOrRedirect(sess)) return@post
+        requireCsrf()
+        val id = call.parameters["id"].orEmpty()
+        if (ProjectService.isChatGhost(id)) {
+            // 진행 중인 Claude 자식 프로세스 정리 + session-id 파일 제거.
+            runCatching { sessionManager.startNew(id) }
+            runCatching { projects.deleteChat(id) }
+                .onFailure { log.warn(it) { "chat delete failed: $id" } }
+        }
+        call.respondRedirect("/chat")
     }
 
     // ── v0.29.0 — 프로젝트 source zip 다운로드 ─────────────────────
@@ -1145,7 +1203,11 @@ fun Routing.webProjectRoutes(
         requireProjectAccessOrThrow(sess, projects, id)
         requireCsrf()  // CSRF 검증은 유지 — 외부 트리거 방지.
         log.info { "slash chip ignored (deprecated v0.75.0): project=$id by ${sess.username}" }
-        val target = if (id == ProjectService.SCRATCH_ID) "/chat" else "/projects/$id/console"
+        val target = when {
+            id == ProjectService.SCRATCH_ID -> "/chat"
+            ProjectService.isChatGhost(id) -> "/chat?c=${id.encodeUrl()}"
+            else -> "/projects/$id/console"
+        }
         call.respondRedirect(target)
     }
 }

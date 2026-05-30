@@ -228,8 +228,9 @@ class ProjectService(
     fun list(): List<ProjectDto> {
         val rows = repo.list()
         // v0.13.0 — scratch "ghost" project (/chat 페이지용) 는 일반 목록에서 숨김.
+        // v1.54.0 — chat 세션 ghost(`__chat_*`)도 동일하게 제외.
         return rows
-            .filter { it.id != SCRATCH_ID }
+            .filter { !isGhost(it.id) }
             .map { row ->
                 val last = buildRepo.lastForProject(row.id)
                 // v1.1.0 — Claude busy 상태 주입 (manager 미주입 = false).
@@ -321,6 +322,93 @@ class ProjectService(
         val p = java.nio.file.Path.of(sourcePath)
         if (p.notExists()) Files.createDirectories(p)
         ProjectScaffolder.ensureClaudeFiles(p)
+    }
+
+    // ── v1.54.0 — ChatGPT 스타일 다중 채팅 (각 채팅 = `__chat_<id>__` ghost) ──────────
+
+    /** Chat 목록 한 줄 요약 (사이드바용). */
+    data class ChatSummary(
+        val id: String,
+        /** 표시 제목 — 사용자 지정명 또는 첫 프롬프트 자동 요약. */
+        val title: String,
+        /** 마지막 대화 시각 ISO (대화 없으면 생성 시각). 정렬/표시용. */
+        val lastActivity: String,
+        val busy: Boolean,
+        val alive: Boolean,
+    )
+
+    /**
+     * 새 채팅 ghost 프로젝트 생성. 워크스페이스 sidecar 폴더 + CLAUDE.md + settings.json
+     * + DB row 를 모두 만든다. 반환은 새 ghost projectId.
+     */
+    fun createChat(): String {
+        val id = CHAT_PREFIX + com.siamakerlab.vibecoder.server.core.Ids.taskId() + "_"
+        val srcRoot = workspace.projectRoot(id)
+        Files.createDirectories(srcRoot)
+        ProjectScaffolder.ensureClaudeFiles(srcRoot)
+        repo.insert(
+            id = id,
+            name = DEFAULT_CHAT_TITLE,
+            packageName = "chat",
+            sourcePath = srcRoot.toString(),
+            moduleName = DEFAULT_MODULE,
+            debugTask = DEFAULT_DEBUG_TASK,
+        )
+        log.info { "chat created: $id at $srcRoot" }
+        return id
+    }
+
+    /** 단일 채팅 존재 보장 (디렉토리/scaffold 복구). 없는 id 면 404. */
+    fun ensureChat(id: String): ProjectDto {
+        require(isChatGhost(id)) { "not a chat id: $id" }
+        val row = repo.findById(id)
+            ?: throw ApiException.localized(404, "chat_not_found", messageKey = "api.project.notFound", args = listOf(id))
+        ensureScratchDirsExist(row.sourcePath)
+        return row.toDto(false, null)
+    }
+
+    /**
+     * 전체 채팅 목록 — 최근 활동순(desc). 제목은 사용자 지정명 우선, "New chat" 이면
+     * 첫 사용자 프롬프트를 잘라 자동 제목으로 표시.
+     */
+    fun listChats(): List<ChatSummary> {
+        return repo.list()
+            .filter { isChatGhost(it.id) }
+            .map { row ->
+                val lastTs = conversationRepo?.lastTs(row.id)
+                val title = if (row.name == DEFAULT_CHAT_TITLE) {
+                    conversationRepo?.firstUserContent(row.id)?.let { summarizeTitle(it) } ?: DEFAULT_CHAT_TITLE
+                } else row.name
+                ChatSummary(
+                    id = row.id,
+                    title = title,
+                    lastActivity = lastTs ?: row.updatedAt,
+                    busy = isBusyOf?.invoke(row.id) ?: false,
+                    alive = false,
+                )
+            }
+            .sortedByDescending { it.lastActivity }
+    }
+
+    /** 채팅 제목 변경 (사용자 지정). 빈 문자열이면 자동 제목으로 되돌림. */
+    fun renameChat(id: String, title: String) {
+        require(isChatGhost(id)) { "not a chat id: $id" }
+        val clean = title.trim().take(120).ifBlank { DEFAULT_CHAT_TITLE }
+        repo.updateName(id, clean)
+    }
+
+    /** 채팅 삭제 — conversation_turns 등 cascade 정리 후 DB row 제거 (디스크는 보존). */
+    fun deleteChat(id: String): Boolean {
+        require(isChatGhost(id)) { "not a chat id: $id" }
+        // delete() 는 scratch 만 거부 — chat ghost 는 통과해 정상 cascade.
+        return delete(id)
+    }
+
+    /** 첫 프롬프트 → 채팅 제목 자동 요약 (한 줄, 최대 40자). */
+    private fun summarizeTitle(prompt: String): String {
+        val firstLine = prompt.trim().lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+        if (firstLine.isEmpty()) return DEFAULT_CHAT_TITLE
+        return if (firstLine.length <= 40) firstLine else firstLine.take(40).trimEnd() + "…"
     }
 
     fun get(id: String): ProjectDto {
@@ -535,5 +623,21 @@ class ProjectService(
 
         /** v0.13.0 — General Chat ghost 프로젝트 ID. 사용자 입력으로는 만들 수 없는 형태. */
         const val SCRATCH_ID = "__scratch__"
+
+        /** v1.54.0 — ChatGPT 스타일 다중 채팅. 각 채팅 = `__chat_<id>__` ghost 프로젝트. */
+        const val CHAT_PREFIX = "__chat_"
+
+        /** v1.54.0 — 새 채팅 기본 제목. 이 값이면 첫 프롬프트로 자동 제목 대체. */
+        const val DEFAULT_CHAT_TITLE = "New chat"
+
+        /** v1.54.0 — chat 세션 ghost 프로젝트인지. */
+        fun isChatGhost(id: String): Boolean = id.startsWith(CHAT_PREFIX)
+
+        /**
+         * v1.54.0 — 일반 워크스페이스 프로젝트가 아닌 ghost(scratch + chat). list() /
+         * metrics / status 등에서 일괄 제외하기 위한 단일 판정. [WorkspacePath.isGhostId]
+         * 와 같은 규칙 (모듈 경계 때문에 양쪽에 존재).
+         */
+        fun isGhost(id: String): Boolean = id == SCRATCH_ID || isChatGhost(id)
     }
 }

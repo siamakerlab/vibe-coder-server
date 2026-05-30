@@ -277,6 +277,33 @@ class ConversationTurnRepository(private val clock: Clock) {
         ConversationTurns.deleteWhere { ConversationTurns.projectId eq projectId }
     }
 
+    /**
+     * v1.54.0 — Chat 목록의 제목 자동 생성용. 해당 프로젝트의 가장 이른 사용자 turn
+     * (role="user", 메인 console = agent_name IS NULL) 본문. 없으면 null.
+     */
+    fun firstUserContent(projectId: String): String? = transaction {
+        ConversationTurns.selectAll()
+            .where {
+                (ConversationTurns.projectId eq projectId) and
+                    (ConversationTurns.role eq "user") and
+                    IsNullOp(ConversationTurns.agentName)
+            }
+            .orderBy(ConversationTurns.ts to SortOrder.ASC)
+            .limit(1)
+            .firstOrNull()?.get(ConversationTurns.content)
+    }
+
+    /**
+     * v1.54.0 — Chat 목록 "최근 활동순" 정렬용. 해당 프로젝트의 마지막 turn ts.
+     * turn 이 하나도 없으면 null.
+     */
+    fun lastTs(projectId: String): String? = transaction {
+        val agg = ConversationTurns.ts.max()
+        ConversationTurns.select(agg)
+            .where { ConversationTurns.projectId eq projectId }
+            .firstOrNull()?.get(agg)
+    }
+
     private fun ResultRow.toRow() = ConversationTurnRow(
         id = this[ConversationTurns.id],
         projectId = this[ConversationTurns.projectId],

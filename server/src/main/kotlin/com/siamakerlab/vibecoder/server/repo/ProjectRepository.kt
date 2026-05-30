@@ -66,6 +66,14 @@ class ProjectRepository(private val clock: Clock) {
         }
     }
 
+    /** v1.54.0 — Chat 세션 제목(rename / 첫 프롬프트 자동 제목) 갱신. */
+    fun updateName(id: String, name: String): Int = transaction {
+        Projects.update({ Projects.id eq id }) {
+            it[Projects.name] = name
+            it[updatedAt] = clock.nowIso()
+        }
+    }
+
     fun count(): Int = transaction { Projects.selectAll().count().toInt() }
 
     private fun ResultRow.toRow() = ProjectRow(

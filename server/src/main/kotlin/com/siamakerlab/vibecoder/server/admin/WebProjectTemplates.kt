@@ -30,6 +30,10 @@ object WebProjectTemplates {
             .replace("\"", "&quot;")
             .replace("'", "&#39;")
 
+    /** v1.54.0 — URL path/query segment 안전 인코딩 (chat id 등). */
+    private fun String.encodeUrlSeg(): String =
+        java.net.URLEncoder.encode(this, Charsets.UTF_8).replace("+", "%20")
+
     /**
      * v0.12.4 — JavaScript 문자열 리터럴 컨텍스트 전용 escape.
      *
@@ -858,6 +862,13 @@ $errHtml
          * inline JSON 으로 embed 되어 페이지 load 직후 JS 가 prepend.
          */
         initialHistory: List<com.siamakerlab.vibecoder.server.repo.ConversationTurnRow> = emptyList(),
+        /**
+         * v1.54.0 — ChatGPT 스타일 다중 채팅. non-null 이면 좌측에 채팅 목록 사이드바를
+         * 두고 기존 콘솔 본문을 우측 메인 영역으로 감싼다 (isChat 전용).
+         */
+        chatSidebar: String? = null,
+        /** v1.54.0 — 활성 채팅 표시 제목 (헤더). null 이면 "General Chat". */
+        chatTitle: String? = null,
         lang: String,
     ): String {
         val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
@@ -893,7 +904,71 @@ $errHtml
         val projectIdJs = jsLit(p.id)
 
         val navPath = if (isChat) "/chat" else "/projects"
-        val titleSuffix = if (isChat) "General Chat" else t("console.title")
+        // v1.54.0 — 다중 채팅이면 헤더 제목을 활성 채팅명으로. 단일 General Chat 호환 fallback.
+        val titleSuffix = if (isChat) (chatTitle?.takeIf { it.isNotBlank() } ?: "General Chat") else t("console.title")
+        // v1.54.0 — chatSidebar 가 주어지면 좌측 목록 + 우측 메인 flex 레이아웃으로 감싼다.
+        val chatShellOpen = if (chatSidebar != null) """
+<style>
+  .chat-shell { display:flex; gap:14px; align-items:flex-start; }
+  .chat-side {
+    flex:0 0 264px; min-width:0; box-sizing:border-box;
+    position:sticky; top:0; max-height:calc(100vh - 70px); overflow-y:auto;
+    background:#0d1018; border:1px solid #1f2330; border-radius:10px; padding:10px;
+  }
+  .chat-main { flex:1; min-width:0; }
+  .chat-new-btn {
+    display:flex; align-items:center; justify-content:center; gap:6px; width:100%;
+    padding:9px 12px; background:var(--accent,#6aa9ff); color:#06121f; border:0;
+    border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; font-family:inherit;
+  }
+  .chat-new-btn:hover { filter:brightness(1.08); }
+  .chat-list { margin-top:10px; display:flex; flex-direction:column; gap:2px; }
+  .chat-item { position:relative; display:flex; align-items:center; border-radius:7px; }
+  .chat-item:hover { background:#161b26; }
+  .chat-item.active { background:rgba(106,169,255,0.14); }
+  .chat-item-link {
+    flex:1; min-width:0; display:flex; align-items:center; gap:7px;
+    padding:8px 9px; text-decoration:none; color:var(--text,#ddd); font-size:13px;
+  }
+  .chat-item.active .chat-item-link { color:var(--accent,#6aa9ff); }
+  .chat-item-title { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .chat-busy-dot {
+    flex-shrink:0; width:7px; height:7px; border-radius:50%; background:#69db7c;
+    animation:vibe-busy-pulse 1.4s ease-in-out infinite;
+  }
+  .chat-item-menu { position:relative; flex-shrink:0; }
+  .chat-item-menu > summary {
+    list-style:none; cursor:pointer; color:var(--text-dim,#888); padding:6px 9px; font-size:14px; line-height:1;
+  }
+  .chat-item-menu > summary::-webkit-details-marker { display:none; }
+  .chat-item-menu[open] > summary { color:var(--text,#ddd); }
+  .chat-item-pop {
+    position:absolute; right:0; top:calc(100% + 2px); z-index:30; min-width:200px;
+    background:#131722; border:1px solid #2a3145; border-radius:8px; padding:8px;
+    box-shadow:0 8px 24px rgba(0,0,0,0.45); display:flex; flex-direction:column; gap:8px;
+  }
+  .chat-rename-row { display:flex; gap:5px; }
+  .chat-rename-row input {
+    flex:1; min-width:0; box-sizing:border-box; padding:5px 7px; font-size:12px;
+    background:#0c0f17; border:1px solid #2a3145; border-radius:5px; color:var(--text,#ddd); font-family:inherit;
+  }
+  .chat-pop-btn {
+    padding:5px 9px; font-size:12px; border-radius:5px; border:1px solid #2a3145;
+    background:#1a1f2c; color:var(--text,#ddd); cursor:pointer; font-family:inherit; white-space:nowrap;
+  }
+  .chat-pop-btn:hover { background:#222838; }
+  .chat-pop-btn.danger { color:#ff9e9e; border-color:#3a2424; }
+  .chat-pop-btn.danger:hover { background:#2c1a1a; }
+  .chat-empty { color:#5a6175; font-size:12px; padding:10px 4px; text-align:center; }
+  @media (max-width:760px) {
+    .chat-shell { flex-direction:column; }
+    .chat-side { flex:none; width:100%; position:static; max-height:240px; }
+  }
+</style>
+<div class="chat-shell">
+  <aside class="chat-side" aria-label="${esc(t("chat.sidebar.label"))}">$chatSidebar</aside>
+  <div class="chat-main">""" else ""
+        val chatShellClose = if (chatSidebar != null) "\n  </div>\n</div>" else ""
         // v1.48.0 — 프로젝트 콘솔의 nav chip(빌드/히스토리/파일/Git/심볼/에이전트) 은 모두
         // 상단 프로젝트 탭으로 대체돼 중복 → 제거. 일반 Chat(isChat) 은 탭 바깥 독립 페이지라
         // history 링크만 유지.
@@ -907,7 +982,7 @@ $errHtml
             currentPath = navPath,
             csrf = csrf,
             lang = lang,
-            body = """
+            body = """$chatShellOpen
 <!-- v1.48.0 — 세션 카드 제거. 세션 상태 + 남은 액션(중지/새 세션)을 헤더 우측(탭 바로 밑)으로
      이동. 나머지 버블 버튼(빌드/파일/Git/에이전트/히스토리/심볼)은 상단 프로젝트 탭으로
      대체돼 제거(isChat 만 history 링크 유지). busy-badge 는 전송 버튼 라인에 있어 id 유지. -->
@@ -1850,9 +1925,58 @@ $authBannerHtml
     });
   }
 })();
-</script>
+</script>$chatShellClose
 """
         )
+    }
+
+    /**
+     * v1.54.0 — ChatGPT 스타일 채팅 목록 사이드바 HTML.
+     * 새 채팅 버튼 + 채팅 항목(제목 / 응답중 점 / ⋯ 메뉴의 rename·delete).
+     */
+    fun chatSidebar(
+        chats: List<com.siamakerlab.vibecoder.server.projects.ProjectService.ChatSummary>,
+        activeId: String,
+        csrf: String?,
+        lang: String,
+    ): String {
+        val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
+        val csrfInput = CsrfTokens.hiddenInput(csrf)
+        val items = if (chats.isEmpty()) {
+            """<div class="chat-empty">${esc(t("chat.empty"))}</div>"""
+        } else chats.joinToString("") { c ->
+            val active = c.id == activeId
+            val busyDot = if (c.busy) """<span class="chat-busy-dot" title="${esc(t("chat.busy"))}"></span>""" else ""
+            """
+      <div class="chat-item${if (active) " active" else ""}">
+        <a class="chat-item-link" href="/chat?c=${esc(c.id.encodeUrlSeg())}">
+          <span class="chat-item-title" title="${esc(c.title)}">${esc(c.title)}</span>
+          $busyDot
+        </a>
+        <details class="chat-item-menu">
+          <summary title="${esc(t("chat.menu"))}">⋯</summary>
+          <div class="chat-item-pop">
+            <form method="post" action="/chat/${esc(c.id.encodeUrlSeg())}/rename" class="chat-rename-row">
+              $csrfInput
+              <input type="text" name="title" maxlength="120" value="${esc(c.title)}"
+                     placeholder="${esc(t("chat.rename.placeholder"))}" autocomplete="off">
+              <button type="submit" class="chat-pop-btn">${esc(t("chat.rename.save"))}</button>
+            </form>
+            <form method="post" action="/chat/${esc(c.id.encodeUrlSeg())}/delete"
+                  onsubmit="return confirm('${esc(t("chat.delete.confirm")).replace("'", "&#39;")}')">
+              $csrfInput
+              <button type="submit" class="chat-pop-btn danger">${esc(t("chat.delete"))}</button>
+            </form>
+          </div>
+        </details>
+      </div>"""
+        }
+        return """
+      <form method="post" action="/chat/new">
+        $csrfInput
+        <button type="submit" class="chat-new-btn">＋ ${esc(t("chat.new"))}</button>
+      </form>
+      <div class="chat-list">$items</div>"""
     }
 
     // ────────────────────────────────────────────────────────────────────
