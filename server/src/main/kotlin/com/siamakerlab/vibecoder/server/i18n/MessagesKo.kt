@@ -1542,6 +1542,9 @@ internal object MessagesKo {
         // ─────────────────────────────────────────────── project tabs (v1.11.0)
         "tabs.title" to "프로젝트",
         "tabs.backToList" to "프로젝트 목록",
+        "tabs.switch.title" to "프로젝트 전환",
+        "tabs.switch.filter" to "프로젝트 검색…",
+        "tabs.switch.all" to "전체 목록 / 새 프로젝트 +",
         "tabs.console" to "콘솔",
         "tabs.builds" to "빌드",
         "tabs.files" to "파일",

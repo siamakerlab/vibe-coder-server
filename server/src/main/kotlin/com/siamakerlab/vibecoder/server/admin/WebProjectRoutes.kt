@@ -180,10 +180,14 @@ fun Routing.webProjectRoutes(
         }
         val err = call.request.queryParameters["err"]
         val ok = call.request.queryParameters["ok"]
+        // v1.49.0 — 헤더 프로젝트명 콤보박스(빠른 프로젝트 전환)용 전체 목록.
+        val allProjects = runCatching { projects.listForUser(sess.userId, sess.isAdmin) }
+            .getOrDefault(listOf(p))
         call.respondText(
             ProjectTabsTemplate.page(
                 username = sess.username,
                 project = p,
+                allProjects = allProjects,
                 flashErr = err, flashOk = ok,
                 csrf = sess.csrf, lang = sess.language,
             ),

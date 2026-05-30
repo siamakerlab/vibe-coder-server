@@ -1564,6 +1564,9 @@ internal object MessagesEn {
         // ─────────────────────────────────────────────── project tabs (v1.11.0)
         "tabs.title" to "Project",
         "tabs.backToList" to "Projects",
+        "tabs.switch.title" to "Switch project",
+        "tabs.switch.filter" to "Filter projects…",
+        "tabs.switch.all" to "All projects / New +",
         "tabs.console" to "Console",
         "tabs.builds" to "Builds",
         "tabs.files" to "Files",

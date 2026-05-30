@@ -81,9 +81,38 @@ internal object ProjectTabsTemplate {
         flashOk: String?,
         csrf: String?,
         lang: String,
+        /** v1.49.0 — 헤더 프로젝트명 콤보박스(빠른 전환)용 전체 프로젝트 목록. */
+        allProjects: List<ProjectDto> = emptyList(),
     ): String {
         val t = { key: String -> Messages.t(lang, key) }
         val esc = ::escapeHtml
+
+        // v1.49.0 — 상단 프로젝트명을 <details> 콤보박스로: 클릭 → 다른 프로젝트로 즉시 이동.
+        // 현재 프로젝트는 active 표시. 항목이 많으면 상단 필터 input 으로 즉시 검색(project-tabs.js).
+        val switcherItems = allProjects
+            .sortedBy { it.name.lowercase() }
+            .joinToString("") { pr ->
+                val active = pr.id == project.id
+                """<a href="/projects/${esc(pr.id)}" class="pt-switch-item${if (active) " active" else ""}"
+                      data-name="${esc((pr.name + " " + pr.id).lowercase())}">
+                     <span class="pt-si-name">${esc(pr.name)}</span>
+                     <span class="pt-si-id">${esc(pr.id)}</span>
+                   </a>"""
+            }
+        val projectSwitcher = """
+    <details class="pt-switcher">
+      <summary title="${esc(t("tabs.switch.title"))}">
+        <span class="pt-proj-name">${esc(project.name)}</span><span class="pt-caret">▾</span>
+      </summary>
+      <div class="pt-switcher-menu">
+        <input type="text" class="pt-switch-filter" placeholder="${esc(t("tabs.switch.filter"))}" autocomplete="off" spellcheck="false">
+        <div class="pt-switch-list">
+          $switcherItems
+        </div>
+        <hr>
+        <a href="/projects" class="pt-switch-item pt-switch-all">${esc(t("tabs.switch.all"))}</a>
+      </div>
+    </details>"""
 
         // primary 탭만 상단 탭바에. overflow 는 더보기 드롭다운에 (아래 moreLinks).
         val tabBtns = PRIMARY_TABS.joinToString("") { tab ->
@@ -152,6 +181,48 @@ internal object ProjectTabsTemplate {
     font-size: 16px; margin: 0; font-weight: 600;
   }
   #project-tabs-root .pt-header .spacer { flex: 1; }
+  /* v1.49.0 — 프로젝트명 콤보박스(빠른 전환). */
+  #project-tabs-root .pt-switcher { position: relative; }
+  #project-tabs-root .pt-switcher > summary {
+    list-style: none; cursor: pointer; font-size: 16px; font-weight: 600;
+    color: var(--text, #ddd); display: inline-flex; align-items: center; gap: 5px;
+    padding: 2px 4px; border-radius: 4px;
+  }
+  #project-tabs-root .pt-switcher > summary::-webkit-details-marker { display: none; }
+  #project-tabs-root .pt-switcher > summary:hover { background: #1a1f2c; }
+  #project-tabs-root .pt-switcher .pt-caret { color: var(--text-dim, #888); font-size: 11px; }
+  #project-tabs-root .pt-switcher[open] > summary { color: var(--accent, #6aa9ff); }
+  #project-tabs-root .pt-switcher-menu {
+    position: absolute; left: 0; top: calc(100% + 6px); z-index: 200;
+    background: #131722; border: 1px solid #2a3145; border-radius: 6px;
+    min-width: 280px; max-width: 440px; padding: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+  }
+  #project-tabs-root .pt-switch-filter {
+    width: 100%; box-sizing: border-box; padding: 6px 8px; margin-bottom: 6px;
+    background: #0c0f17; border: 1px solid #2a3145; border-radius: 4px;
+    color: var(--text, #ddd); font-size: 13px; font-family: inherit;
+  }
+  #project-tabs-root .pt-switch-list {
+    max-height: 320px; overflow-y: auto; display: flex; flex-direction: column;
+  }
+  #project-tabs-root .pt-switch-item {
+    display: flex; justify-content: space-between; align-items: center; gap: 10px;
+    padding: 7px 9px; border-radius: 4px; text-decoration: none;
+    color: var(--text, #ddd); font-size: 13px;
+  }
+  #project-tabs-root .pt-switch-item:hover { background: #1a1f2c; }
+  #project-tabs-root .pt-switch-item.active {
+    background: rgba(106,169,255,0.12); color: var(--accent, #6aa9ff);
+  }
+  #project-tabs-root .pt-switch-item .pt-si-id {
+    color: var(--text-dim, #888); font-size: 11px;
+    font-family: ui-monospace, Menlo, monospace; flex-shrink: 0;
+  }
+  #project-tabs-root .pt-switcher-menu hr {
+    border: 0; border-top: 1px solid #1f2330; margin: 6px 0;
+  }
+  #project-tabs-root .pt-switch-all { color: var(--text-dim, #aaa); }
   /* v1.13.1 — 메타데이터를 헤더 chip 에서 빼고 Settings 드롭다운 안의 dl 로 이동. */
   #project-tabs-root .pt-settings .meta-block {
     padding: 8px 14px; border-bottom: 1px solid #1f2330; margin-bottom: 4px;
@@ -265,7 +336,7 @@ internal object ProjectTabsTemplate {
 <div id="project-tabs-root" data-project-id="${esc(project.id)}">
   <div class="pt-header">
     <a href="/projects" style="color:var(--text-dim);text-decoration:none;font-size:12px">← ${esc(t("tabs.backToList"))}</a>
-    <h1>${esc(project.name)}</h1>
+    $projectSwitcher
     <span class="spacer"></span>
     <details class="pt-settings">
       <summary>⚙ ${esc(t("tabs.settings.label"))}</summary>
@@ -307,7 +378,7 @@ $tabPanes
   </div>
 </div>
 
-<script src="/static/project-tabs.js?v=1.47.0" defer></script>
+<script src="/static/project-tabs.js?v=1.49.0" defer></script>
 """,
         )
     }

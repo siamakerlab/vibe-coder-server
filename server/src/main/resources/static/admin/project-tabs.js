@@ -99,6 +99,42 @@
       if (validTabs.indexOf(hash) >= 0) activate(hash);
     });
 
+    // ── v1.49.0 — project switcher combobox (header project name) ──────
+    // Filter-as-you-type, Esc closes, Enter jumps to first match, click
+    // outside closes. The items are plain <a href> so selecting one navigates
+    // the whole tabs page to that project.
+    (function () {
+      var switcher = root.querySelector('details.pt-switcher');
+      if (!switcher) return;
+      var filter = switcher.querySelector('.pt-switch-filter');
+      var items = Array.from(switcher.querySelectorAll('.pt-switch-list .pt-switch-item'));
+      switcher.addEventListener('toggle', function () {
+        if (!switcher.open || !filter) return;
+        filter.value = '';
+        items.forEach(function (it) { it.style.display = ''; });
+        setTimeout(function () { filter.focus(); }, 0);
+      });
+      if (filter) {
+        filter.addEventListener('input', function () {
+          var q = filter.value.trim().toLowerCase();
+          items.forEach(function (it) {
+            var hay = it.getAttribute('data-name') || '';
+            it.style.display = (!q || hay.indexOf(q) >= 0) ? '' : 'none';
+          });
+        });
+        filter.addEventListener('keydown', function (e) {
+          if (e.key === 'Escape') { switcher.open = false; }
+          else if (e.key === 'Enter') {
+            var first = items.find(function (it) { return it.style.display !== 'none'; });
+            if (first) { e.preventDefault(); window.location.href = first.getAttribute('href'); }
+          }
+        });
+      }
+      document.addEventListener('click', function (e) {
+        if (switcher.open && !switcher.contains(e.target)) switcher.open = false;
+      });
+    })();
+
     // Inner-iframe cleanup: same-origin → reach contentDocument and hide the
     // nested admin <nav> + tab bar so the layout looks like a single page.
     // visibility:hidden until cleanup runs, to avoid the nested nav flashing.
