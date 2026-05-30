@@ -404,9 +404,14 @@ internal object ProjectTabsTemplate {
   #project-tabs-root .pt-ov-row .v.mono { font-family: ui-monospace, Menlo, monospace; font-size: 11px; }
   #project-tabs-root .pt-ks.ok { color: var(--ok, #69db7c); }
   #project-tabs-root .pt-ks.miss { color: var(--text-dim, #888); }
-  /* 프롬프트 히스토리 카드 — 최신 위, 2줄 축약, 5개 밑으로 점점 흐리게(inline opacity). */
-  #project-tabs-root .pt-hist-card { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-  #project-tabs-root .pt-hist-list { overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+  /* 프롬프트 히스토리 카드 — 최신 위, 2줄 축약, 5개 밑으로 점점 흐리게(inline opacity).
+     v1.50.2 — flex:1 제거: 카드를 내용 높이로(이전엔 남는 높이를 채워 하단 빈 여백으로 길어짐).
+     rail 하단 빈 공간은 카드가 아닌 배경. 항목이 많아도 list 자체 max-height 로만 스크롤. */
+  #project-tabs-root .pt-rail { justify-content: flex-start; }
+  #project-tabs-root .pt-hist-card { display: flex; flex-direction: column; flex: 0 0 auto; }
+  #project-tabs-root .pt-hist-list {
+    max-height: 50vh; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;
+  }
   #project-tabs-root .pt-hist-item {
     text-align: left; background: #0c0f17; border: 1px solid #1f2330; border-radius: 6px;
     color: var(--text, #ddd); font: inherit; font-size: 12px; line-height: 1.35;
