@@ -416,13 +416,16 @@ internal object ProjectTabsTemplate {
   #project-tabs-root .pt-hist-item:hover { background: #1a1f2c; border-color: #2a3145; opacity: 1 !important; }
   #project-tabs-root .pt-hist-empty { color: #5a6175; font-size: 12px; padding: 6px 2px; }
   /* rail 접기/펼치기 토글 — rail 좌측 가장자리 손잡이. */
+  /* v1.50.1 — 토글을 rail 세로 중앙에 배치(이전 top:8px 는 콘솔 헤더의 "새 세션" 버튼과
+     겹쳐 오클릭 위험). transform 으로 세로 중앙 정렬. */
   #project-tabs-root .pt-rail-toggle {
-    position: absolute; top: 8px; z-index: 7;
+    position: absolute; top: 50%; transform: translateY(-50%); z-index: 7;
     right: clamp(248px, 22vw, 360px);
     background: #131722; color: var(--text-dim, #888);
     border: 1px solid #1f2330; border-right: 0; border-radius: 6px 0 0 6px;
-    width: 20px; height: 34px; cursor: pointer; font-size: 12px; line-height: 1;
+    width: 20px; height: 48px; cursor: pointer; font-size: 12px; line-height: 1;
     display: flex; align-items: center; justify-content: center;
+    box-shadow: -2px 0 6px rgba(0,0,0,0.25);
   }
   #project-tabs-root .pt-rail-toggle:hover { color: var(--text, #ddd); background: #1a1f2c; }
   #project-tabs-root[data-rail="hidden"] .pt-rail-toggle { right: 0; border-right: 1px solid #1f2330; border-radius: 6px 0 0 6px; }
