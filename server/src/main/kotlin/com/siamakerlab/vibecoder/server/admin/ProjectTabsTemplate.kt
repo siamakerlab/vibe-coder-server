@@ -90,11 +90,20 @@ internal object ProjectTabsTemplate {
             """<button type="button" class="tab-btn" data-tab-btn="${esc(tab.id)}"
                        title="${esc(t(tab.labelKey))}">${esc(t(tab.labelKey))}</button>"""
         }
+        // v1.47.0 — 콘솔 우선 로딩 + 나머지 백그라운드 프리로딩.
+        //  - console: HTML 파싱 즉시 fetch (eager + fetchpriority=high). JS 대기 없이 가장 빨리 표시.
+        //  - 나머지: src 대신 data-src 로 둬 진입 시 fetch 안 함(콘솔과 자원 경쟁 제거).
+        //    project-tabs.js 가 콘솔 load 후 data-src 를 순차로 src 에 옮겨 백그라운드 프리로딩.
+        //    프리로드 전 클릭 시엔 activate() 가 즉시 on-demand 로드.
         val tabPanes = TABS.joinToString("\n") { tab ->
             val src = "/projects/${esc(project.id)}${tab.urlSuffix}"
+            val srcAttr = if (tab.id == "console")
+                """src="${esc(src)}" loading="eager" fetchpriority="high""""
+            else
+                """data-src="${esc(src)}" loading="lazy""""
             """<div class="tab-pane" data-tab="${esc(tab.id)}">
-                <iframe class="tab-frame" src="${esc(src)}" name="${esc(tab.frameName)}"
-                        title="${esc(t(tab.labelKey))}" loading="eager"
+                <iframe class="tab-frame" $srcAttr name="${esc(tab.frameName)}"
+                        title="${esc(t(tab.labelKey))}"
                         referrerpolicy="same-origin"></iframe>
               </div>"""
         }
@@ -298,7 +307,7 @@ $tabPanes
   </div>
 </div>
 
-<script src="/static/project-tabs.js?v=1.29.0" defer></script>
+<script src="/static/project-tabs.js?v=1.47.0" defer></script>
 """,
         )
     }

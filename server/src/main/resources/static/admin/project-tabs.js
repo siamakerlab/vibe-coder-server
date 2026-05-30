@@ -1,18 +1,25 @@
 // v1.11.0 — Project Tabs page client logic.
+// v1.47.0 — Console-first loading + background preloading.
 //
 // Each tab is an <iframe data-tab="<id>"> that loads the existing SSR page
-// (/projects/{id}/console, /builds, /files, /git, /agents). All iframes are
-// inserted on first page load — Claude Code WebSockets / build log streams
-// stay connected in the background.
+// (/projects/{id}/console, /builds, /files, ...).
 //
-// Three responsibilities:
-//   1. Switch which iframe is visible (CSS display toggle), driven by tab
-//      buttons + URL hash (#console, #builds, ...).
-//   2. After each iframe loads, hide its inner admin shell `<nav>` so only
-//      the parent tab bar is visible (visibility:hidden until then to avoid
-//      a flash of the nested nav).
-//   3. Persist the last active tab per project in localStorage so refresh
-//      lands on the tab the user was on.
+//   - The console iframe has a real `src` (eager, fetchpriority=high) so it
+//     starts fetching at HTML parse time — visible as fast as possible, with
+//     no competition from the other 16 iframes.
+//   - Every other iframe ships with `data-src` (no `src`), so the browser
+//     does NOT fetch it on entry. After the console iframe finishes loading,
+//     we preload the rest **sequentially in the background** (one at a time)
+//     so they're warm when clicked but never delay the console.
+//   - Clicking a tab that hasn't been preloaded yet loads it immediately
+//     (on-demand), so there is never a wait beyond that one frame.
+//
+// Other responsibilities (unchanged):
+//   - Switch which iframe is visible (CSS display toggle) via tab buttons +
+//     URL hash (#console, #builds, ...).
+//   - After each iframe loads, hide its inner admin shell <nav> so only the
+//     parent tab bar shows.
+//   - Persist the last active tab per project in localStorage.
 
 (function () {
   'use strict';
@@ -22,9 +29,23 @@
     if (!root) return;
     const projectId = root.dataset.projectId || '';
     const storageKey = 'vibe.projectTabs.' + projectId;
-    const validTabs = Array.from(root.querySelectorAll('.tab-pane'))
-      .map(p => p.dataset.tab);
+    const panes = Array.from(root.querySelectorAll('.tab-pane'));
+    const validTabs = panes.map(p => p.dataset.tab);
     const buttons = Array.from(root.querySelectorAll('[data-tab-btn]'));
+
+    function frameOf(tab) {
+      const pane = panes.find(p => p.dataset.tab === tab);
+      return pane ? pane.querySelector('iframe.tab-frame') : null;
+    }
+
+    // v1.47.0 — promote data-src → src (lazy iframe → start loading). Idempotent.
+    function loadFrame(iframe) {
+      if (!iframe) return;
+      const pending = iframe.getAttribute('data-src');
+      if (pending && !iframe.getAttribute('src')) {
+        iframe.setAttribute('src', pending);
+      }
+    }
 
     function resolveInitialTab() {
       const hash = (window.location.hash || '').replace('#', '');
@@ -44,6 +65,9 @@
       buttons.forEach(b => {
         b.classList.toggle('active', b.dataset.tabBtn === tab);
       });
+      // v1.47.0 — on-demand load: a tab clicked before the background preload
+      // reaches it loads right away (no wait beyond this single frame).
+      loadFrame(frameOf(tab));
       try { localStorage.setItem(storageKey, tab); } catch (e) {}
       if (window.location.hash !== '#' + tab) {
         history.replaceState(null, '', '#' + tab);
@@ -75,10 +99,9 @@
       if (validTabs.indexOf(hash) >= 0) activate(hash);
     });
 
-    // Inner-iframe cleanup: same-origin → we can reach contentDocument and
-    // hide the nested admin <nav> + tab bar so the layout looks like a single
-    // page. visibility:hidden until cleanup runs, to avoid the nested nav
-    // flashing in.
+    // Inner-iframe cleanup: same-origin → reach contentDocument and hide the
+    // nested admin <nav> + tab bar so the layout looks like a single page.
+    // visibility:hidden until cleanup runs, to avoid the nested nav flashing.
     root.querySelectorAll('iframe.tab-frame').forEach(iframe => {
       iframe.style.visibility = 'hidden';
       function cleanup() {
@@ -105,19 +128,64 @@
         iframe.style.visibility = 'visible';
       }
       iframe.addEventListener('load', cleanup);
-      // v1.27.5 — load race fix. project-tabs.js 는 defer 로드, iframe 은
-      // loading="eager". 가벼운 settings sub-page(/settings, /password 등)는
-      // defer 스크립트가 addEventListener 를 붙이기 전에 이미 load 완료될 수 있어,
-      // 지나간 load 이벤트를 놓쳐 cleanup 이 영영 안 걸렸다 → 내부 sidebar +
-      // .settings-tabs 가 그대로 노출(탭바 2줄 중복 + keystore 등 sub-page 레이아웃
-      // 깨짐으로 "다음 화면 안 보임"). 등록 시점에 이미 complete 면 즉시 1회 실행.
+      // v1.27.5 — load race fix: if already complete when we attach (light
+      // sub-pages under defer), run cleanup once now. v1.47.0 — only for frames
+      // that already have a real src (skip about:blank data-src frames not yet loaded).
       try {
         const d = iframe.contentDocument;
-        if (d && d.readyState === 'complete') cleanup();
+        if (iframe.getAttribute('src') && d && d.readyState === 'complete') cleanup();
       } catch (e) { /* same-origin SSR 이라 도달하지 않음 */ }
     });
 
+    // ── v1.47.0 — background preloader ──────────────────────────────────
+    // After the console (priority) frame finishes, load the remaining
+    // data-src frames one at a time so they're warm without ever competing
+    // with the console for connections / CPU.
+    var preloadStarted = false;
+    function startPreload() {
+      if (preloadStarted) return;
+      preloadStarted = true;
+      var pending = Array.from(root.querySelectorAll('iframe.tab-frame[data-src]'));
+      var i = 0;
+      (function next() {
+        // skip any that got loaded meanwhile (e.g. user clicked the tab).
+        while (i < pending.length && pending[i].getAttribute('src')) i++;
+        if (i >= pending.length) return;
+        var f = pending[i++];
+        var go = function () { setTimeout(next, 200); };
+        f.addEventListener('load', go, { once: true });
+        f.addEventListener('error', go, { once: true });
+        loadFrame(f);
+      })();
+    }
+    function whenIdle(fn) {
+      if (window.requestIdleCallback) window.requestIdleCallback(fn, { timeout: 1500 });
+      else setTimeout(fn, 300);
+    }
+
     activate(resolveInitialTab());
+
+    // Kick off preloading once the console frame is loaded (so it never
+    // competes). Fallbacks guarantee preload still runs if load already fired
+    // or the console frame is missing.
+    var consoleFrame = frameOf('console');
+    if (consoleFrame) {
+      var already = false;
+      try {
+        var cd = consoleFrame.contentDocument;
+        already = !!consoleFrame.getAttribute('src') && cd && cd.readyState === 'complete'
+          && (cd.location ? cd.location.href !== 'about:blank' : true);
+      } catch (e) { /* unreachable for same-origin */ }
+      if (already) {
+        whenIdle(startPreload);
+      } else {
+        consoleFrame.addEventListener('load', function () { whenIdle(startPreload); }, { once: true });
+        // Safety net: if the console never fires load (rare), still preload.
+        setTimeout(startPreload, 4000);
+      }
+    } else {
+      whenIdle(startPreload);
+    }
   }
 
   if (document.readyState === 'loading') {
