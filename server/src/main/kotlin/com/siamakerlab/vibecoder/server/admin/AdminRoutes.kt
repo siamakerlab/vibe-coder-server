@@ -625,12 +625,16 @@ internal fun requireProjectAccessOrThrow(
 }
 
 private fun setSessionCookie(call: ApplicationCall, token: String) {
-    // LAN HTTP 환경 가정 → Secure 미지정 (reverse proxy 뒤라면 X-Forwarded-Proto로 감지 가능하나 PoC에서는 생략)
+    // v1.52.0 — 외부 노출(openresty https) 시 Secure 플래그로 쿠키를 https 로만 전송
+    // (http://host:17880 직접 접근 시 평문 전송 방지). trustForwardedFor=true 면
+    // X-Forwarded-Proto 로 origin.scheme 가 https 로 반영됨. LAN http 직접 접근 시엔
+    // secure=false 라 쿠키 정상 동작. SameSite=Lax 는 CSRF 방어 보강(기존 유지).
     call.response.cookies.append(
         Cookie(
             name = SESSION_COOKIE,
             value = token,
             httpOnly = true,
+            secure = call.request.origin.scheme.equals("https", ignoreCase = true),
             maxAge = 60 * 60 * 24 * 14,  // 14일
             path = "/",
             extensions = mapOf("SameSite" to "Lax"),
@@ -644,6 +648,7 @@ private fun clearSessionCookie(call: ApplicationCall) {
             name = SESSION_COOKIE,
             value = "",
             httpOnly = true,
+            secure = call.request.origin.scheme.equals("https", ignoreCase = true),
             maxAge = 0,
             path = "/",
             extensions = mapOf("SameSite" to "Lax"),

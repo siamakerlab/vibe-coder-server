@@ -1,10 +1,13 @@
 package com.siamakerlab.vibecoder.server.admin
 
+import com.siamakerlab.vibecoder.server.auth.AUTH_BEARER
+import com.siamakerlab.vibecoder.server.auth.requireDevice
 import com.siamakerlab.vibecoder.server.claude.ClaudeStatusService
 import com.siamakerlab.vibecoder.server.projects.ProjectService
 import com.siamakerlab.vibecoder.shared.ApiPath
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.server.application.call
+import io.ktor.server.auth.authenticate
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Routing
 import io.ktor.server.routing.get
@@ -23,10 +26,13 @@ private val log = KotlinLogging.logger {}
  * 60s cache 적용 (ClaudeStatusService 내부) 라 부담 작음.
  */
 fun Routing.quotaRoutes(claudeStatus: ClaudeStatusService) {
-    get(ApiPath.SERVER_QUOTA) {
-        // v1.46.0 — 비차단 캐시-온리. 캡처(usage 갱신)는 백그라운드 ClaudeUsageMonitor 가
-        // 주기적으로 수행하므로 이 요청은 즉시 마지막 캐시(또는 light DTO)를 반환한다.
-        // 이전엔 캐시 미스 시 동기 TUI 캡처를 호출해 quota 가 25~80s hang 했음(근본 회수).
-        call.respond(claudeStatus.cachedSnapshot(ProjectService.SCRATCH_ID))
+    // v1.52.0 — 25차 보안점검: 미인증 노출(model/plan/usage% 정보 누설) 회수 → 인증 요구.
+    // 사이드바 pill 은 fetch(credentials:'same-origin') 로 vibe_session 쿠키를 보내 인증됨.
+    authenticate(AUTH_BEARER) {
+        get(ApiPath.SERVER_QUOTA) {
+            call.requireDevice() // 인증만 강제(단일 admin → 추가 role 불필요)
+            // v1.46.0 — 비차단 캐시-온리. 캡처는 백그라운드 ClaudeUsageMonitor 가 수행 → 즉시 반환.
+            call.respond(claudeStatus.cachedSnapshot(ProjectService.SCRATCH_ID))
+        }
     }
 }

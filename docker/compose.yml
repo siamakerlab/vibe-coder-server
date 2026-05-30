@@ -87,6 +87,10 @@ services:
       # IP 차단 우회 가능하므로 반드시 신뢰 프록시 뒤에서만 켤 것.
       VIBECODER_TRUST_FORWARDED_FOR: ${VIBECODER_TRUST_FORWARDED_FOR:-false}
 
+      # 세션 idle timeout(분). 0=무제한(LAN 단일 사용자 기본). 외부 노출 시 양수 권장
+      # (미사용/탈취 토큰 수명 제한). 마지막 요청 후 N분 idle 이면 토큰 폐기 + 재로그인.
+      VIBECODER_SECURITY_SESSION_IDLE_TIMEOUT_MINUTES: ${VIBECODER_SECURITY_SESSION_IDLE_TIMEOUT_MINUTES:-0}
+
       # v0.14.0 — PostgreSQL 연결. host 는 같은 docker network 안의 service 이름.
       VIBECODER_DB_HOST: ${VIBECODER_DB_HOST:-postgres}
       VIBECODER_DB_PORT: ${VIBECODER_DB_PORT:-5432}

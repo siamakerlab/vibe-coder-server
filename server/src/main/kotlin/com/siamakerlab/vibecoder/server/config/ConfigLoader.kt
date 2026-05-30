@@ -71,6 +71,13 @@ object ConfigLoader {
         System.getenv("VIBECODER_TRUST_FORWARDED_FOR")?.takeIf { it.isNotBlank() }?.let {
             current = current.copy(security = current.security.copy(trustForwardedFor = it.equals("true", true)))
         }
+        // v1.52.0 — 세션 idle timeout 분 env override. 기본 0(무제한, LAN 단일 사용자 편의).
+        // 외부 노출 시 양수로 설정해 미사용 토큰 수명 제한(탈취 토큰 노출창 축소). server.yml
+        // 수정 없이 compose env 로 조정.
+        System.getenv("VIBECODER_SECURITY_SESSION_IDLE_TIMEOUT_MINUTES")?.takeIf { it.isNotBlank() }
+            ?.toIntOrNull()?.let {
+                current = current.copy(security = current.security.copy(sessionIdleTimeoutMinutes = it.coerceAtLeast(0)))
+            }
 
         return current
     }
