@@ -1926,7 +1926,7 @@ $errHtml
       <strong>${esc(t("builds.module"))}:</strong> ${esc(p.moduleName)} · <strong>${esc(t("builds.task"))}:</strong> <code>${esc(p.debugTask)}</code>
     </div>
     <div style="display:flex;gap:8px">
-      <a href="/projects/${esc(p.id)}" class="primary-link" style="width:auto;display:inline-block;padding:6px 12px;background:transparent;border:1px solid var(--border);color:var(--text-dim)">${esc(t("builds.back"))}</a>
+      <a href="/projects/${esc(p.id)}" target="_top" class="primary-link" style="width:auto;display:inline-block;padding:6px 12px;background:transparent;border:1px solid var(--border);color:var(--text-dim)">${esc(t("builds.back"))}</a>
       <form method="post" action="/projects/${esc(p.id)}/builds" style="display:inline">
         ${CsrfTokens.hiddenInput(csrf)}
         <button type="submit" class="primary" style="width:auto;padding:8px 16px"${if (!keystoreReady) " disabled title=\"${esc(t("builds.disabled.noKeystore"))}\"" else ""}>${esc(t("builds.queue"))}</button>
@@ -2318,7 +2318,7 @@ $errHtml
 </table>
 
 <p class="hint" style="margin-top:16px">
-  <a href="/projects/${esc(p.id)}" class="chip chip-link">${esc(t("files.back"))}</a>
+  <a href="/projects/${esc(p.id)}" target="_top" class="chip chip-link">${esc(t("files.back"))}</a>
   <a href="/projects/${esc(p.id)}/console" class="chip chip-link">${esc(t("files.toConsole"))}</a>
 </p>
 """
@@ -2437,7 +2437,7 @@ ${if (status != null && !unavailable) """
 </div>""" else ""}
 
 <p class="hint" style="margin-top:16px">
-  <a href="/projects/${esc(p.id)}" class="chip chip-link">${esc(t("git.back"))}</a>
+  <a href="/projects/${esc(p.id)}" target="_top" class="chip chip-link">${esc(t("git.back"))}</a>
   <a href="/projects/${esc(p.id)}/console" class="chip chip-link">${esc(t("git.toConsole"))}</a>
 </p>
 <p class="hint">${t("git.bottomHint")}</p>
