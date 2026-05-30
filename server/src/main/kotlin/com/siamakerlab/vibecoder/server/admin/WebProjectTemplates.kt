@@ -847,15 +847,12 @@ $errHtml
 
         val navPath = if (isChat) "/chat" else "/projects"
         val titleSuffix = if (isChat) "General Chat" else t("console.title")
+        // v1.48.0 — 프로젝트 콘솔의 nav chip(빌드/히스토리/파일/Git/심볼/에이전트) 은 모두
+        // 상단 프로젝트 탭으로 대체돼 중복 → 제거. 일반 Chat(isChat) 은 탭 바깥 독립 페이지라
+        // history 링크만 유지.
         val sideLinks = if (isChat) """
       <a href="/chat/history" class="chip chip-link">${esc(t("console.nav.history"))}</a>"""
-        else """
-      <a href="/projects/${esc(p.id)}/builds" class="chip chip-link">${esc(t("projects.detail.builds"))}</a>
-      <a href="/projects/${esc(p.id)}/history" class="chip chip-link">${esc(t("console.nav.history"))}</a>
-      <a href="/projects/${esc(p.id)}/tree" class="chip chip-link">${esc(t("console.nav.files"))}</a>
-      <a href="/projects/${esc(p.id)}/git" class="chip chip-link">${esc(t("console.nav.git"))}</a>
-      <a href="/projects/${esc(p.id)}/symbols" class="chip chip-link" title="${esc(t("console.nav.symbols.title"))}">${esc(t("console.nav.symbols"))}</a>
-      <a href="/projects/${esc(p.id)}/agents" class="chip chip-link" title="${esc(t("console.nav.agents.title"))}">${esc(t("console.nav.agents"))}</a>"""
+        else ""
 
         return AdminTemplates.shell(
             title = "${esc(p.name)} · $titleSuffix",
@@ -864,57 +861,41 @@ $errHtml
             csrf = csrf,
             lang = lang,
             body = """
-<header>
-  <h1>$titleSuffix
+<!-- v1.48.0 — 세션 카드 제거. 세션 상태 + 남은 액션(중지/새 세션)을 헤더 우측(탭 바로 밑)으로
+     이동. 나머지 버블 버튼(빌드/파일/Git/에이전트/히스토리/심볼)은 상단 프로젝트 탭으로
+     대체돼 제거(isChat 만 history 링크 유지). busy-badge 는 전송 버튼 라인에 있어 id 유지. -->
+<style>
+  @keyframes vibe-busy-pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(105,219,124,0.55); }
+    50% { opacity: 0.85; box-shadow: 0 0 0 6px rgba(105,219,124,0); }
+  }
+  #busy-badge { transition: background 0.2s, color 0.2s; }
+  #busy-badge[data-state="responding"] {
+    background: rgba(105,219,124,0.18); color: #69db7c;
+    animation: vibe-busy-pulse 1.4s ease-in-out infinite;
+  }
+  #busy-badge[data-state="idle"] {
+    background: rgba(255,255,255,0.06); color: var(--text-dim, #888);
+  }
+</style>
+<header style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+  <h1 style="margin:0">$titleSuffix
     <small class="dim" style="font-size:14px;font-weight:400">${esc(p.name)}${if (isChat) "" else " (${esc(p.id)})"}</small>
   </h1>
+  <div class="console-actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+    <span class="dim" style="font-size:12px">${esc(t("console.session"))} $statusBadge${if (sessionId != null) """ <span class="dim">${esc(sessionId.take(12))}…</span>""" else ""}</span>
+    $sideLinks
+    <button type="button" id="stop-btn" class="chip chip-danger" style="display:none"
+            title="${esc(t("console.stop.title"))}">${esc(t("console.stop"))}</button>
+    <form method="post" action="/projects/${esc(p.id)}/console/new" style="display:inline"
+          onsubmit="return confirm('${esc(t("console.newSession.confirm")).replace("'", "&#39;")}')">
+      ${CsrfTokens.hiddenInput(csrf)}
+      <button type="submit" class="chip chip-danger">${esc(t("console.newSession"))}</button>
+    </form>
+  </div>
 </header>
 
 $authBannerHtml
-
-<div class="card" style="margin-bottom:16px">
-  <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
-    <div>
-      <strong>${esc(t("console.session"))}</strong> $statusBadge
-      ${if (sessionId != null) """ <span class="dim">${esc(sessionId.take(12))}…</span>""" else ""}
-    </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-      <!-- v0.98.0 — busy badge: 사용자가 prompt 보낸 후 Claude 가 응답 중인지 한눈에.
-           v1.7.4 — 사용자 요구로 전송 버튼 라인 (hint 라벨 좌측) 으로 이동.
-           id="busy-badge" 는 동일 — JS selector + CSS 모두 변경 없이 그대로 동작. -->
-      <style>
-        @keyframes vibe-busy-pulse {
-          0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(105,219,124,0.55); }
-          50% { opacity: 0.85; box-shadow: 0 0 0 6px rgba(105,219,124,0); }
-        }
-        #busy-badge { transition: background 0.2s, color 0.2s; }
-        #busy-badge[data-state="responding"] {
-          background: rgba(105,219,124,0.18); color: #69db7c;
-          animation: vibe-busy-pulse 1.4s ease-in-out infinite;
-        }
-        #busy-badge[data-state="idle"] {
-          background: rgba(255,255,255,0.06); color: var(--text-dim, #888);
-        }
-      </style>
-      $sideLinks
-      <button type="button" id="stop-btn" class="chip chip-danger" style="display:none"
-              title="${esc(t("console.stop.title"))}">${esc(t("console.stop"))}</button>
-      <form method="post" action="/projects/${esc(p.id)}/console/new" style="display:inline"
-            onsubmit="return confirm('${esc(t("console.newSession.confirm")).replace("'", "&#39;")}')">
-        ${CsrfTokens.hiddenInput(csrf)}
-        <button type="submit" class="chip chip-danger">${esc(t("console.newSession"))}</button>
-      </form>
-    </div>
-  </div>
-  <!--
-    v0.75.0 — slash chip 제거. vibe-coder 의 콘솔은 `claude --print --output-format
-    stream-json` non-interactive 모드라 Claude Code 의 interactive slash commands
-    (`/status` / `/cost` / `/model` / `/memory` / `/plan` / `/compact` / `/clear`)
-    가 동작하지 않음 — 그냥 prompt 텍스트로 처리되어 Claude 가 못 알아들음.
-    `/status` 의 사용량/모델 정보는 우측 상단 status snapshot (ClaudeStatusService)
-    이 별도로 표시. `/clear` 는 "새 세션" 버튼이 같은 역할.
-  -->
-</div>
 
 <!-- v0.97.0 — 콘솔 메시지 필터. 엑셀 필터 스타일. mandatory 항목은 disabled. -->
 <details id="console-filter" style="margin-bottom:6px;font-size:12px">
