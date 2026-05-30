@@ -82,9 +82,20 @@ fun Routing.webProjectRoutes(
         val list = projects.listForUser(sess.userId, sess.isAdmin)
         val err = call.request.queryParameters["err"]
         val ok = call.request.queryParameters["ok"]?.let { Messages.t(sess.language, "flash.project.created") }
+        // v1.53.0 — 각 프로젝트의 현재 Claude 세션 상태를 목록 상태칩으로 노출.
+        // responding(응답중) > ready(세션 활성·대기) > idle(세션 없음) 우선순위.
+        // 이후 busy 변화는 `/ws/projects` (ProjectBusyChanged) 로 실시간 patch.
+        val statuses = list.associate { p ->
+            p.id to when {
+                sessionManager.isBusy(p.id) -> "responding"
+                sessionManager.isAlive(p.id) -> "ready"
+                else -> "idle"
+            }
+        }
         call.respondText(
             WebProjectTemplates.projectsPage(
                 sess.username, list, flashErr = err, flashOk = ok, csrf = sess.csrf, lang = sess.language,
+                statuses = statuses,
             ),
             ContentType.Text.Html,
         )

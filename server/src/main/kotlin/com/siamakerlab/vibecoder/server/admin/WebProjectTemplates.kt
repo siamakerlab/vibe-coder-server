@@ -552,6 +552,12 @@ object WebProjectTemplates {
         flashOk: String? = null,
         csrf: String? = null,
         lang: String,
+        /**
+         * v1.53.0 — projectId → 상태 키 ("responding" | "ready" | "idle").
+         * 누락 시 "idle" 로 폴백. 목록 진입 시점 snapshot 이며 이후 `/ws/projects`
+         * 의 ProjectBusyChanged 로 responding↔ready 가 실시간 patch 된다.
+         */
+        statuses: Map<String, String> = emptyMap(),
     ): String {
         val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
         val errHtml = if (flashErr != null) """<div class="error">${esc(flashErr)}</div>""" else ""
@@ -561,12 +567,16 @@ object WebProjectTemplates {
         // v1.14.4 — row 전체 영역이 클릭 가능 + 첫 화면 무조건 console (#console hash 명시).
         //           각 td 의 자식을 inherit color + block link 로 채워서 셀 어디든 클릭 통함.
         val rowsHtml = if (projects.isEmpty()) {
-            """<tr><td colspan="2" class="dim">${esc(t("projects.list.empty"))}</td></tr>"""
+            """<tr><td colspan="3" class="dim">${esc(t("projects.list.empty"))}</td></tr>"""
         } else {
             projects.joinToString("\n") { p ->
                 val href = "/projects/${esc(p.id)}#console"
                 val cellLinkStyle = "display:block;color:inherit;text-decoration:none"
+                // v1.53.0 — 제일 왼쪽 상태칩. data-pid 로 WS patch 대상 식별, data-state 로 색 분기.
+                val state = statuses[p.id] ?: "idle"
+                val chip = """<span class="pstat pstat-$state" data-pid="${esc(p.id)}" data-state="$state">${esc(t("projects.status.$state"))}</span>"""
                 """<tr class="row-link">
+                    <td><a href="$href" style="$cellLinkStyle">$chip</a></td>
                     <td><a href="$href" style="$cellLinkStyle"><strong>${esc(p.name)}</strong><br><small class="dim">${esc(p.id)}</small></a></td>
                     <td><a href="$href" style="$cellLinkStyle"><code>${esc(p.packageName)}</code></a></td>
                   </tr>"""
@@ -690,7 +700,7 @@ $errHtml
     </style>
     <table class="devices">
       <thead>
-        <tr><th>${esc(t("projects.list.col.name"))}</th><th>${esc(t("projects.list.col.package"))}</th></tr>
+        <tr><th style="width:84px">${esc(t("projects.list.col.status"))}</th><th>${esc(t("projects.list.col.name"))}</th><th>${esc(t("projects.list.col.package"))}</th></tr>
       </thead>
       <tbody>
         $rowsHtml
@@ -698,6 +708,43 @@ $errHtml
     </table>
   </div>
 </section>
+
+<!-- v1.53.0 — 프로젝트 목록 상태칩 실시간 동기. `/ws/projects` (단방향) 구독 후
+     ProjectBusyChanged frame 으로 해당 projectId 칩을 responding↔ready 로 patch.
+     인증은 handshake 의 vibe_session 쿠키로 자동 처리 (콘솔 WS 와 동일 패턴). -->
+<script>
+(function() {
+  var LABELS = {
+    responding: ${jsLit(t("projects.status.responding"))},
+    ready: ${jsLit(t("projects.status.ready"))},
+    idle: ${jsLit(t("projects.status.idle"))}
+  };
+  function patch(pid, busy) {
+    var el = document.querySelector('.pstat[data-pid="' + (window.CSS && CSS.escape ? CSS.escape(pid) : pid) + '"]');
+    if (!el) return;
+    var state = busy ? 'responding' : 'ready';
+    el.className = 'pstat pstat-' + state;
+    el.dataset.state = state;
+    el.textContent = LABELS[state];
+  }
+  var ws = null;
+  function connect() {
+    var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(proto + '//' + location.host + '/ws/projects');
+    ws.onmessage = function(ev) {
+      try {
+        var f = JSON.parse(ev.data);
+        if (f.type === 'project_busy_changed' && f.projectId != null) {
+          patch(f.projectId, !!f.busy);
+        }
+      } catch (e) { /* ignore malformed frame */ }
+    };
+    ws.onclose = function() { setTimeout(connect, 5000); };
+    ws.onerror = function() { try { ws.close(); } catch (e) {} };
+  }
+  connect();
+})();
+</script>
 """
         )
     }

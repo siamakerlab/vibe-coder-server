@@ -878,6 +878,48 @@ table.devices small.dim { font-size: 11px; }
     border-color: var(--danger);
 }
 
+/* ── 프로젝트 목록 상태칩 (v1.53.0) ─────────────────────────────────
+   응답중(responding) / 대기중(ready) / 유휴(idle) 시각화. 좌측 점 +
+   pill 배경. responding 은 pulse 애니메이션으로 진행 중임을 강조. */
+.pstat {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: nowrap;
+}
+.pstat::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+    flex: none;
+}
+.pstat-responding {
+    color: var(--warn);
+    border-color: rgba(255, 169, 77, 0.4);
+    background: rgba(255, 169, 77, 0.08);
+}
+.pstat-responding::before { animation: pstat-pulse 1.2s ease-in-out infinite; }
+.pstat-ready {
+    color: var(--ok);
+    border-color: rgba(105, 219, 124, 0.4);
+    background: rgba(105, 219, 124, 0.08);
+}
+.pstat-idle { color: var(--text-dim); }
+@keyframes pstat-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.25; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .pstat-responding::before { animation: none; }
+}
+
 /* ── 설치 진행 progress bar ─────────────────────────────────────── */
 
 .progress-bar {
