@@ -198,11 +198,12 @@ docker compose up -d            # boots postgres + vibe-coder-server
   iframe grid (cookie auth flows in automatically).
 - **`GET /api/agents`** — list registered `.agents/*.md` for dispatch UI.
 
-**Multi-user / role (v0.37.0+)**
-- **`admin_users.role`** — `admin` / `member` distinction. First admin
-  always admin; new users default to `member`.
-- **`/users`** — admin-only management (create / role-toggle / delete).
-  Last-admin demotion + self-deletion blocked.
+**Multi-user / role — removed in v1.45.0**
+- This is a single-operator tool: multi-user, roles
+  (`admin`/`member`/`viewer`), the `/users` UI and `/api/users*` were
+  **removed in v1.45.0**. One admin; every authenticated session has full
+  access. Authentication (password / 2FA / passkey / rate-limit) is
+  unchanged.
 
 **Ubuntu 26.04 LTS (v0.38.0+)**
 - Slim image rebased on `eclipse-temurin:17-{jdk,jre}-resolute`.
@@ -215,11 +216,10 @@ docker compose up -d            # boots postgres + vibe-coder-server
   TreeView, status bar, live console (WebSocket → Output Channel), 7
   palette commands.
 
-**Roles & access (extended in v0.40.0)**
-- `viewer` role added next to `admin` / `member`. Destructive `POST`
-  endpoints (project / build / console / git / agents) are blocked at
-  the SSR layer for viewers.
-- `/audit`, `/settings`, `/backup` now admin-only.
+**Roles & access — removed in v1.45.0**
+- The `viewer` role and SSR role guards are gone (single-admin). Admin
+  pages still require an authenticated session; there is no role to
+  distinguish.
 
 **Agent dispatch UX (v0.41.0+)**
 - Console page picker for registered `~/.claude/agents/*.md` — selecting
@@ -237,12 +237,10 @@ docker compose up -d            # boots postgres + vibe-coder-server
 - First prompt auto-injects `Use the <agent> sub-agent to ...` so
   Claude Code's standard dispatch mechanism activates.
 
-**JSON API + WebSocket role guards (v0.45.0+)**
-- v0.40.0's `viewer` role enforcement extended past SSR. Mutating
-  REST endpoints require `canWrite` (admin/member); server-level
-  setup endpoints require `admin`. WebSocket `UserPrompt` /
-  `ActionInvoke` from a viewer reply with `viewer_readonly` error
-  but keep the read stream alive.
+**JSON API + WebSocket role guards — removed in v1.45.0**
+- The viewer/role enforcement on the JSON API and WebSocket layers was
+  removed with multi-user. Endpoints require only authentication; the
+  guard helpers remain as inert pass-throughs.
 
 **Web Push (v0.46.0+)**
 - Payload-less Web Push, zero external deps. VAPID P-256 keypair
@@ -273,10 +271,10 @@ docker compose up -d            # boots postgres + vibe-coder-server
 - `server.webauthn.{rpId, rpName, origin}` config — set to actual
   user-facing hostname (LAN: `vibe.local`).
 
-**Project ACL + sub-agent persistent history (v0.49.0+)**
-- `project_acls` table — opt-in restriction. 0 rows for a user →
-  every project visible (default); 1+ rows → only those. `admin`
-  bypasses. `/users/{userId}/projects` checkbox bulk-replace UI.
+**Sub-agent persistent history (v0.49.0+)**
+- (The Project ACL layer that shipped here — `project_acls`,
+  `/users/{userId}/projects` — was **removed in v1.45.0** with
+  multi-user. Table kept empty for schema compatibility.)
 - `conversation_turns.agent_name` column (nullable). Sub-agent
   process pool turns (v0.44.0) now persist to PostgreSQL alongside
   the main console — survive container restart.
@@ -288,13 +286,10 @@ docker compose up -d            # boots postgres + vibe-coder-server
   web-push-java). Notifications carry real title / body / URL — the
   service worker focuses the relevant page on click.
 
-**JSON API + WebSocket ACL completion (v0.51.0+)**
-- v0.49.0 made project ACL SSR-only; v0.51.0 extends the same check
-  to every mutating per-project REST endpoint
-  (`call.requireProjectAcl(...)` returns `403 project_forbidden`)
-  and to the console + sub-agent WebSocket handshakes (close with
-  `WsFrame.Error("project_forbidden")`). No more bypass via Bearer
-  token.
+**JSON API + WebSocket ACL — removed in v1.45.0**
+- The per-project ACL check on REST endpoints and the console /
+  sub-agent WebSocket handshakes was **removed in v1.45.0**. Those
+  endpoints/sockets still exist and now require only authentication.
 
 **/history agent_name filter (v0.52.0+)**
 - The `agent_name` column added in v0.49.0 is now user-facing. The
@@ -512,12 +507,10 @@ SSR POST forms carry a CSRF token (v0.12.4+).
 | `/projects/{id}/stats` | Code statistics (LoC / languages) (v0.35.0+) |
 | `/code-search` | Workspace-wide grep (v0.35.0+) |
 | `/multi-console` | N-pane multi-project console (v0.36.0+) |
-| `/users` | Multi-user / role management (admin only, v0.37.0+; `viewer` added v0.40.0) |
 | `/projects/{id}/agents` | Sub-agent index (v0.44.0+) — live status + open-console |
 | `/projects/{id}/agents/{agent}/console` | Per-agent console — independent Claude child (v0.44.0+) |
 | `/usage` | Claude `/status` raw viewer (admin-only, v0.47.0+) |
 | `/webauthn` | Passkey (WebAuthn) — register / list / delete (v0.48.0+) |
-| `/users/{userId}/projects` | Project ACL editor — admin only (v0.49.0+) |
 | `/projects/{id}/symbols` | Symbol definition lookup (regex; Kotlin/Java; v0.54.0+) |
 | `/metrics` | Prometheus exposition (admin; v0.55.0+) |
 | `/settings`, `/devices`, `/password` | Operations |
@@ -575,17 +568,11 @@ Highlights:
   `vibe_session` cookie + Bearer token)
 - `GET  /api/projects/{id}/symbols?name=<symbol>` (v0.54.0+ —
   best-effort Kotlin/Java definition lookup; returns `{hits:[...]}`)
-- **Role guards (v0.45.0+)**: mutating REST endpoints require write
-  role (admin/member) — viewers get `403 viewer_readonly`. Server-level
-  setup endpoints require admin — non-admins get `403 admin_only`.
-  WebSocket `UserPrompt`/`ActionInvoke` from a viewer reply with
-  `viewer_readonly` error frame but keep the read stream open.
-- **Project ACL (v0.49.0+ / v0.51.0+)**: `GET /api/projects` is
-  filtered by the caller's ACL; `GET /api/projects/{id}` returns
-  `403 project_forbidden` on violation. **v0.51.0** extends the
-  check to every mutating per-project REST endpoint and to the
-  console + sub-agent WebSocket handshakes (close with
-  `WsFrame.Error("project_forbidden")`).
+- **Single-admin (v1.45.0)**: multi-user, roles
+  (`admin`/`member`/`viewer`) and Project ACL were **removed** — this is a
+  single-operator tool. Every authenticated session reaches every endpoint
+  and project; authentication is the only access boundary. The role/ACL
+  guard helpers remain as inert pass-throughs.
 - `GET  /api/env-setup/components`, `POST /api/env-setup/install-all`
 - `POST /api/env-setup/claude-auth/upload | api-key`
 - `POST /api/env-setup/claude-login/start | submit | cancel`

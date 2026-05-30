@@ -235,15 +235,14 @@ vibe-coder-server/
   and Android client consume the same list for an "agent dropdown" so the
   user can quickly inject "Use the `<agent>` sub-agent to …" prompts.
 
-### Users & roles (v0.37.0+ — multi-tenant first step)
-- **`admin_users.role` column** — `admin` / `member` (default for new
-  users is `member`; existing users auto-migrated to `admin` for safety).
-- **`/users` SSR (admin only)** — create / list / role-toggle / delete
-  users. Last-admin demotion & self-deletion are blocked. Audit logged
-  (`user.create`, `user.role.change`, `user.delete`).
-- **`requireAdminOrRedirect(sess)` helper** — used at `/users` today;
-  other admin-only pages (`/audit`, `/settings`, `/backup`, `/2fa`,
-  `/agents`) will be hardened in v0.37.x.
+### Users & roles — **removed in v1.45.0**
+> Multi-user / roles (`admin` / `member` / `viewer`), the `/users`
+> management UI and the `/api/users*` endpoints were **removed in
+> v1.45.0**. This is a single-operator tool (see project scope): there is
+> exactly one admin and every authenticated session has full access.
+> Authentication itself (login / password / token / 2FA / passkey /
+> rate-limit / IP lockout) is unchanged. The `admin_users.role` column is
+> retained for schema compatibility and is always `admin`.
 
 ### Ubuntu 26.04 LTS rebase (v0.38.0+)
 - Base image moved from `eclipse-temurin:17-{jdk,jre}-noble` (24.04 LTS)
@@ -262,19 +261,13 @@ vibe-coder-server/
   Marketplace-ready (`npm run package`); install with
   `code --install-extension vibe-coder-0.2.0.vsix`.
 
-### Roles & access (extended in v0.40.0)
-- **`viewer` role** — third role added next to `admin` / `member`.
-  Read-only: console prompt, build queue, git commit, file upload, agent
-  CRUD, project create/delete are all blocked at the SSR layer.
-- **`requireWriteAccessOrRedirect(sess)`** chain helper guards every
-  destructive SSR `POST` endpoint listed above; viewers get redirected
-  to dashboard with "viewer 권한으로는 변경할 수 없습니다."
-- **Admin-only guards extended** — `/audit`, `/settings` (GET + POST),
-  `/backup`, `/backup/download` now use `requireAdminOrRedirect` on top
-  of the session check. `/2fa` stays open to all roles (personal
-  security).
-- `/users` form gains a `viewer (read-only)` option; the role-toggle
-  button cycles `admin → member → viewer → admin`.
+### Roles & access — **removed in v1.45.0**
+> The `viewer` role and the SSR/JSON role guards described in earlier
+> versions are gone (single-admin, see above). Admin-only pages
+> (`/audit`, `/settings`, `/backup`, …) still require an authenticated
+> session; there is simply no role distinction to enforce. The guard
+> helpers (`requireWriteAccessOrRedirect`, `requireAdminOrRedirect`, …)
+> remain as inert pass-throughs so call sites compile.
 
 ### Agent dispatch UX (v0.41.0+)
 - Console page gains an **`@ Agent dispatch`** dropdown next to the
@@ -304,18 +297,12 @@ vibe-coder-server/
   kicks in. Subsequent prompts reuse the spawned child directly.
 - Idle 30-minute SIGTERM with resume preservation.
 
-### JSON API + WebSocket role guards (v0.45.0+)
-- `viewer` role enforcement extended from SSR (v0.40.0) to JSON API and
-  WebSocket.
-- **`ApplicationCall.requireApiWrite()`** — viewer tokens get
-  `403 viewer_readonly`. Applied to 11 mutating REST endpoints (projects /
-  builds / files / git commit / console prompt-new-cancel / actions invoke).
-- **`ApplicationCall.requireApiAdmin()`** — `admin_only` 403 on
-  server-level setup endpoints (`env-setup`, Claude auth, MCP install,
-  Git integrations).
-- **WebSocket**: `UserPrompt` and `ActionInvoke` frames check viewer role
-  per session. Blocked frames get `WsFrame.Error("viewer_readonly", ...)`
-  — connection stays open so the viewer can keep reading the live stream.
+### JSON API + WebSocket role guards — **removed in v1.45.0**
+> The viewer/role enforcement on the JSON API and WebSocket layers was
+> removed with the rest of multi-user (single-admin). `requireApiWrite()`
+> / `requireApiAdmin()` / `requireProjectAcl()` remain as inert
+> pass-throughs (authentication is still required). WebSocket
+> `UserPrompt` / `ActionInvoke` frames no longer carry a viewer check.
 
 ### Web Push (v0.46.0+ — payload-less, zero external deps)
 - **VAPID P-256 ECDSA keypair** auto-generated and persisted to
@@ -376,23 +363,13 @@ vibe-coder-server/
 - **Audit**: `auth.passkey.register`, `auth.passkey.login`,
   `auth.passkey.delete`.
 
-### Project ACL + Sub-agent persistent history (v0.49.0+)
-- **`project_acls` table** (`project_id`, `user_id`, `granted_by`,
-  `created_at`) — opt-in restriction. A user with **zero ACL rows**
-  sees every project (legacy / default). With **one or more rows** they
-  see only those. `admin` role bypasses ACL entirely (lockout
-  protection).
-- **`ProjectService.listForUser(userId, isAdmin)`** +
-  **`canUserAccess(userId, isAdmin, projectId)`** centralize the
-  evaluation. **`requireProjectAccessOrRedirect`** is the SSR guard
-  chained after the session / role checks.
-- **`/users/{userId}/projects`** (admin-only) — checkbox bulk-replace
-  of the user's ACL. Status banner makes it clear whether the user is
-  in unrestricted ("모든 프로젝트 보임") or opt-in restricted ("N개 허용")
-  mode. `/users` row gains a "권한" chip linking to the editor.
-- **JSON API** — `GET /api/projects` now filters per the caller's
-  `DevicePrincipal.userRole`; `GET /api/projects/{id}` returns
-  `403 project_forbidden` on ACL violation.
+### Sub-agent persistent history (v0.49.0+)
+> The Project ACL layer originally shipped in this section (`project_acls`
+> table, `requireProjectAccessOrRedirect`, `/users/{userId}/projects`
+> editor, per-caller `GET /api/projects` filtering) was **removed in
+> v1.45.0** along with multi-user. The `project_acls` table is retained
+> for schema compatibility but is always empty; `canUserAccess` always
+> returns true. The sub-agent persistence below is unaffected:
 - **`conversation_turns.agent_name`** column (nullable). Main project
   console writes `null`; the sub-agent process pool (v0.44.0) now
   tags every persisted turn with the agent name. New
@@ -426,27 +403,13 @@ vibe-coder-server/
   pulls `title` / `body` / `url`, calls `showNotification` with a
   `data: {url}` payload that the click handler routes to.
 
-### JSON API + WebSocket ACL completion (v0.51.0+)
-- v0.49.0's `requireProjectAccessOrRedirect` (SSR-only) gains a JSON
-  counterpart **`ApplicationCall.requireProjectAcl(projects,
-  projectId)`** that throws `403 project_forbidden` on ACL violation.
-- Applied to **15+** mutating per-project REST endpoints:
-  - `BuildRoutes` (4) — debug build, list, get, cancel
-  - `GitRoutes` (4) — status / diff / log / commit
-  - `FileRoutes` (4) — upload / list / download / delete
-  - `ConsoleRoutes` (5) — prompt / new / cancel / status /
-    prompt-suggestions
-  - `ProjectActionRoutes` (2) — list / invoke
-  - `SubAgentRoutes` (JSON 3 + SSR 3) — prompt / cancel / active +
-    agent index / per-agent console / new
-- **WebSocket** — `/ws/projects/{id}/console/logs` and
-  `/ws/projects/{id}/agents/{agent}/console/logs` handshakes do a
-  `device.userId → role + ACL` lookup; violation closes the connection
-  with `WsFrame.Error("project_forbidden")` + `VIOLATED_POLICY` close
-  reason.
-- `buildRoutes(service, hub, projects)`, `fileRoutes(service,
-  projects)`, and `wsRoutes(...projects)` now all take a
-  `ProjectService` argument for the ACL check.
+### JSON API + WebSocket ACL — **removed in v1.45.0**
+> The per-project ACL check (`requireProjectAcl`, the WebSocket
+> `device.userId → role + ACL` handshake lookup) was **removed in
+> v1.45.0**. The REST/WS endpoints it used to guard (builds, git, files,
+> console, actions, sub-agents, console/agent log sockets) all still
+> exist and now require **only authentication** — every authenticated
+> session reaches every project.
 
 ### `/history` agent_name filter (v0.52.0+)
 - The `conversation_turns.agent_name` column added in v0.49.0 is now
@@ -501,7 +464,7 @@ vibe-coder-server/
   the `line` query parameter, smooth-scrolls the highlighted code to
   the row, and flashes a yellow outline for 1.5 s.
 - **JSON API** `GET /api/projects/{id}/symbols?name=<symbol>` →
-  `{hits:[{relPath, lineNumber, kind, line}]}`. ACL-guarded.
+  `{hits:[{relPath, lineNumber, kind, line}]}`. Bearer-authenticated.
 - Console sidebar gets a **`⇢ 정의 검색`** chip so the lookup is
   reachable from every project workflow.
 - Trade-off: full Kotlin LSP (`kotlin-language-server`) — references,
@@ -796,13 +759,11 @@ carries a CSRF `_csrf` token (v0.12.4+).
 | `/projects/{id}/stats` | **v0.35.0** Code statistics (LoC / languages) |
 | `/code-search` | **v0.35.0** Workspace-wide grep |
 | `/multi-console` | **v0.36.0** N-pane multi-project console (iframe grid) |
-| `/users` | **v0.37.0** Multi-user / role management (admin only); **v0.40.0** added `viewer` |
 | `/projects/{id}/agents` | **v0.44.0** Sub-agent index (per project) — registered agents + live status + open-console |
 | `/projects/{id}/agents/{agent}/console` | **v0.44.0** Per-agent console (independent Claude child) |
 | `/settings/push` | **v0.46.0** Web Push (VAPID) — subscribe / unsubscribe / list / test; **v0.50.0** payload-encrypted |
 | `/usage` | **v0.47.0** Claude `/status` raw viewer (cache stats visible when Anthropic ships them) — admin |
 | `/webauthn` | **v0.48.0** Passkey (WebAuthn) — register / list / delete; 2FA alternative to TOTP |
-| `/users/{userId}/projects` | **v0.49.0** Project ACL editor (admin only) — opt-in per-user restriction |
 | `/projects/{id}/symbols` | **v0.54.0** Symbol definition lookup (regex; Kotlin/Java) |
 | `/metrics` | **v0.55.0** Prometheus exposition (admin) |
 | `/backup/auto/{name}` | **v0.60.0** Download a scheduled backup file (admin) |
@@ -879,22 +840,12 @@ Wire definitions: `shared/.../ApiPath.kt` + `shared/.../Dtos.kt`. Highlights:
   `/ws/env-setup/{taskId}/logs`,
   `/ws/projects/{id}/agents/{agent}/console/logs` (**v0.44.0+** sub-agent)
 
-**Role guards on JSON API (v0.45.0+)** — mutating endpoints require
-`canWrite` (admin or member); server-level setup endpoints require
-`admin`. Viewer Bearer tokens get `403 viewer_readonly`; non-admin tokens
-on server-level endpoints get `403 admin_only`. WebSocket `UserPrompt` /
-`ActionInvoke` from a viewer session reply with
-`WsFrame.Error("viewer_readonly")` but keep the read stream alive.
-
-**Project ACL on JSON API (v0.49.0 / v0.51.0)** — `GET /api/projects`
-is filtered through the caller's ACL (admin sees everything; member /
-viewer with no ACL rows sees everything; member / viewer with any ACL
-rows sees only those projects). Since **v0.51.0** every mutating
-per-project endpoint also checks the ACL via
-`call.requireProjectAcl(projects, projectId)` — violation returns
-`403 project_forbidden`. WebSocket handshakes
-(`/ws/projects/{id}/console/logs` and the sub-agent variant) close with
-`WsFrame.Error("project_forbidden")` + `VIOLATED_POLICY` reason.
+**Single-admin model (v1.45.0)** — multi-user, roles
+(`admin`/`member`/`viewer`) and Project ACL were **removed** (this is a
+single-operator tool). Every authenticated Bearer token / session reaches
+every endpoint and every project; the only access boundary is
+authentication itself (below). The `requireApiWrite` / `requireApiAdmin`
+/ `requireProjectAcl` guards remain as inert pass-throughs.
 
 ## Auth (v0.4.0+, hardened in v0.26.0)
 
@@ -935,31 +886,16 @@ to match the user-facing hostname (LAN: `rpId: "vibe.local"`,
 client is redirected to `/login?err=session_timeout`. Same policy across
 cookie and `Authorization: Bearer …`.
 
-**Multi-user + role (v0.37.0 / v0.40.0 / v0.45.0 / v0.49.0)** —
-`admin_users.role` column adds `admin` / `member` / `viewer`. The first
-admin (from `/setup`) is always `admin`; new users created via `/users`
-default to `member`. `/users` itself is admin-only. Last-admin demotion
-and self-deletion are blocked.
-
-`requireWriteAccessOrRedirect(sess)` blocks `viewer` sessions from
-destructive SSR `POST` endpoints. `requireAdminOrRedirect(sess)` guards
-`/audit`, `/settings`, `/backup`, `/users`, the full `/settings/*`
-family (v0.47.0), `/usage`. **JSON API and WebSocket layers also
-enforce role since v0.45.0** — `requireApiWrite()` and
-`requireApiAdmin()` extension functions return `403 viewer_readonly` /
-`403 admin_only` for unauthorized Bearer tokens, and WS `UserPrompt` /
-`ActionInvoke` from viewer sessions reply with a `viewer_readonly`
-error frame.
-
-**Project ACL (v0.49.0+)** — `project_acls(project_id, user_id,
-granted_by)` table implements opt-in per-user restriction. A user with
-zero ACL rows sees every project (default). With one or more rows,
-they see only those. `admin` role bypasses ACL entirely (lockout
-protection). Admin manages ACLs at **`/users/{userId}/projects`** with
-checkbox bulk-replace. SSR uses `requireProjectAccessOrRedirect(sess,
-projects, projectId)`; JSON `GET /api/projects` is filtered;
-`GET /api/projects/{id}` returns `403 project_forbidden` on
-violation.
+**Single-admin (multi-user removed in v1.45.0)** — this is a
+single-operator tool, so multi-user, the `admin`/`member`/`viewer` roles,
+the `/users` management UI, the `/api/users*` endpoints and the
+`project_acls` per-user restriction were all **removed in v1.45.0**.
+There is exactly one admin (created at `/setup`); every authenticated
+session has full access. The `admin_users.role` column (always `admin`)
+and the empty `project_acls` table are kept for schema compatibility; the
+role/ACL guard helpers remain as inert pass-throughs. Authentication
+(password, 2FA, passkey, idle timeout, brute-force protection) is the
+only access boundary and is unchanged.
 
 ## Security boundaries
 
