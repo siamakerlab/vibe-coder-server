@@ -11,6 +11,7 @@ import kotlinx.serialization.json.contentOrNull
 import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 private val log = KotlinLogging.logger {}
@@ -37,6 +38,12 @@ class ClaudeStatusService(
     private val cache = ConcurrentHashMap<String, Cached>()
 
     /**
+     * v1.46.0 — 단일 비행(single-flight) 가드. 같은 projectId 에 대해 동시/중첩 캡처를
+     * 막아 expect+claude TUI 프로세스가 누적 spawn 되는 것을 방지.
+     */
+    private val capturing = ConcurrentHashMap<String, Unit>()
+
+    /**
      * v0.47.0 — last raw `/status` output per project. The structured fields above only keep
      * a handful of best-effort extractions; the raw text contains additional info Anthropic
      * occasionally ships (prompt cache hit/miss counts, billing context) that we don't want
@@ -50,6 +57,25 @@ class ClaudeStatusService(
 
     fun allRawSnapshots(): Map<String, RawSnapshot> = rawSnapshots.toMap()
 
+    /**
+     * v1.46.0 — **요청 경로용 비차단 스냅샷**. 자식 프로세스를 절대 spawn 하지 않고
+     * 마지막 캐시(만료됐어도)를 즉시 반환한다. 캐시가 없으면 account-global 인 usage 는
+     * scratch 캐시로 폴백하고, busy/alive/sessionId 는 요청 projectId 의 실시간 상태로 덮어쓴다.
+     *
+     * 실제 캡처(usage 갱신)는 백그라운드 [ClaudeUsageMonitor] 가 주기(기본 5분)로만 [snapshot] 을
+     * 호출해 수행한다. 이 분리로 quota/console-status 같은 HTTP 요청이 느린 TUI 캡처에
+     * **절대 블록되지 않는다**(이전엔 캐시 미스 시 동기 캡처 → 25~80s hang).
+     */
+    fun cachedSnapshot(projectId: String): ClaudeStatusDto {
+        val base = cache[projectId]?.dto ?: cache[SCRATCH]?.dto
+        val dto = base ?: ClaudeStatusDto(updatedAt = Instant.now().toString())
+        return dto.copy(
+            busy = sessionManager.isBusy(projectId),
+            processAlive = sessionManager.isAlive(projectId),
+            sessionId = sessionManager.currentSessionId(projectId),
+        )
+    }
+
     suspend fun snapshot(projectId: String): ClaudeStatusDto {
         val cached = cache[projectId]
         if (cached != null && cached.expiresAt.isAfter(Instant.now())) {
@@ -62,6 +88,19 @@ class ClaudeStatusService(
             )
         }
 
+        // v1.46.0 — single-flight: 이미 같은 project 캡처가 진행 중이면 중복 spawn 하지 않고
+        // 마지막 캐시(stale) 를 즉시 반환. (백그라운드 폴러 호출이 겹쳐도 프로세스 누적 0.)
+        if (capturing.putIfAbsent(projectId, Unit) != null) {
+            return cachedSnapshot(projectId)
+        }
+        try {
+            return captureAndCache(projectId)
+        } finally {
+            capturing.remove(projectId)
+        }
+    }
+
+    private suspend fun captureAndCache(projectId: String): ClaudeStatusDto {
         val sessionId = sessionManager.currentSessionId(projectId)
         val alive = sessionManager.isAlive(projectId)
         val parsed = runCatching { runStatusCommand(projectId) }
@@ -142,22 +181,50 @@ class ClaudeStatusService(
             "--dangerously-skip-permissions", "hi",
         ).directory(workDir).redirectErrorStream(true)
         com.siamakerlab.vibecoder.server.env.ClaudeProcessEnv.applyApiKey(pb.environment())
+        // system/init 줄을 받는 즉시 트리 종료(assistant 응답 frame 미대기 → cost/지연 최소).
+        // 10s 내 미수신 시 타임아웃 + 트리 kill. (parseInitFrame 이 반환 텍스트에서 init 줄 추출.)
+        return runWithHardTimeout(pb, timeoutSeconds = 10) { it.contains("\"type\":\"system\"") }
+    }
+
+    /**
+     * v1.46.0 — 자식 프로세스를 **하드 타임아웃**으로 실행하고 stdout 을 수집한다.
+     *
+     * - stdout 읽기는 별도 daemon thread(pump)에서 수행 → 자식(특히 expect→claude TUI)이
+     *   stdout 을 안 닫아도 본 함수가 블록되지 않는다(이전 `readText()`/`readLine()` 직접
+     *   호출의 *read-before-timeout* 데드락 회수 — 23차 점검 패턴).
+     * - 타임아웃 또는 [stopWhen] 충족 시 **프로세스 트리 전체**(자식·손자 = expect → claude
+     *   TUI)를 `descendants().destroyForcibly()` 로 강제 종료 → orphan TUI 누적 방지.
+     */
+    private fun runWithHardTimeout(
+        pb: ProcessBuilder,
+        timeoutSeconds: Long,
+        stopWhen: ((String) -> Boolean)? = null,
+    ): String {
         return runCatching {
             val proc = pb.start()
-            // 첫 줄 (system/init frame) 만 capture 후 process kill — assistant
-            // 응답 frame 까지 기다리지 않아 cost / 지연 둘 다 최소.
-            val firstLine = proc.inputStream.bufferedReader().use { reader ->
-                val deadline = System.currentTimeMillis() + 8_000L
-                var line: String? = null
-                while (System.currentTimeMillis() < deadline) {
-                    line = reader.readLine() ?: break
-                    if (line.contains("\"type\":\"system\"")) break
-                    line = null
+            val sb = StringBuilder()
+            val matched = CountDownLatch(1)
+            val pump = Thread {
+                runCatching {
+                    proc.inputStream.bufferedReader().use { r ->
+                        while (true) {
+                            val line = r.readLine() ?: break
+                            synchronized(sb) { sb.append(line).append('\n') }
+                            if (stopWhen != null && stopWhen(line)) { matched.countDown(); break }
+                        }
+                    }
                 }
-                line.orEmpty()
+            }.apply { isDaemon = true; start() }
+
+            if (stopWhen != null) matched.await(timeoutSeconds, TimeUnit.SECONDS)
+            else proc.waitFor(timeoutSeconds, TimeUnit.SECONDS)
+
+            if (proc.isAlive) {
+                runCatching { proc.descendants().forEach { it.destroyForcibly() } }
+                proc.destroyForcibly()
             }
-            if (proc.isAlive) proc.destroyForcibly()
-            firstLine
+            pump.join(1500)
+            synchronized(sb) { sb.toString() }
         }.getOrDefault("")
     }
 
@@ -178,14 +245,10 @@ class ClaudeStatusService(
         val pb = ProcessBuilder(expectBin, "-f", scriptPath, workDir)
             .redirectError(ProcessBuilder.Redirect.DISCARD)
         com.siamakerlab.vibecoder.server.env.ClaudeProcessEnv.applyApiKey(pb.environment())
-        return runCatching {
-            val proc = pb.start()
-            val output = proc.inputStream.bufferedReader().readText()
-            proc.waitFor(25, TimeUnit.SECONDS)
-            if (proc.isAlive) proc.destroyForcibly()
-            output
-        }.onFailure { log.debug(it) { "[$projectId] usage capture script failed" } }
-            .getOrDefault("")
+        // v1.46.0 — pump thread + 하드 타임아웃 + 트리 kill. 이전엔 readText() 가 waitFor 보다
+        // 먼저라, TUI 가 stdout 을 안 닫으면 readText 가 무한 블록(quota 25~80s hang) + expect 를
+        // 죽여도 자식 claude TUI 가 orphan 으로 누적되던 문제를 회수.
+        return runWithHardTimeout(pb, timeoutSeconds = 25)
     }
 
     /**
@@ -448,5 +511,10 @@ class ClaudeStatusService(
         if (!override.isNullOrBlank()) return override
         if (config.claude.path != "auto") return config.claude.path
         return if (OsType.detect() == OsType.WINDOWS) "claude.cmd" else "claude"
+    }
+
+    private companion object {
+        /** General Chat ghost 프로젝트 id. usage(account-global) 폴백 캐시 키. */
+        const val SCRATCH = "__scratch__"
     }
 }

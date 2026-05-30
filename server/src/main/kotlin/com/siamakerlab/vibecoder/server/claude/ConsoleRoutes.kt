@@ -118,7 +118,8 @@ fun Routing.consoleRoutes(
                 ?: throw ApiException.localized(400, "bad_request", messageKey = "api.console.projectIdRequired")
             call.requireProjectAcl(projects, projectId)
             projects.rowOrThrow(projectId)
-            call.respond(statusService.snapshot(projectId))
+            // v1.46.0 — 비차단 캐시-온리(동기 TUI 캡처 hang 회수). usage 는 백그라운드 폴러가 갱신.
+            call.respond(statusService.cachedSnapshot(projectId))
         }
 
         // v0.31.0 — prompt 자동완성 (history 기반 prefix 매치).

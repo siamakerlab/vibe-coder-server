@@ -24,10 +24,9 @@ private val log = KotlinLogging.logger {}
  */
 fun Routing.quotaRoutes(claudeStatus: ClaudeStatusService) {
     get(ApiPath.SERVER_QUOTA) {
-        val dto = runCatching { claudeStatus.snapshot(ProjectService.SCRATCH_ID) }
-            .onFailure { log.debug(it) { "quota snapshot failed" } }
-            .getOrNull()
-        if (dto != null) call.respond(dto)
-        else call.respond(io.ktor.http.HttpStatusCode.ServiceUnavailable, mapOf("error" to "quota_unavailable"))
+        // v1.46.0 — 비차단 캐시-온리. 캡처(usage 갱신)는 백그라운드 ClaudeUsageMonitor 가
+        // 주기적으로 수행하므로 이 요청은 즉시 마지막 캐시(또는 light DTO)를 반환한다.
+        // 이전엔 캐시 미스 시 동기 TUI 캡처를 호출해 quota 가 25~80s hang 했음(근본 회수).
+        call.respond(claudeStatus.cachedSnapshot(ProjectService.SCRATCH_ID))
     }
 }
