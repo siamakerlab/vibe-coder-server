@@ -489,8 +489,11 @@ fun main(args: Array<String>) {
     )
 
     Runtime.getRuntime().addShutdownHook(Thread {
-        kotlinx.coroutines.runBlocking { sessionManager.shutdown() }
-        kotlinx.coroutines.runBlocking { subAgentManager.shutdown() }
+        // v1.51.0 — 25차: 이하 cleanup 들과 동일하게 runCatching 격리. 이전엔 두 shutdown 만
+        // raw runBlocking 이라, 예외 시 hook thread 가 중단돼 이후 terminal/queue/hub cleanup 이
+        // 전부 누락(PTY/프로세스/코루틴 누수)될 수 있었음.
+        runCatching { kotlinx.coroutines.runBlocking { sessionManager.shutdown() } }
+        runCatching { kotlinx.coroutines.runBlocking { subAgentManager.shutdown() } }
         runCatching { claudeUsageMonitor.shutdown() }
         runCatching { diskMonitor.shutdown() }
         runCatching { kotlinLspService.shutdown() }

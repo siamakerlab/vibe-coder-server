@@ -134,6 +134,7 @@ class ProjectFileBrowser(
                 messageKey = "api.fileBrowser.contentTooLarge", args = listOf(contentBytes))
         }
         val target = PathSafety.normalizeAndCheck(projectRoot, relPath)
+        PathSafety.assertRealInside(projectRoot, target) // v1.51.0 — 25차: write 의 중간 디렉토리 symlink escape 차단(v1.43.0 read-side 회수 누락분)
         if (Files.isSymbolicLink(target)) {
             throw ApiException.localized(403, "symlink_blocked", messageKey = "api.fileBrowser.symlinkBlockedEdit")
         }
@@ -396,6 +397,7 @@ class ProjectFileBrowser(
         // dst Path 도 PathSafety 재검증.
         val dstRel = projectRoot.relativize(dst).toString().replace('\\', '/')
         val dstChecked = PathSafety.normalizeAndCheck(projectRoot, dstRel)
+        PathSafety.assertRealInside(projectRoot, dstChecked) // v1.51.0 — 25차: move 대상 부모 symlink escape 차단
         if (src.normalize() == dstChecked.normalize()) {
             // 같은 위치 → no-op.
             return
@@ -434,6 +436,7 @@ class ProjectFileBrowser(
         val dst = dstParent.resolve(src.fileName)
         val dstRel = projectRoot.relativize(dst).toString().replace('\\', '/')
         val dstChecked = PathSafety.normalizeAndCheck(projectRoot, dstRel)
+        PathSafety.assertRealInside(projectRoot, dstChecked) // v1.51.0 — 25차: copy 대상 부모 symlink escape 차단
         if (Files.exists(dstChecked, LinkOption.NOFOLLOW_LINKS)) {
             throw ApiException.localized(409, "already_exists",
                 messageKey = "api.fileBrowser.alreadyExists", args = listOf(src.fileName.toString()))

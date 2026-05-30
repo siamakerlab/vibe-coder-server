@@ -110,6 +110,11 @@ private object AgentTemplates {
             .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             .replace("\"", "&quot;").replace("'", "&#39;")
 
+    // v1.51.0 — 25차: onclick JS 문자열 컨텍스트용. esc(escJs(x)) 순서(JS escape 후 HTML escape).
+    // 디스크 스캔 agent 파일명에 ' / 가 있으면 esc 만으론 HTML 디코드 후 JS 탈출(XSS).
+    private fun escJs(s: String?): String =
+        s.orEmpty().replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "\\r")
+
     fun listPage(
         username: String,
         agents: List<AgentRegistry.Agent>,
@@ -136,7 +141,7 @@ private object AgentTemplates {
                     <pre style="margin:0;font-size:11px;white-space:pre-wrap;word-break:break-word;max-width:600px;opacity:0.7">${esc(a.preview.take(200))}</pre>
                     <form method="post" action="/agents/${esc(a.name)}/delete" style="display:inline">
                       ${CsrfTokens.hiddenInput(csrf)}
-                      <button type="submit" class="chip chip-danger" onclick="return confirm('${esc(a.name)} 삭제?')">삭제</button>
+                      <button type="submit" class="chip chip-danger" onclick="return confirm('${esc(escJs(a.name))} 삭제?')">삭제</button>
                     </form>
                   </td>
                 </tr>"""

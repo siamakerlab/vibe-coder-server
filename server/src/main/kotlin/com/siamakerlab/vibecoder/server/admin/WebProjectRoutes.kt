@@ -806,6 +806,9 @@ fun Routing.webProjectRoutes(
                 for ((abs, rel) in resolved) {
                     if (!java.nio.file.Files.exists(abs)) continue
                     if (java.nio.file.Files.isSymbolicLink(abs)) continue
+                    // v1.51.0 — 25차: 중간 디렉토리 symlink 로 워크스페이스 밖 파일이 zip 에 담기는
+                    // read-escape 차단(lexical normalizeAndCheck 만으론 부족). 위반 시 해당 entry skip.
+                    if (runCatching { com.siamakerlab.vibecoder.server.core.PathSafety.assertRealInside(projectRoot, abs) }.isFailure) continue
                     if (java.nio.file.Files.isDirectory(abs)) {
                         // 재귀 walk — 디렉토리 안의 모든 정규 파일 entry. zip 안 path 는
                         // rel 기준 상대.

@@ -15,6 +15,11 @@ internal object PluginTemplates {
             .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             .replace("\"", "&quot;").replace("'", "&#39;")
 
+    // v1.51.0 — 25차: onclick JS 문자열 컨텍스트용. esc(escJs(x)). untrusted marketplace 메타데이터
+    // (plugin/marketplace name)에 ' 가 있으면 esc 만으론 HTML 디코드 후 JS 탈출(XSS).
+    private fun escJs(s: String?): String =
+        s.orEmpty().replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "\\r")
+
     /**
      * @param scope          "user" (전역 탭) 또는 "project" (프로젝트 탭)
      * @param actionBase     POST prefix. 전역="/settings/plugins", 프로젝트="/projects/{id}/plugins"
@@ -65,7 +70,7 @@ internal object PluginTemplates {
                   <button type="submit" class="chip chip-link">${esc(t("plugins.update"))}</button></form>
                 <form method="post" action="$actionBase/uninstall" style="display:inline">
                   ${CsrfTokens.hiddenInput(csrf)}<input type="hidden" name="plugin" value="${esc(p.id)}">
-                  <button type="submit" class="chip chip-danger" onclick="return confirm('${esc(p.name)} ${esc(t("plugins.uninstall"))}?')">${esc(t("plugins.uninstall"))}</button></form>"""
+                  <button type="submit" class="chip chip-danger" onclick="return confirm('${esc(escJs(p.name))} ${esc(t("plugins.uninstall"))}?')">${esc(t("plugins.uninstall"))}</button></form>"""
             }
             return """<tr>
               <td><code>${esc(p.name)}</code><span class="dim" style="font-size:10px"> @${esc(p.marketplace)}</span>$mcpNote</td>
@@ -92,7 +97,7 @@ internal object PluginTemplates {
             val removeBtn = if (marketplacesReadonly) "" else """
               <form method="post" action="$actionBase/marketplace/remove" style="display:inline">
                 ${CsrfTokens.hiddenInput(csrf)}<input type="hidden" name="name" value="${esc(m.name)}">
-                <button type="submit" class="chip chip-danger" onclick="return confirm('${esc(m.name)} ${esc(t("plugins.marketplace.remove"))}?')">${esc(t("plugins.marketplace.remove"))}</button></form>"""
+                <button type="submit" class="chip chip-danger" onclick="return confirm('${esc(escJs(m.name))} ${esc(t("plugins.marketplace.remove"))}?')">${esc(t("plugins.marketplace.remove"))}</button></form>"""
             """<tr><td><code>${esc(m.name)}</code></td><td class="dim" style="font-size:11px">${esc(m.repo ?: m.source)}</td><td>$removeBtn</td></tr>"""
         }
         val mktAddForm = if (marketplacesReadonly) {

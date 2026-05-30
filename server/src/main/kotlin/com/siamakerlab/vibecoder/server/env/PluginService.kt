@@ -178,7 +178,11 @@ class PluginService(
 
     /** `claude … --json` 을 동기 실행하고 JsonArray 로 파싱. 실패 시 null. */
     private fun runJson(args: List<String>, cwd: Path?): JsonArray? = runCatching {
-        val pb = ProcessBuilder(listOf(claudeBin) + args).redirectErrorStream(false)
+        // v1.51.0 — 25차: stderr 를 DISCARD 로 배수. 이전엔 (false)+stdout-only readText 라 claude
+        // CLI 가 stderr 로 64KB 초과 출력 시 파이프 포화 → readText 가 30s watchdog destroyForcibly
+        // 까지 블록(매번 30s 지연 + null 반환). stdout(JSON)은 보존해야 하므로 merge 대신 DISCARD.
+        val pb = ProcessBuilder(listOf(claudeBin) + args)
+            .redirectError(ProcessBuilder.Redirect.DISCARD)
             .redirectInput(ProcessBuilder.Redirect.from(java.io.File("/dev/null")))
         cwd?.let { pb.directory(it.toFile()) }
         val proc = pb.start()
