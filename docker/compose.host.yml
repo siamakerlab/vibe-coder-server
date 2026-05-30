@@ -18,14 +18,21 @@ name: vibe-coder-host
 #     127.0.0.1 로 바꾸고, postgres 를 호스트 루프백 5432 에 노출한다.
 #   - 공유기의 AP isolation(기기 간 격리)이 켜져 있으면 폰↔서버가 막힌다(off 필요).
 # ──────────────────────────────────────────────────────────────────────────
+#   - 호스트 5432 가 이미 점유돼 있으면(다른 postgres 등) 아래 노출 포트가 충돌한다.
+#     그 경우 VIBE_PG_PORT + VIBECODER_DB_PORT 를 같은 빈 포트(예: 55432)로 맞춘다:
+#       VIBE_PG_PORT=55432  VIBECODER_DB_PORT=55432  (.env)
+# ──────────────────────────────────────────────────────────────────────────
 services:
   vibe-coder-server:
     network_mode: host
     environment:
       # host 네트워크 → service 이름 미해결. 루프백으로 postgres 접근.
       VIBECODER_DB_HOST: "127.0.0.1"
+      # 호스트 5432 충돌 시 .env 의 VIBECODER_DB_PORT 로 override(아래 VIBE_PG_PORT 와 동일하게).
+      VIBECODER_DB_PORT: "${VIBECODER_DB_PORT:-5432}"
 
   postgres:
-    # host 네트워크의 서버가 127.0.0.1:5432 로 닿도록 루프백에만 노출.
+    # host 네트워크의 서버가 127.0.0.1:<port> 로 닿도록 루프백에만 노출.
+    # 5432 점유 시 VIBE_PG_PORT 로 변경(VIBECODER_DB_PORT 와 일치 필요).
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${VIBE_PG_PORT:-5432}:5432"
