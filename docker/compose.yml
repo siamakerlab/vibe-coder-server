@@ -82,6 +82,11 @@ services:
       VIBECODER_CORS_ALLOWED_HOSTS: ${VIBECODER_CORS_ALLOWED_HOSTS:-*}
       VIBECODER_CORS_ALLOW_CREDENTIALS: ${VIBECODER_CORS_ALLOW_CREDENTIALS:-false}
 
+      # 신뢰 리버스 프록시 뒤 배포 시 true 권장 (X-Forwarded-For 로 실제 클라 IP 식별
+      # → IP 차단/rate-limit 정확 동작). 직노출(LAN)에서 true 면 X-Forwarded-For 스푸핑으로
+      # IP 차단 우회 가능하므로 반드시 신뢰 프록시 뒤에서만 켤 것.
+      VIBECODER_TRUST_FORWARDED_FOR: ${VIBECODER_TRUST_FORWARDED_FOR:-false}
+
       # v0.14.0 — PostgreSQL 연결. host 는 같은 docker network 안의 service 이름.
       VIBECODER_DB_HOST: ${VIBECODER_DB_HOST:-postgres}
       VIBECODER_DB_PORT: ${VIBECODER_DB_PORT:-5432}
