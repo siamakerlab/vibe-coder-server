@@ -194,6 +194,15 @@ fun Routing.webProjectRoutes(
         // v1.49.0 — 헤더 프로젝트명 콤보박스(빠른 프로젝트 전환)용 전체 목록.
         val allProjects = runCatching { projects.listForUser(sess.userId, sess.isAdmin) }
             .getOrDefault(listOf(p))
+        // v1.56.0 — 콤보박스 각 항목 좌측 상태칩 (목록 페이지와 동일 체계).
+        //  responding(응답중) > ready(대기·세션활성) > idle(유휴). 진입 시점 snapshot.
+        val projectStatuses = allProjects.associate { pr ->
+            pr.id to when {
+                sessionManager.isBusy(pr.id) -> "responding"
+                sessionManager.isAlive(pr.id) -> "ready"
+                else -> "idle"
+            }
+        }
         // v1.50.0 — 우측 overview rail 데이터.
         val keystoreReady = runCatching { keystoreService.get(p.packageName) != null }.getOrDefault(false)
         val usage = runCatching { conversationRepo.usageSummary(id) }.getOrNull()
@@ -208,6 +217,7 @@ fun Routing.webProjectRoutes(
                 username = sess.username,
                 project = p,
                 allProjects = allProjects,
+                projectStatuses = projectStatuses,
                 keystoreReady = keystoreReady,
                 tokensTotal = (usage?.let { it.inputTokens + it.outputTokens }) ?: 0L,
                 cacheHitRate = usage?.cacheHitRate,

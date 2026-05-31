@@ -83,6 +83,11 @@ internal object ProjectTabsTemplate {
         lang: String,
         /** v1.49.0 — 헤더 프로젝트명 콤보박스(빠른 전환)용 전체 프로젝트 목록. */
         allProjects: List<ProjectDto> = emptyList(),
+        /**
+         * v1.56.0 — projectId → 상태 키 ("responding" | "ready" | "idle"). 콤보박스
+         * 각 항목 좌측 상태칩(`.pstat`)에 사용. 누락 시 "idle". 목록 페이지와 동일 체계.
+         */
+        projectStatuses: Map<String, String> = emptyMap(),
         /** v1.50.0 — 우측 overview rail 데이터. */
         keystoreReady: Boolean = false,
         tokensTotal: Long = 0,
@@ -135,8 +140,13 @@ internal object ProjectTabsTemplate {
             .sortedBy { it.name.lowercase() }
             .joinToString("") { pr ->
                 val active = pr.id == project.id
+                // v1.56.0 — 좌측 상태칩 (목록 페이지와 동일 .pstat / data-state, /ws/projects 로 실시간 patch).
+                val state = projectStatuses[pr.id] ?: "idle"
+                val chip = """<span class="pstat pstat-$state" data-pid="${esc(pr.id)}" data-state="$state"
+                                    title="${esc(t("projects.status.$state"))}">${esc(t("projects.status.$state"))}</span>"""
                 """<a href="/projects/${esc(pr.id)}" class="pt-switch-item${if (active) " active" else ""}"
                       data-name="${esc((pr.name + " " + pr.id).lowercase())}">
+                     $chip
                      <span class="pt-si-name">${esc(pr.name)}</span>
                      <span class="pt-si-id">${esc(pr.id)}</span>
                    </a>"""
@@ -261,6 +271,17 @@ internal object ProjectTabsTemplate {
     color: var(--text-dim, #888); font-size: 11px;
     font-family: ui-monospace, Menlo, monospace; flex-shrink: 0;
   }
+  /* v1.56.0 — 콤보 항목: [상태칩] 이름(신축) [id]. 이름이 남는 폭을 차지하고 id 는 우측. */
+  #project-tabs-root .pt-switch-item .pt-si-name {
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #project-tabs-root .pt-switch-item .pstat {
+    flex: none; font-size: 11px; padding: 2px 8px; gap: 5px;
+  }
+  /* active 항목이라도 칩 색(warn/ok/dim)은 유지 — accent 색 상속 차단. */
+  #project-tabs-root .pt-switch-item.active .pstat-responding { color: var(--warn, #ffa94d); }
+  #project-tabs-root .pt-switch-item.active .pstat-ready { color: var(--ok, #69db7c); }
+  #project-tabs-root .pt-switch-item.active .pstat-idle { color: var(--text-dim, #888); }
   #project-tabs-root .pt-switcher-menu hr {
     border: 0; border-top: 1px solid #1f2330; margin: 6px 0;
   }
@@ -487,6 +508,42 @@ $railHtml
 </div>
 
 <script src="/static/project-tabs.js?v=1.50.0" defer></script>
+<!-- v1.56.0 — 콤보박스 상태칩 실시간 동기. 목록 페이지와 동일하게 `/ws/projects`
+     (단방향) 의 ProjectBusyChanged 로 responding↔ready patch. -->
+<script>
+(function() {
+  var LABELS = {
+    responding: ${jsLit(t("projects.status.responding"))},
+    ready: ${jsLit(t("projects.status.ready"))},
+    idle: ${jsLit(t("projects.status.idle"))}
+  };
+  function patch(pid, busy) {
+    var el = document.querySelector('.pstat[data-pid="' + (window.CSS && CSS.escape ? CSS.escape(pid) : pid) + '"]');
+    if (!el) return;
+    var state = busy ? 'responding' : 'ready';
+    el.className = 'pstat pstat-' + state;
+    el.dataset.state = state;
+    el.textContent = LABELS[state];
+    el.title = LABELS[state];
+  }
+  var ws = null;
+  function connect() {
+    var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(proto + '//' + location.host + '/ws/projects');
+    ws.onmessage = function(ev) {
+      try {
+        var f = JSON.parse(ev.data);
+        if (f.type === 'project_busy_changed' && f.projectId != null) {
+          patch(f.projectId, !!f.busy);
+        }
+      } catch (e) { /* ignore malformed frame */ }
+    };
+    ws.onclose = function() { setTimeout(connect, 5000); };
+    ws.onerror = function() { try { ws.close(); } catch (e) {} };
+  }
+  connect();
+})();
+</script>
 """,
         )
     }
