@@ -198,7 +198,11 @@ object McpCatalog {
             homepage = "https://gitea.com/gitea/gitea-mcp",
             description = "공식 Gitea MCP Server (gitea/gitea-mcp). Gitea / Forgejo 인스턴스의 issues/PRs/repos/releases 등. self-hosted git 환경.",
             category = Category.GIT_HOSTING, trust = Trust.VERIFIED,
-            command = "gitea-mcp",
+            // v1.68.1 — 절대경로로 고정. 구 npm 패키지(@boringstudio_org/gitea-mcp)가
+            //  `/home/vibe/.local/bin/gitea-mcp`(→ index.js) 심볼릭을 남겼고, PATH 가
+            //  `.local/bin` 을 먼저 보므로 `gitea-mcp` 만 쓰면 공식 바이너리가 가려진다.
+            //  이미지의 공식 바이너리(`/usr/local/bin/gitea-mcp`)를 결정적으로 사용.
+            command = "/usr/local/bin/gitea-mcp",
             argsTemplate = listOf("-t", "stdio"),
             binaryInstall = true,
             configFields = listOf(
