@@ -1420,6 +1420,7 @@ internal object MessagesEn {
         "console.filter.cat.replay" to "Replay markers",
         "console.filter.cat.ws" to "WebSocket connection",
         "console.filter.cat.todo" to "Todos (TaskCreate / TaskUpdate / TodoWrite)",
+        "console.filter.cat.thinking" to "Thinking",
         "console.filter.reset" to "Show all",
 
         // ─────────────────────────────────────────────── console todo panel (v1.3.0)

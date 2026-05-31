@@ -205,6 +205,13 @@ vibe-coder-server/
 - **Console keys** (v1.69.0+) — **Enter sends**, **Ctrl/Cmd+Enter (or
   Shift+Enter) inserts a newline**. IME composition Enter (Korean etc.) never
   sends (`isComposing` guard).
+- **Friendly console rendering** (v1.70.0+) — every stream-json event renders as
+  a human-readable line instead of raw JSON: tool results extract their text,
+  every tool (including `mcp__*`, `Task`, `ToolSearch`, …) gets a one-line
+  summary, `thinking` blocks collapse to `💭 thinking` (toggleable), and
+  sub-agent task / rate-limit events are labelled. Shared
+  `/static/admin/console-render.js` powers the main console, `/chat`, and
+  sub-agent consoles identically; `thinking_tokens` noise is dropped server-side.
 
 ### Environment & build files (v0.32.0+)
 - **Env files quick edit** — `/projects/{id}/env-files` exposes only a

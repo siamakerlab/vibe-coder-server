@@ -1398,6 +1398,7 @@ internal object MessagesKo {
         "console.filter.cat.replay" to "Replay 마커",
         "console.filter.cat.ws" to "WebSocket 연결",
         "console.filter.cat.todo" to "할 일 (TaskCreate / TaskUpdate / TodoWrite)",
+        "console.filter.cat.thinking" to "사고 과정 (thinking)",
         "console.filter.reset" to "모두 표시",
 
         // ─────────────────────────────────────────────── console todo panel (v1.3.0)

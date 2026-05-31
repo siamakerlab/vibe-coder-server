@@ -768,6 +768,9 @@ table.devices small.dim { font-size: 11px; }
 .console-log .tool-err::before  { content: '  ⎿ '; color: var(--danger, #ff6b6b); padding-left: 0.4em; }
 .console-log .sys::before       { content: '⎯ ';   color: #6c7a93; }
 .console-log .err::before       { content: '! ';   color: var(--danger, #ff6b6b); font-weight: 700; }
+/* v1.70.0 — thinking(사고 과정) 행: 흐릿한 이탤릭으로 본문과 구분. */
+.console-log .thinking::before  { content: '💭 '; color: #8a7fb0; }
+.console-log .thinking          { opacity: 0.72; font-style: italic; }
 
 /* v1.21.0 — 기존 .log-label 은 server 측에서 여전히 emit (script 가 사용) 하지만
    시각적으로는 hide. role 정보는 ::before prefix + class 색으로 표현. */

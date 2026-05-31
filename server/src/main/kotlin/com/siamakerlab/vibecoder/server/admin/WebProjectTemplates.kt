@@ -1273,6 +1273,7 @@ $authBannerHtml
         <label style="display:block;padding:2px 0;cursor:pointer"><input type="checkbox" class="filter-cb" data-cat="replay" checked> ${esc(t("console.filter.cat.replay"))}</label>
         <label style="display:block;padding:2px 0;cursor:pointer"><input type="checkbox" class="filter-cb" data-cat="ws" checked> ${esc(t("console.filter.cat.ws"))}</label>
         <label style="display:block;padding:2px 0;cursor:pointer"><input type="checkbox" class="filter-cb" data-cat="todo" checked> ${esc(t("console.filter.cat.todo"))}</label>
+        <label style="display:block;padding:2px 0;cursor:pointer"><input type="checkbox" class="filter-cb" data-cat="thinking" checked> ${esc(t("console.filter.cat.thinking"))}</label>
       </div>
     </div>
     <div style="margin-top:6px;display:flex;justify-content:flex-end">
@@ -1404,6 +1405,8 @@ $automationPanelHtml
   <a href="/agents" class="chip chip-link" style="font-size:11px;margin-left:0;flex-shrink:0">${esc(t("console.agent.manage"))}</a>
 </div>
 
+<!-- v1.70.0 — 콘솔 친화 렌더러 (tool_use/tool_result/unknown). inline 스크립트보다 먼저 동기 로드. -->
+<script src="/static/console-render.js?v=1.70.0"></script>
 <script>
 (function() {
   var projectId = $projectIdJs;
@@ -1424,7 +1427,7 @@ $automationPanelHtml
   // append(cls, label, body, cat) → row.dataset.filterCat = cat, 필터 적용.
   var FILTER_KEY = 'vibe-console-filter-' + projectId;
   var MANDATORY_CATS = ['assistant', 'error', 'system'];
-  var OPTIONAL_CATS = ['tool_use', 'tool_result', 'session', 'done', 'replay', 'ws', 'todo'];
+  var OPTIONAL_CATS = ['tool_use', 'tool_result', 'session', 'done', 'replay', 'ws', 'todo', 'thinking'];
   var filterState = (function() {
     try {
       var raw = localStorage.getItem(FILTER_KEY);
@@ -1757,61 +1760,10 @@ $automationPanelHtml
     });
   })();
 
-  // v0.13.0 — tool_use 도구별 친화적 렌더링. raw JSON 대신 읽기 쉬운 한 줄.
-  function clip(s, n) {
-    s = String(s == null ? '' : s);
-    return s.length > n ? s.slice(0, n) + ' …(+' + (s.length - n) + ')' : s;
-  }
-  function renderToolUse(name, input) {
-    var i = input || {};
-    switch (name) {
-      case 'Bash': {
-        var cmd = i.command || '';
-        var desc = i.description ? ' — ' + i.description : '';
-        return { label: '$', body: clip(cmd, 400) + desc };
-      }
-      case 'Read': {
-        var p = i.file_path || i.path || '';
-        var range = (i.offset != null || i.limit != null)
-          ? ' [' + (i.offset || 0) + ', +' + (i.limit || '?') + ']' : '';
-        return { label: '📄 Read', body: p + range };
-      }
-      case 'Write': {
-        var p2 = i.file_path || i.path || '';
-        var sz = (i.content || '').length;
-        return { label: '✏️ Write', body: p2 + ' (' + sz + ' chars)' };
-      }
-      case 'Edit': {
-        var p3 = i.file_path || i.path || '';
-        var oldS = clip(i.old_string || '', 80);
-        var newS = clip(i.new_string || '', 80);
-        var ra = i.replace_all ? ' [all]' : '';
-        return { label: '✎ Edit' + ra, body: p3 + '\n  - ' + oldS + '\n  + ' + newS };
-      }
-      case 'Glob':
-        return { label: '🔍 Glob', body: (i.pattern || '') + (i.path ? ' in ' + i.path : '') };
-      case 'Grep':
-        return { label: '🔎 Grep', body: '"' + clip(i.pattern || '', 80) + '"' +
-          (i.path ? ' in ' + i.path : '') + (i.glob ? ' (' + i.glob + ')' : '') };
-      case 'TaskCreate':
-        return { label: '📋 TaskCreate', body: i.subject || i.description || '' };
-      case 'TaskUpdate':
-        return { label: '📋 TaskUpdate',
-          body: 'id=' + (i.taskId || '?') + (i.status ? ' status=' + i.status : '') +
-                (i.subject ? ' "' + i.subject + '"' : '') };
-      case 'TodoWrite':
-        var n = (i.todos || []).length;
-        return { label: '📋 TodoWrite', body: n + ' todo(s)' };
-      case 'WebSearch':
-        return { label: '🌐 WebSearch', body: '"' + clip(i.query || '', 200) + '"' };
-      case 'WebFetch':
-        return { label: '🌐 WebFetch', body: i.url || '' };
-      default: {
-        var raw = typeof input === 'string' ? input : JSON.stringify(input || {});
-        return { label: name || 'tool', body: clip(raw, 500) };
-      }
-    }
-  }
+  // v0.13.0 → v1.70.0 — tool_use 친화 렌더링은 공용 /static/console-render.js 로 추출.
+  // clip / renderToolUse 는 그 모듈을 위임 사용 (메인 콘솔 · /chat · sub-agent 공통).
+  function clip(s, n) { return window.VibeConsole.clip(s, n); }
+  function renderToolUse(name, input) { return window.VibeConsole.renderToolUse(name, input); }
 
   function renderFrame(f) {
     var t = f.type;
@@ -1827,11 +1779,10 @@ $automationPanelHtml
       append('tool', rendered.label, rendered.body, isTodoTool ? 'todo' : 'tool_use');
       if (isTodoTool) updateTodoStore(f.toolName, f.input);
     } else if (t === 'console_tool_result') {
-      var out = typeof f.output === 'string' ? f.output : JSON.stringify(f.output);
+      // v1.70.0 — content 배열([{type:text,text}]) 을 평문으로 추출 (raw JSON 노출 제거).
+      var out = window.VibeConsole.extractToolResult(f.output);
       var resultLabel = f.isError ? 'tool-err' : '✓ result';
-      append(f.isError ? 'tool-err' : 'tool-out', resultLabel,
-             out.length > 500 ? out.slice(0,500) + ' …(+' + (out.length - 500) + ')' : out,
-             'tool_result');
+      append(f.isError ? 'tool-err' : 'tool-out', resultLabel, clip(out, 4000), 'tool_result');
       detectAuthFailure(out);
     } else if (t === 'console_error') {
       append('err', 'error', (f.code || '') + ': ' + (f.message || ''), 'error');
@@ -1857,6 +1808,11 @@ $automationPanelHtml
     } else if (t === 'automation_progress') {
       // v1.59.0 — 프롬프트 자동화 진행/종료 프레임 → 패널 뱃지 갱신.
       if (window.__vibeAutoRender) window.__vibeAutoRender(f);
+    } else if (t === 'console_unknown') {
+      // v1.70.0 — 이전엔 미처리(드롭)되거나 raw 로 보이던 이벤트(thinking / system task /
+      // rate_limit 등)를 친화적으로 렌더. null 이면 노이즈로 판단해 숨김.
+      var u = window.VibeConsole.renderUnknown(f.raw);
+      if (u) append(u.cls, u.label, u.body, u.cat);
     }
   }
 
@@ -1873,6 +1829,9 @@ $automationPanelHtml
     try { arr = JSON.parse(raw); } catch (e) { return; }
     if (!Array.isArray(arr) || arr.length === 0) return;
     append('sys', 'history', '— ' + arr.length + ' previous turn(s) restored —', 'replay');
+    // v1.70.0 — 저장된 content 도 친화적으로 렌더 (이전엔 tool_use input / tool_result 배열 /
+    // system {kind:…} / unknown 이 raw JSON 으로 노출됐음). 라이브 흐름과 동일 변환 사용.
+    function tryParse(s) { try { return JSON.parse(s); } catch (e) { return null; } }
     for (var i = 0; i < arr.length; i++) {
       var r = arr[i] || {};
       var role = r.role || '';
@@ -1883,20 +1842,32 @@ $automationPanelHtml
       } else if (role === 'assistant') {
         append('assistant', 'assistant', text, 'assistant', opts);
       } else if (role === 'tool_use') {
-        // ConversationTurn 의 content 는 input JSON. renderToolUse 와 동일 형식 best-effort.
-        var label = (r.tool || 'tool');
-        var body = text.length > 500 ? text.slice(0, 500) + ' …(+' + (text.length - 500) + ')' : text;
-        var isTodoTool = (label === 'TaskCreate' || label === 'TaskUpdate' || label === 'TodoWrite');
-        append('tool', label, body, isTodoTool ? 'todo' : 'tool_use', opts);
-      } else if (role === 'tool_result') {
-        var out = text.length > 500 ? text.slice(0, 500) + ' …(+' + (text.length - 500) + ')' : text;
-        append('tool-out', '✓ result', out, 'tool_result', opts);
+        var inp = tryParse(text);
+        var ru = renderToolUse(r.tool || 'tool', inp != null ? inp : text);
+        var isTodoTool = (r.tool === 'TaskCreate' || r.tool === 'TaskUpdate' || r.tool === 'TodoWrite');
+        append('tool', ru.label, ru.body, isTodoTool ? 'todo' : 'tool_use', opts);
+      } else if (role === 'tool_result' || role === 'tool_result_error') {
+        var parsed = tryParse(text);
+        var out = parsed != null ? window.VibeConsole.extractToolResult(parsed) : text;
+        var isErr = (role === 'tool_result_error');
+        append(isErr ? 'tool-err' : 'tool-out', isErr ? 'tool-err' : '✓ result', clip(out, 4000), 'tool_result', opts);
       } else if (role === 'system') {
-        append('sys', r.tool || 'system', text, 'system', opts);
-      } else if (role === 'done') {
-        append('sys', 'done', text || 'end_turn', 'done', opts);
-      } else if (role === 'session') {
-        append('sys', 'session', text, 'session', opts);
+        var sys = tryParse(text) || {};
+        if (sys.kind === 'session_started') {
+          append('sys', 'session', 'started' + (sys.model ? ' · ' + sys.model : ''), 'session', opts);
+        } else if (sys.kind === 'done') {
+          append('sys', 'done', sys.reason || 'end_turn', 'done', opts);
+        } else if (sys.kind === 'system') {
+          append('sys', sys.code || 'system', sys.message || '', 'system', opts);
+        } else {
+          append('sys', 'system', clip(text, 1000), 'system', opts);
+        }
+      } else if (role === 'error') {
+        var er = tryParse(text) || {};
+        append('err', 'error', (er.code || '') + ': ' + (er.message || text), 'error', opts);
+      } else if (role === 'unknown') {
+        var u = window.VibeConsole.renderUnknown(text);
+        if (u) append(u.cls, u.label, u.body, u.cat, opts);
       }
     }
     append('sys', 'history', '— end of history, live frames follow —', 'replay');

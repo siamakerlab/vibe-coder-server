@@ -46,7 +46,12 @@ class ClaudeStreamParser(
 
         val type = obj["type"]?.jsonPrimitive?.contentOrNull
         return when (type) {
-            "system" -> parseSystem(obj)?.let { listOf(it) } ?: listOf(ClaudeEvent.Unknown(obj))
+            "system" -> {
+                // v1.70.0 — thinking_tokens 는 추정 토큰 카운터로 UI/이력 가치가 없는 순수
+                // 노이즈(운영 DB 5792행). emit/적재 모두 생략.
+                if (obj["subtype"]?.jsonPrimitive?.contentOrNull == "thinking_tokens") emptyList()
+                else parseSystem(obj)?.let { listOf(it) } ?: listOf(ClaudeEvent.Unknown(obj))
+            }
             "assistant" -> parseAssistant(obj)
             "user" -> parseUserToolResult(obj)
             "result" -> parseResult(obj)

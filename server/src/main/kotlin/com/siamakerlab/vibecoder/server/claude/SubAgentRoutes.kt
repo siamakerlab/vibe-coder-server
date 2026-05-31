@@ -387,6 +387,8 @@ private fun renderSubAgentConsole(
   </div>
 </form>
 
+<!-- v1.70.0 — 콘솔 친화 렌더러 (메인 콘솔과 공유). inline 스크립트보다 먼저 동기 로드. -->
+<script src="/static/console-render.js?v=1.70.0"></script>
 <script>
 (function() {
   var projectId = $projectIdJs;
@@ -419,11 +421,13 @@ private fun renderSubAgentConsole(
     if (t === 'console_session_started') append('sys', 'session', 'started ' + (f.sessionId || '').slice(0,12));
     else if (t === 'console_assistant') append('assistant', 'assistant', f.text || '');
     else if (t === 'console_tool_use') {
-      var raw = typeof f.input === 'string' ? f.input : JSON.stringify(f.input || {});
-      append('tool', f.toolName || 'tool', clip(raw, 400));
+      // v1.70.0 — 공용 친화 렌더러 (raw JSON 대신 한 줄 요약 + MCP/Task 등 인식).
+      var ru = window.VibeConsole.renderToolUse(f.toolName, f.input);
+      append('tool', ru.label, clip(ru.body, 500));
     } else if (t === 'console_tool_result') {
-      var out = typeof f.output === 'string' ? f.output : JSON.stringify(f.output);
-      append(f.isError ? 'tool-err' : 'tool-out', f.isError ? 'tool-err' : '✓ result', clip(out, 500));
+      // v1.70.0 — content 배열 평문 추출.
+      var out = window.VibeConsole.extractToolResult(f.output);
+      append(f.isError ? 'tool-err' : 'tool-out', f.isError ? 'tool-err' : '✓ result', clip(out, 1000));
     } else if (t === 'console_error') append('err', 'error', (f.code || '') + ': ' + (f.message || ''));
     else if (t === 'console_done') { append('sys', 'done', f.reason || 'end_turn'); setInFlight(false); }
     else if (t === 'console_system') {
@@ -431,6 +435,11 @@ private fun renderSubAgentConsole(
       append('sys', f.code || 'system', f.message || '');
     } else if (t === 'console_replay_begin') append('sys', 'replay', 'history begin (' + f.fromSeq + ' → ' + f.toSeq + ')');
     else if (t === 'console_replay_end') append('sys', 'replay', 'history end — live frames follow');
+    else if (t === 'console_unknown') {
+      // v1.70.0 — thinking / system task / rate_limit 등을 친화적으로. null 이면 숨김.
+      var u = window.VibeConsole.renderUnknown(f.raw);
+      if (u) append(u.cls, u.label, u.body);
+    }
   }
 
   var ws = null;
