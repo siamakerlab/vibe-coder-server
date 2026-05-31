@@ -796,6 +796,8 @@ $errHtml
     <label><input name="claude.enabled" type="checkbox" ${if (settings.claudeEnabled) "checked" else ""}> ${esc(t("common.enabled"))}</label>
     <label>${esc(t("settings.field.path"))} <input name="claude.path" value="${esc(settings.claudePath)}"></label>
     <label>${esc(t("settings.field.timeoutMin"))} <input name="claude.timeoutMinutes" type="number" value="${settings.claudeTimeoutMin}"></label>
+    <label>${esc(t("settings.field.maxConcurrentTurns"))} <input name="claude.maxConcurrentTurns" type="number" min="0" max="20" value="${settings.claudeMaxConcurrent}"></label>
+    <p class="hint">${esc(t("settings.field.maxConcurrentTurns.hint"))}</p>
   </fieldset>
 
   <fieldset>
@@ -937,6 +939,7 @@ $okHtml
         val claudeEnabled: Boolean,
         val claudePath: String,
         val claudeTimeoutMin: Int,
+        val claudeMaxConcurrent: Int,
         val buildTimeoutMin: Int,
         val defaultDebugTask: String,
     )

@@ -278,6 +278,7 @@ fun Routing.adminRoutes(deps: AdminRoutesDeps) {
             claudeEnabled = cfg.claude.enabled,
             claudePath = cfg.claude.path,
             claudeTimeoutMin = cfg.claude.timeoutMinutes,
+            claudeMaxConcurrent = cfg.claude.maxConcurrentTurns,
             buildTimeoutMin = cfg.build.timeoutMinutes,
             defaultDebugTask = cfg.build.defaultDebugTask,
         )
@@ -350,6 +351,9 @@ fun Routing.adminRoutes(deps: AdminRoutesDeps) {
                     timeoutMinutes = params["claude.timeoutMinutes"]?.toIntOrNull()?.also {
                         require(it in 1..600) { "claude.timeoutMinutes must be in 1..600 (got $it)" }
                     } ?: cur.claude.timeoutMinutes,
+                    maxConcurrentTurns = params["claude.maxConcurrentTurns"]?.toIntOrNull()?.also {
+                        require(it in 0..20) { "claude.maxConcurrentTurns must be in 0..20 (got $it)" }
+                    } ?: cur.claude.maxConcurrentTurns,
                 ),
                 build = cur.build.copy(
                     timeoutMinutes = params["build.timeoutMinutes"]?.toIntOrNull()?.also {

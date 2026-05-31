@@ -182,6 +182,13 @@ data class ClaudeSection(
     val path: String = "auto",
     val timeoutMinutes: Int = 60,
     val autoBuildAfterTask: Boolean = false,
+    /**
+     * v1.69.0 — 동시에 진행 가능한 Claude turn 수 상한. 여러 프로젝트/sub-agent 콘솔에서
+     * 동시에 prompt 를 던질 때 같은 계정+IP burst 로 인한 서버측 throttle(429) 을 막는다.
+     * 상한 도달 시 새 turn 은 대기(queue). **0 이하면 무제한(기존 동작)**. 기본 3 (1M
+     * 컨텍스트 + throttle 회피를 위한 보수적 기본값). 변경은 서버 재시작 후 적용.
+     */
+    val maxConcurrentTurns: Int = 3,
     /** v0.21.0 — usage 모니터링 정책. */
     val usage: ClaudeUsageSection = ClaudeUsageSection(),
 )

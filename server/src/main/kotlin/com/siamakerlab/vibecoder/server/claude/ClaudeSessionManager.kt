@@ -59,6 +59,8 @@ class ClaudeSessionManager(
     private val idleTimeout: Duration = Duration.ofMinutes(30),
     /** v0.16.0 — turn 영구 적재. null 이면 history persistence 비활성 (테스트). */
     private val history: ConversationHistoryService? = null,
+    /** v1.69.0 — 동시 in-flight turn 제한 게이트. 기본값 = 무제한(비활성). */
+    private val gate: ClaudeConcurrencyGate = ClaudeConcurrencyGate(0),
 ) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -138,6 +140,9 @@ class ClaudeSessionManager(
             })
         }.toString()
 
+        // v1.69.0 — 동시 in-flight 상한 도달 시 permit 이 빌 때까지 대기(queue). 무제한이면 즉시 통과.
+        // release 는 setBusy(true→false) 전이 단일 지점(아래 catch 의 write 실패 포함)에서 idempotent 하게.
+        gate.acquire(projectId)
         session.stdinMutex.withLock {
             try {
                 withContext(Dispatchers.IO) {
@@ -150,6 +155,8 @@ class ClaudeSessionManager(
                 setBusy(projectId, true)
             } catch (e: IOException) {
                 log.warn(e) { "[$projectId] stdin write failed; will respawn on next prompt" }
+                // busy 가 true 로 전이되기 전 실패 → setBusy(false) 전이가 안 일어나므로 여기서 명시 release.
+                gate.release(projectId)
                 emitSystem(projectId, "process_crashed", "Claude process is no longer accepting input (${e.message}). Retrying on next prompt.")
                 terminateSession(projectId)
                 fireInterrupt(projectId, "crashed")
@@ -213,6 +220,9 @@ class ClaudeSessionManager(
     private suspend fun setBusy(projectId: String, value: Boolean, state: String? = null) {
         val prev = busy.put(projectId, value)
         if (prev == value) return
+        // v1.69.0 — turn 종료(busy true→false: Done / cancel / crash / idle) 단일 지점에서
+        // 동시 in-flight permit 반환. idempotent → 다른 종료 경로와 중복돼도 안전.
+        if (prev == true && !value) gate.release(projectId)
         // v1.60.0 — 상태칩 명시 상태. 미지정 시 busy → responding / ready.
         // value 가 실제로 바뀐 경우(prev != value)만 도달하므로, false 전이는
         // "직전까지 응답중이었다" 를 뜻함 → Done 은 "ready", 프로세스 종료(cancel/

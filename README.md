@@ -194,6 +194,17 @@ vibe-coder-server/
 - **Prompt suggestions** — `GET /api/projects/{id}/claude/prompt-suggestions?prefix=…`
   returns LIKE-prefix matches from this project's `user` turns (60 s
   in-memory cache).
+- **Concurrent turn cap** (v1.69.0+) — `claude.maxConcurrentTurns` (default 3)
+  limits how many Claude turns run at once across **all** project and sub-agent
+  consoles. Firing prompts across many projects at once otherwise bursts the
+  same account+IP and triggers Anthropic's server-side throttle (HTTP 429
+  *"Server is temporarily limiting requests"*). When the cap is hit, new turns
+  **queue** (not rejected) until a slot frees. A single coroutine `Semaphore`
+  is shared by the main and sub-agent session managers. Set `0` for unlimited;
+  editable at `/settings` (restart to apply).
+- **Console keys** (v1.69.0+) — **Enter sends**, **Ctrl/Cmd+Enter (or
+  Shift+Enter) inserts a newline**. IME composition Enter (Korean etc.) never
+  sends (`isComposing` guard).
 
 ### Environment & build files (v0.32.0+)
 - **Env files quick edit** — `/projects/{id}/env-files` exposes only a

@@ -2,7 +2,7 @@ server:
   name: Vibe Coder Server
   host: 0.0.0.0
   port: 17880
-  version: 1.68.1
+  version: 1.69.0
 
 workspace:
   # Each project lives at <root>/<projectId>/.
@@ -49,6 +49,11 @@ claude:
   path: auto
   timeoutMinutes: 60
   autoBuildAfterTask: false
+  # v1.69.0 — 동시 진행 turn 상한. 여러 프로젝트/sub-agent 콘솔에서 동시에 prompt 를
+  # 던질 때 같은 계정+IP burst 로 인한 서버측 throttle(429 "Server is temporarily
+  # limiting requests") 을 막는다. 상한 도달 시 새 turn 은 거부가 아니라 대기(queue).
+  # 0 이하 = 무제한(기존 동작). 기본 3 (1M 컨텍스트 + throttle 회피 보수값). 재시작 후 적용.
+  maxConcurrentTurns: 3
   # v0.21.0 — 사용량 모니터링 + 임계치 이메일 알림.
   # enabled=false 면 폴링/알림 둘 다 끔. pollIntervalMinutes 너무 짧으면
   # claude /status 호출 비용↑. warnThresholdPercent 도달 시 1회 + critical 도달 시

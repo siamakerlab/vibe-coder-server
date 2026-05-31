@@ -187,7 +187,13 @@ fun main(args: Array<String>) {
     )
     // v0.49.0 — Project ACL persistence (member 가 일부 프로젝트만 보기).
     val projectAclRepo = com.siamakerlab.vibecoder.server.repo.ProjectAclRepository(clock)
-    val sessionManager = ClaudeSessionManager(config, workspace, hub, history = conversationHistory)
+    // v1.69.0 — 동시 in-flight turn 제한 게이트. 메인 콘솔 + sub-agent 가 같은 인스턴스를
+    // 공유해 같은 Anthropic 계정으로 나가는 동시 turn 총수를 하나의 풀에서 제한 (throttle 회피).
+    val claudeGate = com.siamakerlab.vibecoder.server.claude.ClaudeConcurrencyGate(config.claude.maxConcurrentTurns)
+    if (claudeGate.enabled) {
+        log.info { "Claude concurrency gate enabled: max ${claudeGate.limit} concurrent turn(s)" }
+    }
+    val sessionManager = ClaudeSessionManager(config, workspace, hub, history = conversationHistory, gate = claudeGate)
     // v1.1.0 — ProjectDto.busy 필드를 위해 sessionManager 를 lambda 로 주입.
     // 구성 순서: sessionManager 가 먼저 생성되어야 lambda 가 안전하게 호출 가능.
     // v0.33.0 — Cron 빌드 schedule + webhook secret. v1.43.0 — ProjectService 삭제 cascade
@@ -220,7 +226,7 @@ fun main(args: Array<String>) {
     // ClaudeSessionManager so a project can run its primary console plus multiple sub-agents
     // (reviewer / frontend / backend / ...) concurrently in the same workspace.
     val subAgentManager = com.siamakerlab.vibecoder.server.claude.SubAgentSessionManager(
-        config = config, workspace = workspace, hub = hub, history = conversationHistory,
+        config = config, workspace = workspace, hub = hub, history = conversationHistory, gate = claudeGate,
     )
     val gradle = GradleBuilder(config)
     val artifacts = ArtifactService(config, workspace, artifactRepo, buildRepo, clock)

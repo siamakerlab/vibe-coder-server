@@ -2154,10 +2154,21 @@ $automationPanelHtml
   };
 
   input.addEventListener('keydown', function(ev) {
-    if ((ev.ctrlKey || ev.metaKey) && ev.key === 'Enter') {
+    // v1.69.0 — 전송: Enter · 줄바꿈: Ctrl/Cmd+Enter (또는 Shift+Enter)
+    // ev.isComposing: 한글 등 IME 조합 확정 Enter 는 전송하지 않음 (오발송 방지)
+    if (ev.key !== 'Enter' || ev.isComposing) return;
+    if (ev.ctrlKey || ev.metaKey) {
+      // Ctrl/Cmd+Enter → 커서 위치에 줄바꿈 삽입 (textarea 기본 동작 아님)
       ev.preventDefault();
-      form.requestSubmit();
+      var s = input.selectionStart, e = input.selectionEnd, nl = String.fromCharCode(10);
+      input.value = input.value.substring(0, s) + nl + input.value.substring(e);
+      input.selectionStart = input.selectionEnd = s + 1;
+      if (typeof input.dispatchEvent === 'function') input.dispatchEvent(new Event('input', { bubbles: true }));
+      return;
     }
+    if (ev.shiftKey || ev.altKey) return; // Shift/Alt+Enter 는 기본 줄바꿈 유지
+    ev.preventDefault();
+    form.requestSubmit();
   });
 
   // v0.13.0 — 프롬프트 템플릿 드롭다운 채우기. JSON API → optgroup by category.

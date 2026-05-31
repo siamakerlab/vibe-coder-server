@@ -61,6 +61,8 @@ class SubAgentSessionManager(
     private val idleTimeout: Duration = Duration.ofMinutes(30),
     /** v0.49.0 — conversation_turns 영구 적재. null 이면 history persistence 비활성. */
     private val history: ConversationHistoryService? = null,
+    /** v1.69.0 — 동시 in-flight turn 제한 게이트(메인 콘솔과 공유). 기본 = 무제한(비활성). */
+    private val gate: ClaudeConcurrencyGate = ClaudeConcurrencyGate(0),
 ) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -105,6 +107,8 @@ class SubAgentSessionManager(
             })
         }.toString()
 
+        // v1.69.0 — 메인 콘솔과 공유하는 동시 in-flight 상한. 도달 시 permit 대기(queue).
+        gate.acquire(key.id)
         session.stdinMutex.withLock {
             try {
                 withContext(Dispatchers.IO) {
@@ -115,6 +119,7 @@ class SubAgentSessionManager(
                 session.lastActivity = Instant.now()
             } catch (e: IOException) {
                 log.warn(e) { "[${key.id}] stdin write failed; will respawn on next prompt" }
+                gate.release(key.id)
                 emitSystem(key, "process_crashed", "Sub-agent claude is no longer accepting input (${e.message}). Retrying on next prompt.")
                 terminateSession(key)
                 throw e
@@ -274,6 +279,8 @@ class SubAgentSessionManager(
                 else -> sessions[key]?.sessionId
             }
             history?.event(key.projectId, sidForRow, event, key.agentName)
+            // v1.69.0 — turn 정상 완료 시 동시 in-flight permit 반환 (idempotent).
+            if (event is ClaudeEvent.Done) gate.release(key.id)
         }
     }
 
@@ -322,11 +329,15 @@ class SubAgentSessionManager(
         }
         runCatching { session.stdin.close() }
         sessions.remove(key, session)
+        // v1.69.0 — 프로세스 종료(정상/크래시) 시 미반환 permit 회수 (idempotent).
+        gate.release(key.id)
     }
 
     private suspend fun terminateSession(key: AgentKey) {
         val session = sessions.remove(key) ?: return
         runCatching { session.stdin.close() }
+        // v1.69.0 — cancel / new / idle / shutdown 종료 시 permit 회수 (idempotent).
+        gate.release(key.id)
         if (session.process.isAlive) {
             session.process.destroy()
             withContext(Dispatchers.IO) {

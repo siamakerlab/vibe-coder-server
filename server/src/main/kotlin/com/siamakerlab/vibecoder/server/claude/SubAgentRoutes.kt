@@ -380,7 +380,7 @@ private fun renderSubAgentConsole(
 
 <form id="prompt-form" class="prompt-form" autocomplete="off">
   <textarea id="prompt-input" rows="3" maxlength="32768"
-            placeholder="이 sub-agent 에게 보낼 prompt 를 입력하세요. Ctrl+Enter 로 전송."></textarea>
+            placeholder="이 sub-agent 에게 보낼 prompt 를 입력하세요. Enter 로 전송, Ctrl+Enter 로 줄바꿈."></textarea>
   <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
     <small class="dim">첫 prompt 에 자동으로 'Use the @${esc(agentName)} sub-agent to …' prefix 가 붙습니다.</small>
     <button type="submit" class="primary" id="send-btn" style="width:auto;padding:8px 16px">전송</button>
@@ -483,7 +483,18 @@ private fun renderSubAgentConsole(
     if (text) sendPrompt(text);
   });
   input.addEventListener('keydown', function(ev) {
-    if ((ev.ctrlKey || ev.metaKey) && ev.key === 'Enter') { ev.preventDefault(); form.requestSubmit(); }
+    // v1.69.0 — 전송: Enter · 줄바꿈: Ctrl/Cmd+Enter (또는 Shift+Enter)
+    if (ev.key !== 'Enter' || ev.isComposing) return;
+    if (ev.ctrlKey || ev.metaKey) {
+      ev.preventDefault();
+      var s = input.selectionStart, e = input.selectionEnd, nl = String.fromCharCode(10);
+      input.value = input.value.substring(0, s) + nl + input.value.substring(e);
+      input.selectionStart = input.selectionEnd = s + 1;
+      return;
+    }
+    if (ev.shiftKey || ev.altKey) return;
+    ev.preventDefault();
+    form.requestSubmit();
   });
 })();
 </script>
