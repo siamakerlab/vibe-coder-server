@@ -1004,6 +1004,12 @@ internal object MessagesEn {
         "mcp.js.uploadingSuffix" to " KB)",
         "mcp.js.uploadDonePrefix" to "✓ Upload complete → ",
         "mcp.js.uploadFailed" to "upload failed",
+        // v1.62.0 — inline install/remove progress.
+        "mcp.js.installing" to "Installing…",
+        "mcp.js.installDone" to "✓ Installed",
+        "mcp.js.installFailed" to "✗ Install failed",
+        "mcp.js.removing" to "Removing…",
+        "mcp.js.removed" to "✓ Removed",
 
         // ─────────────────────────────────────────────── git integrations
         "gitint.title" to "Git integrations",

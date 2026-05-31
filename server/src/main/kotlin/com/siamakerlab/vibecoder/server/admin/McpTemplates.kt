@@ -69,6 +69,16 @@ object McpTemplates {
         val jsUploadingSuffix = jsLit(t("mcp.js.uploadingSuffix"))
         val jsUploadDonePrefix = jsLit(t("mcp.js.uploadDonePrefix"))
         val jsUploadFailed = jsLit(t("mcp.js.uploadFailed"))
+        // v1.62.0 — 인라인 설치/제거 진행 라벨.
+        val jsLabelInstall = jsLit(t("mcp.entry.install"))
+        val jsLabelReinstall = jsLit(t("mcp.entry.reinstall"))
+        val jsLabelInstalled = jsLit(t("mcp.entry.installed"))
+        val jsLabelNotInstalled = jsLit(t("mcp.entry.notInstalled"))
+        val jsInstalling = jsLit(t("mcp.js.installing"))
+        val jsInstallDone = jsLit(t("mcp.js.installDone"))
+        val jsInstallFailed = jsLit(t("mcp.js.installFailed"))
+        val jsRemoving = jsLit(t("mcp.js.removing"))
+        val jsRemoved = jsLit(t("mcp.js.removed"))
         return AdminTemplates.shell(
             title = t("mcp.title"),
             username = username,
@@ -139,23 +149,92 @@ JSON</pre>
 
 <script>
 (function() {
-  // v1.61.0 — 카드별 설치 폼. 제출 직전 필수 파일 업로드 완료 여부만 검증.
-  document.querySelectorAll('.mcp-install-form').forEach(function(form) {
+  // v1.62.0 — 인라인 설치/제거. 페이지 이동 없이 카드에서 스피너 + 진행 + 상태 갱신.
+  var L = {
+    install: $jsLabelInstall, reinstall: $jsLabelReinstall,
+    installed: $jsLabelInstalled, notInstalled: $jsLabelNotInstalled,
+    installing: $jsInstalling, done: $jsInstallDone, failed: $jsInstallFailed,
+    removing: $jsRemoving, removed: $jsRemoved
+  };
+  document.querySelectorAll('.mcp-card-form').forEach(function(form) {
+    var card = form.closest('.mcp-entry');
+    var prog = form.querySelector('.mcp-progress');
+    var progText = form.querySelector('.mcp-progress-text');
+    var spinner = form.querySelector('.mcp-spinner');
+    var installBtn = form.querySelector('.mcp-install-btn');
+    var removeBtn = form.querySelector('.mcp-remove-btn');
+    var pill = card ? card.querySelector('.mcp-pill') : null;
+    var mcpId = form.dataset.mcpId;
+
+    function setProg(text, cls) { prog.hidden = false; progText.textContent = text; progText.className = 'mcp-progress-text ' + (cls || 'dim'); }
+    function spin(on) { spinner.style.display = on ? '' : 'none'; }
+    function setPill(state, label) { if (!pill) return; pill.className = 'pstat pstat-' + state + ' mcp-pill'; pill.textContent = label; }
+    function enable(on) { installBtn.disabled = !on; removeBtn.disabled = !on; }
+    function csrf() { var el = form.querySelector('input[name="_csrf"]'); return (el && el.value) || (window.__VIBE_CSRF__ || ''); }
+
     form.addEventListener('submit', function(e) {
+      e.preventDefault();
+      if (e.submitter && e.submitter.classList.contains('mcp-remove-btn')) { doRemove(); }
+      else { doInstall(); }
+    });
+
+    function doInstall() {
       var pending = null;
       form.querySelectorAll('.mcp-file-field').forEach(function(el) {
-        var fileInput = el.querySelector('.mcp-file-input');
-        var pathInput = el.querySelector('.mcp-file-path');
-        var required = fileInput && fileInput.hasAttribute('required');
-        if (required && !(pathInput && pathInput.value)) {
-          pending = el.dataset.mcpId + '.' + el.dataset.fieldKey;
-        }
+        var fi = el.querySelector('.mcp-file-input'), pi = el.querySelector('.mcp-file-path');
+        if (fi && fi.hasAttribute('required') && !(pi && pi.value)) pending = el.dataset.mcpId + '.' + el.dataset.fieldKey;
       });
-      if (pending) {
-        e.preventDefault();
-        alert(($jsAlertPendingFile).replace('___FNAME___', pending));
-      }
-    });
+      if (pending) { alert(($jsAlertPendingFile).replace('___FNAME___', pending)); return; }
+      enable(false); spin(true); setProg(L.installing, 'dim');
+      var body = new URLSearchParams(new FormData(form)).toString();
+      fetch('/env-setup/mcp/install.json', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body,
+      }).then(function(r) {
+        if (r.ok) return r.json();
+        return r.json().catch(function() { return { error: 'HTTP ' + r.status }; }).then(function(j) { throw new Error(j.error || 'error'); });
+      }).then(function(d) { watchTask(d.taskId); })
+        .catch(function(err) { spin(false); setProg(L.failed + ' · ' + err.message, 'warn'); enable(true); });
+    }
+
+    function watchTask(taskId) {
+      var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      var ws = new WebSocket(proto + '//' + location.host + '/ws/env-setup/' + encodeURIComponent(taskId) + '/logs');
+      var done = false;
+      ws.onmessage = function(ev) {
+        try {
+          var f = JSON.parse(ev.data);
+          if (f.type === 'log') { setProg(L.installing + ' · ' + (f.message || '').slice(0, 56), 'dim'); }
+          else if (f.type === 'done') {
+            done = true;
+            if (f.status === 'SUCCESS') {
+              spin(false); setProg(L.done, 'ok'); setPill('ready', L.installed);
+              installBtn.textContent = L.reinstall; installBtn.classList.remove('primary'); removeBtn.style.display = '';
+            } else {
+              spin(false); setProg(L.failed + (f.errorMessage ? ' · ' + f.errorMessage : ''), 'warn');
+            }
+            enable(true); try { ws.close(); } catch (_) {}
+          }
+        } catch (e) {}
+      };
+      ws.onclose = function() { if (!done) { spin(false); setProg(L.failed + ' · connection lost', 'warn'); enable(true); } };
+      ws.onerror = function() { try { ws.close(); } catch (_) {} };
+    }
+
+    function doRemove() {
+      if (!confirm(form.dataset.confirmRemove || '')) return;
+      enable(false); spin(true); setProg(L.removing, 'dim');
+      var body = new URLSearchParams();
+      body.set('_csrf', csrf()); body.set('select', mcpId);
+      fetch('/env-setup/mcp/unregister', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString(),
+      }).then(function(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        spin(false); setProg(L.removed, 'ok'); setPill('idle', L.notInstalled);
+        installBtn.textContent = L.install; installBtn.classList.add('primary'); removeBtn.style.display = 'none'; enable(true);
+      }).catch(function(err) { spin(false); setProg('✗ ' + err.message, 'warn'); enable(true); });
+    }
   });
 
   // v0.11.0 — file input onChange 시 즉시 ajax 업로드 → 응답 path 를 hidden 에 채움.
@@ -254,12 +333,14 @@ JSON</pre>
         }
         val installed = state?.status == McpService.Status.INSTALLED
         val registeredOnly = state?.status == McpService.Status.REGISTERED_ONLY
-        // v1.61.0 — 카드 우상단 상태 pill (마켓플레이스형). 미설치도 명시.
-        val statusPill = when (state?.status) {
-            McpService.Status.INSTALLED -> """<span class="pstat pstat-ready" style="font-size:11px;padding:2px 9px">✓ ${esc(t("mcp.entry.installed"))}</span>"""
-            McpService.Status.REGISTERED_ONLY -> """<span class="pstat pstat-responding" style="font-size:11px;padding:2px 9px">${esc(t("mcp.entry.registeredOnly"))}</span>"""
-            else -> """<span class="pstat pstat-idle" style="font-size:11px;padding:2px 9px">${esc(t("mcp.entry.notInstalled"))}</span>"""
+        // v1.61.0 — 카드 우상단 상태 pill. v1.62.0 — JS 가 인라인 설치 후 갱신할 수 있게 클래스/속성.
+        val pillState = if (installed || registeredOnly) "ready" else "idle"
+        val pillLabel = when {
+            installed -> t("mcp.entry.installed")
+            registeredOnly -> t("mcp.entry.registeredOnly")
+            else -> t("mcp.entry.notInstalled")
         }
+        val statusPill = """<span class="pstat pstat-$pillState mcp-pill" data-mcp-pill="${esc(entry.id)}" style="font-size:11px;padding:2px 9px">${esc(pillLabel)}</span>"""
         val starHtml = if (entry.recommended) """<span title="${esc(t("mcp.entry.recommendedTitle"))}" style="color:#ffd700">★</span>""" else ""
         val defaultBadge = if (entry.defaultInstall) """ <span class="ok" style="font-size:10px;padding:1px 6px;border-radius:3px;border:1px solid var(--ok)" title="${esc(t("mcp.entry.defaultTitle"))}">${esc(t("mcp.entry.default"))}</span>""" else ""
         val homepageLink = entry.homepage?.let {
@@ -267,32 +348,28 @@ JSON</pre>
         }.orEmpty()
         val cardStyle = if (entry.comingSoon) "padding:12px;opacity:0.55" else "padding:12px;display:flex;flex-direction:column"
 
-        // v1.61.0 — 카드 하단 액션 영역: comingSoon → 준비중, 그 외 → 설치 폼(+제거 폼).
+        // v1.62.0 — 카드 하단 액션: comingSoon → 준비중, 그 외 → 단일 폼(설치/제거 두 submit
+        // 버튼, formaction 분기 — 중첩 폼 회피) + 인라인 진행 영역(스피너+로그 tail).
         val actionHtml = if (entry.comingSoon) {
             """<div style="margin-top:10px"><span class="dim" style="font-size:11px;padding:2px 8px;border-radius:3px;border:1px solid var(--text-dim)" title="${esc(t("mcp.entry.comingSoonTitle"))}">${esc(t("mcp.entry.comingSoon"))}</span></div>"""
         } else {
             val configHtml = renderConfigFields(entry, state?.configValues.orEmpty(), lang)
-            // 설치/재설치 버튼 라벨.
             val installLabel = if (installed || registeredOnly) t("mcp.entry.reinstall") else t("mcp.entry.install")
             val installClass = if (installed) "" else "primary"
-            // 제거 폼은 설치/등록된 경우만.
-            val removeForm = if (installed || registeredOnly) {
-                """
-      <form method="post" action="/env-setup/mcp/unregister" style="display:inline">
-        ${CsrfTokens.hiddenInput(csrf)}
-        <input type="hidden" name="select" value="${esc(entry.id)}">
-        <button type="submit" class="chip chip-danger" style="font-size:12px"
-                onclick="return confirm(${jsLit(t("mcp.entry.removeConfirm"))})">${esc(t("mcp.entry.remove"))}</button>
-      </form>"""
-            } else ""
+            val removeStyle = if (installed || registeredOnly) "" else "display:none"
             """
-  <form method="post" action="/env-setup/mcp/install" class="mcp-install-form" style="margin-top:auto">
+  <form method="post" action="/env-setup/mcp/install" class="mcp-card-form" data-mcp-id="${esc(entry.id)}"
+        data-confirm-remove="${esc(t("mcp.entry.removeConfirm"))}" style="margin-top:auto">
     ${CsrfTokens.hiddenInput(csrf)}
     <input type="hidden" name="select" value="${esc(entry.id)}">
     $configHtml
-    <div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">
-      <button type="submit" class="$installClass" style="padding:6px 16px;font-size:13px">${esc(installLabel)}</button>
-      $removeForm
+    <div class="mcp-actions" style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">
+      <button type="submit" class="mcp-install-btn $installClass" style="padding:6px 16px;font-size:13px">${esc(installLabel)}</button>
+      <button type="submit" class="mcp-remove-btn chip chip-danger" formaction="/env-setup/mcp/unregister"
+              formnovalidate style="font-size:12px;$removeStyle">${esc(t("mcp.entry.remove"))}</button>
+    </div>
+    <div class="mcp-progress" hidden style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12px">
+      <span class="mcp-spinner"></span><span class="mcp-progress-text dim"></span>
     </div>
   </form>"""
         }

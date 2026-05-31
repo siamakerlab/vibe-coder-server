@@ -983,6 +983,12 @@ internal object MessagesKo {
         "mcp.js.uploadingSuffix" to " KB)",
         "mcp.js.uploadDonePrefix" to "✓ 업로드 완료 → ",
         "mcp.js.uploadFailed" to "업로드 실패",
+        // v1.62.0 — 인라인 설치/제거 진행.
+        "mcp.js.installing" to "설치 중…",
+        "mcp.js.installDone" to "✓ 설치 완료",
+        "mcp.js.installFailed" to "✗ 설치 실패",
+        "mcp.js.removing" to "제거 중…",
+        "mcp.js.removed" to "✓ 제거됨",
 
         // ─────────────────────────────────────────────── git integrations
         "gitint.title" to "Git 통합",

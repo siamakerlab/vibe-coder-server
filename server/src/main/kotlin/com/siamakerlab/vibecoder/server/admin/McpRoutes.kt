@@ -83,6 +83,35 @@ fun Routing.mcpRoutes(
         call.respondRedirect("/env-setup/tasks/$taskId")
     }
 
+    // v1.62.0 — 인라인 설치(카드에서 페이지 이동 없이). 동일 로직이지만 redirect 대신
+    // taskId 를 JSON 으로 반환 → 카드 JS 가 /ws/env-setup/{taskId}/logs 를 구독해 진행/완료 표시.
+    post("/env-setup/mcp/install.json") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireAdminOrRedirect(sess)) return@post
+        val form = requireCsrf()
+        val selectedIds = form.getAll("select").orEmpty().distinct()
+        if (selectedIds.isEmpty()) {
+            call.respond(HttpStatusCode.BadRequest, mapOf("error" to "no_selection"))
+            return@post
+        }
+        val selections: Map<String, Map<String, String>> = selectedIds.associateWith { id ->
+            val entry = McpCatalog.get(id) ?: return@associateWith emptyMap()
+            entry.configFields.mapNotNull { f ->
+                val v = form["cfg.$id.${f.key}"].orEmpty().trim()
+                if (v.isNotEmpty()) f.key to v else null
+            }.toMap()
+        }
+        val taskId = try {
+            mcp.spawnBatch(selections)
+        } catch (e: ApiException) {
+            call.respond(HttpStatusCode.fromValue(e.statusCode), mapOf("error" to (e.message ?: "install_rejected")))
+            return@post
+        }
+        log.info { "MCP install (inline) by ${sess.username}: ${selectedIds.joinToString(",")}" }
+        authDeps.audit.mcpInstall(sess.userId, taskId, selectedIds, call.request.origin.remoteHost)
+        call.respond(mapOf("taskId" to taskId))
+    }
+
     post("/env-setup/mcp/unregister") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireAdminOrRedirect(sess)) return@post

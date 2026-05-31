@@ -819,6 +819,17 @@ table.devices small.dim { font-size: 11px; }
 @keyframes vibe-spinner-rotate {
     to { transform: rotate(360deg); }
 }
+/* v1.62.0 — MCP 카드 인라인 설치 스피너 (키프레임 재사용). */
+.mcp-spinner {
+    display: inline-block;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    border: 2px solid rgba(105,219,124,0.25);
+    border-top-color: #69db7c;
+    animation: vibe-spinner-rotate 0.85s linear infinite;
+    flex-shrink: 0;
+}
 
 .console-log .sys .log-label   { color: #6c7a93; }
 .console-log .user .log-label  { color: var(--primary); }
