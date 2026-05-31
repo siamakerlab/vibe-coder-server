@@ -960,15 +960,52 @@ $errHtml
   .chat-pop-btn.danger { color:#ff9e9e; border-color:#3a2424; }
   .chat-pop-btn.danger:hover { background:#2c1a1a; }
   .chat-empty { color:#5a6175; font-size:12px; padding:10px 4px; text-align:center; }
+  /* v1.54.1 — 사이드바 접기/펼치기 토글. */
+  .chat-side-head { display:flex; justify-content:flex-end; margin-bottom:4px; }
+  .chat-collapse-btn {
+    background:transparent; border:0; color:var(--text-dim,#888); cursor:pointer;
+    font-size:15px; line-height:1; padding:3px 7px; border-radius:5px; font-family:inherit;
+  }
+  .chat-collapse-btn:hover { background:#1a1f2c; color:var(--text,#ddd); }
+  .chat-expand-btn {
+    display:none; align-items:center; gap:7px; margin-bottom:10px;
+    background:#0d1018; border:1px solid #1f2330; color:var(--text,#ddd); cursor:pointer;
+    font-size:12px; padding:7px 12px; border-radius:8px; font-family:inherit;
+  }
+  .chat-expand-btn:hover { background:#1a1f2c; border-color:#2a3145; }
+  #chat-shell.collapsed .chat-side { display:none; }
+  #chat-shell.collapsed .chat-expand-btn { display:inline-flex; }
   @media (max-width:760px) {
     .chat-shell { flex-direction:column; }
     .chat-side { flex:none; width:100%; position:static; max-height:240px; }
   }
 </style>
-<div class="chat-shell">
-  <aside class="chat-side" aria-label="${esc(t("chat.sidebar.label"))}">$chatSidebar</aside>
-  <div class="chat-main">""" else ""
-        val chatShellClose = if (chatSidebar != null) "\n  </div>\n</div>" else ""
+<div class="chat-shell" id="chat-shell">
+  <aside class="chat-side" aria-label="${esc(t("chat.sidebar.label"))}">
+    <div class="chat-side-head">
+      <button type="button" class="chat-collapse-btn" data-chat-toggle
+              title="${esc(t("chat.collapse"))}" aria-label="${esc(t("chat.collapse"))}">⟨</button>
+    </div>
+    $chatSidebar
+  </aside>
+  <div class="chat-main">
+    <button type="button" class="chat-expand-btn" data-chat-toggle
+            title="${esc(t("chat.expand"))}">☰ ${esc(t("chat.show"))}</button>""" else ""
+        val chatShellClose = if (chatSidebar != null) """
+  </div>
+</div>
+<script>(function(){
+  var shell = document.getElementById('chat-shell');
+  if (!shell) return;
+  var KEY = 'vibe-chat-side-collapsed';
+  try { if (localStorage.getItem(KEY) === '1') shell.classList.add('collapsed'); } catch (e) {}
+  function toggle() {
+    var c = shell.classList.toggle('collapsed');
+    try { localStorage.setItem(KEY, c ? '1' : '0'); } catch (e) {}
+  }
+  var btns = shell.querySelectorAll('[data-chat-toggle]');
+  for (var i = 0; i < btns.length; i++) btns[i].addEventListener('click', toggle);
+})();</script>""" else ""
         // v1.48.0 — 프로젝트 콘솔의 nav chip(빌드/히스토리/파일/Git/심볼/에이전트) 은 모두
         // 상단 프로젝트 탭으로 대체돼 중복 → 제거. 일반 Chat(isChat) 은 탭 바깥 독립 페이지라
         // history 링크만 유지.
