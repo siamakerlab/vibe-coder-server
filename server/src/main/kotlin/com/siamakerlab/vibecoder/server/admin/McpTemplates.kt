@@ -62,12 +62,9 @@ object McpTemplates {
             renderCategory(cat, list, states, csrf, lang)
         }
         // JS 안에서 쓰이는 i18n 메시지들 — render 시점 jsLit 화.
-        // confirm/alert/upload status 메시지 5개 + parametric 2개 (sentinel-replace 패턴).
-        val jsAlertNoSelection = jsLit(t("mcp.js.alertNoSelection"))
+        // v1.61.0 — 카드별 폼으로 전환하며 batch confirm/no-selection 제거.
         // alertPendingFile: "%s" → ___FNAME___ sentinel → JS .replace
         val jsAlertPendingFile = jsLit(Messages.t(lang, "mcp.js.alertPendingFile", "___FNAME___"))
-        // confirmInstall: "%d" → ___COUNT___ sentinel → JS .replace
-        val jsConfirmInstall = jsLit(Messages.t(lang, "mcp.js.confirmInstall", "___COUNT___"))
         val jsUploadingPrefix = jsLit(t("mcp.js.uploadingPrefix"))
         val jsUploadingSuffix = jsLit(t("mcp.js.uploadingSuffix"))
         val jsUploadDonePrefix = jsLit(t("mcp.js.uploadDonePrefix"))
@@ -107,27 +104,8 @@ $detectedHtml
   </p>
 </div>
 
-<form method="post" id="mcp-form" action="/env-setup/mcp/install">
-  ${CsrfTokens.hiddenInput(csrf)}
-  $categoriesHtml
-
-  <div class="card" style="margin-top:16px;position:sticky;bottom:0;background:var(--card-bg,#1a1a1a);border:2px solid var(--ok);padding:14px">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
-      <div>
-        <strong>${esc(t("mcp.selected"))}</strong> <span id="select-count" class="ok">0</span> ${esc(t("mcp.selectedSuffix"))}
-        <span class="dim" style="font-size:12px">${esc(t("mcp.selectedHint"))}</span>
-      </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button type="submit" class="primary" style="padding:8px 18px"
-                formaction="/env-setup/mcp/install"
-                onclick="return confirmInstall()">${esc(t("mcp.installBtn"))}</button>
-        <button type="submit" style="padding:8px 14px"
-                formaction="/env-setup/mcp/unregister" formnovalidate
-                onclick="return confirm(${jsLit(t("mcp.unregisterConfirm"))})">${esc(t("mcp.unregisterBtn"))}</button>
-      </div>
-    </div>
-  </div>
-</form>
+<!-- v1.61.0 — 마켓플레이스형: 카드마다 설치/제거 버튼 + 상태. 일괄 체크박스 폼 제거. -->
+$categoriesHtml
 
 <div class="card" style="margin-top:24px;background:rgba(160,120,200,0.06)">
   <h2 style="margin-top:0">${esc(t("mcp.customCard.title"))}</h2>
@@ -161,55 +139,27 @@ JSON</pre>
 
 <script>
 (function() {
-  var form = document.getElementById('mcp-form');
-  var countEl = document.getElementById('select-count');
-
-  function updateCount() {
-    var n = form.querySelectorAll('input[name="select"]:checked').length;
-    countEl.textContent = n;
-    countEl.className = n > 0 ? 'ok' : 'dim';
-    // 선택된 항목의 토큰 입력란 강조
-    form.querySelectorAll('.mcp-entry').forEach(function(el) {
-      var cb = el.querySelector('input[name="select"]');
-      var configBlock = el.querySelector('.config-block');
-      if (configBlock) {
-        configBlock.style.display = cb && cb.checked ? 'block' : 'none';
+  // v1.61.0 — 카드별 설치 폼. 제출 직전 필수 파일 업로드 완료 여부만 검증.
+  document.querySelectorAll('.mcp-install-form').forEach(function(form) {
+    form.addEventListener('submit', function(e) {
+      var pending = null;
+      form.querySelectorAll('.mcp-file-field').forEach(function(el) {
+        var fileInput = el.querySelector('.mcp-file-input');
+        var pathInput = el.querySelector('.mcp-file-path');
+        var required = fileInput && fileInput.hasAttribute('required');
+        if (required && !(pathInput && pathInput.value)) {
+          pending = el.dataset.mcpId + '.' + el.dataset.fieldKey;
+        }
+      });
+      if (pending) {
+        e.preventDefault();
+        alert(($jsAlertPendingFile).replace('___FNAME___', pending));
       }
     });
-  }
-  form.addEventListener('change', function(e) {
-    if (e.target.name === 'select') updateCount();
   });
-  updateCount();
-
-  window.confirmInstall = function() {
-    var n = form.querySelectorAll('input[name="select"]:checked').length;
-    if (n === 0) {
-      alert($jsAlertNoSelection);
-      return false;
-    }
-    // 파일 입력이 있는데 path hidden 이 비어있으면 차단 — 사용자가 file 선택만 하고
-    // 업로드 응답을 기다리지 않은 경우 또는 업로드 실패한 경우.
-    var pendingFile = null;
-    form.querySelectorAll('.mcp-file-field').forEach(function(el) {
-      var cb = el.closest('.mcp-entry').querySelector('input[name="select"]');
-      if (!cb || !cb.checked) return;
-      var fileInput = el.querySelector('.mcp-file-input');
-      var pathInput = el.querySelector('.mcp-file-path');
-      var required = fileInput && fileInput.hasAttribute('required');
-      if (required && !(pathInput && pathInput.value)) {
-        pendingFile = el.dataset.mcpId + '.' + el.dataset.fieldKey;
-      }
-    });
-    if (pendingFile) {
-      alert(($jsAlertPendingFile).replace('___FNAME___', pendingFile));
-      return false;
-    }
-    return confirm(($jsConfirmInstall).replace('___COUNT___', n));
-  };
 
   // v0.11.0 — file input onChange 시 즉시 ajax 업로드 → 응답 path 를 hidden 에 채움.
-  form.querySelectorAll('.mcp-file-field').forEach(function(el) {
+  document.querySelectorAll('.mcp-file-field').forEach(function(el) {
     var mcpId = el.dataset.mcpId;
     var fieldKey = el.dataset.fieldKey;
     var fileInput = el.querySelector('.mcp-file-input');
@@ -247,7 +197,7 @@ JSON</pre>
   var btnAll = document.getElementById('filter-all');
   if (btnRecommended && btnAll) {
     function show(filter) {
-      form.querySelectorAll('.mcp-entry').forEach(function(el) {
+      document.querySelectorAll('.mcp-entry').forEach(function(el) {
         if (filter === 'recommended') {
           el.style.display = el.classList.contains('recommended') ? '' : 'none';
         } else {
@@ -296,59 +246,69 @@ JSON</pre>
 
     private fun renderEntry(entry: McpCatalog.McpEntry, state: McpService.EntryState?, csrf: String?, lang: String): String {
         val t = { key: String -> Messages.t(lang, key) }
-        // v1.37.0 — 이미 설치/등록됐거나, zero-config 기본 설치 대상(fetch/memory/seq)이면
-        // 기본 선택 → 미설치 상태에서도 [설치] 한 번이면 바로 적용.
-        val checked = state?.status == McpService.Status.INSTALLED ||
-                      state?.status == McpService.Status.REGISTERED_ONLY ||
-                      (entry.defaultInstall && !entry.comingSoon)
         val recClass = if (entry.recommended) "recommended" else ""
         val (badgeCls, badgeText) = when (entry.trust) {
             McpCatalog.Trust.VERIFIED -> "ok" to "VERIFIED"
             McpCatalog.Trust.COMMUNITY -> "warn" to "COMMUNITY"
             McpCatalog.Trust.EXPERIMENTAL -> "dim" to "EXPERIMENTAL"
         }
-        val statusChip = when (state?.status) {
-            McpService.Status.INSTALLED -> """<span class="ok" style="font-size:11px">${esc(t("mcp.entry.installed"))}</span>"""
-            McpService.Status.REGISTERED_ONLY -> """<span class="warn" style="font-size:11px">${esc(t("mcp.entry.registeredOnly"))}</span>"""
-            McpService.Status.NOT_INSTALLED -> ""
-            else -> ""
+        val installed = state?.status == McpService.Status.INSTALLED
+        val registeredOnly = state?.status == McpService.Status.REGISTERED_ONLY
+        // v1.61.0 — 카드 우상단 상태 pill (마켓플레이스형). 미설치도 명시.
+        val statusPill = when (state?.status) {
+            McpService.Status.INSTALLED -> """<span class="pstat pstat-ready" style="font-size:11px;padding:2px 9px">✓ ${esc(t("mcp.entry.installed"))}</span>"""
+            McpService.Status.REGISTERED_ONLY -> """<span class="pstat pstat-responding" style="font-size:11px;padding:2px 9px">${esc(t("mcp.entry.registeredOnly"))}</span>"""
+            else -> """<span class="pstat pstat-idle" style="font-size:11px;padding:2px 9px">${esc(t("mcp.entry.notInstalled"))}</span>"""
         }
         val starHtml = if (entry.recommended) """<span title="${esc(t("mcp.entry.recommendedTitle"))}" style="color:#ffd700">★</span>""" else ""
         val defaultBadge = if (entry.defaultInstall) """ <span class="ok" style="font-size:10px;padding:1px 6px;border-radius:3px;border:1px solid var(--ok)" title="${esc(t("mcp.entry.defaultTitle"))}">${esc(t("mcp.entry.default"))}</span>""" else ""
-        val configHtml = if (entry.comingSoon) "" else renderConfigFields(entry, state?.configValues.orEmpty(), lang)
         val homepageLink = entry.homepage?.let {
             """<a href="${esc(it)}" target="_blank" rel="noreferrer" class="dim" style="font-size:11px">${esc(t("mcp.entry.docsLink"))}</a>"""
         }.orEmpty()
+        val cardStyle = if (entry.comingSoon) "padding:12px;opacity:0.55" else "padding:12px;display:flex;flex-direction:column"
 
-        // v0.12.1 — comingSoon 항목은 checkbox disabled + "준비중" 배지 + 카드 흐리게.
-        val comingSoonChip = if (entry.comingSoon) {
-            """<span class="dim" style="font-size:10px;padding:2px 6px;border-radius:3px;border:1px solid var(--text-dim)">${esc(t("mcp.entry.comingSoon"))}</span>"""
-        } else ""
-        val cardStyle = if (entry.comingSoon) "padding:12px;opacity:0.55;cursor:not-allowed" else "padding:12px"
-        val cbDisabled = if (entry.comingSoon) "disabled" else ""
-        val cbTitle = if (entry.comingSoon) {
-            "title=\"${esc(t("mcp.entry.comingSoonTitle"))}\""
-        } else ""
+        // v1.61.0 — 카드 하단 액션 영역: comingSoon → 준비중, 그 외 → 설치 폼(+제거 폼).
+        val actionHtml = if (entry.comingSoon) {
+            """<div style="margin-top:10px"><span class="dim" style="font-size:11px;padding:2px 8px;border-radius:3px;border:1px solid var(--text-dim)" title="${esc(t("mcp.entry.comingSoonTitle"))}">${esc(t("mcp.entry.comingSoon"))}</span></div>"""
+        } else {
+            val configHtml = renderConfigFields(entry, state?.configValues.orEmpty(), lang)
+            // 설치/재설치 버튼 라벨.
+            val installLabel = if (installed || registeredOnly) t("mcp.entry.reinstall") else t("mcp.entry.install")
+            val installClass = if (installed) "" else "primary"
+            // 제거 폼은 설치/등록된 경우만.
+            val removeForm = if (installed || registeredOnly) {
+                """
+      <form method="post" action="/env-setup/mcp/unregister" style="display:inline">
+        ${CsrfTokens.hiddenInput(csrf)}
+        <input type="hidden" name="select" value="${esc(entry.id)}">
+        <button type="submit" class="chip chip-danger" style="font-size:12px"
+                onclick="return confirm(${jsLit(t("mcp.entry.removeConfirm"))})">${esc(t("mcp.entry.remove"))}</button>
+      </form>"""
+            } else ""
+            """
+  <form method="post" action="/env-setup/mcp/install" class="mcp-install-form" style="margin-top:auto">
+    ${CsrfTokens.hiddenInput(csrf)}
+    <input type="hidden" name="select" value="${esc(entry.id)}">
+    $configHtml
+    <div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">
+      <button type="submit" class="$installClass" style="padding:6px 16px;font-size:13px">${esc(installLabel)}</button>
+      $removeForm
+    </div>
+  </form>"""
+        }
 
         return """
 <div class="card mcp-entry $recClass" style="$cardStyle">
-  <label style="display:flex;gap:10px;align-items:flex-start;cursor:${if (entry.comingSoon) "not-allowed" else "pointer"}">
-    <input type="checkbox" name="select" value="${esc(entry.id)}" ${if (checked) "checked" else ""} $cbDisabled $cbTitle
-           style="margin-top:4px;width:18px;height:18px;flex-shrink:0">
-    <div style="flex:1;min-width:0">
-      <div style="display:flex;justify-content:space-between;gap:6px;align-items:start;flex-wrap:wrap">
-        <strong style="font-size:14px">$starHtml ${esc(entry.displayName)}</strong>$defaultBadge
-        <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
-          <span class="$badgeCls" style="font-size:10px;padding:2px 6px;border-radius:3px">${esc(badgeText)}</span>
-          $comingSoonChip
-          $statusChip
-        </div>
-      </div>
-      <p style="font-size:12px;color:var(--text-dim);margin:4px 0 0;line-height:1.5">${esc(entry.description)}</p>
-      <p class="dim" style="font-size:11px;margin:4px 0 0;font-family:ui-monospace,Menlo,monospace">${esc(entry.pkg)} $homepageLink</p>
+  <div style="display:flex;justify-content:space-between;gap:6px;align-items:start;flex-wrap:wrap">
+    <strong style="font-size:14px">$starHtml ${esc(entry.displayName)}</strong>$defaultBadge
+    <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
+      <span class="$badgeCls" style="font-size:10px;padding:2px 6px;border-radius:3px">${esc(badgeText)}</span>
+      $statusPill
     </div>
-  </label>
-  $configHtml
+  </div>
+  <p style="font-size:12px;color:var(--text-dim);margin:4px 0 0;line-height:1.5">${esc(entry.description)}</p>
+  <p class="dim" style="font-size:11px;margin:4px 0 0;font-family:ui-monospace,Menlo,monospace">${esc(entry.pkg)} $homepageLink</p>
+  $actionHtml
 </div>"""
     }
 
@@ -362,8 +322,9 @@ JSON</pre>
             if (f.isFile) renderFileField(entry, f, existing, lang)
             else renderTextField(entry, f, existing)
         }
+        // v1.61.0 — 카드별 폼이라 항상 표시(체크박스 게이팅 제거).
         return """
-<div class="config-block" style="margin-top:8px;padding-top:8px;border-top:1px dashed #333;display:none">
+<div class="config-block" style="margin-top:8px;padding-top:8px;border-top:1px dashed #333">
   <p class="dim" style="font-size:11px;margin:0 0 4px">${esc(Messages.t(lang, "mcp.field.required"))}</p>
   $fields
 </div>"""

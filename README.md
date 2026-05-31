@@ -742,7 +742,7 @@ carries a CSRF `_csrf` token (v0.12.4+).
 | `/chat/history` | **v0.16.0** Scratch-project persistent history |
 | `/prompts` | **v0.13.0** Prompt template CRUD (used by the ▼ dropdown) |
 | `/env-setup` | Build-environment status + one-click installers |
-| `/env-setup/mcp` | MCP catalog (60+ entries, checkbox multi-select) |
+| `/env-setup/mcp` | MCP catalog (60+ entries); **v1.61.0** marketplace cards — per-card Install/Remove + status pill |
 | `/env-setup/claude-login` | Semi-automatic web OAuth |
 | `/env-setup/tasks/{taskId}` | Live install progress (WS) |
 | `/settings/git-integrations` | PAT tokens + SSH public key (**v0.47.0** admin-only) |
