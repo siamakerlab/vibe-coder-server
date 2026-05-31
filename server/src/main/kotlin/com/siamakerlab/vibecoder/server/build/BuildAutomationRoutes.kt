@@ -334,9 +334,13 @@ private object AutomationTemplates {
             csrf = csrf,
             body = """
 <header>
-  <h1>Automation
-    <small class="dim" style="font-size:14px;font-weight:400">${esc(p.name)} (${esc(p.id)}) · v0.33.0</small>
-  </h1>
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+    <h1 style="margin:0">Automation
+      <small class="dim" style="font-size:14px;font-weight:400">${esc(p.name)} (${esc(p.id)})</small>
+    </h1>
+    <a href="/projects/${esc(p.id)}/automation/prompts" class="chip chip-action" style="background:#1e40af;color:#fff">🤖 프롬프트 자동화 →</a>
+  </div>
+  <p class="dim" style="margin:6px 0 0;font-size:13px">빌드 cron / webhook 은 여기서, 콘솔 프롬프트 반복·순차 자동화는 "프롬프트 자동화" 에서.</p>
 </header>
 
 $okHtml

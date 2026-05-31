@@ -194,6 +194,10 @@ fun main(args: Array<String>) {
     // 정리에 필요해 생성 순서를 ProjectService 앞으로 이동.
     val buildScheduleRepo = com.siamakerlab.vibecoder.server.repo.BuildScheduleRepository(clock)
     val buildWebhookSecretRepo = com.siamakerlab.vibecoder.server.repo.BuildWebhookSecretRepository(clock)
+    // v1.59.0 — 프롬프트 자동화 실행 이력 repo. ProjectService delete cascade 정리에 필요해
+    // 생성 순서를 ProjectService 앞으로.
+    val promptAutomationRunRepo =
+        com.siamakerlab.vibecoder.server.repo.PromptAutomationRunRepository(clock)
     val projects = ProjectService(
         workspace, projectRepo, buildRepo, keystoreGen, gitClone,
         artifactRepo = artifactRepo, uploadedFileRepo = uploadedRepo,
@@ -201,6 +205,7 @@ fun main(args: Array<String>) {
         projectAclRepo = projectAclRepo,
         buildScheduleRepo = buildScheduleRepo,
         buildWebhookSecretRepo = buildWebhookSecretRepo,
+        promptAutomationRunRepo = promptAutomationRunRepo,
         isBusyOf = sessionManager::isBusy,
     )
     // v1.7.2 — SCRATCH 프로젝트 (__scratch__) 를 server startup 시 자동 ensure.
@@ -298,6 +303,20 @@ fun main(args: Array<String>) {
     buildScheduler.start()
     val conversationArchiver = com.siamakerlab.vibecoder.server.claude.ConversationArchiver(workspace)
     conversationArchiver.start()
+    // v1.59.0 — 프롬프트 자동화 (서버 백그라운드 autopilot). turn 완료마다 다음 프롬프트 자동 전송.
+    // (promptAutomationRunRepo 는 ProjectService 앞에서 이미 생성됨.)
+    val promptAutomationPresetStore =
+        com.siamakerlab.vibecoder.server.automation.PromptAutomationPresetStore(workspace, clock)
+    val promptAutomationManager = com.siamakerlab.vibecoder.server.automation.PromptAutomationManager(
+        sessionManager, promptAutomationRunRepo, hub,
+    )
+    // turn 완료/중단 hook 주입 (순환의존 방지를 위해 생성 후 setter).
+    sessionManager.turnDoneListener = promptAutomationManager::onTurnDone
+    sessionManager.turnInterruptListener = promptAutomationManager::onInterrupt
+    // 부팅 reconcile — 재시작으로 끊긴 RUNNING run 을 STOPPED 로 정리.
+    runCatching { promptAutomationRunRepo.reconcileOrphans() }
+        .onSuccess { if (it > 0) log.info { "reconciled $it orphaned automation run(s) → stopped" } }
+        .onFailure { log.warn(it) { "automation run reconcile failed" } }
     // v0.35.0 — 코드 분석 묶음 (wrapper / stats / search).
     val gradleWrapperService = com.siamakerlab.vibecoder.server.build.GradleWrapperService(workspace)
     val codeStatsService = com.siamakerlab.vibecoder.server.projects.CodeStatsService(workspace)
@@ -486,6 +505,9 @@ fun main(args: Array<String>) {
         plugins = pluginService,
         terminalManager = terminalManager,
         adb = adbService,
+        promptAutomationPresetStore = promptAutomationPresetStore,
+        promptAutomationRunRepo = promptAutomationRunRepo,
+        promptAutomationManager = promptAutomationManager,
     )
 
     Runtime.getRuntime().addShutdownHook(Thread {

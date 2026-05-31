@@ -946,6 +946,40 @@ $errHtml
 </div>"""
         }
 
+        // v1.59.0 — 프롬프트 자동화 패널 (서버 백그라운드 autopilot). 대화 전용 General
+        // Chat 에선 코드 작업 자동화가 부적합하므로 숨김. blocking(인증 미비)이면 비활성.
+        val automationPanelHtml = if (isChat) "" else run {
+            val dis = if (blocking) " disabled" else ""
+            """
+<details class="auto-panel" id="auto-panel" style="margin:8px 0 0">
+  <summary style="cursor:pointer;font-size:13px;font-weight:600;color:#6aa9ff">🤖 ${esc(t("console.automation.title"))} <span id="auto-badge" class="dim" style="font-weight:400;font-size:12px"></span></summary>
+  <div style="border:1px solid #243049;border-radius:8px;padding:10px;margin-top:6px;background:rgba(30,64,175,0.05)">
+    <p class="dim" style="font-size:12px;margin:0 0 8px">${esc(t("console.automation.hint"))}</p>
+    <!-- 진행 중 뷰 -->
+    <div id="auto-running" hidden style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+      <strong style="color:#6aa9ff">▶ ${esc(t("console.automation.running"))}</strong>
+      <span id="auto-progress" style="font-size:13px"></span>
+      <button type="button" id="auto-stop-btn" class="chip chip-danger"$dis>${esc(t("console.automation.stop"))}</button>
+    </div>
+    <!-- 시작 뷰 -->
+    <div id="auto-idle">
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:6px">
+        <label style="margin:0;font-size:13px"><input type="radio" name="auto-mode" value="repeat" checked> ${esc(t("console.automation.repeat"))}</label>
+        <label style="margin:0;font-size:13px"><input type="radio" name="auto-mode" value="sequence"> ${esc(t("console.automation.sequence"))}</label>
+        <label style="margin:0;font-size:13px">${esc(t("console.automation.count"))}<input type="number" id="auto-count" min="1" max="200" value="20" style="width:70px;margin-left:6px;padding:4px"></label>
+      </div>
+      <textarea id="auto-prompts" rows="2" style="width:100%;padding:8px" placeholder="${esc(t("console.automation.placeholder"))}"></textarea>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">
+        <button type="button" id="auto-start-btn" class="chip chip-action" style="background:#1e40af;color:#fff"$dis>${esc(t("console.automation.start"))}</button>
+        <select id="auto-preset" style="font-size:12px;padding:4px 8px;background:#1a1a1a;color:var(--text);border:1px solid #333;display:none"></select>
+        <button type="button" id="auto-preset-start" class="chip chip-link" style="display:none"$dis>${esc(t("console.automation.presetStart"))}</button>
+        <a href="/projects/${esc(p.id)}/automation/prompts" target="_top" class="chip chip-link" style="margin-left:auto">${esc(t("console.automation.manage"))}</a>
+      </div>
+    </div>
+  </div>
+</details>"""
+        }
+
         val navPath = if (isChat) "/chat" else "/projects"
         // v1.54.0 — 다중 채팅이면 헤더 제목을 활성 채팅명으로. 단일 General Chat 호환 fallback.
         val titleSuffix = if (isChat) (chatTitle?.takeIf { it.isNotBlank() } ?: "General Chat") else t("console.title")
@@ -1185,6 +1219,7 @@ $authBannerHtml
 </details>
 
 $quickBarHtml
+$automationPanelHtml
 
 <form id="prompt-form" class="prompt-form" autocomplete="off">
   <!-- maxlength 는 char 단위라 ASCII 기준 32K. 한국어 등 multi-byte 입력은
@@ -1702,6 +1737,9 @@ $quickBarHtml
       setInFlight(!!f.busy);
     } else if (t === 'console_replay_end') {
       append('sys', 'replay', 'history end — live frames follow', 'replay');
+    } else if (t === 'automation_progress') {
+      // v1.59.0 — 프롬프트 자동화 진행/종료 프레임 → 패널 뱃지 갱신.
+      if (window.__vibeAutoRender) window.__vibeAutoRender(f);
     }
   }
 
@@ -1907,6 +1945,82 @@ $quickBarHtml
       else form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
     });
   }
+
+  // v1.59.0 — 프롬프트 자동화 패널 (서버 백그라운드 autopilot).
+  (function initAutomation() {
+    var panel = document.getElementById('auto-panel');
+    if (!panel) return;  // chat / blocking 숨김
+    var badge = document.getElementById('auto-badge');
+    var runningEl = document.getElementById('auto-running');
+    var idleEl = document.getElementById('auto-idle');
+    var progEl = document.getElementById('auto-progress');
+    var startBtn = document.getElementById('auto-start-btn');
+    var stopBtn2 = document.getElementById('auto-stop-btn');
+    var presetSel = document.getElementById('auto-preset');
+    var presetStartBtn = document.getElementById('auto-preset-start');
+
+    // 진행 프레임/상태 → UI. 전역 노출(프레임 핸들러가 호출).
+    window.__vibeAutoRender = function(st) {
+      if (st && st.active) {
+        runningEl.hidden = false;
+        idleEl.style.display = 'none';
+        progEl.textContent = (st.name ? st.name + ' · ' : '') + (st.sent || 0) + '/' + (st.total || 0);
+        badge.textContent = '· ' + (st.sent || 0) + '/' + (st.total || 0);
+      } else {
+        runningEl.hidden = true;
+        idleEl.style.display = '';
+        badge.textContent = (st && st.status) ? '· ' + st.status : '';
+      }
+    };
+
+    function api(method, url, body) {
+      return fetch(url, {
+        method: method, credentials: 'same-origin',
+        headers: body ? { 'Content-Type': 'application/json' } : undefined,
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    }
+    var base = '/api/projects/' + encodeURIComponent(projectId) + '/claude/automation/';
+
+    // 프리셋 로드 (전역 /api/prompt-automations).
+    api('GET', '/api/prompt-automations').then(function(r){ return r.ok ? r.json() : null; }).then(function(d) {
+      if (!d || !d.presets || !d.presets.length) return;
+      presetSel.innerHTML = '';
+      d.presets.forEach(function(p) {
+        var o = document.createElement('option'); o.value = p.id; o.textContent = p.name + ' (' + p.mode + ')';
+        presetSel.appendChild(o);
+      });
+      presetSel.style.display = ''; presetStartBtn.style.display = '';
+    }).catch(function(){});
+
+    // 현재 상태 1회 조회.
+    api('GET', base + 'status').then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(st){ if (st) window.__vibeAutoRender(st); }).catch(function(){});
+
+    function doStart(body) {
+      api('POST', base + 'start', body).then(function(r) {
+        if (!r.ok) { return r.text().then(function(m){ append('err', 'automation', r.status + ' ' + m, 'error'); }); }
+        return r.json().then(function(st){ window.__vibeAutoRender(st); panel.open = true; });
+      }).catch(function(e){ append('err', 'automation', String(e), 'error'); });
+    }
+    if (startBtn) startBtn.addEventListener('click', function() {
+      var mode = (document.querySelector('input[name=auto-mode]:checked') || {}).value || 'repeat';
+      var raw = (document.getElementById('auto-prompts').value || '').trim();
+      var prompts = raw.split('\n').map(function(s){ return s.trim(); }).filter(Boolean);
+      if (!prompts.length) { document.getElementById('auto-prompts').focus(); return; }
+      var count = parseInt(document.getElementById('auto-count').value, 10) || 1;
+      doStart({ mode: mode, prompts: prompts, repeatCount: count, loops: 1, stopOnError: false });
+    });
+    if (presetStartBtn) presetStartBtn.addEventListener('click', function() {
+      if (!presetSel.value) return;
+      doStart({ presetId: presetSel.value });
+    });
+    if (stopBtn2) stopBtn2.addEventListener('click', function() {
+      if (!confirm(${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.automation.confirmStop"))})) return;
+      api('POST', base + 'stop').then(function(r){ return r.ok ? r.json() : null; })
+        .then(function(st){ if (st) window.__vibeAutoRender(st); }).catch(function(){});
+    });
+  })();
 
   // v0.99.0 — 사용자가 큐 명시적으로 비우고 싶을 때. window 에 노출 — 콘솔에서
   // `window.vibeClearQueue()` 로 호출 가능. UI 버튼은 차후 옵션.

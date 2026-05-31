@@ -217,6 +217,27 @@ sealed class WsFrame {
         val params: JsonElement? = null,
     ) : WsFrame()
 
+    /**
+     * v1.59.0 — 프롬프트 자동화(서버 백그라운드 autopilot) 진행 상태.
+     *
+     * 자동화 run 이 시작/매 turn 완료마다 다음 프롬프트 발사/종료될 때 console
+     * topic 으로 emit. 웹/Android 콘솔은 본 프레임으로 "자동화 N/총 · status"
+     * 뱃지를 갱신한다. `active=false` 면 run 종료(status = done|stopped|failed).
+     */
+    @Serializable
+    @SerialName("automation_progress")
+    data class AutomationProgress(
+        val projectId: String,
+        val runId: String,
+        val status: String,          // running | done | stopped | failed
+        val mode: String,            // repeat | sequence
+        val sent: Int,
+        val total: Int,
+        val active: Boolean,
+        val lastPrompt: String? = null,
+        val seq: Long,
+    ) : WsFrame()
+
     // endregion
 }
 

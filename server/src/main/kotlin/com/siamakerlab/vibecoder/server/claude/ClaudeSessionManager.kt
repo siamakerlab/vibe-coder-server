@@ -75,6 +75,32 @@ class ClaudeSessionManager(
      */
     private val busy = ConcurrentHashMap<String, Boolean>()
 
+    /**
+     * v1.59.0 — turn 완료(정상 Done) 리스너. 프롬프트 자동화
+     * ([com.siamakerlab.vibecoder.server.automation.PromptAutomationManager])가 등록해
+     * "작업 완료마다 다음 프롬프트"를 구현. 순환의존 방지를 위해 setter 주입.
+     * reason = `ClaudeEvent.Done.subtype` (예: "success", "error_max_turns").
+     */
+    @Volatile
+    var turnDoneListener: (suspend (projectId: String, reason: String) -> Unit)? = null
+
+    /**
+     * v1.59.0 — turn 비정상 중단(cancel / new session / crash) 리스너. 진행 중인
+     * 자동화를 멈추기 위함. reason = "cancelled" | "new_session" | "crashed".
+     */
+    @Volatile
+    var turnInterruptListener: (suspend (projectId: String, reason: String) -> Unit)? = null
+
+    private fun fireTurnDone(projectId: String, reason: String) {
+        val l = turnDoneListener ?: return
+        scope.launch { runCatching { l(projectId, reason) }.onFailure { log.warn(it) { "[$projectId] turnDoneListener failed" } } }
+    }
+
+    private fun fireInterrupt(projectId: String, reason: String) {
+        val l = turnInterruptListener ?: return
+        scope.launch { runCatching { l(projectId, reason) }.onFailure { log.warn(it) { "[$projectId] turnInterruptListener failed" } } }
+    }
+
     init {
         // Idle reaper
         scope.launch {
@@ -126,6 +152,7 @@ class ClaudeSessionManager(
                 log.warn(e) { "[$projectId] stdin write failed; will respawn on next prompt" }
                 emitSystem(projectId, "process_crashed", "Claude process is no longer accepting input (${e.message}). Retrying on next prompt.")
                 terminateSession(projectId)
+                fireInterrupt(projectId, "crashed")
                 throw e
             }
         }
@@ -137,6 +164,7 @@ class ClaudeSessionManager(
         runCatching { sessionIdFile(projectId).deleteIfExists() }
         hub.resetConsole(topic(projectId))
         emitSystem(projectId, "new_session_requested", "Session reset. The next prompt starts a fresh conversation.")
+        fireInterrupt(projectId, "new_session")
     }
 
     /**
@@ -159,6 +187,7 @@ class ClaudeSessionManager(
             projectId, "turn_cancelled",
             "사용자가 turn 을 중단했습니다. 다음 prompt 는 같은 세션 (--resume) 으로 이어집니다.",
         )
+        fireInterrupt(projectId, "cancelled")
     }
 
     fun isAlive(projectId: String): Boolean =
@@ -353,7 +382,11 @@ class ClaudeSessionManager(
             }
             history?.event(projectId, sidForRow, event)
             // v0.98.0 — Done 이벤트 시 busy=false. ConsoleBusyState 자동 emit.
-            if (event is ClaudeEvent.Done) setBusy(projectId, false)
+            if (event is ClaudeEvent.Done) {
+                setBusy(projectId, false)
+                // v1.59.0 — 자동화 리스너에 turn 완료 통지 (fire-and-forget, stdout 파싱 비blocking).
+                fireTurnDone(projectId, event.reason)
+            }
         }
     }
 

@@ -60,6 +60,20 @@ object ApiPath {
     fun claudeStatus(projectId: String) =
         "/api/projects/$projectId/claude/status"
 
+    // v1.59.0 — 프롬프트 자동화 (서버 백그라운드 autopilot). turn 완료마다 다음
+    // 프롬프트 자동 전송. 실행 제어는 프로젝트별, 프리셋은 workspace 전역.
+    fun promptAutomationStart(projectId: String) =
+        "/api/projects/${pathSeg(projectId)}/claude/automation/start"
+    fun promptAutomationStop(projectId: String) =
+        "/api/projects/${pathSeg(projectId)}/claude/automation/stop"
+    fun promptAutomationStatus(projectId: String) =
+        "/api/projects/${pathSeg(projectId)}/claude/automation/status"
+    /** workspace 전역 프리셋 목록/생성. */
+    const val PROMPT_AUTOMATION_PRESETS = "/api/prompt-automations"
+    /** workspace 전역 프리셋 단건 (수정/삭제). */
+    fun promptAutomationPreset(presetId: String) =
+        "/api/prompt-automations/${pathSeg(presetId)}"
+
     // Project actions (chip system)
     fun projectActions(projectId: String) = "/api/projects/$projectId/actions"
     fun projectActionsInvoke(projectId: String) =

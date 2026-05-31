@@ -10,6 +10,7 @@ import com.siamakerlab.vibecoder.server.admin.backupRoutes
 import com.siamakerlab.vibecoder.server.admin.logSearchRoutes
 import com.siamakerlab.vibecoder.server.admin.multiConsoleRoutes
 import com.siamakerlab.vibecoder.server.build.buildAutomationRoutes
+import com.siamakerlab.vibecoder.server.automation.promptAutomationRoutes
 import com.siamakerlab.vibecoder.server.build.buildCacheRoutes
 import com.siamakerlab.vibecoder.server.build.dependencyAuditRoutes
 import com.siamakerlab.vibecoder.server.projects.codeAnalysisRoutes
@@ -250,6 +251,10 @@ data class ServerContext(
     val terminalManager: TerminalSessionManager,
     /** v1.40.0 — 무선 ADB 기기 logcat (admin). */
     val adb: com.siamakerlab.vibecoder.server.device.AdbService,
+    /** v1.59.0 — 프롬프트 자동화 (서버 백그라운드 autopilot): 프리셋 저장 / 실행 이력 / 오케스트레이터. */
+    val promptAutomationPresetStore: com.siamakerlab.vibecoder.server.automation.PromptAutomationPresetStore,
+    val promptAutomationRunRepo: com.siamakerlab.vibecoder.server.repo.PromptAutomationRunRepository,
+    val promptAutomationManager: com.siamakerlab.vibecoder.server.automation.PromptAutomationManager,
 )
 
 fun Application.module(ctx: ServerContext) {
@@ -459,6 +464,11 @@ fun Application.module(ctx: ServerContext) {
         buildAutomationRoutes(
             adminDeps, ctx.projects, ctx.buildScheduleRepo, ctx.buildWebhookSecretRepo,
             ctx.build, ctx.hub, ctx.clock,
+        )
+        // v1.59.0 — 프롬프트 자동화 (서버 백그라운드 autopilot): JSON + SSR.
+        promptAutomationRoutes(
+            adminDeps, ctx.projects, ctx.promptAutomationManager,
+            ctx.promptAutomationPresetStore, ctx.promptAutomationRunRepo,
         )
         // v0.34.0 — 백업 / 복원 UI.
         backupRoutes(adminDeps, ctx.workspace, ctx.backupService)

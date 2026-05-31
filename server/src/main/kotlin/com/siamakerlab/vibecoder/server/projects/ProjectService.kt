@@ -49,6 +49,8 @@ class ProjectService(
      */
     private val buildScheduleRepo: com.siamakerlab.vibecoder.server.repo.BuildScheduleRepository? = null,
     private val buildWebhookSecretRepo: com.siamakerlab.vibecoder.server.repo.BuildWebhookSecretRepository? = null,
+    /** v1.59.0 — 프롬프트 자동화 실행 이력 (Projects.id FK). delete cascade 정리용. */
+    private val promptAutomationRunRepo: com.siamakerlab.vibecoder.server.repo.PromptAutomationRunRepository? = null,
     /**
      * v1.1.0 — `ClaudeSessionManager.isBusy(projectId)` 콜백. ProjectDto.busy 필드 채움.
      * Construction-order 문제 회피 위해 lambda. null 이면 항상 false (테스트 / dev 환경).
@@ -449,6 +451,7 @@ class ProjectService(
             artifactRepo?.deleteForProject(id)
             buildScheduleRepo?.deleteForProject(id)
             buildWebhookSecretRepo?.deleteForProject(id)
+            promptAutomationRunRepo?.deleteForProject(id)
             projectAclRepo?.deleteAllForProject(id)
             buildRepo.deleteForProject(id)
             repo.delete(id) > 0

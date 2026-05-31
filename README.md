@@ -756,6 +756,7 @@ carries a CSRF `_csrf` token (v0.12.4+).
 | `/projects/{id}/env-files` | **v0.32.0** Whitelist-edit `local.properties` / `.env` / `build.gradle.kts` |
 | `/projects/{id}/deps` | **v0.32.0** Gradle dependency tree + coord extraction |
 | `/projects/{id}/automation` | **v0.33.0** Cron schedule + webhook secret management |
+| `/projects/{id}/automation/prompts` | **v1.59.0** Prompt automation — repeat/sequence presets, start/stop, run history |
 | `/history` | **v0.30.0** Cross-project conversation search |
 | `/logs` | **v0.32.0** Build log grep across all projects |
 | `/agents` | **v0.31.0** Custom `.agents/*.md` CRUD |
@@ -788,6 +789,11 @@ Wire definitions: `shared/.../ApiPath.kt` + `shared/.../Dtos.kt`. Highlights:
 - `POST /api/projects/{id}/claude/console/prompt | new | cancel`
   (`.../cancel` is **v0.13.0+** — Android `shared/` v0.6.11+ required)
 - `GET  /api/projects/{id}/claude/status`
+- `POST /api/projects/{id}/claude/automation/start | stop`, `GET .../status`
+  (**v1.59.0+** server-side prompt automation — repeat/sequence; fires the next
+  prompt on every turn completion, runs even with the browser closed)
+- `GET/POST /api/prompt-automations`, `PUT/DELETE /api/prompt-automations/{presetId}`
+  (**v1.59.0+** workspace-global automation presets)
 - `GET  /api/prompt-templates` (v0.13.0+ — prompt library)
 - `GET  /api/projects/{id}/history`, `GET /api/chat/history`
   (**v0.64.0+ JSON variant** — persisted conversation_turns; pagination via

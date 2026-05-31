@@ -378,8 +378,37 @@ object ProjectAcls : Table("project_acls") {
     }
 }
 
+/**
+ * v1.59.0 — 프롬프트 자동화 실행(run) 이력.
+ *
+ * 자동화 1건 = 한 프로젝트에서 turn 완료마다 다음 프롬프트를 자동 전송하는 작업.
+ * active 진행 상태 자체는 [com.siamakerlab.vibecoder.server.automation.PromptAutomationManager]
+ * 의 in-memory 맵이 SSOT 이고, 본 테이블은 시작/종료 이력 + 부팅 reconcile 용.
+ *
+ * status: running / done / stopped / failed. 서버 재시작 시 in-memory active 가
+ * 사라지므로 부팅 시 `running` 행은 `stopped` 로 정리(orphan reconcile).
+ */
+object PromptAutomationRuns : Table("prompt_automation_runs") {
+    val id = varchar("id", 64)
+    val projectId = varchar("project_id", 64).references(Projects.id)
+    val name = varchar("name", 256)
+    val mode = varchar("mode", 16)                 // repeat | sequence
+    val total = integer("total")
+    val sent = integer("sent").default(0)
+    val status = varchar("status", 16)             // running | done | stopped | failed
+    val startedAt = varchar("started_at", 64)
+    val finishedAt = varchar("finished_at", 64).nullable()
+    val lastError = text("last_error").nullable()
+    override val primaryKey = PrimaryKey(id)
+
+    init {
+        index(isUnique = false, columns = arrayOf(projectId, startedAt))
+        index(isUnique = false, columns = arrayOf(status))
+    }
+}
+
 val AllTables = arrayOf(
     AdminUsers, Devices, Projects, Builds, Artifacts, UploadedFiles, AuditLog, ConversationTurns,
     BuildSchedules, BuildWebhookSecrets, PushSubscriptions, WebauthnCredentials, ProjectAcls,
-    NotificationEvents,
+    NotificationEvents, PromptAutomationRuns,
 )
