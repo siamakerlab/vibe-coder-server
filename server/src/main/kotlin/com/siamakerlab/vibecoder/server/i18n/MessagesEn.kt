@@ -987,6 +987,7 @@ internal object MessagesEn {
         "mcp.entry.registeredOnly" to "Registered only",
         // v1.61.0 — marketplace-style per-card install/remove.
         "mcp.entry.notInstalled" to "Not installed",
+        "mcp.entry.configToggle" to "Config",
         "mcp.entry.install" to "Install",
         "mcp.entry.reinstall" to "Reinstall",
         "mcp.entry.remove" to "Remove",

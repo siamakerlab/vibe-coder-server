@@ -966,6 +966,7 @@ internal object MessagesKo {
         "mcp.entry.registeredOnly" to "등록만",
         // v1.61.0 — 마켓플레이스형 카드별 설치/제거.
         "mcp.entry.notInstalled" to "미설치",
+        "mcp.entry.configToggle" to "설정 필요",
         "mcp.entry.install" to "설치",
         "mcp.entry.reinstall" to "재설치",
         "mcp.entry.remove" to "제거",

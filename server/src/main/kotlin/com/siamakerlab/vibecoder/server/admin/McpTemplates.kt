@@ -166,11 +166,21 @@ JSON</pre>
     var pill = card ? card.querySelector('.mcp-pill') : null;
     var mcpId = form.dataset.mcpId;
 
-    function setProg(text, cls) { prog.hidden = false; progText.textContent = text; progText.className = 'mcp-progress-text ' + (cls || 'dim'); }
+    function setProg(text, cls) { prog.style.display = 'flex'; progText.textContent = text; progText.className = 'mcp-progress-text ' + (cls || 'dim'); }
     function spin(on) { spinner.style.display = on ? '' : 'none'; }
     function setPill(state, label) { if (!pill) return; pill.className = 'pstat pstat-' + state + ' mcp-pill'; pill.textContent = label; }
     function enable(on) { installBtn.disabled = !on; removeBtn.disabled = !on; }
     function csrf() { var el = form.querySelector('input[name="_csrf"]'); return (el && el.value) || (window.__VIBE_CSRF__ || ''); }
+    function setInstallIcon(reinstall) {
+      installBtn.textContent = reinstall ? installBtn.dataset.iconReinstall : installBtn.dataset.iconInstall;
+      installBtn.title = reinstall ? L.reinstall : L.install;
+      installBtn.setAttribute('aria-label', installBtn.title);
+    }
+
+    // v1.66.3 — 설치 클릭 시 접힌 설정(<details>)을 펼쳐 collapsed required 필드의 validation 포커스 보장.
+    installBtn.addEventListener('click', function() {
+      form.querySelectorAll('details.mcp-config').forEach(function(d) { d.open = true; });
+    });
 
     form.addEventListener('submit', function(e) {
       e.preventDefault();
@@ -209,7 +219,7 @@ JSON</pre>
             done = true;
             if (f.status === 'SUCCESS') {
               spin(false); setProg(L.done, 'ok'); setPill('ready', L.installed);
-              installBtn.textContent = L.reinstall; installBtn.classList.remove('primary'); removeBtn.style.display = '';
+              setInstallIcon(true); installBtn.classList.remove('primary'); removeBtn.style.display = '';
             } else {
               spin(false); setProg(L.failed + (f.errorMessage ? ' · ' + f.errorMessage : ''), 'warn');
             }
@@ -232,7 +242,7 @@ JSON</pre>
       }).then(function(r) {
         if (!r.ok) throw new Error('HTTP ' + r.status);
         spin(false); setProg(L.removed, 'ok'); setPill('idle', L.notInstalled);
-        installBtn.textContent = L.install; installBtn.classList.add('primary'); removeBtn.style.display = 'none'; enable(true);
+        setInstallIcon(false); installBtn.classList.add('primary'); removeBtn.style.display = 'none'; enable(true);
       }).catch(function(err) { spin(false); setProg('✗ ' + err.message, 'warn'); enable(true); });
     }
   });
@@ -356,20 +366,26 @@ JSON</pre>
             val configHtml = renderConfigFields(entry, state?.configValues.orEmpty(), lang)
             val installLabel = if (installed || registeredOnly) t("mcp.entry.reinstall") else t("mcp.entry.install")
             val installClass = if (installed) "" else "primary"
+            val installIcon = if (installed || registeredOnly) "↻" else "⤓"
             val removeStyle = if (installed || registeredOnly) "" else "display:none"
+            // v1.66.3 — 설치 아이콘 버튼을 카드 우하단(margin-top:auto + justify-content:flex-end).
+            //  진행영역은 처음엔 display:none(이전 `hidden` + inline `display:flex` 충돌로 항상
+            //  스피너가 돌던 버그 수정 — JS 가 설치 시 flex 로 노출).
             """
   <form method="post" action="/env-setup/mcp/install" class="mcp-card-form" data-mcp-id="${esc(entry.id)}"
         data-confirm-remove="${esc(t("mcp.entry.removeConfirm"))}" style="margin-top:auto">
     ${CsrfTokens.hiddenInput(csrf)}
     <input type="hidden" name="select" value="${esc(entry.id)}">
     $configHtml
-    <div class="mcp-actions" style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">
-      <button type="submit" class="mcp-install-btn $installClass" style="padding:6px 16px;font-size:13px">${esc(installLabel)}</button>
+    <div class="mcp-progress" style="display:none;align-items:center;gap:8px;margin-top:10px;font-size:12px">
+      <span class="mcp-spinner"></span><span class="mcp-progress-text dim"></span>
+    </div>
+    <div class="mcp-actions" style="display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:10px">
       <button type="submit" class="mcp-remove-btn chip chip-danger" formaction="/env-setup/mcp/unregister"
               formnovalidate style="font-size:12px;$removeStyle">${esc(t("mcp.entry.remove"))}</button>
-    </div>
-    <div class="mcp-progress" hidden style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12px">
-      <span class="mcp-spinner"></span><span class="mcp-progress-text dim"></span>
+      <button type="submit" class="mcp-install-btn $installClass" title="${esc(installLabel)}" aria-label="${esc(installLabel)}"
+              data-icon-install="⤓" data-icon-reinstall="↻"
+              style="padding:5px 12px;font-size:16px;line-height:1">$installIcon</button>
     </div>
   </form>"""
         }
@@ -399,12 +415,16 @@ JSON</pre>
             if (f.isFile) renderFileField(entry, f, existing, lang)
             else renderTextField(entry, f, existing)
         }
-        // v1.61.0 — 카드별 폼이라 항상 표시(체크박스 게이팅 제거).
+        // v1.66.3 — 설정필요 항목은 접어놓고(<details> closed), 설치 시 JS 가 자동 펼침
+        //  (collapsed 안의 required 필드 validation 포커스 문제 회피).
         return """
-<div class="config-block" style="margin-top:8px;padding-top:8px;border-top:1px dashed #333">
-  <p class="dim" style="font-size:11px;margin:0 0 4px">${esc(Messages.t(lang, "mcp.field.required"))}</p>
-  $fields
-</div>"""
+<details class="config-block mcp-config" style="margin-top:8px">
+  <summary style="cursor:pointer;font-size:12px;color:#cfa763;list-style:none">⚙ ${esc(Messages.t(lang, "mcp.entry.configToggle"))} (${entry.configFields.size})</summary>
+  <div style="margin-top:8px;padding-top:8px;border-top:1px dashed #333">
+    <p class="dim" style="font-size:11px;margin:0 0 4px">${esc(Messages.t(lang, "mcp.field.required"))}</p>
+    $fields
+  </div>
+</details>"""
     }
 
     private fun renderFileField(
