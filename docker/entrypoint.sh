@@ -135,6 +135,33 @@ if [[ -f "$GIT_CFG_FILE" ]]; then
     chmod 600 "$GIT_CFG_FILE" 2>/dev/null || true
 fi
 
+# ─── 2d. Claude TUI 온보딩/trust 부트스트랩 (v1.70.6) ────────────────────────
+# Claude Code 2.1.x interactive TUI 는 ~/.claude/.claude.json 의
+# hasCompletedOnboarding 플래그가 없으면 매번 "Select login method" 온보딩을
+# 띄운다. 서버의 quota 표시는 /usage 화면을 PTY 로 캡처해 얻는데, 온보딩 화면에
+# 막히면 사용량이 표시되지 않는다(2.1.158 에서 발생). 이미 로그인(oauthAccount)
+# 된 상태면 온보딩은 무의미하므로 플래그를 세우고, 캡처가 도는 cwd
+# (/workspace, /workspace/__scratch__) 의 trust 를 사전 기록해 trust 다이얼로그도
+# 건너뛰게 한다. config 가 있을 때만, 변경이 있을 때만 기록 (idempotent).
+CLAUDE_CFG=/home/vibe/.claude/.claude.json
+if [[ -f "$CLAUDE_CFG" ]] && command -v node >/dev/null 2>&1; then
+    gosu vibe:vibe node -e '
+      const fs=require("fs"); const f=process.argv[1];
+      try {
+        const d=JSON.parse(fs.readFileSync(f,"utf8"));
+        let changed=false;
+        if(d.hasCompletedOnboarding!==true){d.hasCompletedOnboarding=true;changed=true;}
+        if(!(d.numStartups>=1)){d.numStartups=(d.numStartups||0)+1;changed=true;}
+        d.projects=d.projects||{};
+        for(const p of ["/workspace","/workspace/__scratch__"]){
+          d.projects[p]=d.projects[p]||{};
+          if(d.projects[p].hasTrustDialogAccepted!==true){d.projects[p].hasTrustDialogAccepted=true;changed=true;}
+        }
+        if(changed){fs.writeFileSync(f,JSON.stringify(d));console.error("[entrypoint] Claude onboarding/trust bootstrapped");}
+      } catch(e){ console.error("[entrypoint] Claude config bootstrap skipped: "+e.message); }
+    ' "$CLAUDE_CFG" 2>&1 || true
+fi
+
 # ─── 3. Admin 부트스트랩 (있으면 서버 sys-prop으로 전달) ──────────────────────
 JAVA_OPTS="${JAVA_OPTS:-}"
 if [[ -n "${VIBECODER_ADMIN_USERNAME:-}" ]] && [[ -n "${VIBECODER_ADMIN_PASSWORD:-}" ]]; then
