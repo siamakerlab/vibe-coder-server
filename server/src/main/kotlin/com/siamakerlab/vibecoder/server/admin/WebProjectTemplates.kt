@@ -882,6 +882,8 @@ $errHtml
         flashOk: String? = null,
         csrf: String? = null,
         lang: String,
+        /** v1.71.0 — 폴더명·패키지명 변경 가능 여부(대기중 = turn/빌드 미진행). */
+        structuralEnabled: Boolean = true,
     ): String {
         val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
         val errHtml = if (flashErr != null) """<div class="error">${esc(flashErr)}</div>""" else ""
@@ -923,6 +925,43 @@ $errHtml
       <dt>${esc(t("projects.lastBuild"))}</dt><dd>${esc(p.lastBuildStatus ?: "-")}</dd>
       <dt>${esc(t("projects.detail.updated"))}</dt><dd>${esc(p.updatedAt)}</dd>
     </dl>
+  </div>
+
+  <div class="card">
+    <h2>${esc(t("projects.edit.title"))}</h2>
+    <form method="post" action="/projects/${esc(p.id)}/rename-name" style="margin-bottom:14px">
+      ${CsrfTokens.hiddenInput(csrf)}
+      <label style="font-size:12px;color:var(--text-dim)">${esc(t("projects.edit.name"))}</label>
+      <div style="display:flex;gap:6px;margin-top:4px">
+        <input type="text" name="name" value="${esc(p.name)}" maxlength="256" required style="flex:1;min-width:0">
+        <button type="submit" class="primary" style="width:auto;padding:6px 14px;white-space:nowrap">${esc(t("projects.edit.save"))}</button>
+      </div>
+    </form>
+    ${if (!structuralEnabled) """<p class="hint" style="color:#e0a13a;margin:0 0 12px">⚠ ${esc(t("projects.edit.idleOnly"))}</p>""" else ""}
+    <form method="post" action="/projects/${esc(p.id)}/rename-package" style="margin-bottom:14px"
+          onsubmit="return confirm('${esc(t("projects.edit.package.confirm")).replace("'", "&#39;")}')">
+      ${CsrfTokens.hiddenInput(csrf)}
+      <label style="font-size:12px;color:var(--text-dim)">${esc(t("projects.edit.package"))}</label>
+      <div style="display:flex;gap:6px;margin-top:4px">
+        <input type="text" name="packageName" value="${esc(p.packageName)}" maxlength="256"
+               pattern="[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+" required
+               style="flex:1;min-width:0" ${if (structuralEnabled) "" else "disabled"}>
+        <button type="submit" class="primary" style="width:auto;padding:6px 14px;white-space:nowrap" ${if (structuralEnabled) "" else "disabled"}>${esc(t("projects.edit.save"))}</button>
+      </div>
+      <p class="hint" style="margin:4px 0 0;font-size:11px">${esc(t("projects.edit.package.hint"))}</p>
+    </form>
+    <form method="post" action="/projects/${esc(p.id)}/rename-folder"
+          onsubmit="return confirm('${esc(t("projects.edit.folder.confirm")).replace("'", "&#39;")}')">
+      ${CsrfTokens.hiddenInput(csrf)}
+      <label style="font-size:12px;color:var(--text-dim)">${esc(t("projects.edit.folder"))}</label>
+      <div style="display:flex;gap:6px;margin-top:4px">
+        <input type="text" name="newId" value="${esc(p.id)}" maxlength="64"
+               pattern="[a-z0-9][a-z0-9._-]{0,63}" required
+               style="flex:1;min-width:0" ${if (structuralEnabled) "" else "disabled"}>
+        <button type="submit" class="danger" style="width:auto;padding:6px 14px;white-space:nowrap" ${if (structuralEnabled) "" else "disabled"}>${esc(t("projects.edit.save"))}</button>
+      </div>
+      <p class="hint" style="margin:4px 0 0;font-size:11px">${esc(t("projects.edit.folder.hint"))}</p>
+    </form>
   </div>
 
   <div class="card">

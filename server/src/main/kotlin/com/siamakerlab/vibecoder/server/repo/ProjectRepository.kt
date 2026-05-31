@@ -101,6 +101,56 @@ class ProjectRepository(private val clock: Clock) {
         }
     }
 
+    /** v1.71.0 — 패키지명(applicationId) 갱신. 실제 코드/파일 리네임은 콘솔 프롬프트로 Claude 가 수행. */
+    fun updatePackageName(id: String, packageName: String): Int = transaction {
+        Projects.update({ Projects.id eq id }) {
+            it[Projects.packageName] = packageName
+            it[updatedAt] = clock.nowIso()
+        }
+    }
+
+    /** v1.71.0 — source_path(프로젝트 루트 경로) 갱신. 폴더 rename 후 호출. */
+    fun updateSourcePathOnly(id: String, sourcePath: String): Int = updateSourcePath(id, sourcePath)
+
+    /**
+     * v1.71.0 — 프로젝트 id(=PK=폴더명) 변경. PK 마이그레이션 + 모든 자식 테이블 project_id repoint.
+     *
+     * FK 가 NO_ACTION(즉시 체크)이라 단순 `UPDATE projects SET id` 는 위반. 순서로 회피:
+     *   1) 새 id 로 Projects 행 복제(자식이 가리킬 부모 먼저 존재)
+     *   2) 모든 자식 테이블 project_id: old → new
+     *   3) 옛 Projects 행 삭제(자식이 모두 이동한 뒤)
+     * 전부 단일 transaction → 부분 실패 시 롤백.
+     *
+     * @return 성공 true. oldId 미존재 또는 newId 이미 존재 시 false (호출부 사전 검증 권장).
+     */
+    fun renameId(oldId: String, newId: String): Boolean = transaction {
+        val old = Projects.selectAll().where { Projects.id eq oldId }.singleOrNull()
+            ?: return@transaction false
+        if (Projects.selectAll().where { Projects.id eq newId }.any()) return@transaction false
+        Projects.insert {
+            it[Projects.id] = newId
+            it[Projects.name] = old[Projects.name]
+            it[Projects.packageName] = old[Projects.packageName]
+            it[Projects.sourcePath] = old[Projects.sourcePath]
+            it[Projects.moduleName] = old[Projects.moduleName]
+            it[Projects.debugTask] = old[Projects.debugTask]
+            it[Projects.createdAt] = old[Projects.createdAt]
+            it[Projects.updatedAt] = clock.nowIso()
+            it[Projects.sortOrder] = old[Projects.sortOrder]
+        }
+        // 자식 테이블 repoint. (NotificationEvents.projectId 는 nullable·FK 없음이나 일관성 위해 함께 갱신.)
+        com.siamakerlab.vibecoder.server.db.Builds.update({ com.siamakerlab.vibecoder.server.db.Builds.projectId eq oldId }) { it[com.siamakerlab.vibecoder.server.db.Builds.projectId] = newId }
+        com.siamakerlab.vibecoder.server.db.Artifacts.update({ com.siamakerlab.vibecoder.server.db.Artifacts.projectId eq oldId }) { it[com.siamakerlab.vibecoder.server.db.Artifacts.projectId] = newId }
+        com.siamakerlab.vibecoder.server.db.UploadedFiles.update({ com.siamakerlab.vibecoder.server.db.UploadedFiles.projectId eq oldId }) { it[com.siamakerlab.vibecoder.server.db.UploadedFiles.projectId] = newId }
+        com.siamakerlab.vibecoder.server.db.ConversationTurns.update({ com.siamakerlab.vibecoder.server.db.ConversationTurns.projectId eq oldId }) { it[com.siamakerlab.vibecoder.server.db.ConversationTurns.projectId] = newId }
+        com.siamakerlab.vibecoder.server.db.BuildSchedules.update({ com.siamakerlab.vibecoder.server.db.BuildSchedules.projectId eq oldId }) { it[com.siamakerlab.vibecoder.server.db.BuildSchedules.projectId] = newId }
+        com.siamakerlab.vibecoder.server.db.BuildWebhookSecrets.update({ com.siamakerlab.vibecoder.server.db.BuildWebhookSecrets.projectId eq oldId }) { it[com.siamakerlab.vibecoder.server.db.BuildWebhookSecrets.projectId] = newId }
+        com.siamakerlab.vibecoder.server.db.PromptAutomationRuns.update({ com.siamakerlab.vibecoder.server.db.PromptAutomationRuns.projectId eq oldId }) { it[com.siamakerlab.vibecoder.server.db.PromptAutomationRuns.projectId] = newId }
+        com.siamakerlab.vibecoder.server.db.NotificationEvents.update({ com.siamakerlab.vibecoder.server.db.NotificationEvents.projectId eq oldId }) { it[com.siamakerlab.vibecoder.server.db.NotificationEvents.projectId] = newId }
+        Projects.deleteWhere { Projects.id eq oldId }
+        true
+    }
+
     fun count(): Int = transaction { Projects.selectAll().count().toInt() }
 
     private fun ResultRow.toRow() = ProjectRow(

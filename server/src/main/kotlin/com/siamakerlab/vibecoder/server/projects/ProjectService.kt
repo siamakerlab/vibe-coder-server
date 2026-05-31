@@ -480,6 +480,92 @@ class ProjectService(
         }
     }
 
+    /** v1.71.0 — 표시명(name) 변경. 언제든 가능. */
+    fun rename(id: String, newName: String): Boolean {
+        val name = newName.trim()
+        require(name.isNotBlank()) { "name required" }
+        require(name.length <= 256) { "name too long (max 256)" }
+        if (id == SCRATCH_ID) {
+            throw ApiException.localized(403, "scratch_protected", messageKey = "api.project.scratchProtected")
+        }
+        return repo.updateName(id, name) > 0
+    }
+
+    /**
+     * v1.71.0 — DB 패키지명(applicationId) 갱신. 실제 코드/파일/keystore 리네임은
+     * 라우트가 콘솔 프롬프트로 Claude 에게 위임 + keystore 파일은 서버(KeystoreService)가 처리.
+     */
+    fun updatePackageName(id: String, newPackage: String): Boolean {
+        val pkg = newPackage.trim()
+        require(PACKAGE_NAME_PATTERN.matches(pkg)) {
+            "invalid package name (expected like com.example.app): $pkg"
+        }
+        if (id == SCRATCH_ID) {
+            throw ApiException.localized(403, "scratch_protected", messageKey = "api.project.scratchProtected")
+        }
+        return repo.updatePackageName(id, pkg) > 0
+    }
+
+    /**
+     * v1.71.0 — 폴더명(=projectId=PK) 변경. 파일시스템 이동 + DB PK 마이그레이션.
+     *
+     * 호출 전 라우트가 idle 가드(세션 미진행/미실행 + 빌드 미진행)를 검사해야 한다.
+     * 순서: FS 이동(루트 먼저) → DB 마이그레이션. DB 실패 시 FS 롤백 후 throw.
+     */
+    fun renameFolder(oldId: String, newId: String) {
+        val target = newId.trim()
+        if (oldId == SCRATCH_ID) {
+            throw ApiException.localized(403, "scratch_protected", messageKey = "api.project.scratchProtected")
+        }
+        require(PROJECT_ID_PATTERN.matches(target)) {
+            "projectId must match $PROJECT_ID_PATTERN (소문자/숫자로 시작, [a-z0-9._-] 만 허용, 1~64자)"
+        }
+        if (target == oldId) return
+        repo.findById(oldId) ?: throw ApiException.localized(
+            404, "project_not_found", messageKey = "api.project.notFound", args = listOf(oldId))
+        if (repo.findById(target) != null) throw ApiException.localized(
+            409, "already_exists", messageKey = "api.project.alreadyRegistered", args = listOf(target))
+
+        val oldRoot = workspace.projectRoot(oldId)
+        val newRoot = workspace.projectRoot(target)
+        val oldVibe = workspace.vibecoderDir(oldId)
+        val newVibe = workspace.vibecoderDir(target)
+        val oldKs = runCatching { workspace.keystoresDir(oldId) }.getOrNull()
+        val newKs = runCatching { workspace.keystoresDir(target) }.getOrNull()
+
+        if (newRoot.exists()) throw ApiException.localized(
+            409, "already_exists", messageKey = "api.project.alreadyRegistered", args = listOf(target))
+
+        // 1) FS 루트 이동 (가장 중요 — 실패하면 아무것도 안 바뀐 상태로 중단).
+        if (oldRoot.exists()) {
+            runCatching { Files.move(oldRoot, newRoot) }.getOrElse {
+                log.error(it) { "[rename] project root move failed $oldRoot → $newRoot" }
+                throw ApiException.localized(500, "fs_move_failed",
+                    messageKey = "api.project.notFound", args = listOf(oldId))
+            }
+        }
+        // 2) 메타/keystore 디렉토리 best-effort 이동.
+        runCatching { if (oldVibe.exists() && newVibe.notExists()) Files.move(oldVibe, newVibe) }
+            .onFailure { log.warn(it) { "[rename] vibecoder dir move failed" } }
+        if (oldKs != null && newKs != null) runCatching {
+            if (oldKs.exists() && newKs.notExists()) { newKs.parent?.createDirectories(); Files.move(oldKs, newKs) }
+        }.onFailure { log.warn(it) { "[rename] keystores dir move failed" } }
+
+        // 3) DB PK 마이그레이션. 실패 시 FS 롤백.
+        val ok = runCatching { repo.renameId(oldId, target) }.getOrDefault(false)
+        if (!ok) {
+            log.error { "[rename] DB migration failed — rolling back FS $newRoot → $oldRoot" }
+            runCatching { if (newRoot.exists() && oldRoot.notExists()) Files.move(newRoot, oldRoot) }
+            runCatching { if (newVibe.exists() && oldVibe.notExists()) Files.move(newVibe, oldVibe) }
+            if (oldKs != null && newKs != null) runCatching { if (newKs.exists() && oldKs.notExists()) Files.move(newKs, oldKs) }
+            throw ApiException.localized(500, "db_migration_failed",
+                messageKey = "api.project.notFound", args = listOf(oldId))
+        }
+        // 4) source_path 를 새 루트로 갱신.
+        runCatching { repo.updateSourcePath(target, newRoot.toString()) }
+        log.info { "project folder rename: $oldId → $target" }
+    }
+
     private fun buildProjectYml(
         req: RegisterProjectRequestDto,
         absSource: Path,
@@ -695,6 +781,9 @@ class ProjectService(
          * 클라이언트 regex `[a-z0-9][a-z0-9._-]*{,63}` 와 서버 검증을 일원화.
          */
         val PROJECT_ID_PATTERN = Regex("^[a-z0-9][a-z0-9._-]{0,63}$")
+
+        /** v1.71.0 — Android applicationId(패키지명) 유효 패턴. 각 세그먼트는 소문자로 시작. */
+        val PACKAGE_NAME_PATTERN = Regex("^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$")
 
         /** v0.13.0 — General Chat ghost 프로젝트 ID. 사용자 입력으로는 만들 수 없는 형태. */
         const val SCRATCH_ID = "__scratch__"

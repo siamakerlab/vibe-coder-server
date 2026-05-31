@@ -4,6 +4,7 @@ import com.siamakerlab.vibecoder.server.config.KeystoreDefaults
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.PosixFilePermission
 import java.nio.file.attribute.PosixFilePermissions
 import java.util.Properties
@@ -124,6 +125,35 @@ class KeystoreService(
             admobExists = Files.exists(admob),
             createdAt = runCatching { Files.getLastModifiedTime(release).toString() }.getOrNull(),
         )
+    }
+
+    /**
+     * v1.71.0 — 패키지명 변경 시 키스토어 파일 4종을 새 prefix 로 rename.
+     * `<old>.keystore` / `-debug.keystore` / `-keystore.properties` / `-admob.properties`
+     * → `<new>…`. properties 내부의 옛 패키지 문자열(storeFile 경로 등)도 치환.
+     * 대상 파일이 없으면 skip(무해). @return 이동한 파일 수.
+     */
+    fun renamePackage(oldPackageName: String, newPackageName: String): Int {
+        if (!packageNameRegex.matches(newPackageName)) {
+            throw IllegalArgumentException("invalid_package_name: $newPackageName")
+        }
+        if (oldPackageName == newPackageName) return 0
+        var moved = 0
+        for (suffix in listOf(".keystore", "-debug.keystore", "-keystore.properties", "-admob.properties")) {
+            val src = keystoreDir.resolve("$oldPackageName$suffix")
+            if (!Files.exists(src)) continue
+            val dst = keystoreDir.resolve("$newPackageName$suffix")
+            Files.move(src, dst, StandardCopyOption.REPLACE_EXISTING)
+            moved++
+            if (suffix.endsWith(".properties")) {
+                runCatching {
+                    Files.writeString(dst, Files.readString(dst).replace(oldPackageName, newPackageName))
+                }
+            }
+            runCatching { setPerm(dst, "rw-------") }
+        }
+        log.info { "keystore rename: $oldPackageName → $newPackageName ($moved file(s))" }
+        return moved
     }
 
     /**

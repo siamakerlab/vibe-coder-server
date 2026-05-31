@@ -48,12 +48,45 @@ import java.nio.file.Path
 
 private val log = KotlinLogging.logger {}
 
+/** v1.71.0 — 프로젝트에 진행 중(RUNNING/PENDING) 빌드가 있는지. 폴더/패키지 변경 idle 가드용. */
+private fun isBuildRunning(buildRepo: BuildRepository, id: String): Boolean =
+    buildRepo.listForProject(id, limit = 5).any {
+        it.status == com.siamakerlab.vibecoder.shared.dto.TaskStatus.RUNNING ||
+            it.status == com.siamakerlab.vibecoder.shared.dto.TaskStatus.PENDING
+    }
+
 /**
  * 프로젝트 / 콘솔 / 빌드 SSR 라우트.
  *
  * 인증 모델: AdminRoutes 와 동일하게 `vibe_session` 쿠키 기반 (requireSessionOrRedirect).
  * REST API (`/api/projects/...`) 는 그대로 두고 폼/페이지만 새로 만든다.
  */
+/**
+ * v1.71.0 — 패키지명 변경 시 콘솔로 보내는 Claude 작업 지시 프롬프트.
+ * vibe-coder 서버는 이미 (1) DB packageName 갱신 (2) /home/vibe/keystores 의
+ * 키스토어 파일명(`<pkg>.keystore` 등)을 새 패키지로 rename 해 두었다. 나머지
+ * 코드/디렉토리/매니페스트/signing 참조 갱신을 Claude 가 수행한다.
+ */
+private fun packageRenamePrompt(oldPkg: String?, newPkg: String): String {
+    val from = oldPkg ?: "(현재 패키지)"
+    return """
+        이 Android 프로젝트의 패키지명(applicationId)을 `$from` 에서 `$newPkg` 로 완전히 변경해 주세요.
+        vibe-coder 서버가 이미 처리한 것: ① 등록 DB 의 패키지명 갱신, ② /home/vibe/keystores 의
+        키스토어 파일명(`$from.keystore` 등 4종)을 `$newPkg.*` 로 rename. 나머지를 모두 수행하세요:
+
+        1. `app/build.gradle.kts` 의 `namespace` 와 `applicationId` 를 `$newPkg` 로 변경.
+        2. 소스 디렉토리 구조 이동: `src/main/java`(및 `kotlin`)/`src/test`/`src/androidTest` 아래
+           `${from.replace('.', '/')}` 경로의 모든 파일을 `${newPkg.replace('.', '/')}` 로 이동(폴더 구조 변경).
+        3. 모든 `.kt`/`.java` 의 `package` 선언과 `import` 를 새 패키지로 갱신.
+        4. `AndroidManifest.xml` 및 XML 리소스의 fully-qualified 클래스 참조(`$from.*`)를 `$newPkg.*` 로 갱신.
+        5. signing config 가 키스토어 파일명/properties 를 `$from` 기준으로 참조하면 `$newPkg` 로 갱신
+           (서버가 파일은 이미 rename 함 — 코드 내 참조만 맞추면 됨).
+        6. 빈 옛 패키지 디렉토리 정리, 그리고 `assembleDebug` 로 빌드가 통과하는지 확인.
+
+        주의: vibe-coder 프로젝트 폴더명 자체는 바꾸지 마세요(별도 절차). 위 작업만 정확히 수행 후 요약 보고해 주세요.
+    """.trimIndent()
+}
+
 fun Routing.webProjectRoutes(
     authDeps: AdminRoutesDeps,
     projects: ProjectService,
@@ -285,6 +318,8 @@ fun Routing.webProjectRoutes(
             WebProjectTemplates.projectDetailPage(
                 sess.username, p, recent, flashErr = err, flashOk = ok, csrf = sess.csrf,
                 lang = sess.language,
+                // v1.71.0 — 폴더/패키지 변경은 대기중(turn·빌드 미진행)일 때만.
+                structuralEnabled = !sessionManager.isBusy(id) && !isBuildRunning(buildRepo, id),
             ),
             ContentType.Text.Html,
         )
@@ -301,6 +336,80 @@ fun Routing.webProjectRoutes(
         authDeps.audit.projectDelete(sess.userId, id, call.request.origin.remoteHost, removed)
         val ok = if (removed) Messages.t(sess.language, "flash.project.deleted") else Messages.t(sess.language, "flash.project.notExist")
         call.respondRedirect("/projects?ok=${ok.encodeUrl()}")
+    }
+
+    // ── v1.71.0 프로젝트 설정: 표시명 / 패키지명 / 폴더명 변경 ─────────────
+    // 폴더명·패키지명은 프로젝트가 "대기중"(turn 미진행 + 빌드 미진행)일 때만 허용.
+    // (buildRunning 판정은 top-level isBuildRunning 헬퍼.)
+    post("/projects/{id}/rename-name") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireWriteAccessOrRedirect(sess)) return@post
+        val params = requireCsrf()
+        val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
+        val newName = params["name"]?.trim().orEmpty()
+        try {
+            projects.rename(id, newName)
+            call.respondRedirect("/projects/$id/overview?ok=${Messages.t(sess.language, "flash.project.renamed").encodeUrl()}")
+        } catch (e: Exception) {
+            call.respondRedirect("/projects/$id/overview?err=${(e.message ?: "error").encodeUrl()}")
+        }
+    }
+
+    post("/projects/{id}/rename-package") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireWriteAccessOrRedirect(sess)) return@post
+        val params = requireCsrf()
+        val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
+        val newPkg = params["packageName"]?.trim().orEmpty()
+        // 대기중 가드: turn 진행 중 / 빌드 중이면 거부 (alive 프로세스엔 프롬프트를 보낼 것이므로 허용).
+        if (sessionManager.isBusy(id) || isBuildRunning(buildRepo, id)) {
+            call.respondRedirect("/projects/$id/overview?err=${Messages.t(sess.language, "flash.project.rename.notIdle").encodeUrl()}")
+            return@post
+        }
+        val oldPkg = runCatching { projects.get(id).packageName }.getOrNull()
+        try {
+            projects.updatePackageName(id, newPkg)
+        } catch (e: Exception) {
+            call.respondRedirect("/projects/$id/overview?err=${(e.message ?: "invalid package").encodeUrl()}")
+            return@post
+        }
+        // 키스토어 파일명은 서버가 처리 (KeystoreService).
+        if (oldPkg != null && oldPkg != newPkg) {
+            runCatching { keystoreService.renamePackage(oldPkg, newPkg) }
+                .onFailure { log.warn(it) { "keystore rename failed $oldPkg → $newPkg" } }
+        }
+        // 코드/파일/디렉토리 구조 리네임은 콘솔 프롬프트로 Claude 에게 위임.
+        val prompt = packageRenamePrompt(oldPkg, newPkg)
+        runCatching { sessionManager.sendPrompt(id, prompt) }
+            .onFailure { log.warn(it) { "package-rename prompt send failed for $id" } }
+        call.respondRedirect("/projects/$id/overview?ok=${Messages.t(sess.language, "flash.project.package.changed").encodeUrl()}")
+    }
+
+    post("/projects/{id}/rename-folder") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireWriteAccessOrRedirect(sess)) return@post
+        val params = requireCsrf()
+        val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
+        val newId = params["newId"]?.trim().orEmpty()
+        // 폴더 이동은 프로세스 cwd 를 옮기므로 완전 idle 필요: turn/빌드 미진행.
+        if (sessionManager.isBusy(id) || isBuildRunning(buildRepo, id)) {
+            call.respondRedirect("/projects/$id/overview?err=${Messages.t(sess.language, "flash.project.rename.notIdle").encodeUrl()}")
+            return@post
+        }
+        try {
+            // live claude 프로세스가 옛 폴더를 cwd 로 잡고 있으므로 먼저 종료(세션 재설정).
+            // DB 대화 이력은 마이그레이션으로 보존되어 새 콘솔에서 그대로 보임.
+            if (sessionManager.isAlive(id)) sessionManager.startNew(id)
+            projects.renameFolder(id, newId)
+            log.info { "project folder renamed $id → $newId by ${sess.username}" }
+            call.respondRedirect("/projects/$newId/overview?ok=${Messages.t(sess.language, "flash.project.folder.renamed").encodeUrl()}")
+        } catch (e: Exception) {
+            log.warn(e) { "folder rename failed $id → $newId" }
+            call.respondRedirect("/projects/$id/overview?err=${(e.message ?: "rename failed").encodeUrl()}")
+        }
     }
 
     // ── 콘솔 ──────────────────────────────────────────────────────────
