@@ -32,8 +32,25 @@ object ConfigLoader {
         }
 
         val cfg = yaml.decodeFromString(ServerConfig.serializer(), text)
-        return applyEnvironmentOverrides(cfg)
+        // v1.70.7 — `server.version` 은 코드(번들 리소스)에서만 결정한다. 외부 config
+        // (사용자가 /settings 에서 저장한 설정본)가 version 까지 박제해, 이미지 업그레이드
+        // 후에도 대시보드/health 가 옛 버전을 표시하던 문제 회수. 사용자 설정(port/timeout/
+        // maxConcurrentTurns 등)은 외부 config 가 그대로 유지하고, version 만 번들로 덮어쓴다.
+        val withVersion = if (external != null) {
+            val bundled = readBundledVersion()
+            if (bundled != null && bundled != cfg.server.version)
+                cfg.copy(server = cfg.server.copy(version = bundled)) else cfg
+        } else cfg
+        return applyEnvironmentOverrides(withVersion)
     }
+
+    /** 번들(classpath) server.yml 의 server.version. 외부 config 의 박제된 version 무시용. */
+    private fun readBundledVersion(): String? = runCatching {
+        ConfigLoader::class.java.classLoader
+            .getResourceAsStream("config/server.yml")
+            ?.bufferedReader()?.use { it.readText() }
+            ?.let { yaml.decodeFromString(ServerConfig.serializer(), it).server.version }
+    }.getOrNull()
 
     private fun applyEnvironmentOverrides(cfg: ServerConfig): ServerConfig {
         var current = cfg
