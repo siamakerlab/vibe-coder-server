@@ -1225,6 +1225,8 @@ internal object MessagesEn {
         "console.live.authDesc" to "Authentication failure signal detected in the latest response. Re-login inside the container and refresh.",
         "console.live.placeholder" to "Refresh after re-logging into Claude.",
         "console.ws.reconnect5s" to "closed (code %s); reconnect in 5s",
+        "console.ws.disconnected" to "Disconnected — reconnecting…",
+        "console.ws.reconnected" to "Reconnected",
         "console.cancel.sent" to "user cancel request sent",
 
         // ─────────────────────────────────────────────── build detail (PR-level git metadata)

@@ -1204,6 +1204,8 @@ internal object MessagesKo {
         "console.live.authDesc" to "현재 응답에서 인증 실패 신호가 감지되었습니다. 컨테이너 안에서 재로그인 후 페이지를 새로고침하세요.",
         "console.live.placeholder" to "Claude 재로그인 후 새로고침하세요.",
         "console.ws.reconnect5s" to "closed (code %s); 재연결 5초 후",
+        "console.ws.disconnected" to "연결 끊김 — 재연결 중…",
+        "console.ws.reconnected" to "재연결됨",
         "console.cancel.sent" to "사용자 중단 요청 전송됨",
 
         // ─────────────────────────────────────────────── build detail (PR-level git metadata)

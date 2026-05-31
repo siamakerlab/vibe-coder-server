@@ -442,11 +442,24 @@ private fun renderSubAgentConsole(
     }
   }
 
+  // v1.70.4 — 재연결 UX (메인 콘솔과 동일). 백그라운드 복귀/네트워크 복구 시 즉시 재연결.
   var ws = null;
+  var reconnectTimer = null;
+  var everConnected = false;
+  var wsClosedNotified = false;
+  function scheduleReconnect(delay) {
+    if (reconnectTimer) return;
+    reconnectTimer = setTimeout(function() { reconnectTimer = null; connect(); }, delay);
+  }
   function connect() {
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
     var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     ws = new WebSocket(proto + '//' + location.host + '/ws/projects/' + projectId + '/agents/' + agentName + '/console/logs');
-    ws.onopen = function() { append('sys', 'ws', 'connected'); };
+    ws.onopen = function() {
+      if (!everConnected) append('sys', 'ws', 'connected');
+      else if (wsClosedNotified) append('sys', 'ws', '재연결됨');
+      everConnected = true; wsClosedNotified = false;
+    };
     ws.onmessage = function(ev) {
       try {
         var f = JSON.parse(ev.data);
@@ -454,9 +467,22 @@ private fun renderSubAgentConsole(
         renderFrame(f);
       } catch (e) { append('err', 'parse', String(e)); }
     };
-    ws.onclose = function(ev) { append('sys', 'ws', 'closed (code ' + ev.code + '); 재연결 5초 후'); setTimeout(connect, 5000); };
-    ws.onerror = function() { append('err', 'ws', 'error'); };
+    ws.onclose = function(ev) {
+      if (ev.code === 1000) return;
+      if (!wsClosedNotified) { append('sys', 'ws', '연결 끊김 — 재연결 중…'); wsClosedNotified = true; }
+      scheduleReconnect(2000);
+    };
+    ws.onerror = function() {};
   }
+  function reconnectNow() {
+    if (document.hidden) return;
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    connect();
+  }
+  document.addEventListener('visibilitychange', function() { if (!document.hidden) reconnectNow(); });
+  window.addEventListener('online', reconnectNow);
+  window.addEventListener('focus', reconnectNow);
   connect();
 
   // v1.70.1 — 사용자 프롬프트 카드(2줄 클램프) 클릭 시 펼침/접힘.

@@ -1888,15 +1888,31 @@ $automationPanelHtml
 
   var ws = null;
   var wsAuthed = false;
+  // v1.70.4 — 재연결 UX. 탭을 백그라운드로 보내면 브라우저가 소켓을 얼려 서버
+  // timeout(45s)으로 1006 close 가 발생한다(정상). 매번 "closed (code 1006)" 를
+  // 띄우는 대신 한 번만 부드럽게 안내하고, 탭 복귀/네트워크 복구 시 즉시 재연결한다.
+  var WS_DISCONNECTED = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.ws.disconnected"))};
+  var WS_RECONNECTED = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.ws.reconnected"))};
+  var reconnectTimer = null;
+  var everConnected = false;     // 최초 연결 후 true → 이후 onopen 은 "재연결됨"
+  var wsClosedNotified = false;  // 끊김 메시지 1회만
+
+  function scheduleReconnect(delay) {
+    if (reconnectTimer) return;  // 이미 예약됨
+    reconnectTimer = setTimeout(function() { reconnectTimer = null; connect(); }, delay);
+  }
 
   function connect() {
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
     var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     ws = new WebSocket(proto + '//' + location.host + '/ws/projects/' + projectId + '/console/logs');
 
     ws.onopen = function() {
-      append('sys', 'ws', 'connected', 'ws');
-      // 인증은 WS handshake 의 cookie 헤더로 처리 (vibe_session 은 httpOnly 이므로
-      // JS 가 읽지 못함 — XSS 방어). 서버가 handshake 시점에 cookie 에서 토큰을 추출.
+      // 인증은 WS handshake 의 cookie 헤더로 처리 (vibe_session 은 httpOnly).
+      if (!everConnected) append('sys', 'ws', 'connected', 'ws');
+      else if (wsClosedNotified) append('sys', 'ws', WS_RECONNECTED, 'ws');
+      everConnected = true;
+      wsClosedNotified = false;
     };
 
     ws.onmessage = function(ev) {
@@ -1912,14 +1928,25 @@ $automationPanelHtml
     };
 
     ws.onclose = function(ev) {
-      append('sys', 'ws', (${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.ws.reconnect5s", "___CODE___"))}).replace('___CODE___', ev.code), 'ws');
-      setTimeout(connect, 5000);
+      if (ev.code === 1000) return;  // 정상 종료(페이지 이탈 등)는 알림/재연결 불필요
+      if (!wsClosedNotified) { append('sys', 'ws', WS_DISCONNECTED, 'ws'); wsClosedNotified = true; }
+      // 포그라운드면 빠르게(2s), 백그라운드면 복귀 이벤트가 즉시 깨운다.
+      scheduleReconnect(2000);
     };
 
-    ws.onerror = function() {
-      append('err', 'ws', 'error', 'ws');
-    };
+    ws.onerror = function() { /* onclose 가 뒤따르므로 별도 메시지 생략 */ };
   }
+
+  // 탭 복귀 / 네트워크 복구 / 포커스 시 5초 기다리지 않고 즉시 재연결.
+  function reconnectNow() {
+    if (document.hidden) return;
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    connect();
+  }
+  document.addEventListener('visibilitychange', function() { if (!document.hidden) reconnectNow(); });
+  window.addEventListener('online', reconnectNow);
+  window.addEventListener('focus', reconnectNow);
 
   connect();
 
