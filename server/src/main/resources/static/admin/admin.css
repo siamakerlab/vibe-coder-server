@@ -811,7 +811,8 @@ table.devices small.dim { font-size: 11px; }
 }
 .console-log .log-copy:hover { color: var(--text); }
 .console-log .log-copy.copied { color: #5ed3a1; }
-.console-log .log-copy svg { display: block; width: 14px; height: 14px; }
+/* v1.70.2 — 복사 아이콘 축소 (14 → 11px). */
+.console-log .log-copy svg { display: block; width: 11px; height: 11px; }
 
 /* v1.7.12 — 응답중 spinner. console-log 직후 위치, busy 일 때만 visible. */
 .console-spinner {
