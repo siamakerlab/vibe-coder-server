@@ -64,6 +64,16 @@ ${if (ok != null) """<div class="ok-banner">✓ ${esc(ok)}</div>""" else ""}
 ${if (!err.isNullOrBlank()) """<div class="error">${esc(err)}</div>""" else ""}
 <p class="dim" style="font-size:13px;margin:6px 0 16px;line-height:1.5">${esc(t("mcpProject.intro"))}</p>
 
+<!-- v1.67.0 — 현재 프로젝트에서 인식된 MCP + 연결 상태(claude mcp list). 별도 ajax 로드(health check 느릴 수 있음). -->
+<div class="card" style="margin-bottom:16px">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+    <h2 style="margin:0;font-size:15px">${esc(t("mcpProject.live.title"))}</h2>
+    <button type="button" id="mcp-live-refresh" class="chip chip-link">↻ ${esc(t("mcpProject.live.refresh"))}</button>
+  </div>
+  <p class="dim" style="font-size:12px;margin:6px 0 8px">${esc(t("mcpProject.live.hint"))}</p>
+  <div id="mcp-live"></div>
+</div>
+
 <div class="card" style="margin-bottom:16px">
   <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
     <h2 style="margin:0;font-size:15px">${esc(t("scope.global"))} <span class="dim" style="font-size:11px;font-weight:400;font-family:ui-monospace,Menlo,monospace">~/.claude/.mcp.json</span></h2>
@@ -89,9 +99,26 @@ ${if (!err.isNullOrBlank()) """<div class="error">${esc(err)}</div>""" else ""}
 <script>
 (function(){
   var ta=document.getElementById('mcp-content'),f=document.getElementById('mcp-form');
-  if(!ta||!f)return;
-  document.addEventListener('keydown',function(e){if((e.ctrlKey||e.metaKey)&&(e.key==='s'||e.key==='S')){e.preventDefault();f.submit();}});
-  ta.addEventListener('keydown',function(e){if(e.key==='Tab'){e.preventDefault();var s=ta.selectionStart,en=ta.selectionEnd;ta.value=ta.value.substring(0,s)+'  '+ta.value.substring(en);ta.selectionStart=ta.selectionEnd=s+2;}});
+  if(ta&&f){
+    document.addEventListener('keydown',function(e){if((e.ctrlKey||e.metaKey)&&(e.key==='s'||e.key==='S')){e.preventDefault();f.submit();}});
+    ta.addEventListener('keydown',function(e){if(e.key==='Tab'){e.preventDefault();var s=ta.selectionStart,en=ta.selectionEnd;ta.value=ta.value.substring(0,s)+'  '+ta.value.substring(en);ta.selectionStart=ta.selectionEnd=s+2;}});
+  }
+  // v1.67.0 — 인식된 MCP + 상태 로드(claude mcp list health check).
+  var box=document.getElementById('mcp-live'), btn=document.getElementById('mcp-live-refresh');
+  if(box){
+    var CHECKING=${jsLit(t("mcpProject.live.checking"))}, ERR=${jsLit(t("mcpProject.live.err"))};
+    function load(){
+      box.innerHTML='<span class="dim" style="font-size:12px">'+CHECKING+'</span>';
+      if(btn) btn.disabled=true;
+      fetch('/projects/$id/mcp/status',{credentials:'same-origin'})
+        .then(function(r){return r.ok?r.text():null;})
+        .then(function(h){ box.innerHTML = (h&&h.trim())?h:ERR; })
+        .catch(function(){ box.innerHTML=ERR; })
+        .then(function(){ if(btn) btn.disabled=false; });
+    }
+    if(btn) btn.addEventListener('click', load);
+    load();
+  }
 })();
 </script>
 """
@@ -102,6 +129,16 @@ ${if (!err.isNullOrBlank()) """<div class="error">${esc(err)}</div>""" else ""}
             ),
             ContentType.Text.Html,
         )
+    }
+
+    // v1.67.0 — 현재 프로젝트에서 인식된 MCP + 연결 상태(claude mcp list, cwd=projectRoot).
+    //  health check 가 느릴 수 있어 페이지와 분리된 ajax 로 fragment 반환.
+    get("/projects/{id}/mcp/status") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@get
+        val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
+        val servers = runCatching { globalMcp.liveStatus(workspace.projectRoot(id)) }.getOrElse { emptyList() }
+        call.respondText(renderMcpLive(servers, sess.language), ContentType.Text.Html)
     }
 
     post("/projects/{id}/mcp/save") {
@@ -128,3 +165,34 @@ ${if (!err.isNullOrBlank()) """<div class="error">${esc(err)}</div>""" else ""}
 }
 
 private fun enc(s: String) = URLEncoder.encode(s, StandardCharsets.UTF_8).replace("+", "%20")
+
+private fun jsLit(s: String): String =
+    "'" + s.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "\\r") + "'"
+
+/** v1.67.0 — 인식된 MCP + 상태 fragment (ajax 응답). */
+private fun renderMcpLive(servers: List<McpService.LiveServer>, lang: String): String {
+    val t = { k: String -> Messages.t(lang, k) }
+    fun esc(s: String?) = s.orEmpty()
+        .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        .replace("\"", "&quot;").replace("'", "&#39;")
+    if (servers.isEmpty()) {
+        return """<p class="dim" style="font-size:12px">${esc(t("mcpProject.live.empty"))}</p>"""
+    }
+    val rows = servers.joinToString("") { s ->
+        val (cls, icon, label) = when (s.state) {
+            "connected" -> Triple("ok", "✓", t("mcpProject.live.connected"))
+            "failed" -> Triple("warn", "✗", t("mcpProject.live.failed"))
+            "auth" -> Triple("warn", "!", t("mcpProject.live.auth"))
+            "pending" -> Triple("dim", "⏸", t("mcpProject.live.pending"))
+            else -> Triple("dim", "·", esc(s.state))
+        }
+        """<tr>
+          <td><strong>${esc(s.name)}</strong><br><small class="dim" style="font-family:ui-monospace,Menlo,monospace">${esc(s.detail)}</small></td>
+          <td style="white-space:nowrap"><span class="$cls">$icon ${esc(label)}</span></td>
+        </tr>"""
+    }
+    return """<table class="devices" style="width:100%">
+      <thead><tr><th>MCP</th><th style="width:140px">${esc(t("mcpProject.live.status"))}</th></tr></thead>
+      <tbody>$rows</tbody>
+    </table>"""
+}

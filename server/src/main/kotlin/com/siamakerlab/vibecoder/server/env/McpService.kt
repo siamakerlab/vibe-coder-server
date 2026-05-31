@@ -389,16 +389,43 @@ class McpService(
 
     private fun claudeCmd(): String = System.getenv("CLAUDE_CMD")?.takeIf { it.isNotBlank() } ?: "claude"
 
-    /** `claude mcp <args...>` 실행 → (exit, output). 30s 타임아웃. */
-    private fun runClaudeMcp(vararg args: String): Pair<Int, String> {
+    /** `claude mcp <args...>` 실행 → (exit, output). [cwd] 지정 시 그 디렉토리에서(프로젝트 scope). */
+    private fun runClaudeMcp(vararg args: String, cwd: Path? = null, timeoutSec: Long = 30): Pair<Int, String> {
         return try {
-            val proc = ProcessBuilder(listOf(claudeCmd(), "mcp", *args)).redirectErrorStream(true).start()
+            val pb = ProcessBuilder(listOf(claudeCmd(), "mcp", *args)).redirectErrorStream(true)
+            if (cwd != null) pb.directory(cwd.toFile())
+            val proc = pb.start()
             val out = proc.inputStream.bufferedReader(Charsets.UTF_8).readText()
-            if (!proc.waitFor(30, TimeUnit.SECONDS)) { proc.destroyForcibly(); return -2 to "timeout" }
+            if (!proc.waitFor(timeoutSec, TimeUnit.SECONDS)) { proc.destroyForcibly(); return -2 to "timeout" }
             proc.exitValue() to out
         } catch (e: Throwable) {
             -1 to (e.message ?: "exec failed")
         }
+    }
+
+    /** v1.67.0 — 현재 인식 MCP + 연결 상태. cwd=프로젝트 root 면 user-scope + 그 프로젝트 scope 포함. */
+    data class LiveServer(val name: String, val detail: String, val state: String)
+
+    fun liveStatus(cwd: Path?): List<LiveServer> {
+        val (_, out) = runClaudeMcp("list", cwd = cwd, timeoutSec = 60)
+        if (out.isBlank()) return emptyList()
+        // 형식: "<name>: <command/url> - <상태>"  (상태: ✓ Connected / ✗ Failed to connect /
+        //        ! Needs authentication / ⏸ Pending approval)
+        val re = Regex("""^(.+?):\s+(.*?)\s+-\s+(.+)$""")
+        return out.lineSequence().mapNotNull { line ->
+            val tline = line.trim()
+            if (tline.isEmpty() || tline.startsWith("Checking")) return@mapNotNull null
+            val m = re.find(tline) ?: return@mapNotNull null
+            val statusText = m.groupValues[3].trim()
+            val state = when {
+                statusText.contains("Connected", true) -> "connected"
+                statusText.contains("Failed", true) -> "failed"
+                statusText.contains("authentication", true) -> "auth"
+                statusText.contains("Pending", true) -> "pending"
+                else -> "unknown"
+            }
+            LiveServer(m.groupValues[1].trim(), m.groupValues[2].trim(), state)
+        }.toList()
     }
 
     /** user-scope 에 등록(이미 있으면 교체). add-json 의 JSON 은 server 객체 그대로. */
