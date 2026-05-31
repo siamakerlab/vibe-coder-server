@@ -83,6 +83,13 @@ object McpCatalog {
          * 예: Google Drive (OAuth client.json 받은 후 첫 호출에서 브라우저 인증 필요).
          */
         val comingSoon: Boolean = false,
+        /**
+         * v1.68.0 — npm 패키지가 아니라 이미지에 박힌 바이너리(`command` 가 PATH 의 실행파일)로
+         * 동작하는 MCP. true 면 설치 시 `npm install -g` 를 건너뛰고 user-scope 등록만 한다.
+         * "설치됨" 판정도 npm 대신 PATH 의 바이너리 존재로 한다.
+         * 예: 공식 Gitea MCP(`gitea-mcp`, Go 정적 바이너리 — Dockerfile 에서 릴리스 다운로드).
+         */
+        val binaryInstall: Boolean = false,
     )
 
     /** 전체 카탈로그 — 항목 추가 시 ID 중복 주의. */
@@ -181,20 +188,28 @@ object McpCatalog {
             ),
         ))
         add(McpEntry(
-            // v1.66.4 — pkg 수정: `mcp-server-gitea` 는 npm 에 없음(404, 설치 exit 1).
-            //  실제 게시 패키지 `@boringstudio_org/gitea-mcp`(GITEA_API_URL/GITEA_TOKEN env 일치)로 교체.
+            // v1.68.0 — 공식 Gitea MCP Server(gitea.com/gitea/gitea-mcp)로 교체.
+            //  이전 community npm 패키지(`@boringstudio_org/gitea-mcp`)가 오작동.
+            //  Go 정적 바이너리라 npm 이 아닌 이미지 번들 바이너리(`gitea-mcp -t stdio`)로 실행.
+            //  env 도 공식 규약: GITEA_HOST(루트 URL, /api/v1 아님) + GITEA_ACCESS_TOKEN.
             id = "gitea",
             displayName = "Gitea",
-            pkg = "@boringstudio_org/gitea-mcp",
-            homepage = "https://github.com/boringstudio-org/mcp-gitea",
-            description = "Gitea / Forgejo 인스턴스 issues/PRs/repos. self-hosted git 환경에서.",
-            category = Category.GIT_HOSTING, trust = Trust.COMMUNITY,
+            pkg = "gitea.com/gitea/gitea-mcp",
+            homepage = "https://gitea.com/gitea/gitea-mcp",
+            description = "공식 Gitea MCP Server (gitea/gitea-mcp). Gitea / Forgejo 인스턴스의 issues/PRs/repos/releases 등. self-hosted git 환경.",
+            category = Category.GIT_HOSTING, trust = Trust.VERIFIED,
+            command = "gitea-mcp",
+            argsTemplate = listOf("-t", "stdio"),
+            binaryInstall = true,
             configFields = listOf(
-                ConfigField("GITEA_API_URL", "Gitea API URL", "https://gitea.example.com/api/v1",
-                    help = "Gitea API base — 보통 `<root>/api/v1`."),
-                ConfigField("GITEA_TOKEN", "Gitea PAT", "...",
+                ConfigField("GITEA_HOST", "Gitea Host URL", "https://gitea.example.com",
+                    help = "인스턴스 루트 URL (예: https://gitea.wody.kr). `/api/v1` 를 붙이지 않습니다."),
+                ConfigField("GITEA_ACCESS_TOKEN", "Gitea PAT", "...",
                     isSecret = true,
                     help = "User Settings > Applications > Generate New Token."),
+                ConfigField("GITEA_INSECURE", "TLS 인증서 무시", "false",
+                    required = false,
+                    help = "self-signed 인증서면 `true`. 기본 false."),
             ),
         ))
         add(McpEntry(

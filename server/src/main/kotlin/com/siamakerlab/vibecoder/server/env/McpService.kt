@@ -97,7 +97,8 @@ class McpService(
 
     fun detect(id: String): EntryState {
         val e = McpCatalog.get(id) ?: return EntryState(id, Status.UNKNOWN, "카탈로그에 없음")
-        val installed = isPackageInstalled(e.pkg)
+        // v1.68.0 — binaryInstall 항목은 npm 이 아니라 PATH 의 바이너리 존재로 설치 판정.
+        val installed = if (e.binaryInstall) isBinaryOnPath(e.command) else isPackageInstalled(e.pkg)
         // v1.66.5 — 표준 user-scope(`.claude.json` mcpServers) 기준으로 등록 판정.
         val userServers = readUserScopeServers()
         val registered = userServers.containsKey(id)
@@ -114,8 +115,12 @@ class McpService(
             else -> Status.NOT_INSTALLED
         }
         val msg = when (status) {
-            Status.INSTALLED -> if (installed) "설치됨 + 등록됨" else "등록됨 (npx on-demand)"
-            Status.REGISTERED_ONLY -> "등록되어 있으나 npm 패키지 미설치"
+            Status.INSTALLED -> when {
+                e.binaryInstall -> "설치됨 (바이너리) + 등록됨"
+                installed -> "설치됨 + 등록됨"
+                else -> "등록됨 (npx on-demand)"
+            }
+            Status.REGISTERED_ONLY -> if (e.binaryInstall) "등록되어 있으나 바이너리 없음" else "등록되어 있으나 npm 패키지 미설치"
             Status.NOT_INSTALLED -> "미설치"
             Status.UNKNOWN -> "확인 불가"
         }
@@ -320,10 +325,18 @@ class McpService(
                 "── [$idx/${selections.size}] ${entry.displayName} (${entry.pkg})",
                 clock.nowIso()))
 
-            // 1) npm install -g <pkg>
-            val installExit = runNpmInstall(taskId, entry.pkg)
-            if (installExit != 0) {
-                throw RuntimeException("npm install -g ${entry.pkg} → exit $installExit")
+            // 1) npm install -g <pkg> — v1.68.0: 바이너리 항목은 이미지에 박혀 있어 설치 skip.
+            if (entry.binaryInstall) {
+                if (!isBinaryOnPath(entry.command)) {
+                    throw RuntimeException("바이너리 `${entry.command}` 를 PATH 에서 찾을 수 없습니다(이미지 업그레이드 필요).")
+                }
+                hub.publisher(taskId).emit(WsFrame.Log(taskId, "INFO",
+                    "  · 바이너리 `${entry.command}` (이미지 번들) — npm 설치 생략", clock.nowIso()))
+            } else {
+                val installExit = runNpmInstall(taskId, entry.pkg)
+                if (installExit != 0) {
+                    throw RuntimeException("npm install -g ${entry.pkg} → exit $installExit")
+                }
             }
 
             // 2) v1.66.5 — 표준 user-scope 등록(`claude mcp add-json -s user`). 콘솔/서브에이전트/
@@ -468,7 +481,35 @@ class McpService(
             val migrate = legacy.filterKeys { it !in userServers.keys }
             migrate.forEach { (name, v) -> (v as? JsonObject)?.let { registerUserScope(name, it) } }
             if (migrate.isNotEmpty()) log.info { "MCP 레거시 .mcp.json → user-scope 이관: ${migrate.keys}" }
+
+            // v1.68.0 — 카탈로그가 npm → 바이너리로 바뀐 항목(예: gitea: npx @boringstudio → 공식 gitea-mcp)의
+            //  stale user-scope 등록 정리. 등록된 command 가 카탈로그 command 와 다르면 제거해
+            //  사용자가 올바른 env(GITEA_HOST/ACCESS_TOKEN)로 재설치하도록 NOT_INSTALLED 로 되돌린다.
+            val current = readUserScopeServers()
+            current.forEach { (name, v) ->
+                val e = McpCatalog.get(name) ?: return@forEach
+                if (!e.binaryInstall) return@forEach
+                val cmd = ((v as? JsonObject)?.get("command") as? JsonPrimitive)?.content
+                if (cmd != null && cmd != e.command) {
+                    runClaudeMcp("remove", name, "-s", "user")
+                    log.info { "MCP stale 등록 정리(바이너리 전환): $name (command=$cmd → 재설치 필요)" }
+                }
+            }
         }.onFailure { log.warn(it) { "MCP user-scope 등록 보장 실패(무시)" } }
+    }
+
+    /** v1.68.0 — binaryInstall 항목용. `command -v <cmd>` 로 PATH 에 실행파일이 있는지. */
+    private fun isBinaryOnPath(cmd: String): Boolean {
+        return try {
+            val pb = ProcessBuilder(listOf("sh", "-c", "command -v ${cmd.replace("'", "")}"))
+                .redirectErrorStream(true)
+            val proc = pb.start()
+            proc.inputStream.bufferedReader(Charsets.UTF_8).readText()
+            if (!proc.waitFor(5, TimeUnit.SECONDS)) { proc.destroyForcibly(); return false }
+            proc.exitValue() == 0
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     private fun isPackageInstalled(pkg: String): Boolean {

@@ -96,6 +96,28 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && npm install -g @anthropic-ai/claude-code \
     && npm cache clean --force
 
+# ---- 공식 Gitea MCP 서버 바이너리 (Go 정적 링크) -----------------------------
+# v1.68.0 — gitea.com/gitea/gitea-mcp. npm 패키지가 아니므로 릴리스 바이너리를
+# 이미지에 박는다. /usr/local/bin 은 볼륨 마운트 밖이라 이미지 업그레이드/재시작
+# 후에도 유지된다(.local/bin 은 npm prefix 볼륨에 가려질 수 있어 사용 안 함).
+# 정적 링크라 런타임 의존성 없음. 실행: `gitea-mcp -t stdio`
+# (env GITEA_HOST / GITEA_ACCESS_TOKEN). TARGETARCH 는 buildx 가 주입(amd64/arm64)
+# — multi-arch 빌드에서 올바른 자산 선택.
+ARG TARGETARCH
+ARG GITEA_MCP_VERSION=v1.0.1
+RUN set -eux; \
+    case "${TARGETARCH:-amd64}" in \
+        amd64) GMARCH="x86_64" ;; \
+        arm64) GMARCH="arm64" ;; \
+        *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /tmp/gitea-mcp.tar.gz \
+        "https://gitea.com/gitea/gitea-mcp/releases/download/${GITEA_MCP_VERSION}/gitea-mcp_Linux_${GMARCH}.tar.gz"; \
+    tar -xzf /tmp/gitea-mcp.tar.gz -C /usr/local/bin gitea-mcp; \
+    chmod +x /usr/local/bin/gitea-mcp; \
+    rm -f /tmp/gitea-mcp.tar.gz; \
+    /usr/local/bin/gitea-mcp -version
+
 # ---- 사용자 / 디렉토리 -------------------------------------------------------
 # entrypoint에서 호스트 UID에 맞춰 재조정한다. 여기는 기본값.
 ARG VIBE_UID=1000
