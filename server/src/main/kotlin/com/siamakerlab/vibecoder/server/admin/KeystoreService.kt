@@ -23,8 +23,8 @@ private val log = KotlinLogging.logger {}
  *  - `<pkg>-admob.properties`    — AdMob IDs (선택)
  *
  * keytool 호출은 비동기 / sync 양쪽 가능하나 본 service 는 sync (Ktor route
- * handler 가 IO dispatcher 안에서 호출). 25년 validity 가 기본 — Play Store
- * 권장 (25+).
+ * handler 가 IO dispatcher 안에서 호출). 100년 validity 가 기본 (v1.54.2) —
+ * Play Store 권장 (25+) 을 크게 상회, 운영자 정책. UI max 도 100.
  */
 class KeystoreService(
     private val keystoreDir: Path = Path.of("/home/vibe/keystores"),

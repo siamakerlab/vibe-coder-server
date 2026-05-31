@@ -44,7 +44,7 @@ data class KeystoreDefaults(
     val city: String = "",
     /** 평문 password — 운영자 본인이 server.yml 에서만 설정 (또는 env override). 비어있으면 form 필수. */
     val defaultPassword: String = "",
-    val validityYears: Int = 25,
+    val validityYears: Int = 100,
 )
 
 /**

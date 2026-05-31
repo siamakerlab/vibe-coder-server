@@ -2,7 +2,7 @@ server:
   name: Vibe Coder Server
   host: 0.0.0.0
   port: 17880
-  version: 1.54.1
+  version: 1.54.2
 
 workspace:
   # Each project lives at <root>/<projectId>/.
@@ -135,4 +135,4 @@ keystore:
     state: "Chungbuk"
     city: "Jecheon"
     defaultPassword: ""
-    validityYears: 25
+    validityYears: 100
