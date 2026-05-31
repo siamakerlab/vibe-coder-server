@@ -117,7 +117,7 @@ private object BuildCacheTemplates {
             csrf = csrf,
             body = """
 <header>
-  <h1>빌드 캐시 관리 (v0.28.0)</h1>
+  <h1>빌드 캐시 관리</h1>
   <p class="dim" style="font-size:13px;margin:6px 0 0">
     Gradle / Android SDK / npm 의 캐시 디렉토리 크기 + 비우기. 빌드 진행 중에는
     cleanup 금지 (race risk) — 빌드 페이지에서 모든 빌드 종료 확인 후 사용.

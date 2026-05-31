@@ -396,7 +396,7 @@ curl -X POST http://&lt;host&gt;:17880/api/webhooks/build/${esc(p.id)} \
   -H "X-Vibe-Signature: ${'$'}SIGNATURE" \
   -H 'Content-Type: text/plain' \
   --data "${'$'}BODY"</pre>
-    <p class="hint">v1.27.4 — GitHub-style HMAC-only. secret 평문은 전송하지 않습니다
+    <p class="hint">GitHub-style HMAC-only. secret 평문은 전송하지 않습니다
       (X-Vibe-Signature 의 HMAC 만). server 가 X-Vibe-Secret-Id 로 secret 을 찾아
       HMAC 을 재계산·비교합니다. 외부 노출 시 HTTPS 권장 (replay 방어).</p>
   </details>

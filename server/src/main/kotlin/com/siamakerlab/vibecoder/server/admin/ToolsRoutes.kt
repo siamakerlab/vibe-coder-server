@@ -40,7 +40,7 @@ fun Routing.toolsRoutes(authDeps: AdminRoutesDeps) {
         val lang = sess.language
         val t = { key: String -> Messages.t(lang, key) }
         val body = """
-<h1 style="margin-bottom:16px">${t("tools.heading")} <small class="dim" style="font-size:14px;font-weight:400">v0.69.0</small></h1>
+<h1 style="margin-bottom:16px">${t("tools.heading")} <small class="dim" style="font-size:14px;font-weight:400"></small></h1>
 <p class="dim" style="margin-bottom:24px">
   ${t("tools.intro")}
 </p>

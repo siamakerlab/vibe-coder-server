@@ -142,7 +142,7 @@ private object WrapperTemplates {
             csrf = csrf,
             body = """
 <header>
-  <h1>Gradle wrapper <small class="dim" style="font-size:14px;font-weight:400">${esc(p.name)} (${esc(p.id)}) · v0.35.0</small></h1>
+  <h1>Gradle wrapper <small class="dim" style="font-size:14px;font-weight:400">${esc(p.name)} (${esc(p.id)})</small></h1>
 </header>
 
 $okHtml
@@ -216,7 +216,7 @@ private object StatsTemplates {
             csrf = csrf,
             body = """
 <header>
-  <h1>코드 통계 <small class="dim" style="font-size:14px;font-weight:400">${esc(p.name)} (${esc(p.id)}) · v0.35.0</small></h1>
+  <h1>코드 통계 <small class="dim" style="font-size:14px;font-weight:400">${esc(p.name)} (${esc(p.id)})</small></h1>
 </header>
 
 $errBanner
@@ -298,7 +298,7 @@ private object SearchTemplates {
             csrf = csrf,
             body = """
 <header>
-  <h1>코드 검색 <small class="dim" style="font-size:14px;font-weight:400">v0.35.0 — 모든 워크스페이스 source 트리</small></h1>
+  <h1>코드 검색 <small class="dim" style="font-size:14px;font-weight:400">모든 워크스페이스 source 트리</small></h1>
 </header>
 
 <form method="get" action="/code-search" class="card" style="margin-bottom:14px;display:grid;grid-template-columns:1fr 200px auto auto;gap:8px;align-items:end">

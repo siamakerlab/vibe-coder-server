@@ -62,7 +62,7 @@ private fun renderUsagePage(
     fun fmt(n: Long): String = "%,d".format(n)
     val cacheCard = if (cacheStats.isEmpty()) {
         """<div class="card dim" style="text-align:center;padding:18px;margin-bottom:14px">
-          <strong>Prompt cache stats (v0.63.0+):</strong> 아직 적재된 usage turn 이 없습니다.
+          <strong>Prompt cache stats:</strong> 아직 적재된 usage turn 이 없습니다.
           콘솔로 prompt 를 한 번 보내면 turn 종료 시점에 자동 적재됩니다.
         </div>"""
     } else {
@@ -95,7 +95,7 @@ private fun renderUsagePage(
             }
         """
 <div class="card" style="margin-bottom:14px">
-  <h2 style="margin-top:0">Prompt Cache 통계 (v0.63.0+)</h2>
+  <h2 style="margin-top:0">Prompt Cache 통계</h2>
   <p class="dim" style="margin:0 0 8px;font-size:12px">
     Claude stream-json 의 <code>usage</code> 객체에서 추출한 누적 토큰 사용량.
     <code>cache_read</code> 가 높으면 prompt 가 cache hit (저렴) — 비율은 효율 지표.
@@ -160,7 +160,7 @@ private fun renderUsagePage(
 
     return """
 <header>
-  <h1>Claude 사용량 / Cache 조회 <small class="dim" style="font-size:14px;font-weight:400">v0.47.0+ / v0.63.0+</small></h1>
+  <h1>Claude 사용량 / Cache 조회 <small class="dim" style="font-size:14px;font-weight:400"></small></h1>
 </header>
 ${com.siamakerlab.vibecoder.server.admin.SettingsNav.categoryNav("/usage", lang)}
 

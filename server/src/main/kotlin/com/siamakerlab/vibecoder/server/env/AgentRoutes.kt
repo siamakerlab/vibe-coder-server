@@ -155,7 +155,7 @@ private object AgentTemplates {
             csrf = csrf,
             body = """
 <header>
-  <h1>Custom agents <small class="dim" style="font-size:14px;font-weight:400">v0.31.0 — ~/.claude/agents/*.md</small></h1>
+  <h1>Custom agents <small class="dim" style="font-size:14px;font-weight:400">~/.claude/agents/*.md</small></h1>
 </header>
 
 $okHtml

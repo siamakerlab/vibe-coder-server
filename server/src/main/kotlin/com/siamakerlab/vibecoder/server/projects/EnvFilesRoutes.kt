@@ -161,7 +161,7 @@ internal object EnvFilesTemplates {
             body = """
 <header>
   <h1>Env / Build 파일
-    <small class="dim" style="font-size:14px;font-weight:400">${esc(p.name)} (${esc(p.id)}) · v0.32.0</small>
+    <small class="dim" style="font-size:14px;font-weight:400">${esc(p.name)} (${esc(p.id)})</small>
   </h1>
 </header>
 

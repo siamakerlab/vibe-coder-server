@@ -164,7 +164,7 @@ private fun renderPushSettings(
 
     return """
 <header>
-  <h1>Web Push 알림 <small class="dim" style="font-size:14px;font-weight:400">v0.46.0+</small></h1>
+  <h1>Web Push 알림 <small class="dim" style="font-size:14px;font-weight:400"></small></h1>
 </header>
 
 <div class="card" style="margin-bottom:16px">

@@ -373,7 +373,7 @@ object HistoryTemplates {
                     <div style="margin-top:4px">
                       <button type="button" class="star-btn $starCls" data-starred="${r.starred}"
                               style="background:none;border:none;font-size:16px;cursor:pointer;padding:0"
-                              title="별표 토글 (v0.61.0+)">$starChar</button>
+                              title="별표 토글">$starChar</button>
                     </div>
                   </td>
                   <td><span class="$roleCls" style="font-size:11px;text-transform:uppercase">${esc(r.role)}</span>$toolBadge$agentBadge</td>
@@ -411,7 +411,7 @@ $okHtml
 $errHtml
 
 <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
-  <a href="/projects/${esc(projectId)}/history/export" class="chip chip-link" title="모든 turn 을 JSON 으로 다운로드 (v0.31.0+)">📥 JSON 다운로드</a>
+  <a href="/projects/${esc(projectId)}/history/export" class="chip chip-link" title="모든 turn 을 JSON 으로 다운로드">📥 JSON 다운로드</a>
   <details style="display:inline-block">
     <summary class="chip chip-link" style="cursor:pointer">📤 JSON 가져오기</summary>
     <form method="post" action="/projects/${esc(projectId)}/history/import?_csrf=${esc(csrf ?: "")}&dryRun=false" enctype="multipart/form-data" style="margin-top:8px;display:flex;gap:6px;align-items:center;background:rgba(255,255,255,0.04);padding:8px;border-radius:6px">
@@ -419,12 +419,12 @@ $errHtml
       <label style="margin:0;font-size:12px"><input type="checkbox" onclick="this.form.action=this.form.action.replace('dryRun=false','dryRun='+!this.checked)" checked> dry-run 미리보기</label>
       <button type="submit" class="primary" style="padding:6px 12px">업로드</button>
     </form>
-    <p class="hint" style="margin:6px 0 0;font-size:11px">v0.31.0+ — 같은 sessionId 가 이미 존재하면 wholesale skip (idempotent).</p>
+    <p class="hint" style="margin:6px 0 0;font-size:11px">같은 sessionId 가 이미 존재하면 wholesale skip (idempotent).</p>
   </details>
 </div>
 
 <form method="get" action="$baseAction" class="card" style="margin-bottom:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;align-items:end">
-  <label style="margin:0">Agent (v0.52.0+)
+  <label style="margin:0">Agent
     <select name="agent" style="width:100%">$agentOpts</select>
   </label>
   <label style="margin:0">Session
@@ -447,7 +447,7 @@ $errHtml
   </label>
   <label style="margin:0;display:flex;align-items:center;gap:6px">
     <input type="checkbox" name="starred" value="1" ${if (filter.starredOnly) "checked" else ""}>
-    <span>★ starred 만 (v0.61.0+)</span>
+    <span>★ starred 만</span>
   </label>
   <div style="display:flex;gap:6px">
     <button type="submit" class="primary" style="padding:8px 14px">검색</button>
@@ -475,7 +475,7 @@ $errHtml
 
 <p class="hint" style="margin-top:14px;font-size:12px">
   ts 정렬은 ascending (오래된 → 최근). assistant partial chunks 는 영구 적재되지 않음 (turn 단위 final 만).
-  ${if (filter.q != null) "Content 검색은 PostgreSQL tsvector + GIN 인덱스 (v0.53.0+). 'simple' 토크나이저 — 정확 매칭 best-effort." else ""}
+  ${if (filter.q != null) "Content 검색은 PostgreSQL tsvector + GIN 인덱스. 'simple' 토크나이저 — 정확 매칭 best-effort." else ""}
 </p>
 
 <script>

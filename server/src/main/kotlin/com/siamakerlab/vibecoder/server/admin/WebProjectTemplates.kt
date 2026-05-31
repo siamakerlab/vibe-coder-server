@@ -1399,7 +1399,7 @@ $automationPanelHtml
 
 <!-- v1.6.3 — Agent dispatch + 관리 버튼 (한 줄). 가장 하단. -->
 <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px">
-  <select id="agent-picker" style="flex:1;min-width:0;font-size:12px;padding:4px 8px;background:#1a1a1a;color:var(--text);border:1px solid #333" title="v0.41.0+ — Dispatch a registered sub-agent into the prompt">
+  <select id="agent-picker" style="flex:1;min-width:0;font-size:12px;padding:4px 8px;background:#1a1a1a;color:var(--text);border:1px solid #333" title="Dispatch a registered sub-agent into the prompt">
     <option value="">${esc(t("console.agent.placeholder"))}</option>
   </select>
   <a href="/agents" class="chip chip-link" style="font-size:11px;margin-left:0;flex-shrink:0">${esc(t("console.agent.manage"))}</a>

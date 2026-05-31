@@ -257,7 +257,7 @@ private fun renderWebauthnPage(
 
     return """
 <header>
-  <h1>WebAuthn (passkey) <small class="dim" style="font-size:14px;font-weight:400">v0.48.0+ · 2FA</small></h1>
+  <h1>WebAuthn (passkey) <small class="dim" style="font-size:14px;font-weight:400">2FA</small></h1>
 </header>
 
 <div class="card" style="margin-bottom:16px">
@@ -277,7 +277,7 @@ private fun renderWebauthnPage(
 </div>
 
 <div class="card" style="margin-bottom:16px;${if (passwordlessOnly) "border-color:var(--ok)" else ""}">
-  <h2 style="margin-top:0;font-size:16px">Passwordless-only 모드 (v0.57.0+)</h2>
+  <h2 style="margin-top:0;font-size:16px">Passwordless-only 모드</h2>
   <p style="margin:0 0 8px">
     상태: <strong>${if (passwordlessOnly) """<span class="ok">✓ 활성</span> — password / TOTP 로그인 차단됨""" else """<span class="dim">비활성</span> — password / TOTP / passkey 모두 가능"""}</strong>
   </p>

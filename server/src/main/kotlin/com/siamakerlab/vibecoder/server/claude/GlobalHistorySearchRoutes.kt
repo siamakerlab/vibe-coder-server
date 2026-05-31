@@ -154,7 +154,7 @@ private fun renderPage(
         csrf = csrf,
         body = """
 <header>
-  <h1>대화 검색 <small class="dim" style="font-size:14px;font-weight:400">v0.30.0 — 모든 프로젝트 가로지름</small></h1>
+  <h1>대화 검색 <small class="dim" style="font-size:14px;font-weight:400">모든 프로젝트 가로지름</small></h1>
 </header>
 
 <form method="get" action="/history" class="card" style="margin-bottom:14px;display:grid;grid-template-columns:1fr 200px auto;gap:8px;align-items:end">

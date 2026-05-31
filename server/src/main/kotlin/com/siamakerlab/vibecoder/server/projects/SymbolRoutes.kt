@@ -105,7 +105,7 @@ fun Routing.symbolRoutes(
 </header>
 
 <div class="card" style="margin-bottom:14px">
-  <p style="margin:0 0 6px"><strong>Best-effort regex 기반 정의 검색 (v0.54.0+).</strong>
+  <p style="margin:0 0 6px"><strong>Best-effort regex 기반 정의 검색.</strong>
     Kotlin / Java 의 <code>fun</code> / <code>class</code> / <code>object</code> /
     <code>interface</code> / <code>val</code> / <code>var</code> / <code>typealias</code>
     선언을 잡습니다. 90% 케이스 충분 — false positive 가능 (nested 동명 등).</p>
