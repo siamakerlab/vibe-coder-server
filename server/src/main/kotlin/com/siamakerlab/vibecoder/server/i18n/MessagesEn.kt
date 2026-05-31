@@ -493,6 +493,17 @@ internal object MessagesEn {
         // v1.15.1 — Auto-send option for voice input.
         "console.voice.autoSend" to "Auto-send",
         "console.voice.autoSend.tip" to "Automatically send the prompt to Claude when speech ends. Preference is stored in your browser.",
+        // v1.58.0 — quick prompt bubble buttons above the input (one click = send).
+        "console.quick.title" to "Quick prompts — one click sends immediately",
+        "console.quick.continue.label" to "Continue",
+        "console.quick.continue.prompt" to "Continue.",
+        "console.quick.fixAll.label" to "Fix all",
+        "console.quick.fixAll.prompt" to "Fix all the issues you raised.",
+        "console.quick.review.label" to "Full review",
+        "console.quick.review.prompt" to "Do a thorough review of the entire codebase.",
+        "console.quick.recommended.label" to "Go with recommendation",
+        "console.quick.recommended.prompt" to "Proceed with your recommended option.",
+        "console.quick.optionTip" to "Answer with option %s",
         // v1.20.0 — Console auto-scroll mode.
         "console.autoscroll" to "Auto-scroll",
         "console.autoscroll.tip" to "Always stick to the bottom on new messages, regardless of where the user is scrolled. When OFF, only stick if the user is already near the bottom. Preference is stored in your browser.",

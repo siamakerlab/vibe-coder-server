@@ -470,6 +470,17 @@ internal object MessagesKo {
         // v1.15.1 — 음성 인식 결과 자동 전송 옵션.
         "console.voice.autoSend" to "자동 전송",
         "console.voice.autoSend.tip" to "발화가 끝나면 prompt 를 자동으로 Claude 에 전송합니다. 사용자 선호는 브라우저에 저장됩니다.",
+        // v1.58.0 — 입력창 상단 빠른 프롬프트 버블 버튼 (클릭 즉시 송신).
+        "console.quick.title" to "빠른 프롬프트 — 클릭하면 바로 전송됩니다",
+        "console.quick.continue.label" to "계속",
+        "console.quick.continue.prompt" to "계속 진행해줘",
+        "console.quick.fixAll.label" to "모두 수정",
+        "console.quick.fixAll.prompt" to "지적된 사항을 모두 수정해줘",
+        "console.quick.review.label" to "정밀 리뷰",
+        "console.quick.review.prompt" to "전체 코드를 정밀하게 리뷰해줘",
+        "console.quick.recommended.label" to "권장대로 진행",
+        "console.quick.recommended.prompt" to "네 권장사항대로 진행해줘",
+        "console.quick.optionTip" to "선택지 %s 로 답합니다",
         // v1.20.0 — 콘솔 auto-scroll 모드.
         "console.autoscroll" to "자동 스크롤",
         "console.autoscroll.tip" to "새 응답 도착 시 사용자 스크롤 위치 무시하고 항상 최하단. OFF 면 사용자가 하단에 있을 때만 따라감. 사용자 선호는 브라우저에 저장됨.",

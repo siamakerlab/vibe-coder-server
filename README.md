@@ -728,7 +728,7 @@ carries a CSRF `_csrf` token (v0.12.4+).
 | `/` | Dashboard (server / environment / activity summary) |
 | `/projects` | Project list + register form (empty / clone) |
 | `/projects/{id}` | Project detail, recent builds |
-| `/projects/{id}/console` | Claude prompt input + live log (WebSocket) + slash chips + ▼ template dropdown + ■ stop button |
+| `/projects/{id}/console` | Claude prompt input + live log (WebSocket) + **v1.58.0** quick-prompt bubble buttons (A/B/C/D · continue · fix all · review · go with recommendation) + ▼ template dropdown + ■ stop button |
 | `/projects/{id}/builds` | Queue debug build + APK download; **v1.57.0** inline keystore-create form when none is linked |
 | `POST /projects/{id}/keystore` | **v1.57.0** Create a keystore for this project (package name locked to the project → auto-linked) |
 | `/projects/{id}/builds/{buildId}` | Build detail + live log + cancel |

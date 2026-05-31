@@ -903,6 +903,49 @@ $errHtml
         // 통과하긴 하나 defense-in-depth.
         val projectIdJs = jsLit(p.id)
 
+        // v1.58.0 — 입력창 상단 빠른 프롬프트 버블 버튼. 클릭 시 input 에 채우고
+        // form.requestSubmit() → 기존 송신/큐잉 경로 그대로 재사용. blocking(인증 미비)
+        // 이면 비활성. 코드 전용(fixAll/review) 버튼은 대화 전용 General Chat 에선 제외.
+        val quickBarHtml = run {
+            val dis = if (blocking) " disabled" else ""
+            val optionBtns = listOf("A", "B", "C", "D").joinToString("") { o ->
+                """<button type="button" class="qp-btn qp-opt" data-prompt="$o" title="${esc(t("console.quick.optionTip").format(o))}"$dis>$o</button>"""
+            }
+            val textKeys = buildList {
+                add("continue")
+                if (!isChat) { add("fixAll"); add("review") }
+                add("recommended")
+            }
+            val textBtns = textKeys.joinToString("") { key ->
+                val label = t("console.quick.$key.label")
+                val prompt = t("console.quick.$key.prompt")
+                """<button type="button" class="qp-btn" data-prompt="${esc(prompt)}" title="${esc(prompt)}"$dis>${esc(label)}</button>"""
+            }
+            """
+<style>
+  .quick-prompts { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:0 0 8px; }
+  .quick-prompts .qp-btn {
+    font-size:12px; padding:5px 12px; background:#1a1a1a; color:var(--text);
+    border:1px solid #333; border-radius:999px; cursor:pointer; white-space:nowrap;
+    line-height:1.2; font-family:inherit;
+  }
+  .quick-prompts .qp-btn:hover:not(:disabled) { background:#252525; border-color:#3a82f6; }
+  .quick-prompts .qp-btn:active:not(:disabled) { transform:translateY(1px); }
+  .quick-prompts .qp-btn:disabled { opacity:.4; cursor:not-allowed; }
+  .quick-prompts .qp-opt {
+    width:32px; padding:5px 0; text-align:center; font-weight:600;
+    font-family:ui-monospace,Menlo,monospace;
+  }
+  .quick-prompts .qp-sep { width:1px; align-self:stretch; min-height:20px; background:#333; margin:0 2px; }
+</style>
+<div id="quick-prompts" class="quick-prompts" role="toolbar"
+     aria-label="${esc(t("console.quick.title"))}" title="${esc(t("console.quick.title"))}">
+  $optionBtns
+  <span class="qp-sep" aria-hidden="true"></span>
+  $textBtns
+</div>"""
+        }
+
         val navPath = if (isChat) "/chat" else "/projects"
         // v1.54.0 — 다중 채팅이면 헤더 제목을 활성 채팅명으로. 단일 General Chat 호환 fallback.
         val titleSuffix = if (isChat) (chatTitle?.takeIf { it.isNotBlank() } ?: "General Chat") else t("console.title")
@@ -1140,6 +1183,8 @@ $authBannerHtml
     <ul id="todo-panel-list" style="list-style:none;margin:0;padding:0;display:none"></ul>
   </div>
 </details>
+
+$quickBarHtml
 
 <form id="prompt-form" class="prompt-form" autocomplete="off">
   <!-- maxlength 는 char 단위라 ASCII 기준 32K. 한국어 등 multi-byte 입력은
@@ -1848,6 +1893,20 @@ $authBannerHtml
     }
     sendPrompt(text);
   });
+
+  // v1.58.0 — 입력창 상단 빠른 프롬프트 버블 버튼. 클릭 시 textarea 에 값을 채우고
+  // form.requestSubmit() 으로 위 submit 핸들러를 그대로 거친다 → busy 면 큐로,
+  // 아니면 즉시 sendPrompt. 전송 후 input 비우기/blur 도 기존 경로가 처리.
+  var quickBar = document.getElementById('quick-prompts');
+  if (quickBar) {
+    quickBar.addEventListener('click', function(ev) {
+      var btn = ev.target.closest ? ev.target.closest('.qp-btn') : null;
+      if (!btn || btn.disabled || input.disabled) return;
+      input.value = btn.getAttribute('data-prompt') || '';
+      if (typeof form.requestSubmit === 'function') form.requestSubmit();
+      else form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+    });
+  }
 
   // v0.99.0 — 사용자가 큐 명시적으로 비우고 싶을 때. window 에 노출 — 콘솔에서
   // `window.vibeClearQueue()` 로 호출 가능. UI 버튼은 차후 옵션.
