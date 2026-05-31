@@ -2030,6 +2030,8 @@ $authBannerHtml
         /** v1.26.0 — packageName 매칭 키스토어 존재 여부. false 면 빌드 버튼 비활성화 + 안내.
          *  v1.26.1 — fail-secure default false. 호출자가 명시 안 하면 안전한 쪽 (차단). */
         keystoreReady: Boolean = false,
+        /** v1.57.0 — 인라인 키스토어 생성 폼 prefill (DN 메타 + 비번 기본값). null=폼 생략. */
+        keystorePrefill: com.siamakerlab.vibecoder.server.config.KeystoreDefaults? = null,
         flashErr: String? = null,
         flashOk: String? = null,
         csrf: String? = null,
@@ -2097,14 +2099,16 @@ $errHtml
   <p class="hint">${esc(t("builds.queueHint"))}</p>
   ${if (!keystoreReady) """
   <!-- v1.26.0 — 키스토어 미준비 시 빌드 차단 안내. 운영 정책: AGP 의 default
-       debug.keystore 자동 생성도 허용 X (CLAUDE.md "키스토어 임의 생성 금지"). -->
+       debug.keystore 자동 생성도 허용 X (CLAUDE.md "키스토어 임의 생성 금지").
+       v1.57.0 — 설정 페이지로 떠나지 않고 여기서 바로 생성하는 인라인 폼 추가. -->
   <div class="warn" style="margin-top:10px;padding:10px 12px;background:rgba(234,179,8,0.08);border:1px solid rgba(234,179,8,0.35);border-radius:6px">
     <strong>⚠ ${esc(t("builds.disabled.title"))}</strong>
     <p style="margin:4px 0 0;font-size:13px;line-height:1.5">${esc(t("builds.disabled.body"))}</p>
     <p style="margin:6px 0 0;font-size:12px">
-      <a href="/settings/keystores" class="chip chip-link">${esc(t("builds.disabled.openKeystores"))}</a>
+      <a href="/settings/keystores" class="chip chip-link" target="_top">${esc(t("builds.disabled.openKeystores"))}</a>
       <code style="margin-left:8px">${esc(p.packageName)}</code> ${esc(t("builds.disabled.expected"))}
     </p>
+${if (keystorePrefill != null) renderInlineKeystoreForm(p, keystorePrefill, csrf, lang) else ""}
   </div>
   """ else ""}
 </div>
@@ -2121,6 +2125,104 @@ ${renderBuildHistoryChart(builds, artifactsByBuild, lang)}
 </table>
 """
         )
+    }
+
+    /**
+     * v1.57.0 — 빌드 페이지 인라인 키스토어 생성 폼.
+     *
+     * `/settings/keystores` 의 생성 폼과 같은 필드지만:
+     *  - packageName 은 이 프로젝트 것으로 readonly 고정 (자동 연결 — POST 핸들러가
+     *    프로젝트 메타로 강제 set 생성).
+     *  - DN 메타는 [prefill](= server.yml defaults + 마지막 입력 캐시) 로 미리 채움.
+     *  - 비밀번호만 매번 입력 (기본값이 server.yml 에 있으면 그 값 prefill).
+     *  - action 은 `/projects/{id}/keystore` → 성공 시 이 빌드 페이지로 돌아옴.
+     */
+    private fun renderInlineKeystoreForm(
+        p: ProjectDto,
+        prefill: com.siamakerlab.vibecoder.server.config.KeystoreDefaults,
+        csrf: String?,
+        lang: String,
+    ): String {
+        val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
+        val pwPrefill = if (prefill.defaultPassword.isNotBlank())
+            """ value="${esc(prefill.defaultPassword)}"""" else ""
+        return """
+    <details class="ks-inline" style="margin-top:12px;border-top:1px solid rgba(234,179,8,0.25);padding-top:10px">
+      <summary style="cursor:pointer;font-size:13px;font-weight:600;color:#eab308">${esc(t("builds.ks.summary"))}</summary>
+      <p class="dim" style="font-size:12px;margin:8px 0 10px">${esc(t("builds.ks.hint"))}</p>
+      <form method="post" action="/projects/${esc(p.id)}/keystore" target="_top">
+        ${CsrfTokens.hiddenInput(csrf)}
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <label style="grid-column:1/3">
+            <div style="font-size:12px;color:#aaa;margin-bottom:4px">${esc(t("ks.field.package"))} · ${esc(t("builds.ks.locked"))}</div>
+            <input name="packageName" value="${esc(p.packageName)}" readonly
+                   style="width:100%;padding:8px;font-family:ui-monospace,Menlo,monospace;opacity:.75;cursor:not-allowed">
+          </label>
+          <label>
+            <div style="font-size:12px;color:#aaa;margin-bottom:4px">${esc(t("ks.field.password"))}</div>
+            <input name="password" type="text" required$pwPrefill
+                   style="width:100%;padding:8px;font-family:ui-monospace,Menlo,monospace">
+          </label>
+          <label>
+            <div style="font-size:12px;color:#aaa;margin-bottom:4px">${esc(t("ks.field.validity"))}</div>
+            <input name="validityYears" type="number" min="1" max="100"
+                   value="${prefill.validityYears}" style="width:100%;padding:8px">
+          </label>
+          <label>
+            <div style="font-size:12px;color:#aaa;margin-bottom:4px">${esc(t("ks.field.name"))}</div>
+            <input name="name" value="${esc(prefill.name)}" style="width:100%;padding:8px">
+          </label>
+          <label>
+            <div style="font-size:12px;color:#aaa;margin-bottom:4px">${esc(t("ks.field.organization"))}</div>
+            <input name="organization" value="${esc(prefill.organization)}" style="width:100%;padding:8px">
+          </label>
+          <label>
+            <div style="font-size:12px;color:#aaa;margin-bottom:4px">${esc(t("ks.field.unit"))}</div>
+            <input name="unit" value="${esc(prefill.unit)}" style="width:100%;padding:8px">
+          </label>
+          <label>
+            <div style="font-size:12px;color:#aaa;margin-bottom:4px">${esc(t("ks.field.country"))}</div>
+            <input name="country" value="${esc(prefill.country)}" maxlength="2"
+                   style="width:100%;padding:8px;text-transform:uppercase">
+          </label>
+          <label>
+            <div style="font-size:12px;color:#aaa;margin-bottom:4px">${esc(t("ks.field.state"))}</div>
+            <input name="state" value="${esc(prefill.state)}" style="width:100%;padding:8px">
+          </label>
+          <label>
+            <div style="font-size:12px;color:#aaa;margin-bottom:4px">${esc(t("ks.field.city"))}</div>
+            <input name="city" value="${esc(prefill.city)}" style="width:100%;padding:8px">
+          </label>
+        </div>
+        <details style="margin-top:12px">
+          <summary style="cursor:pointer;font-size:13px;color:#aaa">${esc(t("ks.admob.toggle"))}</summary>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
+            <label style="grid-column:1/3">
+              <div style="font-size:12px;color:#aaa;margin-bottom:4px">${esc(t("ks.admob.appId"))}</div>
+              <input name="admobAppId" placeholder="ca-app-pub-XXXX~YYYY"
+                     style="width:100%;padding:8px;font-family:ui-monospace,Menlo,monospace">
+            </label>
+            <label>
+              <div style="font-size:12px;color:#aaa;margin-bottom:4px">${esc(t("ks.admob.appOpen"))}</div>
+              <input name="admobAppOpenUnitId" placeholder="ca-app-pub-XXXX/YYYY"
+                     style="width:100%;padding:8px;font-family:ui-monospace,Menlo,monospace">
+            </label>
+            <label>
+              <div style="font-size:12px;color:#aaa;margin-bottom:4px">${esc(t("ks.admob.banner"))}</div>
+              <input name="admobBannerUnitId" placeholder="ca-app-pub-XXXX/YYYY"
+                     style="width:100%;padding:8px;font-family:ui-monospace,Menlo,monospace">
+            </label>
+            <label>
+              <div style="font-size:12px;color:#aaa;margin-bottom:4px">${esc(t("ks.admob.native"))}</div>
+              <input name="admobNativeUnitId" placeholder="ca-app-pub-XXXX/YYYY"
+                     style="width:100%;padding:8px;font-family:ui-monospace,Menlo,monospace">
+            </label>
+          </div>
+        </details>
+        <p class="dim" style="font-size:12px;margin:12px 0 8px">${esc(t("ks.create.warn"))}</p>
+        <button type="submit" class="primary" style="width:auto;padding:8px 16px">${esc(t("builds.ks.submit"))}</button>
+      </form>
+    </details>"""
     }
 
     /**

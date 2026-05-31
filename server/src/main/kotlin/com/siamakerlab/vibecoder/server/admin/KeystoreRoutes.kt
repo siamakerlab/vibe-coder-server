@@ -17,6 +17,10 @@ import io.ktor.server.routing.post
 
 private val log = KotlinLogging.logger {}
 
+/** flash 메시지 / path segment 를 query 에 안전하게 싣기 위한 percent-encoding. */
+private fun String.enc(): String =
+    java.net.URLEncoder.encode(this, Charsets.UTF_8).replace("+", "%20")
+
 /**
  * v1.5.0 — 키스토어 관리 라우트.
  *
@@ -92,6 +96,62 @@ fun Routing.keystoreRoutes(
             .map { "ok:${it.packageName}" }
             .getOrElse { "err:${it.message ?: "create_failed"}" }
         call.respondRedirect("/settings/keystores?flash=$flash")
+    }
+
+    /**
+     * v1.57.0 — 프로젝트 페이지/빌드 탭 안에서 바로 키스토어 생성.
+     *
+     * packageName 은 **프로젝트의 것으로 강제** — 폼 입력을 신뢰하지 않고
+     * `project.packageName` 으로 set 을 만들어 packageName prefix 매칭으로 자동 연결.
+     * 성공/실패 모두 해당 프로젝트의 빌드 페이지로 redirect 해 곧바로 빌드 가능.
+     * 비밀번호는 매번 입력받고, DN 메타는 [KeystoreService.effectiveDefaults] prefill.
+     */
+    post("/projects/{id}/keystore") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireAdminOrRedirect(sess)) return@post
+        val projectId = call.parameters["id"].orEmpty()
+        val backBuilds = "/projects/${projectId.enc()}/builds"
+        val form = call.receiveParameters()
+        if (!com.siamakerlab.vibecoder.server.auth.CsrfTokens.isValidCsrf(call, form["_csrf"])) {
+            call.respondRedirect("$backBuilds?err=${Messages.t(sess.language, "ks.flash.csrfExpired").enc()}")
+            return@post
+        }
+        val project = projectRepo.findById(projectId)
+        if (project == null) {
+            call.respondRedirect("/projects?err=${Messages.t(sess.language, "flash.project.notFound", projectId).enc()}")
+            return@post
+        }
+        // packageName 은 프로젝트 메타에서 — 폼의 hidden/readonly 값은 무시 (자동 연결 보장).
+        val req = CreateKeystoreRequest(
+            packageName = project.packageName,
+            name = form["name"]?.trim().orEmpty(),
+            organization = form["organization"]?.trim().orEmpty(),
+            unit = form["unit"]?.trim().orEmpty(),
+            country = form["country"]?.trim().orEmpty(),
+            state = form["state"]?.trim().orEmpty(),
+            city = form["city"]?.trim().orEmpty(),
+            password = form["password"]?.trim().orEmpty(),
+            validityYears = form["validityYears"]?.trim()?.toIntOrNull(),
+            admob = AdmobIds(
+                appId = form["admobAppId"]?.trim().orEmpty(),
+                appOpenUnitId = form["admobAppOpenUnitId"]?.trim().orEmpty(),
+                bannerUnitId = form["admobBannerUnitId"]?.trim().orEmpty(),
+                nativeUnitId = form["admobNativeUnitId"]?.trim().orEmpty(),
+            ).takeIf {
+                it.appId.isNotBlank() || it.bannerUnitId.isNotBlank() ||
+                    it.appOpenUnitId.isNotBlank() || it.nativeUnitId.isNotBlank()
+            },
+        )
+        val result = runCatching { service.create(req) }
+        if (result.isSuccess) {
+            val msg = Messages.t(sess.language, "ks.project.created", project.packageName)
+            call.respondRedirect("$backBuilds?ok=${msg.enc()}")
+        } else {
+            val reason = result.exceptionOrNull()?.message ?: "create_failed"
+            log.warn(result.exceptionOrNull()) { "project keystore create failed: $projectId / ${project.packageName}" }
+            val msg = Messages.t(sess.language, "ks.project.createFailed", reason)
+            call.respondRedirect("$backBuilds?err=${msg.enc()}")
+        }
     }
 
     post("/settings/keystores/{pkg}/delete") {

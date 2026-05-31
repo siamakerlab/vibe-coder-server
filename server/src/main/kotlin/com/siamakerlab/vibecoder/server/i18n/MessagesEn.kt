@@ -509,6 +509,11 @@ internal object MessagesEn {
         "builds.disabled.openKeystores" to "Open keystore management",
         "builds.disabled.expected" to "expects a matching keystore set",
         "builds.disabled.noKeystore" to "Keystore not prepared — register one via Settings → Keystores first.",
+        // v1.57.0 — inline keystore creation form on the builds page.
+        "builds.ks.summary" to "＋ Create this project's keystore right here",
+        "builds.ks.hint" to "Just enter a password. The package name is locked to this project, so the keystore links to your builds the moment it is created. Other fields are pre-filled from your last input / defaults.",
+        "builds.ks.locked" to "locked to this project",
+        "builds.ks.submit" to "Create and link to this project",
         "flash.build.keystoreRequired" to "Build cannot start: no keystore matches this project's packageName (policy: no auto-generation). Register one via Settings → Keystores first.",
         "builds.col.id" to "Build ID",
         "builds.col.status" to "Status",
@@ -1550,6 +1555,9 @@ internal object MessagesEn {
         "ks.usage.step1" to "Release builds: automatic. vibe-coder-server injects `-Pandroid.injected.signing.*` (passwords redacted in logs) whenever the project's packageName matches a keystore set.",
         "ks.usage.step2" to "Debug builds / IDE builds: use the \"Apply\" dropdown above to send a prompt to the Claude console — Claude edits build.gradle.kts to set up signingConfigs.{debug,release} permanently against /home/vibe/keystores/<pkg>-keystore.properties.",
         "ks.usage.step3" to "Optionally read <pkg>-admob.properties for AdMob app/unit IDs — use manifestPlaceholders and buildConfigField.",
+        // v1.57.0 — project-context keystore creation flash.
+        "ks.project.created" to "Keystore created and linked to this project (%s). You can build now.",
+        "ks.project.createFailed" to "Keystore creation failed: %s",
 
         // ─────────────────────────────────────────────── git identity (v1.9.0)
         "git.id.title" to "Git Identity",

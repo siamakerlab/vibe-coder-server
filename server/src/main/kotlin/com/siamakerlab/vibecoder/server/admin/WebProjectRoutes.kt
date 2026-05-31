@@ -357,11 +357,15 @@ fun Routing.webProjectRoutes(
         val keystoreReady = runCatching { keystoreService.get(p.packageName) != null }
             .onFailure { log.warn(it) { "keystore probe failed for package=${p.packageName}" } }
             .getOrDefault(false)
+        // v1.57.0 — 키스토어 미준비 시 인라인 생성 폼 prefill (DN 메타 + 마지막 입력 캐시).
+        val keystorePrefill = if (keystoreReady) null
+        else runCatching { keystoreService.effectiveDefaults() }.getOrNull()
         call.respondText(
             WebProjectTemplates.buildsPage(
                 sess.username, p, buildDtos, artifacts,
                 stats = stats,
                 keystoreReady = keystoreReady,
+                keystorePrefill = keystorePrefill,
                 flashErr = err, flashOk = ok, csrf = sess.csrf,
                 lang = sess.language,
             ),

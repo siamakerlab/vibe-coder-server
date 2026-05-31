@@ -486,6 +486,11 @@ internal object MessagesKo {
         "builds.disabled.openKeystores" to "키스토어 관리 페이지 열기",
         "builds.disabled.expected" to "에 매칭되는 keystore set 필요",
         "builds.disabled.noKeystore" to "키스토어 미준비 — 설정 → 키스토어 에서 먼저 등록하세요.",
+        // v1.57.0 — 빌드 페이지 인라인 키스토어 생성 폼.
+        "builds.ks.summary" to "＋ 이 프로젝트 키스토어 바로 생성",
+        "builds.ks.hint" to "비밀번호만 입력하면 됩니다. 패키지명은 이 프로젝트로 고정되어 생성 즉시 빌드에 연결됩니다. 나머지 값은 마지막 입력/기본값으로 채워져 있습니다.",
+        "builds.ks.locked" to "이 프로젝트로 고정됨",
+        "builds.ks.submit" to "생성하고 이 프로젝트에 연결",
         "flash.build.keystoreRequired" to "이 프로젝트의 packageName 에 매칭되는 키스토어가 없어 빌드를 시작할 수 없습니다 (정책: 임의 생성 금지). 설정 → 키스토어 에서 먼저 등록하세요.",
         "builds.col.id" to "빌드 ID",
         "builds.col.status" to "상태",
@@ -1528,6 +1533,9 @@ internal object MessagesKo {
         "ks.usage.step1" to "릴리즈 빌드는 자동 — vibe-coder-server 가 packageName 매칭 시 Gradle CLI 에 `-Pandroid.injected.signing.*` 4종을 inject (passwords redacted in logs).",
         "ks.usage.step2" to "디버그 빌드 / IDE 빌드까지 일관되게 적용하려면 위 \"Apply\" 버튼으로 프로젝트의 build.gradle.kts 에 signingConfigs.{debug,release} 를 영구 작성 (Claude 콘솔 prompt 전송).",
         "ks.usage.step3" to "선택: <pkg>-admob.properties 의 광고 ID 들을 manifestPlaceholders + buildConfigField 로 주입.",
+        // v1.57.0 — 프로젝트 컨텍스트 키스토어 생성 flash.
+        "ks.project.created" to "키스토어가 생성되어 이 프로젝트(%s)에 연결되었습니다. 이제 빌드할 수 있습니다.",
+        "ks.project.createFailed" to "키스토어 생성 실패: %s",
 
         // ─────────────────────────────────────────────── git identity (v1.9.0)
         "git.id.title" to "Git Identity",

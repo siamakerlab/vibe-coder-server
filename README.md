@@ -729,7 +729,8 @@ carries a CSRF `_csrf` token (v0.12.4+).
 | `/projects` | Project list + register form (empty / clone) |
 | `/projects/{id}` | Project detail, recent builds |
 | `/projects/{id}/console` | Claude prompt input + live log (WebSocket) + slash chips + ▼ template dropdown + ■ stop button |
-| `/projects/{id}/builds` | Queue debug build + APK download |
+| `/projects/{id}/builds` | Queue debug build + APK download; **v1.57.0** inline keystore-create form when none is linked |
+| `POST /projects/{id}/keystore` | **v1.57.0** Create a keystore for this project (package name locked to the project → auto-linked) |
 | `/projects/{id}/builds/{buildId}` | Build detail + live log + cancel |
 | `/projects/{id}/tree` | **v0.13.0** Filesystem browser inside the project workspace |
 | `/projects/{id}/view?path=...` | **v0.13.0** Read-only view (highlight.js) ↔ Edit mode (textarea) |

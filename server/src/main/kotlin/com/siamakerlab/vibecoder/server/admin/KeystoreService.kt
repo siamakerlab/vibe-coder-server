@@ -42,6 +42,16 @@ class KeystoreService(
     private val packageNameRegex = Regex("""^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$""")
 
     /**
+     * v1.57.0 — 마지막 생성 폼 입력값(비밀번호 제외) 캐시 파일.
+     *
+     * `.keystore` suffix 가 아니므로 [list] 의 스캔 대상에 잡히지 않는다. 비밀번호 /
+     * alias 등 비밀값은 절대 저장하지 않으며, DN 메타(name/org/unit/country/state/city)
+     * + validityYears 만 기록 → 다음 생성 폼 prefill 에 재사용. 운영자가 server.yml
+     * 기본값과 다른 DN 을 한 번 입력하면 그 값이 이후 폼에 자동 반영된다.
+     */
+    private val lastInputFile = keystoreDir.resolve(".last-input.properties")
+
+    /**
      * 전체 키스토어 entry list — 디렉토리 스캔 + 메타 추출.
      * `.keystore` (debug 제외) 파일만 일차 후보로, 같은 prefix 의 다른 파일
      * 존재 여부를 검사.
@@ -170,8 +180,59 @@ class KeystoreService(
             )
             runCatching { setPerm(admob, "rw-------") }
         }
+        // v1.57.0 — DN 메타 + validityYears 캐시 (비밀번호 제외). 다음 생성 폼 prefill 용.
+        runCatching { recordLastInput(req) }
+            .onFailure { log.warn(it) { "last-input record failed (non-fatal)" } }
+
         log.info { "Keystore created: ${req.packageName}" }
         return entryFor(req.packageName)
+    }
+
+    /**
+     * v1.57.0 — 다음 생성 폼 prefill 에 쓸 [KeystoreDefaults] 계산.
+     *
+     * 마지막 입력 캐시([lastInputFile])가 있으면 그 DN 값을 우선하고, 빈 필드는
+     * server.yml [defaults] 로 fallback. 비밀번호([KeystoreDefaults.defaultPassword])는
+     * 캐시에 없으므로 항상 server.yml 값 유지 (보통 운영자 기본 비번 prefill).
+     */
+    fun effectiveDefaults(): KeystoreDefaults {
+        val last = loadLastInput() ?: return defaults
+        fun pick(key: String, fallback: String): String =
+            last.getProperty(key)?.trim()?.ifBlank { null } ?: fallback
+        return defaults.copy(
+            name = pick("name", defaults.name),
+            organization = pick("organization", defaults.organization),
+            unit = pick("unit", defaults.unit),
+            country = pick("country", defaults.country),
+            state = pick("state", defaults.state),
+            city = pick("city", defaults.city),
+            validityYears = last.getProperty("validityYears")?.trim()?.toIntOrNull()
+                ?.coerceIn(1, 100) ?: defaults.validityYears,
+        )
+    }
+
+    private fun loadLastInput(): Properties? {
+        if (!Files.exists(lastInputFile)) return null
+        return runCatching {
+            Properties().apply { Files.newBufferedReader(lastInputFile).use { load(it) } }
+        }.getOrNull()
+    }
+
+    /** DN 메타(비밀번호 제외)를 캐시 파일에 기록. create() 성공 직후 호출. */
+    private fun recordLastInput(req: CreateKeystoreRequest) {
+        val props = Properties().apply {
+            setProperty("name", req.name)
+            setProperty("organization", req.organization)
+            setProperty("unit", req.unit)
+            setProperty("country", req.country)
+            setProperty("state", req.state)
+            setProperty("city", req.city)
+            setProperty("validityYears", (req.validityYears ?: defaults.validityYears).toString())
+        }
+        Files.newBufferedWriter(lastInputFile).use {
+            props.store(it, "v1.57.0 — last keystore form input (NO password/secret). prefill cache.")
+        }
+        runCatching { setPerm(lastInputFile, "rw-------") }
     }
 
     /** 전체 set 삭제 — release / debug / properties / admob 모두. */
