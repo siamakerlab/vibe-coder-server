@@ -80,6 +80,58 @@ PATH=/home/vibe/.local/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/androi
 
 **Do not override these** in build scripts or IDE settings.
 
+## Versioning policy (delegated to Claude Code)
+
+Versioning is **fully automated by Claude Code**. The user does not bump versions
+manually; **on every code change** Claude Code updates the version per the rules below.
+
+- **versionName** = `major.minor.patch` (SemVer). Claude Code decides the level by change type:
+  - **MAJOR**: breaking change (public API removal/signature change, incompatible data schema, destructive workflow change, first 0.x→1.0.0 production).
+  - **MINOR**: backward-compatible new feature/screen/setting, a meaningful UX revamp.
+  - **PATCH**: backward-compatible bug fix, perf/security improvement, refactor, minor UI tweak, docs.
+  - **Default is PATCH ++1** — bump at least the patch on every code change (minor/major for larger changes).
+  - Under 0.x (pre-1.0) a breaking change may be handled as MINOR (SemVer 2.0.0 §4).
+- **versionCode** = `YYMMDDRRR` (9 digits, e.g. `260531001`). **Increment `RRR` by 1 on every code change.**
+  - **When the date changes, `RRR` restarts at `001`** (e.g. if the last on 5/31 was `260531007`, the first on 6/1 is `260601001`).
+  - Second change the same day = `...002`, third = `...003`, …
+- **In-app version display** uses `BuildConfig` — never hardcode the version string in UI/code.
+- Apply the above to `versionName`/`versionCode` in `app/build.gradle(.kts)` and include it in the same commit.
+
+## Keystore (signing) — per-project file locations
+
+Android signing keystores live on the **host-persistent volume** `/home/vibe/keystores/`,
+prefixed by **applicationId** (the operator creates them in the vibe-coder server UI).
+Replace `<applicationId>` below with the real applicationId from `app/build.gradle(.kts)`:
+
+| File | Purpose |
+|---|---|
+| `/home/vibe/keystores/<applicationId>.keystore` | Release signing key (PKCS12) |
+| `/home/vibe/keystores/<applicationId>-debug.keystore` | Debug signing key |
+| `/home/vibe/keystores/<applicationId>-keystore.properties` | Gradle signing config (`storeFile` / `storePassword` / `keyAlias` / `keyPassword`) |
+| `/home/vibe/keystores/<applicationId>-admob.properties` | (optional) AdMob IDs |
+
+- Load the `.properties` file in `signingConfigs` via `Properties().load(FileInputStream(...))`.
+  **Never hardcode passwords/alias in build.gradle** — reference only the properties file path.
+- **Never create a new keystore yourself** (operator policy). If a file is missing, stop the build
+  and tell the operator to create it for that applicationId under **Settings → Keystores
+  (`/settings/keystores`)** in the vibe-coder server. AGP's default `debug.keystore` auto-generation
+  is also forbidden.
+
+## Design principles / code quality
+
+- **Object-oriented (OOP)** design.
+- **Modular features** — separate by responsibility, single-responsibility principle.
+- **Minimal dependencies** — avoid unnecessary libraries/coupling.
+- **Strict encapsulation** — hide internals, minimize the public (API) surface.
+- **Maintainability first** — code that is easy to read and change.
+- **Never leave legacy code lying around — remove it the moment you find it.** (Includes commented-out dead code, unused functions/classes/resources/imports.)
+
+## Git rules
+
+- **Run `git init` immediately when creating a project.**
+- **Commit immediately on every code change** — don't let changes pile up.
+- Write commit messages **clearly, per unit of work** (what / why).
+
 ## Never do
 
 - Ignore the pre-installed tools and re-download a different path/version

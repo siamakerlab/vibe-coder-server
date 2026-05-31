@@ -80,6 +80,57 @@ PATH=/home/vibe/.local/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/androi
 
 빌드 스크립트나 IDE 설정에서 이 값을 **덮어쓰지 않는다.**
 
+## 버전 정책 (Claude Code 에 일임)
+
+버전 관리는 **전적으로 Claude Code 가 자동 수행**한다. 사용자가 수동으로 버전을
+올리지 않으며, **코드를 수정할 때마다** Claude Code 가 아래 규칙으로 버전을 갱신한다.
+
+- **versionName** = `메이저.마이너.패치` (SemVer). 변경 내용에 따라 Claude Code 가 자율 결정:
+  - **MAJOR**: Breaking change (공개 API 제거/시그니처 변경, 데이터 스키마 비호환, 파괴적 워크플로 변경, 0.x→1.0.0 최초 프로덕션).
+  - **MINOR**: 하위호환 신규 기능/화면/설정 추가, 수준 있는 UX 개편.
+  - **PATCH**: 하위호환 버그 수정·성능/보안 개선·리팩토링·UI 미세 조정·문서 갱신.
+  - **기본값은 PATCH ++1** — 매 코드 수정마다 최소 patch 를 올린다(더 큰 변경이면 minor/major).
+  - 0.x(pre-1.0) 에서는 파괴적 변경도 MINOR 로 처리 가능 (SemVer 2.0.0 §4).
+- **versionCode** = `YYMMDDRRR` (9자리, 예: `260531001`). **매 코드 수정마다 `RRR` 을 +1**.
+  - **날짜가 바뀌면 `RRR` 은 `001` 부터 다시 시작** (예: 5/31 마지막이 `260531007` 이면, 6/1 첫 수정은 `260601001`).
+  - 같은 날 두 번째 수정 = `...002`, 세 번째 = `...003` …
+- **앱 내 버전 표시**는 `BuildConfig` 참조 — 화면/코드에 버전 문자열 하드코딩 금지.
+- 위 갱신은 `app/build.gradle(.kts)` 의 `versionName`/`versionCode` 에 반영하고, 같은 커밋에 포함한다.
+
+## 키스토어 (서명) — 프로젝트별 파일 위치
+
+Android 서명 키스토어는 **호스트 영속 볼륨** `/home/vibe/keystores/` 에 **applicationId 를
+prefix** 로 저장되어 있다(운영자가 vibe-coder 서버 UI 에서 미리 생성). 아래 `<applicationId>`
+를 `app/build.gradle(.kts)` 의 실제 applicationId 로 치환:
+
+| 파일 | 용도 |
+|---|---|
+| `/home/vibe/keystores/<applicationId>.keystore` | 릴리즈 서명 키 (PKCS12) |
+| `/home/vibe/keystores/<applicationId>-debug.keystore` | 디버그 서명 키 |
+| `/home/vibe/keystores/<applicationId>-keystore.properties` | Gradle signing config (`storeFile` / `storePassword` / `keyAlias` / `keyPassword`) |
+| `/home/vibe/keystores/<applicationId>-admob.properties` | (선택) AdMob IDs |
+
+- `signingConfigs` 는 위 `.properties` 를 `Properties().load(FileInputStream(...))` 로 읽어 적용한다.
+  **비밀번호/alias 평문을 build.gradle 에 하드코딩 금지** — properties 파일 경로만 참조.
+- **키스토어를 임의로 새로 만들지 말 것** (운영자 정책). 파일이 없으면 빌드를 멈추고, 운영자에게
+  vibe-coder 서버의 **설정 → 키스토어(`/settings/keystores`)** 에서 해당 applicationId 로
+  생성하도록 안내한다. AGP 의 default `debug.keystore` 자동 생성도 금지.
+
+## 설계 원칙 / 코드 품질
+
+- **객체지향(OOP) 기반** 설계.
+- **기능 모듈화** — 역할별로 분리, 단일 책임 원칙.
+- **의존성 최소화** — 불필요한 라이브러리/결합 지양.
+- **캡슐화 철저** — 내부 구현 은닉, 공개 표면(API) 최소화.
+- **유지보수성 최우선** — 읽기 쉽고 변경하기 쉬운 코드.
+- **레거시 코드 절대 방치 금지 — 발견 즉시 제거.** (주석 처리한 죽은 코드, 미사용 함수/클래스/리소스/import 포함.)
+
+## Git 규칙
+
+- **프로젝트 생성 즉시 `git init`.**
+- **코드 변경 시 반드시 즉시 commit** — 변경을 쌓아두지 않는다.
+- 커밋 메시지는 **작업 단위 기준으로 명확하게** 작성한다(무엇을 / 왜).
+
 ## 절대 금지
 
 - 사전 설치된 도구를 무시하고 다른 경로/버전 재다운로드
