@@ -350,10 +350,12 @@ object HistoryTemplates {
                     "tool_result_error", "error" -> "err"
                     else -> "sys"
                 }
+                // v1.70.2 — raw JSON 대신 친화 변환(콘솔 렌더러의 서버측 짝).
+                val friendly = HistoryContentFormatter.friendly(r.role, r.toolName, r.content)
                 val previewLen = 800
-                val preview = if (r.content.length > previewLen)
-                    r.content.take(previewLen) + " …(+" + (r.content.length - previewLen) + ")"
-                else r.content
+                val preview = if (friendly.length > previewLen)
+                    friendly.take(previewLen) + " …(+" + (friendly.length - previewLen) + ")"
+                else friendly
                 val toolBadge = r.toolName?.let { """<span class="dim" style="font-size:11px"> · $it</span>""" } ?: ""
                 // v0.52.0 — sub-agent 출처 표시.
                 val agentBadge = r.agentName?.let {

@@ -124,7 +124,8 @@ private fun renderPage(
             }
             val href = if (r.projectId == "__scratch__") "/chat/history" else "/projects/${esc(r.projectId)}/history"
             val previewLen = 500
-            val raw = r.content
+            // v1.70.2 — raw JSON 대신 친화 변환 후 발췌/하이라이트(콘솔 렌더러의 서버측 짝).
+            val raw = HistoryContentFormatter.friendly(r.role, r.toolName, r.content)
             // 매치 위치 주변만 발췌 (앞뒤 100자) 가독성 ↑
             val excerpted = run {
                 val q0 = q ?: ""
