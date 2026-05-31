@@ -275,6 +275,40 @@
           }
         })();
       });
+
+      // v1.59.2 — 콘솔 iframe 에서 프롬프트를 보내면 우측 히스토리에 즉시 prepend.
+      // (서버 렌더 snapshot 만으론 reload 전까지 stale.) 콘솔이 postMessage 로 통지.
+      function prependHistory(text) {
+        text = (text || '').trim();
+        if (!text) return;
+        var list = root.querySelector('.pt-hist-list');
+        if (!list) return;
+        var empty = list.querySelector('.pt-hist-empty');
+        if (empty) empty.parentNode.removeChild(empty);
+        var first = list.querySelector('.pt-hist-item');
+        if (first && (first.getAttribute('data-prompt') || '') === text) return;  // 직전과 동일하면 skip
+        var hint = list.getAttribute('data-hist-hint') || '';
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'pt-hist-item';
+        btn.setAttribute('data-prompt', text);
+        if (hint) btn.setAttribute('title', hint);
+        btn.textContent = text;
+        list.insertBefore(btn, list.firstChild);
+        // 최대 7개 + opacity ramp (0~4 불투명, 5 흐림, 6+ 더 흐림) — 서버 렌더와 동일 체계.
+        var items = list.querySelectorAll('.pt-hist-item');
+        for (var i = items.length - 1; i >= 7; i--) items[i].parentNode.removeChild(items[i]);
+        items = list.querySelectorAll('.pt-hist-item');
+        for (var j = 0; j < items.length; j++) {
+          items[j].style.opacity = j <= 4 ? '1' : (j === 5 ? '0.55' : '0.32');
+        }
+      }
+      window.addEventListener('message', function (ev) {
+        if (ev.origin !== location.origin) return;
+        var d = ev.data;
+        if (!d || d.type !== 'vibe:prompt-sent') return;
+        prependHistory(d.text);
+      });
     })();
 
     activate(resolveInitialTab());

@@ -1900,6 +1900,9 @@ $automationPanelHtml
         // v1.20.0 — prompt 전송 직후엔 토글 모드 무관 항상 최하단으로 jump.
         // 사용자가 자기 prompt + 응답을 바로 봐야 함이 명확.
         scrollToBottom();
+        // v1.59.2 — 부모 ProjectTabs 의 우측 오버뷰 프롬프트 히스토리에 즉시 반영
+        // (콘솔은 iframe — 부모가 서버 렌더 시점 snapshot 만 갖고 있어 reload 전엔 stale).
+        try { window.parent.postMessage({ type: 'vibe:prompt-sent', text: text }, location.origin); } catch (e) {}
       }
     } catch (e) {
       append('err', 'send', String(e), 'error');

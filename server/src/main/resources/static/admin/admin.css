@@ -823,6 +823,27 @@ table.devices small.dim { font-size: 11px; }
 .console-log .sys .log-label   { color: #6c7a93; }
 .console-log .user .log-label  { color: var(--primary); }
 .console-log .user .log-body   { color: var(--text); }
+
+/* v1.59.2 — 내가 보낸 프롬프트 카드를 스크롤 상단에 고정(sticky).
+   새 메시지가 쌓여 위로 밀리다가 최상단에 닿으면 걸려 있어, 지금 응답이
+   어떤 프롬프트에 대한 것인지 한눈에 보인다. sticky 형제 특성상 다음 user
+   카드가 올라오면 이전 카드를 교체(겹치지 않음) → 항상 "직전 프롬프트" 1장 고정.
+   배경은 console-log 와 동일 불투명색이라 아래 내용이 비치지 않는다. 긴 프롬프트는
+   40vh 로 캡 + 자체 스크롤. */
+.console-log .log-line.user {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background: #0a0d12;
+    max-height: 40vh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    margin: 0 -14px;            /* console-log 좌우 padding 만큼 넓혀 가장자리까지 덮음 */
+    padding-left: calc(1.6em + 14px);
+    padding-right: 14px;
+    box-shadow: 0 1px 0 rgba(106,169,255,0.30), 0 8px 12px -10px rgba(0,0,0,0.75);
+}
+.console-log .log-line.user::before { left: 14px; }  /* margin 보정 후 prefix 정렬 */
 .console-log .assistant .log-label { color: #5ed3a1; }
 .console-log .tool .log-label  { color: #cfa763; }
 .console-log .tool-out .log-label { color: #8ea0c2; }
