@@ -181,14 +181,17 @@ object McpCatalog {
             ),
         ))
         add(McpEntry(
+            // v1.66.4 — pkg 수정: `mcp-server-gitea` 는 npm 에 없음(404, 설치 exit 1).
+            //  실제 게시 패키지 `@boringstudio_org/gitea-mcp`(GITEA_API_URL/GITEA_TOKEN env 일치)로 교체.
             id = "gitea",
             displayName = "Gitea",
-            pkg = "mcp-server-gitea",
+            pkg = "@boringstudio_org/gitea-mcp",
+            homepage = "https://github.com/boringstudio-org/mcp-gitea",
             description = "Gitea / Forgejo 인스턴스 issues/PRs/repos. self-hosted git 환경에서.",
             category = Category.GIT_HOSTING, trust = Trust.COMMUNITY,
             configFields = listOf(
-                ConfigField("GITEA_API_URL", "Gitea 베이스 URL", "https://gitea.example.com",
-                    help = "Gitea 서버의 root URL."),
+                ConfigField("GITEA_API_URL", "Gitea API URL", "https://gitea.example.com/api/v1",
+                    help = "Gitea API base — 보통 `<root>/api/v1`."),
                 ConfigField("GITEA_TOKEN", "Gitea PAT", "...",
                     isSecret = true,
                     help = "User Settings > Applications > Generate New Token."),

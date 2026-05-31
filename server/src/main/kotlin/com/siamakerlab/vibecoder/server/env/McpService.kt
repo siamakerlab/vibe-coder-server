@@ -120,13 +120,17 @@ class McpService(
         val mcpJson = readMcpJson()
         val registered = mcpJson?.let { it["mcpServers"] as? JsonObject }?.containsKey(id) == true
         val configValues = if (registered) extractConfigValues(mcpJson!!, id, e) else emptyMap()
+        // v1.66.4 — npx 기반 MCP(`npx -y <pkg>`)는 글로벌 설치 없이 on-demand 실행되므로,
+        //  .mcp.json 에 등록만 되어 있어도 "설치됨" 으로 본다(기본 설치 MCP 의 "등록만" 오표시 수정).
+        //  글로벌 설치가 필요한(command != npx) 항목만 npm 미설치 시 "등록만" 으로 구분.
+        val effectivelyInstalled = installed || (registered && e.command == "npx")
         val status = when {
-            installed && registered -> Status.INSTALLED
+            effectivelyInstalled && registered -> Status.INSTALLED
             registered -> Status.REGISTERED_ONLY
             else -> Status.NOT_INSTALLED
         }
         val msg = when (status) {
-            Status.INSTALLED -> "설치됨 + 등록됨"
+            Status.INSTALLED -> if (installed) "설치됨 + 등록됨" else "등록됨 (npx on-demand)"
             Status.REGISTERED_ONLY -> ".mcp.json 에 등록되어 있으나 npm 패키지 미설치"
             Status.NOT_INSTALLED -> "미설치"
             Status.UNKNOWN -> "확인 불가"

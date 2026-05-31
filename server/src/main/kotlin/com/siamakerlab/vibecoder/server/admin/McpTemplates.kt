@@ -172,9 +172,7 @@ JSON</pre>
     function enable(on) { installBtn.disabled = !on; removeBtn.disabled = !on; }
     function csrf() { var el = form.querySelector('input[name="_csrf"]'); return (el && el.value) || (window.__VIBE_CSRF__ || ''); }
     function setInstallIcon(reinstall) {
-      installBtn.textContent = reinstall ? installBtn.dataset.iconReinstall : installBtn.dataset.iconInstall;
-      installBtn.title = reinstall ? L.reinstall : L.install;
-      installBtn.setAttribute('aria-label', installBtn.title);
+      installBtn.textContent = reinstall ? L.reinstall : L.install;
     }
 
     // v1.66.3 — 설치 클릭 시 접힌 설정(<details>)을 펼쳐 collapsed required 필드의 validation 포커스 보장.
@@ -366,10 +364,10 @@ JSON</pre>
             val configHtml = renderConfigFields(entry, state?.configValues.orEmpty(), lang)
             val installLabel = if (installed || registeredOnly) t("mcp.entry.reinstall") else t("mcp.entry.install")
             val installClass = if (installed) "" else "primary"
-            val installIcon = if (installed || registeredOnly) "↻" else "⤓"
             val removeStyle = if (installed || registeredOnly) "" else "display:none"
-            // v1.66.3 — 설치 아이콘 버튼을 카드 우하단(margin-top:auto + justify-content:flex-end).
-            //  진행영역은 처음엔 display:none(이전 `hidden` + inline `display:flex` 충돌로 항상
+            // v1.66.4 — 설치 버튼은 라벨 너비만큼만(우측 정렬). `button.primary` 의 width:100%
+            //  를 inline `width:auto` 로 덮어 전체폭 사용 방지.
+            //  진행영역은 처음엔 display:none(이전 `hidden`+inline `display:flex` 충돌로 항상
             //  스피너가 돌던 버그 수정 — JS 가 설치 시 flex 로 노출).
             """
   <form method="post" action="/env-setup/mcp/install" class="mcp-card-form" data-mcp-id="${esc(entry.id)}"
@@ -383,9 +381,8 @@ JSON</pre>
     <div class="mcp-actions" style="display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:10px">
       <button type="submit" class="mcp-remove-btn chip chip-danger" formaction="/env-setup/mcp/unregister"
               formnovalidate style="font-size:12px;$removeStyle">${esc(t("mcp.entry.remove"))}</button>
-      <button type="submit" class="mcp-install-btn $installClass" title="${esc(installLabel)}" aria-label="${esc(installLabel)}"
-              data-icon-install="⤓" data-icon-reinstall="↻"
-              style="padding:5px 12px;font-size:16px;line-height:1">$installIcon</button>
+      <button type="submit" class="mcp-install-btn $installClass"
+              style="width:auto;margin-top:0;padding:6px 16px;font-size:13px">${esc(installLabel)}</button>
     </div>
   </form>"""
         }
