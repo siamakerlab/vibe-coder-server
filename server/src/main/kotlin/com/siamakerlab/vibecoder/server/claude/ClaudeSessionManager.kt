@@ -210,14 +210,19 @@ class ClaudeSessionManager(
      * (idempotent 호출 시 노이즈 방지). projectId 별로 독립 — 여러 프로젝트 동시 작업
      * 시 각 프로젝트 콘솔이 자기 상태만 받음 (hub.topic 이 프로젝트별 분리).
      */
-    private suspend fun setBusy(projectId: String, value: Boolean) {
+    private suspend fun setBusy(projectId: String, value: Boolean, state: String? = null) {
         val prev = busy.put(projectId, value)
         if (prev == value) return
+        // v1.60.0 — 상태칩 명시 상태. 미지정 시 busy → responding / ready.
+        // value 가 실제로 바뀐 경우(prev != value)만 도달하므로, false 전이는
+        // "직전까지 응답중이었다" 를 뜻함 → Done 은 "ready", 프로세스 종료(cancel/
+        // crash/idle-during-busy)는 호출부가 "stopped" 전달.
+        val st = state ?: if (value) "responding" else "ready"
         hub.emitConsole(topic(projectId)) { seq -> WsFrame.ConsoleBusyState(busy = value, seq = seq) }
         // v1.3.0 — cross-project topic 으로도 broadcast. /ws/projects 구독자
         // (workspaces 목록 / 대시보드) 가 실시간으로 busy 뱃지 갱신.
         hub.emitConsole(PROJECTS_TOPIC) { seq ->
-            WsFrame.ProjectBusyChanged(projectId = projectId, busy = value, seq = seq)
+            WsFrame.ProjectBusyChanged(projectId = projectId, busy = value, seq = seq, state = st)
         }
     }
 
@@ -425,7 +430,9 @@ class ClaudeSessionManager(
         val crashed = exit != null && exit != 0
         // v0.98.0 — process exit 시 항상 busy 해제. setBusy 가 suspend 라
         // launch 안에서 호출 (onProcessExit 자체는 비-suspend).
-        scope.launch { setBusy(projectId, false) }
+        // v1.60.0 — busy 중 프로세스 종료 = 미완 turn 중단 → "stopped". busy 아니었으면
+        // setBusy 가 idempotent 로 무시(=정상 완료 후 종료엔 영향 없음).
+        scope.launch { setBusy(projectId, false, "stopped") }
         if (session.intentionalKill) {
             // B1 (21차 점검) — 의도된 종료(cancel/startNew/idle reap/shutdown). SIGTERM 의
             // 비정상 종료코드를 crash 로 보지 않음 → session-id 보존, 오메시지 미emit.
@@ -475,7 +482,8 @@ class ClaudeSessionManager(
         session.readerJob?.cancel()
         session.stderrJob?.cancel()
         // v0.98.0 — process 종료 (cancel / startNew / idle reap / crash) 시 busy 항상 false.
-        setBusy(projectId, false)
+        // v1.60.0 — busy 중 종료면 "stopped"(중지됨), 아니면 idempotent 무시.
+        setBusy(projectId, false, "stopped")
     }
 
     private suspend fun reapIdleSessions() {

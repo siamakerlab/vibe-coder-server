@@ -726,7 +726,7 @@ carries a CSRF `_csrf` token (v0.12.4+).
 | Path | Purpose |
 |---|---|
 | `/` | Dashboard (server / environment / activity summary) |
-| `/projects` | Project list + register form (empty / clone) |
+| `/projects` | Project list + register form; **v1.60.0** drag-reorder (☰ handle) · page size 20/50/100 · 3-state status chips |
 | `/projects/{id}` | Project detail, recent builds |
 | `/projects/{id}/console` | Claude prompt input + live log (WebSocket) + **v1.58.0** quick-prompt bubble buttons (A/B/C/D · continue · fix all · review · go with recommendation) + ▼ template dropdown + ■ stop button |
 | `/projects/{id}/builds` | Queue debug build + APK download; **v1.57.0** inline keystore-create form when none is linked |
@@ -784,6 +784,8 @@ Wire definitions: `shared/.../ApiPath.kt` + `shared/.../Dtos.kt`. Highlights:
 - `GET  /api/server/status`, `GET /api/server/environment`, `GET /api/server/environment/check`
 - `GET  /api/projects`, `POST /api/projects/register` (with `sourceType=clone`
   for git clone; **v0.18.0+** `templateId` field for built-in scaffolds)
+- `POST /api/projects/reorder` (**v1.60.0** — body `{offset, order:[id…]}`; persists
+  custom project order, reflected in the list and the console switcher)
 - `POST /api/projects/{id}/build/debug`, `GET /api/projects/{id}/builds`
 - `POST /api/projects/{id}/builds/{buildId}/cancel`
 - `POST /api/projects/{id}/claude/console/prompt | new | cancel`

@@ -383,6 +383,15 @@ internal object MessagesKo {
         "projects.status.responding" to "응답중",
         "projects.status.ready" to "대기중",
         "projects.status.idle" to "유휴",
+        // v1.60.0 — 응답 도중 cancel/crash/서버중단으로 끊김.
+        "projects.status.stopped" to "중지됨",
+        // v1.60.0 — 순서변경 / 페이지네이션.
+        "projects.reorder.handle" to "드래그하여 순서 변경",
+        "projects.pageSize" to "페이지당",
+        "projects.page.prev" to "이전",
+        "projects.page.next" to "다음",
+        "projects.page.of" to "%d / %d 페이지",
+        "projects.page.total" to "총 %d개",
         "projects.list.openConsole" to "콘솔 열기",
         "projects.new.title" to "새 프로젝트",
         "projects.new.template" to "템플릿 (v0.18.0+)",
@@ -1208,6 +1217,7 @@ internal object MessagesKo {
         "api.project.overwriteFailed" to "기존 폴더 삭제 실패: %s",
         "api.project.notFound" to "프로젝트 '%s' 가 등록되지 않았습니다.",
         "api.project.scratchProtected" to "General Chat 워크스페이스는 삭제할 수 없습니다.",
+        "api.project.reorderMismatch" to "순서 정보가 현재 목록과 일치하지 않습니다. 새로고침 후 다시 시도하세요.",
         "api.build.gradleExit" to "gradle 종료 코드 %d.",
         "api.build.apkNotFound" to "build/outputs/apk/debug 아래에 APK 가 없습니다.",
         "api.build.keystoreRequired" to "packageName '%s' 에 매칭되는 키스토어가 없어 빌드를 시작할 수 없습니다 (정책: 임의 생성 금지). 설정 → 키스토어 에서 먼저 등록하세요.",

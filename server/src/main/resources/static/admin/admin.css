@@ -933,6 +933,12 @@ table.devices small.dim { font-size: 11px; }
     background: rgba(105, 219, 124, 0.08);
 }
 .pstat-idle { color: var(--text-dim); }
+/* v1.60.0 — 중지됨(응답 도중 cancel/crash/서버중단). */
+.pstat-stopped {
+    color: var(--danger, #ff6b6b);
+    border-color: rgba(255, 107, 107, 0.4);
+    background: rgba(255, 107, 107, 0.08);
+}
 @keyframes pstat-pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.25; }

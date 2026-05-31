@@ -32,6 +32,10 @@ class ProjectRepository(private val clock: Clock) {
         debugTask: String,
     ): ProjectRow = transaction {
         val now = clock.nowIso()
+        // v1.60.0 — 새 프로젝트는 맨 위: 현재 최소 sort_order - 1 (없으면 0).
+        // 프로젝트 테이블은 단일 사용자라 행 수가 적어 메모리 min 으로 충분.
+        val minOrder = Projects.selectAll().minOfOrNull { it[Projects.sortOrder] }
+        val topOrder = (minOrder ?: 1) - 1
         Projects.insert {
             it[Projects.id] = id
             it[Projects.name] = name
@@ -41,6 +45,7 @@ class ProjectRepository(private val clock: Clock) {
             it[Projects.debugTask] = debugTask
             it[createdAt] = now
             it[updatedAt] = now
+            it[sortOrder] = topOrder
         }
         ProjectRow(id, name, packageName, sourcePath, moduleName, debugTask, now, now)
     }
@@ -50,8 +55,30 @@ class ProjectRepository(private val clock: Clock) {
     }
 
     fun list(): List<ProjectRow> = transaction {
-        Projects.selectAll().orderBy(Projects.updatedAt to org.jetbrains.exposed.sql.SortOrder.DESC)
+        // v1.60.0 — 사용자 정의 순서 우선, 동률은 최신 갱신순.
+        Projects.selectAll()
+            .orderBy(
+                Projects.sortOrder to org.jetbrains.exposed.sql.SortOrder.ASC,
+                Projects.updatedAt to org.jetbrains.exposed.sql.SortOrder.DESC,
+            )
             .map { it.toRow() }
+    }
+
+    /** v1.60.0 — 현재 정렬 순서의 전체 id (ghost 제외는 호출부에서). reorder 정규화용. */
+    fun listIdsInOrder(): List<String> = transaction {
+        Projects.selectAll()
+            .orderBy(
+                Projects.sortOrder to org.jetbrains.exposed.sql.SortOrder.ASC,
+                Projects.updatedAt to org.jetbrains.exposed.sql.SortOrder.DESC,
+            )
+            .map { it[Projects.id] }
+    }
+
+    /** v1.60.0 — 주어진 id 순서대로 sort_order = index 일괄 기록(단일 transaction). */
+    fun applyOrder(ids: List<String>): Unit = transaction {
+        ids.forEachIndexed { idx, id ->
+            Projects.update({ Projects.id eq id }) { it[sortOrder] = idx }
+        }
     }
 
     fun delete(id: String): Int = transaction {

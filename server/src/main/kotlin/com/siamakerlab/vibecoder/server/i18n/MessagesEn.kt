@@ -406,6 +406,15 @@ internal object MessagesEn {
         "projects.status.responding" to "Responding",
         "projects.status.ready" to "Ready",
         "projects.status.idle" to "Idle",
+        // v1.60.0 — interrupted mid-response (cancel/crash/server stop).
+        "projects.status.stopped" to "Stopped",
+        // v1.60.0 — reorder / pagination.
+        "projects.reorder.handle" to "Drag to reorder",
+        "projects.pageSize" to "Per page",
+        "projects.page.prev" to "Prev",
+        "projects.page.next" to "Next",
+        "projects.page.of" to "Page %d / %d",
+        "projects.page.total" to "%d total",
         "projects.list.openConsole" to "Open console",
         "projects.new.title" to "New project",
         "projects.new.template" to "Template (v0.18.0+)",
@@ -1230,6 +1239,7 @@ internal object MessagesEn {
         "api.project.overwriteFailed" to "Failed to wipe existing folder: %s",
         "api.project.notFound" to "Project '%s' not registered.",
         "api.project.scratchProtected" to "General Chat workspace cannot be deleted.",
+        "api.project.reorderMismatch" to "Order does not match the current list. Refresh and try again.",
         "api.build.gradleExit" to "gradle exited with code %d.",
         "api.build.apkNotFound" to "No APK under build/outputs/apk/debug.",
         "api.build.keystoreRequired" to "No keystore matches packageName '%s'; build cannot start (policy: no auto-generation). Register one via Settings → Keystores first.",

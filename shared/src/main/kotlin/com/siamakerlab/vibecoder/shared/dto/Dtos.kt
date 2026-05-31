@@ -147,6 +147,17 @@ data class ProjectDto(
     val busy: Boolean = false,
 )
 
+/**
+ * v1.60.0 — 프로젝트 목록 드래그 순서변경 요청.
+ * [order] 는 현재 페이지(글로벌 [offset] 부터)의 새 id 순서. 서버가 전체 정렬의
+ * 해당 slice 를 교체 후 sort_order 정규화. order 가 그 slice 와 같은 집합이 아니면 거부.
+ */
+@Serializable
+data class ProjectReorderRequestDto(
+    val offset: Int = 0,
+    val order: List<String> = emptyList(),
+)
+
 @Serializable
 data class RegisterProjectRequestDto(
     /**

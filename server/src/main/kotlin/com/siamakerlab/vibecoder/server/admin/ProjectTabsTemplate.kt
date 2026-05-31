@@ -136,12 +136,13 @@ internal object ProjectTabsTemplate {
 
         // v1.49.0 — 상단 프로젝트명을 <details> 콤보박스로: 클릭 → 다른 프로젝트로 즉시 이동.
         // 현재 프로젝트는 active 표시. 항목이 많으면 상단 필터 input 으로 즉시 검색(project-tabs.js).
+        // v1.60.0 — 사용자 정의 순서(sort_order)를 그대로 — allProjects 는 이미 그 순서.
         val switcherItems = allProjects
-            .sortedBy { it.name.lowercase() }
             .joinToString("") { pr ->
                 val active = pr.id == project.id
                 // v1.56.0 — 좌측 상태칩 (목록 페이지와 동일 .pstat / data-state, /ws/projects 로 실시간 patch).
-                val state = projectStatuses[pr.id] ?: "idle"
+                // v1.60.0 — 3-state (응답중/대기중/중지됨). 누락 시 ready.
+                val state = projectStatuses[pr.id] ?: "ready"
                 val chip = """<span class="pstat pstat-$state" data-pid="${esc(pr.id)}" data-state="$state"
                                     title="${esc(t("projects.status.$state"))}">${esc(t("projects.status.$state"))}</span>"""
                 """<a href="/projects/${esc(pr.id)}" class="pt-switch-item${if (active) " active" else ""}"
@@ -281,6 +282,7 @@ internal object ProjectTabsTemplate {
   /* active 항목이라도 칩 색(warn/ok/dim)은 유지 — accent 색 상속 차단. */
   #project-tabs-root .pt-switch-item.active .pstat-responding { color: var(--warn, #ffa94d); }
   #project-tabs-root .pt-switch-item.active .pstat-ready { color: var(--ok, #69db7c); }
+  #project-tabs-root .pt-switch-item.active .pstat-stopped { color: var(--danger, #ff6b6b); }
   #project-tabs-root .pt-switch-item.active .pstat-idle { color: var(--text-dim, #888); }
   #project-tabs-root .pt-switcher-menu hr {
     border: 0; border-top: 1px solid #1f2330; margin: 6px 0;
@@ -512,19 +514,20 @@ $railHtml
      (단방향) 의 ProjectBusyChanged 로 responding↔ready patch. -->
 <script>
 (function() {
+  // v1.60.0 — 3-state. ProjectBusyChanged.state 우선, 없으면 busy 폴백.
   var LABELS = {
     responding: ${jsLit(t("projects.status.responding"))},
     ready: ${jsLit(t("projects.status.ready"))},
-    idle: ${jsLit(t("projects.status.idle"))}
+    stopped: ${jsLit(t("projects.status.stopped"))}
   };
-  function patch(pid, busy) {
+  function patch(pid, state) {
+    if (!state) return;
     var el = document.querySelector('.pstat[data-pid="' + (window.CSS && CSS.escape ? CSS.escape(pid) : pid) + '"]');
     if (!el) return;
-    var state = busy ? 'responding' : 'ready';
     el.className = 'pstat pstat-' + state;
     el.dataset.state = state;
-    el.textContent = LABELS[state];
-    el.title = LABELS[state];
+    el.textContent = LABELS[state] || state;
+    el.title = LABELS[state] || state;
   }
   var ws = null;
   function connect() {
@@ -534,7 +537,7 @@ $railHtml
       try {
         var f = JSON.parse(ev.data);
         if (f.type === 'project_busy_changed' && f.projectId != null) {
-          patch(f.projectId, !!f.busy);
+          patch(f.projectId, f.state || (f.busy ? 'responding' : 'ready'));
         }
       } catch (e) { /* ignore malformed frame */ }
     };

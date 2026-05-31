@@ -74,6 +74,9 @@ object Projects : Table("projects") {
     val debugTask = varchar("debug_task", 128)
     val createdAt = varchar("created_at", 64)
     val updatedAt = varchar("updated_at", 64)
+    // v1.60.0 — 사용자 정의 정렬. 작을수록 위. 새 프로젝트는 (현재 min)-1 로 맨 위.
+    // 기존 행은 default 0 → 정렬 tiebreak(updatedAt DESC)로 기존 순서 유지.
+    val sortOrder = integer("sort_order").default(0)
     override val primaryKey = PrimaryKey(id)
 }
 

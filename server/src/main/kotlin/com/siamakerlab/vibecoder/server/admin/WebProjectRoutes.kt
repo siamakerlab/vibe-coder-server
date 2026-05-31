@@ -15,8 +15,15 @@ import com.siamakerlab.vibecoder.server.repo.ArtifactRepository
 import com.siamakerlab.vibecoder.server.repo.BuildRepository
 import com.siamakerlab.vibecoder.server.repo.ConversationTurnRepository
 import com.siamakerlab.vibecoder.server.ws.LogHub
+import com.siamakerlab.vibecoder.shared.ApiPath
 import com.siamakerlab.vibecoder.shared.dto.BuildDto
+import com.siamakerlab.vibecoder.shared.dto.ProjectReorderRequestDto
 import com.siamakerlab.vibecoder.shared.dto.RegisterProjectRequestDto
+import com.siamakerlab.vibecoder.server.auth.AUTH_BEARER
+import com.siamakerlab.vibecoder.server.auth.requireApiWrite
+import io.ktor.server.auth.authenticate
+import io.ktor.server.request.receive
+import io.ktor.server.response.respond
 import java.nio.file.Files
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentDisposition
@@ -79,26 +86,35 @@ fun Routing.webProjectRoutes(
     // ── 목록 + 등록 폼 ────────────────────────────────────────────────
     get("/projects") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
-        val list = projects.listForUser(sess.userId, sess.isAdmin)
+        val full = projects.listForUser(sess.userId, sess.isAdmin)
         val err = call.request.queryParameters["err"]
         val ok = call.request.queryParameters["ok"]?.let { Messages.t(sess.language, "flash.project.created") }
-        // v1.53.0 — 각 프로젝트의 현재 Claude 세션 상태를 목록 상태칩으로 노출.
-        // responding(응답중) > ready(세션 활성·대기) > idle(세션 없음) 우선순위.
-        // 이후 busy 변화는 `/ws/projects` (ProjectBusyChanged) 로 실시간 patch.
-        val statuses = list.associate { p ->
-            p.id to when {
-                sessionManager.isBusy(p.id) -> "responding"
-                sessionManager.isAlive(p.id) -> "ready"
-                else -> "idle"
-            }
-        }
+        // v1.60.0 — 페이지네이션: size 화이트리스트(20/50/100, 기본 20), page 1-base.
+        val total = full.size
+        val size = call.request.queryParameters["size"]?.toIntOrNull()?.takeIf { it in setOf(20, 50, 100) } ?: 20
+        val pageCount = ((total + size - 1) / size).coerceAtLeast(1)
+        val page = (call.request.queryParameters["page"]?.toIntOrNull() ?: 1).coerceIn(1, pageCount)
+        val offset = (page - 1) * size
+        val list = full.drop(offset).take(size)
+        // v1.60.0 — 상태칩 3-state (응답중/대기중/중지됨). 프로세스 생존이 아닌 대화 이력 기반.
+        val statuses = list.associate { it.id to projectStatus(it.id, sessionManager, conversationRepo) }
         call.respondText(
             WebProjectTemplates.projectsPage(
                 sess.username, list, flashErr = err, flashOk = ok, csrf = sess.csrf, lang = sess.language,
-                statuses = statuses,
+                statuses = statuses, page = page, size = size, total = total,
             ),
             ContentType.Text.Html,
         )
+    }
+
+    // v1.60.0 — 드래그 순서변경 (JSON, Bearer/쿠키). 목록 페이지 JS 가 fetch.
+    authenticate(AUTH_BEARER) {
+        post(ApiPath.PROJECTS_REORDER) {
+            call.requireApiWrite()
+            val req = call.receive<ProjectReorderRequestDto>()
+            projects.reorder(req.offset, req.order)
+            call.respond(HttpStatusCode.OK)
+        }
     }
 
     post("/projects") {
@@ -196,12 +212,9 @@ fun Routing.webProjectRoutes(
             .getOrDefault(listOf(p))
         // v1.56.0 — 콤보박스 각 항목 좌측 상태칩 (목록 페이지와 동일 체계).
         //  responding(응답중) > ready(대기·세션활성) > idle(유휴). 진입 시점 snapshot.
+        // v1.60.0 — 3-state 상태칩 (대화 이력 기반). switcher 콤보의 각 항목 좌측 칩.
         val projectStatuses = allProjects.associate { pr ->
-            pr.id to when {
-                sessionManager.isBusy(pr.id) -> "responding"
-                sessionManager.isAlive(pr.id) -> "ready"
-                else -> "idle"
-            }
+            pr.id to projectStatus(pr.id, sessionManager, conversationRepo)
         }
         // v1.50.0 — 우측 overview rail 데이터.
         val keystoreReady = runCatching { keystoreService.get(p.packageName) != null }.getOrDefault(false)
@@ -1233,6 +1246,24 @@ fun Routing.webProjectRoutes(
  */
 private fun String.encodeUrl(): String =
     java.net.URLEncoder.encode(this, Charsets.UTF_8).replace("+", "%20")
+
+/**
+ * v1.60.0 — 프로젝트 상태칩 3-state. 프로세스 생존이 아닌 **대화 이력 기반**이라
+ * 서버 재시작 후에도 정확하다.
+ *  - responding(응답중) : 현재 응답 stream 중(in-memory busy).
+ *  - stopped(중지됨)    : 최신 user 프롬프트 이후 완료(assistant/usage)가 없음
+ *                         (cancel / crash / 서버중단으로 끊김).
+ *  - ready(대기중)      : 완료됐거나 대화가 없는(fresh) 상태 — 프롬프트 대기.
+ */
+private fun projectStatus(
+    id: String,
+    sessionManager: ClaudeSessionManager,
+    conversationRepo: ConversationTurnRepository,
+): String = when {
+    sessionManager.isBusy(id) -> "responding"
+    runCatching { conversationRepo.lastPromptInterrupted(id) }.getOrDefault(false) -> "stopped"
+    else -> "ready"
+}
 
 /** 종료된 빌드의 디스크 로그를 읽어 화면에 prerender 할 수 있게 가공한 결과. */
 data class BuildLogReplay(

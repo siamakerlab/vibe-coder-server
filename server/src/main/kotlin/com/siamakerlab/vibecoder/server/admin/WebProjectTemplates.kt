@@ -562,30 +562,56 @@ object WebProjectTemplates {
          * 의 ProjectBusyChanged 로 responding↔ready 가 실시간 patch 된다.
          */
         statuses: Map<String, String> = emptyMap(),
+        /** v1.60.0 — 페이지네이션(1-base) / 페이지당 개수 / 전체 개수. */
+        page: Int = 1,
+        size: Int = 20,
+        total: Int = 0,
     ): String {
         val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
         val errHtml = if (flashErr != null) """<div class="error">${esc(flashErr)}</div>""" else ""
         val okHtml = if (flashOk != null) """<div class="ok-banner">${esc(flashOk)}</div>""" else ""
 
+        val offset = (page - 1) * size
+        val pageCount = ((total + size - 1) / size).coerceAtLeast(1)
+
         // v1.14.3 — 등록된 프로젝트 list: lastBuild / openConsole 컬럼 제거. name + package 만.
         // v1.14.4 — row 전체 영역이 클릭 가능 + 첫 화면 무조건 console (#console hash 명시).
-        //           각 td 의 자식을 inherit color + block link 로 채워서 셀 어디든 클릭 통함.
+        // v1.60.0 — 우측 드래그 핸들(☰) 열 추가 + 3-state 상태칩(idle 제거 → ready 폴백).
         val rowsHtml = if (projects.isEmpty()) {
-            """<tr><td colspan="3" class="dim">${esc(t("projects.list.empty"))}</td></tr>"""
+            """<tr><td colspan="4" class="dim">${esc(t("projects.list.empty"))}</td></tr>"""
         } else {
             projects.joinToString("\n") { p ->
                 val href = "/projects/${esc(p.id)}#console"
                 val cellLinkStyle = "display:block;color:inherit;text-decoration:none"
                 // v1.53.0 — 제일 왼쪽 상태칩. data-pid 로 WS patch 대상 식별, data-state 로 색 분기.
-                val state = statuses[p.id] ?: "idle"
+                val state = statuses[p.id] ?: "ready"
                 val chip = """<span class="pstat pstat-$state" data-pid="${esc(p.id)}" data-state="$state">${esc(t("projects.status.$state"))}</span>"""
-                """<tr class="row-link">
+                """<tr class="row-link proj-row" data-pid="${esc(p.id)}">
                     <td><a href="$href" style="$cellLinkStyle">$chip</a></td>
                     <td><a href="$href" style="$cellLinkStyle"><strong>${esc(p.name)}</strong><br><small class="dim">${esc(p.id)}</small></a></td>
                     <td><a href="$href" style="$cellLinkStyle"><code>${esc(p.packageName)}</code></a></td>
+                    <td class="proj-handle" title="${esc(t("projects.reorder.handle"))}" aria-label="${esc(t("projects.reorder.handle"))}">☰</td>
                   </tr>"""
             }
         }
+
+        // v1.60.0 — 페이지당 개수 콤보 + 페이지 네비.
+        fun sizeOpt(n: Int) = """<option value="$n"${if (n == size) " selected" else ""}>$n</option>"""
+        val sizeCombo = """
+          <label style="font-size:13px;color:var(--text-dim);display:flex;align-items:center;gap:6px">
+            ${esc(t("projects.pageSize"))}
+            <select id="proj-page-size" style="padding:4px 8px;background:#1a1a1a;color:var(--text);border:1px solid #333;border-radius:5px">
+              ${sizeOpt(20)}${sizeOpt(50)}${sizeOpt(100)}
+            </select>
+          </label>"""
+        val prevHref = if (page > 1) """href="/projects?page=${page - 1}&size=$size"""" else ""
+        val nextHref = if (page < pageCount) """href="/projects?page=${page + 1}&size=$size"""" else ""
+        val navHtml = """
+          <div style="display:flex;align-items:center;gap:8px">
+            <a class="chip chip-link"${if (page > 1) "" else " style=\"opacity:.4;pointer-events:none\""} $prevHref>‹ ${esc(t("projects.page.prev"))}</a>
+            <span class="dim" style="font-size:12px">${esc(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "projects.page.of", page, pageCount))} · ${esc(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "projects.page.total", total))}</span>
+            <a class="chip chip-link"${if (page < pageCount) "" else " style=\"opacity:.4;pointer-events:none\""} $nextHref>${esc(t("projects.page.next"))} ›</a>
+          </div>"""
 
         return AdminTemplates.shell(
             title = t("projects.title"),
@@ -695,21 +721,31 @@ $errHtml
   </details>
 
   <div class="card">
-    <h2>${esc(t("projects.list.title"))}</h2>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <h2 style="margin:0">${esc(t("projects.list.title"))}</h2>
+      $sizeCombo
+    </div>
     <style>
       /* v1.14.4 — row 전체 영역 클릭 가능. cell padding 안에서도 hover 강조 / cursor 변경. */
       table.devices tr.row-link td { padding: 0; }
       table.devices tr.row-link td a { padding: 10px 12px; }
       table.devices tr.row-link:hover { background: #1a1f2c; cursor: pointer; }
+      /* v1.60.0 — 드래그 핸들 열. */
+      table.devices td.proj-handle { padding: 10px 12px; width: 40px; text-align: center;
+        color: #6c7a93; cursor: grab; user-select: none; font-size: 15px; }
+      table.devices td.proj-handle:active { cursor: grabbing; }
+      table.devices tr.proj-row.dragging { opacity: 0.55; background: #243049; }
+      table.devices tr.proj-row.drop-target td { box-shadow: inset 0 2px 0 var(--accent,#3b82f6); }
     </style>
     <table class="devices">
       <thead>
-        <tr><th style="width:84px">${esc(t("projects.list.col.status"))}</th><th>${esc(t("projects.list.col.name"))}</th><th>${esc(t("projects.list.col.package"))}</th></tr>
+        <tr><th style="width:84px">${esc(t("projects.list.col.status"))}</th><th>${esc(t("projects.list.col.name"))}</th><th>${esc(t("projects.list.col.package"))}</th><th style="width:40px"></th></tr>
       </thead>
       <tbody>
         $rowsHtml
       </tbody>
     </table>
+    <div style="display:flex;justify-content:flex-end;margin-top:10px">$navHtml</div>
   </div>
 </section>
 
@@ -718,18 +754,19 @@ $errHtml
      인증은 handshake 의 vibe_session 쿠키로 자동 처리 (콘솔 WS 와 동일 패턴). -->
 <script>
 (function() {
+  // v1.60.0 — 3-state(응답중/대기중/중지됨). ProjectBusyChanged.state 우선, 없으면 busy 폴백.
   var LABELS = {
     responding: ${jsLit(t("projects.status.responding"))},
     ready: ${jsLit(t("projects.status.ready"))},
-    idle: ${jsLit(t("projects.status.idle"))}
+    stopped: ${jsLit(t("projects.status.stopped"))}
   };
-  function patch(pid, busy) {
+  function patch(pid, state) {
+    if (!state) return;
     var el = document.querySelector('.pstat[data-pid="' + (window.CSS && CSS.escape ? CSS.escape(pid) : pid) + '"]');
     if (!el) return;
-    var state = busy ? 'responding' : 'ready';
     el.className = 'pstat pstat-' + state;
     el.dataset.state = state;
-    el.textContent = LABELS[state];
+    el.textContent = LABELS[state] || state;
   }
   var ws = null;
   function connect() {
@@ -739,7 +776,7 @@ $errHtml
       try {
         var f = JSON.parse(ev.data);
         if (f.type === 'project_busy_changed' && f.projectId != null) {
-          patch(f.projectId, !!f.busy);
+          patch(f.projectId, f.state || (f.busy ? 'responding' : 'ready'));
         }
       } catch (e) { /* ignore malformed frame */ }
     };
@@ -747,6 +784,70 @@ $errHtml
     ws.onerror = function() { try { ws.close(); } catch (e) {} };
   }
   connect();
+})();
+
+// v1.60.0 — 페이지당 개수 콤보(기억) + 드래그 순서변경.
+(function() {
+  var KEY = 'vibe-projects-page-size';
+  var sel = document.getElementById('proj-page-size');
+  if (sel) {
+    var params = new URLSearchParams(location.search);
+    if (!params.has('size')) {
+      // url 에 size 없고 저장값이 현재(기본 ${size})와 다르면 1회 이동.
+      var saved = localStorage.getItem(KEY);
+      if (saved && ['20','50','100'].indexOf(saved) >= 0 && saved !== '${size}') {
+        params.set('size', saved); params.set('page', '1');
+        location.replace(location.pathname + '?' + params.toString());
+        return;
+      }
+    }
+    sel.addEventListener('change', function() {
+      try { localStorage.setItem(KEY, sel.value); } catch (e) {}
+      var p = new URLSearchParams(location.search);
+      p.set('size', sel.value); p.set('page', '1');
+      location.assign(location.pathname + '?' + p.toString());
+    });
+  }
+
+  var tbody = document.querySelector('table.devices tbody');
+  if (!tbody) return;
+  var OFFSET = ${offset};
+  var dragRow = null;
+  tbody.addEventListener('mousedown', function(e) {
+    var h = e.target.closest && e.target.closest('.proj-handle');
+    if (h) { var tr = h.closest('tr.proj-row'); if (tr) tr.setAttribute('draggable', 'true'); }
+  });
+  tbody.addEventListener('dragstart', function(e) {
+    var tr = e.target.closest && e.target.closest('tr.proj-row');
+    if (!tr || tr.getAttribute('draggable') !== 'true') { return; }
+    dragRow = tr; tr.classList.add('dragging');
+    try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', tr.getAttribute('data-pid') || ''); } catch (_) {}
+  });
+  tbody.addEventListener('dragover', function(e) {
+    if (!dragRow) return;
+    e.preventDefault();
+    var over = e.target.closest && e.target.closest('tr.proj-row');
+    if (!over || over === dragRow) return;
+    var rect = over.getBoundingClientRect();
+    var after = (e.clientY - rect.top) > rect.height / 2;
+    tbody.insertBefore(dragRow, after ? over.nextSibling : over);
+  });
+  tbody.addEventListener('drop', function(e) { if (dragRow) e.preventDefault(); });
+  tbody.addEventListener('dragend', function() {
+    if (!dragRow) return;
+    dragRow.classList.remove('dragging');
+    dragRow.removeAttribute('draggable');
+    dragRow = null;
+    var ids = Array.prototype.map.call(tbody.querySelectorAll('tr.proj-row'), function(tr) {
+      return tr.getAttribute('data-pid');
+    });
+    fetch('/api/projects/reorder', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ offset: OFFSET, order: ids }),
+    }).then(function(r) { if (!r.ok) { location.reload(); } })
+      .catch(function() { location.reload(); });
+  });
 })();
 </script>
 """

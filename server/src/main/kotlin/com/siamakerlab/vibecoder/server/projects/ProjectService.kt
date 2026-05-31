@@ -254,6 +254,28 @@ class ProjectService(
     }
 
     /**
+     * v1.60.0 — 드래그 순서변경. [pageIds] 는 현재 페이지(글로벌 [offset] 부터)의 새
+     * 순서. 전체 비-ghost 정렬 id 의 `[offset, offset+size)` slice 를 pageIds 로 교체한
+     * 뒤 전 행 sort_order 를 0..N-1 로 정규화한다. slice 와 pageIds 가 **같은 집합이
+     * 아니면 거부**(다른 페이지/위조 차단).
+     */
+    fun reorder(offset: Int, pageIds: List<String>) {
+        if (pageIds.isEmpty()) return
+        val all = repo.listIdsInOrder().filter { !isGhost(it) }
+        val from = offset.coerceIn(0, all.size)
+        val to = (offset + pageIds.size).coerceAtMost(all.size)
+        val slice = all.subList(from, to)
+        if (slice.size != pageIds.size || slice.toSet() != pageIds.toSet()) {
+            throw ApiException.localized(400, "reorder_mismatch", messageKey = "api.project.reorderMismatch")
+        }
+        val newAll = ArrayList<String>(all.size)
+        newAll.addAll(all.subList(0, from))
+        newAll.addAll(pageIds)
+        newAll.addAll(all.subList(to, all.size))
+        repo.applyOrder(newAll)
+    }
+
+    /**
      * v0.49.0 — Single-project access check. Admin always allowed; non-admin allowed if the
      * user has no ACL rows OR has an explicit grant for [projectId].
      */

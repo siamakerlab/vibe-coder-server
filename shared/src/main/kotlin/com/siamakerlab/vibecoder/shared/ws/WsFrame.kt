@@ -161,6 +161,13 @@ sealed class WsFrame {
         val projectId: String,
         val busy: Boolean,
         val seq: Long,
+        /**
+         * v1.60.0 — 상태칩(목록/switcher) 실시간 정확성용 명시 상태.
+         * "responding" | "ready" | "stopped". null 이면 구버전 호환 — 클라가
+         * busy 로 responding/ready 도출. cancel/crash 시 "stopped" 로 emit 해
+         * busy=false 만으론 구분 못 하던 "중지됨" 을 live 반영.
+         */
+        val state: String? = null,
     ) : WsFrame()
 
     /** Sent right before replay frames so the client can show a "loading history" affordance. */

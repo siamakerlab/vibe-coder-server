@@ -47,6 +47,8 @@ object ApiPath {
     // Projects
     const val PROJECTS = "/api/projects"
     const val PROJECTS_REGISTER = "/api/projects/register"
+    /** v1.60.0 — 프로젝트 목록 드래그 순서변경(body: ProjectReorderRequestDto). */
+    const val PROJECTS_REORDER = "/api/projects/reorder"
     fun project(id: String) = "/api/projects/$id"
 
     // Claude console (persistent session)

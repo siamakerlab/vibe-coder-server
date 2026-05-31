@@ -9,7 +9,9 @@ import org.jetbrains.exposed.sql.ResultRow
 import org.jetbrains.exposed.sql.SortOrder
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.IsNullOp
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.greater
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.greaterEq
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.inList
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.lessEq
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.like
 import org.jetbrains.exposed.sql.TextColumnType
@@ -302,6 +304,35 @@ class ConversationTurnRepository(private val clock: Clock) {
         ConversationTurns.select(agg)
             .where { ConversationTurns.projectId eq projectId }
             .firstOrNull()?.get(agg)
+    }
+
+    /**
+     * v1.60.0 — 상태칩 "중지됨" 판정용. 메인 콘솔(agent_name IS NULL)의 **최신 user
+     * 프롬프트 이후 완료 row(assistant/usage)가 없으면 true** (= 응답이 시작/완료되지
+     * 못하고 끊김: cancel / crash / 서버중단). user 프롬프트가 아예 없으면 false.
+     *
+     * ts 는 ISO 문자열이라 lexicographic max = chronological (lastTs 와 동일 가정).
+     */
+    fun lastPromptInterrupted(projectId: String): Boolean = transaction {
+        val agg = ConversationTurns.ts.max()
+        val lastUserTs = ConversationTurns.select(agg)
+            .where {
+                (ConversationTurns.projectId eq projectId) and
+                    (ConversationTurns.role eq "user") and
+                    IsNullOp(ConversationTurns.agentName)
+            }
+            .firstOrNull()?.get(agg)
+            ?: return@transaction false
+        val completed = ConversationTurns.selectAll()
+            .where {
+                (ConversationTurns.projectId eq projectId) and
+                    (ConversationTurns.role inList listOf("assistant", "usage")) and
+                    IsNullOp(ConversationTurns.agentName) and
+                    (ConversationTurns.ts greater lastUserTs)
+            }
+            .limit(1)
+            .firstOrNull() != null
+        !completed
     }
 
     private fun ResultRow.toRow() = ConversationTurnRow(
