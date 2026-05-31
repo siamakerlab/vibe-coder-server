@@ -234,8 +234,18 @@ class ClaudeSessionManager(
             add("--dangerously-skip-permissions")
             // 인터랙티브 위젯 (AskUserQuestion / EnterPlanMode / ExitPlanMode) 명시 차단 —
             // 모델이 호출하면 즉시 거부되어 다른 경로 (응답 끝에 옵션 나열) 로 진행.
+            // v1.55.0 — General Chat ghost(__scratch__ / __chat_*)는 "대화 전용":
+            // 파일 생성·수정·실행(빌드)·하위에이전트 도구를 추가 차단해 실제 프로젝트
+            // 작업이 일어나지 않게 한다. 읽기(Read/Glob/Grep)·웹검색(WebSearch/WebFetch)
+            // 은 허용해 대화 품질 유지. 일반 프로젝트는 영향 없음.
             add("--disallowedTools")
-            add("AskUserQuestion ExitPlanMode EnterPlanMode NotebookEdit")
+            val disallowed = buildString {
+                append("AskUserQuestion ExitPlanMode EnterPlanMode NotebookEdit")
+                if (WorkspacePath.isGhostId(projectId)) {
+                    append(" Bash Write Edit Task")
+                }
+            }
+            add(disallowed)
             if (savedId != null) {
                 add("--resume"); add(savedId)
             }
