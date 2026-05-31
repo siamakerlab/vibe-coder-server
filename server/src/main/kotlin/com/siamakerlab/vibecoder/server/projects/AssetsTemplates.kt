@@ -24,6 +24,10 @@ internal object AssetsTemplates {
         hasIcon: Boolean,
         hasGraphic: Boolean,
         screenshots: List<String>,
+        /** v1.66.0 — Play Console 업로드(MCP google-play-publisher). */
+        playReady: Boolean = false,
+        playStatus: String? = null,
+        playWarnings: List<String> = emptyList(),
         flash: String?,
         csrf: String?,
         lang: String,
@@ -36,11 +40,52 @@ internal object AssetsTemplates {
             flash == "copied" -> ok(t("assets.flash.copied"))
             flash == "graphic" -> ok(t("assets.flash.graphic"))
             flash == "shotDeleted" -> ok(t("assets.flash.shotDeleted"))
+            flash == "play" -> ok(t("assets.flash.play"))
+            flash == "err:playNotReady" -> err(t("assets.flash.err.playNotReady"))
             flash.startsWith("shots:") -> ok(Messages.t(lang, "assets.flash.shots", flash.removePrefix("shots:")))
             flash == "err:csrf" -> err(t("assets.flash.err.csrf"))
             flash == "err:nofile" -> err(t("assets.flash.err.nofile"))
             flash.startsWith("err:") -> err(t("assets.flash.err.generic"))
             else -> ""
+        }
+
+        // v1.66.0 — Play Console 업로드 카드 (MCP google-play-publisher 설치 시 활성).
+        val playCard = if (playReady) {
+            """
+<div class="card" style="margin-bottom:14px;border-color:#1e40af;background:rgba(30,64,175,0.06)">
+  <h2 style="margin-top:0">${esc(t("assets.play.title"))}</h2>
+  <p class="dim" style="font-size:13px;margin:0 0 10px">${esc(t("assets.play.hint"))}</p>
+  <form method="post" action="/projects/$projectId/assets/play-upload">
+    $csrfHidden
+    <div style="display:flex;gap:12px;align-items:end;flex-wrap:wrap">
+      <label style="margin:0;font-size:13px">${esc(t("assets.play.track"))}
+        <select name="track" style="margin-left:6px;padding:5px 8px">
+          <option value="internal">internal</option>
+          <option value="alpha">alpha</option>
+          <option value="beta">beta</option>
+          <option value="production">production</option>
+        </select>
+      </label>
+      <label style="margin:0;display:flex;align-items:center;gap:5px;font-size:13px">
+        <input type="checkbox" name="includeListing" value="true" checked> ${esc(t("assets.play.includeListing"))}
+      </label>
+    </div>
+    <textarea name="notes" rows="2" placeholder="${esc(t("assets.play.notes"))}"
+              style="width:100%;padding:8px;margin-top:10px"></textarea>
+    <button type="submit" class="primary" style="margin-top:8px;padding:8px 16px">${esc(t("assets.play.upload"))}</button>
+    <p class="hint" style="font-size:12px;margin:8px 0 0">${esc(t("assets.play.applyHint"))}</p>
+  </form>
+</div>"""
+        } else {
+            val warns = playWarnings.joinToString("") { """<li>${esc(it)}</li>""" }
+            """
+<div class="card" style="margin-bottom:14px">
+  <h2 style="margin-top:0">${esc(t("assets.play.title"))}</h2>
+  <p class="dim" style="font-size:13px;margin:0 0 6px">${esc(t("assets.play.needMcp"))}</p>
+  ${if (playStatus != null) """<p style="font-size:12px;margin:0 0 6px"><code>google-play-publisher</code> · ${esc(playStatus)}</p>""" else ""}
+  ${if (warns.isNotEmpty()) """<ul class="dim" style="font-size:12px;margin:0 0 8px 18px">$warns</ul>""" else ""}
+  <a href="/env-setup/mcp" target="_top" class="chip chip-link">${esc(t("assets.play.openMcp"))}</a>
+</div>"""
         }
 
         val iconSrc = if (hasIcon) "/projects/$projectId/assets/raw/icon.png" else "/static/icon.png"
@@ -132,6 +177,8 @@ $flashHtml
   </form>
   $shotsHtml
 </div>
+
+$playCard
 
 <script>
 (function() {

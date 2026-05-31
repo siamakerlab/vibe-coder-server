@@ -5,6 +5,7 @@ import com.siamakerlab.vibecoder.server.admin.requireProjectAccessOrThrow
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireWriteAccessOrRedirect
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens
+import com.siamakerlab.vibecoder.server.auth.CsrfTokens.requireCsrf
 import com.siamakerlab.vibecoder.server.claude.ClaudeSessionManager
 import com.siamakerlab.vibecoder.server.core.WorkspacePath
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -58,6 +59,8 @@ fun Routing.projectAssetsRoutes(
     projects: ProjectService,
     workspace: WorkspacePath,
     sessionManager: ClaudeSessionManager,
+    /** v1.66.0 — Play Console 업로드(MCP google-play-publisher 위임). */
+    playPublishService: com.siamakerlab.vibecoder.server.publish.PlayPublishService,
 ) {
     get("/projects/{id}/assets") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
@@ -71,15 +74,48 @@ fun Routing.projectAssetsRoutes(
         val hasIcon = Files.isRegularFile(root.resolve("icon.png"))
         val hasGraphic = Files.isRegularFile(root.resolve("graphic.png"))
         val shots = listScreenshots(root)
+        // v1.66.0 — Play 업로드 precheck (MCP 설치/등록 여부).
+        val play = runCatching { playPublishService.precheck(p.packageName) }.getOrNull()
         call.respondText(
             AssetsTemplates.page(
                 username = sess.username, projectId = id, projectName = p.name,
                 hasIcon = hasIcon, hasGraphic = hasGraphic, screenshots = shots,
+                playReady = play?.ready ?: false,
+                playStatus = play?.mcpStatus,
+                playWarnings = play?.warnings.orEmpty(),
                 flash = call.request.queryParameters["flash"],
                 csrf = sess.csrf, lang = sess.language,
             ),
             ContentType.Text.Html,
         )
+    }
+
+    // ── Play Console 업로드 (MCP 설치 시) ──────────────────────────────────
+    post("/projects/{id}/assets/play-upload") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireWriteAccessOrRedirect(sess)) return@post
+        val form = requireCsrf()
+        val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
+        val p = projects.get(id)
+        val pre = runCatching { playPublishService.precheck(p.packageName) }.getOrNull()
+        if (pre?.ready != true) {
+            call.respondRedirect("/projects/$id/assets?flash=err:playNotReady"); return@post
+        }
+        val track = form["track"]?.trim().orEmpty().ifBlank { "internal" }
+        val notes = form["notes"]?.trim()
+        val includeListing = form["includeListing"]?.equals("true", true) == true ||
+            form["includeListing"]?.equals("on", true) == true
+        val root = workspace.projectRoot(id)
+        val sent = runCatching {
+            playPublishService.triggerStoreUpload(
+                projectId = id, track = track, releaseNotes = notes,
+                includeListing = includeListing,
+                hasGraphic = Files.isRegularFile(root.resolve("graphic.png")),
+                screenshotsByLang = screenshotsByLang(root),
+            )
+        }.onFailure { log.warn(it) { "play upload trigger failed: $id" } }.isSuccess
+        call.respondRedirect("/projects/$id/assets?flash=${if (sent) "play" else "err:claude"}")
     }
 
     // 미리보기 serve — 루트의 허용된 asset 파일만.
@@ -197,6 +233,16 @@ private fun listScreenshots(root: Path): List<String> {
     return Files.list(root).use { s ->
         s.map { it.fileName.toString() }.filter { SHOT_RE.matches(it) }.sorted().toList()
     }
+}
+
+private val SHOT_LANG_RE = Regex("""^screenshot-([a-z]{2}(?:-[A-Z]{2})?)-\d{1,3}\.png$""")
+
+/** v1.66.0 — 스크린샷을 언어별로 그룹. Play listing prompt 에 사용. */
+private fun screenshotsByLang(root: Path): Map<String, List<String>> {
+    return listScreenshots(root)
+        .mapNotNull { name -> SHOT_LANG_RE.find(name)?.groupValues?.get(1)?.let { it to name } }
+        .groupBy({ it.first }, { it.second })
+        .mapValues { it.value.sorted() }
 }
 
 private fun nextScreenshotIndex(root: Path, lang: String): Int {

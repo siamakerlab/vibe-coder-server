@@ -1714,6 +1714,18 @@ internal object MessagesEn {
         "assets.flash.err.csrf" to "Security token expired. Refresh and try again.",
         "assets.flash.err.nofile" to "No file to upload.",
         "assets.flash.err.generic" to "Upload failed.",
+        // v1.66.0 — Play Console upload.
+        "assets.play.title" to "Play Console upload",
+        "assets.play.hint" to "Uploads the release AAB and (optionally) store assets (graphic/screenshots) via the google-play-publisher MCP.",
+        "assets.play.track" to "Track",
+        "assets.play.includeListing" to "Also apply store assets (graphic/screenshots)",
+        "assets.play.notes" to "Release notes (empty = last commit)",
+        "assets.play.upload" to "Upload to Play",
+        "assets.play.applyHint" to "Sends the upload command to the Claude console. Watch progress/result on the Console tab. Publishing is left in a review state.",
+        "assets.play.needMcp" to "Play Console upload requires the google-play-publisher MCP installed + a Service Account JSON configured.",
+        "assets.play.openMcp" to "Open MCP install page",
+        "assets.flash.play" to "Sent the Play Console upload command to the Claude console. Check the Console tab.",
+        "assets.flash.err.playNotReady" to "Play upload not ready (MCP not installed / Service Account not set).",
         "tabs.git" to "Git",
         "tabs.agents" to "Agents",
         // v1.12.0 — Pages that used to live in the More dropdown are now prerendered tabs.

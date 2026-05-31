@@ -112,6 +112,59 @@ class PlayPublishService(
         sessionManager.sendPrompt(projectId, prompt)
     }
 
+    /**
+     * v1.66.0 — 스토어 자산 탭에서 호출. release AAB 업로드 + (옵션) 스토어 listing
+     * 자산(피처 그래픽 / 언어별 스크린샷) 반영을 한 prompt 로 Claude 에 위임.
+     *
+     * [screenshotsByLang] = lang → ["screenshot-ko-1.png", ...] (project root 기준).
+     */
+    suspend fun triggerStoreUpload(
+        projectId: String,
+        track: String = "internal",
+        releaseNotes: String? = null,
+        includeListing: Boolean = true,
+        hasGraphic: Boolean = false,
+        screenshotsByLang: Map<String, List<String>> = emptyMap(),
+        aabRelativePath: String = "app/build/outputs/bundle/release/app-release.aab",
+    ) {
+        val safeTrack = sanitizeTrack(track)
+        val notes = releaseNotes?.trim().orEmpty().take(2000)
+        val notesLine = if (notes.isNotBlank()) notes else "(없으면 마지막 커밋 메시지를 사용)"
+
+        val listingBlock = if (!includeListing) "" else buildString {
+            appendLine()
+            appendLine("2) 스토어 등록정보(listing) 반영 — 프로젝트 root 의 자산 파일 사용:")
+            if (hasGraphic) appendLine("   - 피처 그래픽: graphic.png")
+            if (screenshotsByLang.isNotEmpty()) {
+                appendLine("   - 스크린샷(언어별):")
+                screenshotsByLang.toSortedMap().forEach { (lang, files) ->
+                    appendLine("       $lang: ${files.joinToString(", ")}")
+                }
+            }
+            if (!hasGraphic && screenshotsByLang.isEmpty()) {
+                appendLine("   - (반영할 그래픽/스크린샷 파일이 없음 — listing 자산은 건너뛰고 바이너리만)")
+            }
+            appendLine("   - 앱 아이콘은 이미 res/mipmap 에 적용된 것을 사용(별도 listing icon 필요 시 root 의 icon.png).")
+        }
+
+        val prompt = """
+            이 프로젝트를 Google Play Console 에 업로드해 줘. 도구는 `google-play-publisher` MCP 사용.
+
+            1) 바이너리: release AAB 를 $safeTrack track 에 업로드.
+               - 대상(project root 기준): $aabRelativePath
+               - 없으면 release AAB 산출물 위치를 탐색(필요 시 빌드 방법 안내만, 자동 빌드는 하지 말 것).
+            $listingBlock
+            3) Release notes: $notesLine
+
+            업로드/반영 결과(version code, track, 반영 항목)를 1~2줄로 요약해 줘. 실패(인증/packageName
+            불일치/version code 충돌 등) 시 원인과 해결 방법을 알려줘. publish 단계는 자동 commit 하지 말고
+            review 가 필요한 상태로 남겨 둘 것.
+        """.trimIndent()
+
+        log.info { "Play store upload triggered: project=$projectId track=$safeTrack listing=$includeListing" }
+        sessionManager.sendPrompt(projectId, prompt)
+    }
+
     private fun sanitizeTrack(raw: String): String {
         val v = raw.trim().lowercase()
         // 화이트리스트로 prompt injection 방지.

@@ -1692,6 +1692,18 @@ internal object MessagesKo {
         "assets.flash.err.csrf" to "보안 토큰이 만료되었습니다. 새로고침 후 다시 시도하세요.",
         "assets.flash.err.nofile" to "업로드할 파일이 없습니다.",
         "assets.flash.err.generic" to "업로드에 실패했습니다.",
+        // v1.66.0 — Play Console 업로드.
+        "assets.play.title" to "Play Console 업로드",
+        "assets.play.hint" to "release AAB 와 (선택) 스토어 자산(그래픽/스크린샷)을 google-play-publisher MCP 로 업로드합니다.",
+        "assets.play.track" to "트랙",
+        "assets.play.includeListing" to "스토어 자산(그래픽/스크린샷)도 함께 반영",
+        "assets.play.notes" to "릴리스 노트 (비우면 마지막 커밋 사용)",
+        "assets.play.upload" to "Play 업로드",
+        "assets.play.applyHint" to "업로드 명령을 Claude 콘솔에 보냅니다. 콘솔 탭에서 진행/결과를 확인하세요. publish 는 review 상태로 남습니다.",
+        "assets.play.needMcp" to "Play Console 업로드는 google-play-publisher MCP 설치 + Service Account JSON 설정이 필요합니다.",
+        "assets.play.openMcp" to "MCP 설치 페이지 열기",
+        "assets.flash.play" to "Play Console 업로드 명령을 Claude 콘솔에 보냈습니다. 콘솔 탭에서 확인하세요.",
+        "assets.flash.err.playNotReady" to "Play 업로드 준비가 안 됐습니다(MCP 미설치/Service Account 미설정).",
         "tabs.git" to "Git",
         "tabs.agents" to "에이전트",
         // v1.12.0 — 기존 More 드롭다운 안에 있던 페이지들도 모두 prerender 탭으로.

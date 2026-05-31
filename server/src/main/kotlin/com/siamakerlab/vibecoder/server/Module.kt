@@ -456,7 +456,7 @@ fun Application.module(ctx: ServerContext) {
         envFilesRoutes(adminDeps, ctx.projects, ctx.workspace)
         projectClaudeMdRoutes(adminDeps, ctx.projects, ctx.workspace)
         // v1.65.0 — 스토어 자산(앱 아이콘/그래픽/스크린샷) 탭.
-        projectAssetsRoutes(adminDeps, ctx.projects, ctx.workspace, ctx.sessionManager)
+        projectAssetsRoutes(adminDeps, ctx.projects, ctx.workspace, ctx.sessionManager, ctx.playPublishService)
         projectAgentRoutes(adminDeps, ctx.projects, ctx.workspace, ctx.agentRegistry)
         projectMcpRoutes(adminDeps, ctx.projects, ctx.workspace, ctx.mcp)
         projectSkillRoutes(adminDeps, ctx.projects, ctx.workspace, globalSkillRegistry)
