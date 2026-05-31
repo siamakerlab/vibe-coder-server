@@ -86,6 +86,15 @@ vibe-coder-server/
   with auto-generated ed25519 key pair.
 
 ### Project tooling
+- **Project settings — rename name / package / folder** (v1.71.0+) — the
+  `/projects/{id}/overview` page edits the display name (anytime), the package
+  name (`applicationId`), and the folder name (project ID). Package and folder
+  changes require the project to be **idle** (no turn or build in progress).
+  Renaming the package updates the DB, renames the keystore files
+  (`<pkg>.keystore` …), and sends a console prompt so Claude refactors the code,
+  source directory structure, manifest and signing references. Renaming the
+  folder moves the workspace directories and migrates the DB primary key across
+  all child tables in one transaction (live session is terminated first).
 - **In-browser file tree + editor** (v0.13.0+) — `/projects/{id}/tree` browses
   the workspace; `/projects/{id}/view` opens read-only / edit toggle with
   syntax highlighting via bundled highlight.js (Kotlin / Java / XML / JSON /
