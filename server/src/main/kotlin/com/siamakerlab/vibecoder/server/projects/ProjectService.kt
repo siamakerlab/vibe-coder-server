@@ -648,6 +648,12 @@ class ProjectService(
                 }
             }
         }
+        // v1.65.0 — res 에 raster 가 없으면 업로드된 프로젝트 루트 icon.png fallback
+        // (App Icon 탭 업로드 직후, Claude 가 res 에 적용하기 전에도 미리보기/목록 반영).
+        val rootIcon = runCatching { workspace.projectRoot(projectId) }.getOrNull()?.resolve("icon.png")
+        if (rootIcon != null && Files.isRegularFile(rootIcon)) {
+            return runCatching { workspace.ensureUnderWorkspace(rootIcon.toRealPath()) }.getOrNull()
+        }
         return null
     }
 

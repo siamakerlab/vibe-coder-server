@@ -51,6 +51,8 @@ internal object ProjectTabsTemplate {
     private val PRIMARY_TABS = listOf(
         Tab("console", "tabs.console", "/console", "tab-console"),
         Tab("builds", "tabs.builds", "/builds", "tab-builds"),
+        // v1.65.0 — 스토어 자산(앱 아이콘/그래픽/스크린샷) 탭.
+        Tab("assets", "tabs.assets", "/assets", "tab-assets"),
         Tab("files", "tabs.files", "/tree", "tab-files"),
         Tab("git", "tabs.git", "/git", "tab-git"),
         Tab("agents", "tabs.agents", "/agents", "tab-agents"),

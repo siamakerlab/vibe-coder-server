@@ -16,6 +16,7 @@ import com.siamakerlab.vibecoder.server.build.dependencyAuditRoutes
 import com.siamakerlab.vibecoder.server.projects.codeAnalysisRoutes
 import com.siamakerlab.vibecoder.server.projects.envFilesRoutes
 import com.siamakerlab.vibecoder.server.projects.projectClaudeMdRoutes
+import com.siamakerlab.vibecoder.server.projects.projectAssetsRoutes
 import com.siamakerlab.vibecoder.server.projects.projectAgentRoutes
 import com.siamakerlab.vibecoder.server.projects.projectMcpRoutes
 import com.siamakerlab.vibecoder.server.admin.twoFactorRoutes
@@ -454,6 +455,8 @@ fun Application.module(ctx: ServerContext) {
         // v0.32.0 — Env files + 의존성 audit + 로그 검색.
         envFilesRoutes(adminDeps, ctx.projects, ctx.workspace)
         projectClaudeMdRoutes(adminDeps, ctx.projects, ctx.workspace)
+        // v1.65.0 — 스토어 자산(앱 아이콘/그래픽/스크린샷) 탭.
+        projectAssetsRoutes(adminDeps, ctx.projects, ctx.workspace, ctx.sessionManager)
         projectAgentRoutes(adminDeps, ctx.projects, ctx.workspace, ctx.agentRegistry)
         projectMcpRoutes(adminDeps, ctx.projects, ctx.workspace, ctx.mcp)
         projectSkillRoutes(adminDeps, ctx.projects, ctx.workspace, globalSkillRegistry)
