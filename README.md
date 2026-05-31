@@ -74,6 +74,10 @@ vibe-coder-server/
 ### Build & deploy
 - **MCP catalog** — 60+ Model Context Protocol servers in 10 categories,
   checkbox multi-select, per-MCP token form, recommended ★, trust tiers.
+  Registered to the standard **user scope** (`claude mcp add-json -s user`,
+  v1.66.5) so the console/sub-agents/`claude mcp list` all see them. The
+  official **Gitea MCP** (`gitea-mcp`, v1.68.0) ships as a bundled Go binary.
+  Per-project MCP tab shows a **live connection-status** card (v1.67.0).
 - **Build environment one-click installer** — Android SDK / Gradle binary &
   cache / Node + Claude CLI / MCP packages, all persisted under one host
   directory. New project `CLAUDE.md` is wired to use the installed Gradle to
@@ -735,6 +739,7 @@ carries a CSRF `_csrf` token (v0.12.4+).
 | `/projects/{id}/tree` | **v0.13.0** Filesystem browser inside the project workspace |
 | `/projects/{id}/view?path=...` | **v0.13.0** Read-only view (highlight.js) ↔ Edit mode (textarea) |
 | `/projects/{id}/files` | Upload / download / delete (the upload area) |
+| `/projects/{id}/mcp` | Per-project `.mcp.json` editor + **v1.67.0** recognized-MCP + connection-status live card (`/projects/{id}/mcp/status`, `claude mcp list`) |
 | `/projects/{id}/git` | git status / diff / log (read-only) + **v0.18.0** commit & push form |
 | `/projects/{id}/history` | **v0.16.0** Persistent prompt/response history (filter / paginate) |
 | `/chat`, `/chat?c=<id>` | **v0.13.0** General Chat; **v1.54.0** multi-session sidebar (each chat = `__chat_<id>__` ghost) |
