@@ -103,6 +103,29 @@ class AdbService(
         return CmdResult(out.contains("connected", ignoreCase = true) && !out.contains("failed", ignoreCase = true), out)
     }
 
+    /**
+     * v1.59.1 — connect 실패가 "미페어링" 때문인지 추정.
+     *
+     * adb 는 포트 미도달이면 `Connection refused` / `timed out` 등 suffix 를 붙이지만,
+     * Android 11+ 무선 디버깅의 connect 포트는 **열려 있으나 미페어링 키를 TLS 단계에서
+     * 거부**한다 → suffix 없는 `failed to connect to 'ip:port'`. 이 모양이면 페어링 안내.
+     */
+    fun isLikelyUnpaired(output: String): Boolean {
+        val o = output.lowercase()
+        if (!o.contains("failed to connect")) return false
+        return !o.contains("refused") && !o.contains("timed out") &&
+            !o.contains("timeout") && !o.contains("no route") && !o.contains("unreachable")
+    }
+
+    /**
+     * v1.59.1 — 주어진 IP 와 같은 호스트의 mDNS connect 서비스(`_adb-tls-connect`) 포트.
+     * pair 성공 직후 자동 connect 대상 결정용. 못 찾으면 null (HOST 네트워크 아님 등).
+     */
+    fun connectPortFor(ip: String): String? {
+        if (ip.isBlank()) return null
+        return discover().firstOrNull { !it.pairing && it.hostPort.substringBefore(':') == ip }?.hostPort
+    }
+
     fun disconnect(hostPort: String): CmdResult {
         if (!ipPortRe.matches(hostPort)) return CmdResult(false, "잘못된 주소 형식")
         val out = run(listOf("disconnect", hostPort), 10) ?: return CmdResult(false, "adb disconnect 실행 실패")

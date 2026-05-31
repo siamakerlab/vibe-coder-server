@@ -69,15 +69,36 @@ fun Routing.adbRoutes(
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireAdminOrRedirect(sess)) return@post
         val form = requireCsrf()
-        val r = adb.pair(form["hostPort"]?.trim().orEmpty(), form["code"]?.trim().orEmpty())
-        // 페어링 성공 시 곧바로 connect 도 시도(같은 IP, connect 포트는 다를 수 있어 별도 입력 안내).
-        redirectResult(r.ok, r.output)
+        val pairHostPort = form["hostPort"]?.trim().orEmpty()
+        val r = adb.pair(pairHostPort, form["code"]?.trim().orEmpty())
+        if (!r.ok) {
+            redirectResult(false, r.output)
+            return@post
+        }
+        // v1.59.1 — 페어링 성공 시 같은 IP 의 mDNS connect 포트로 자동 connect 1회 시도.
+        // (페어링 포트와 connect 포트는 다름. 자동 탐지가 connect 서비스를 찾으면 바로 연결.)
+        val ip = pairHostPort.substringBefore(':')
+        val connectHp = runCatching { adb.connectPortFor(ip) }.getOrNull()
+        if (connectHp != null) {
+            val cr = runCatching { adb.connect(connectHp) }.getOrNull()
+            if (cr != null && cr.ok) {
+                redirectResult(true, Messages.t(sess.language, "adb.pair.autoConnected", connectHp))
+                return@post
+            }
+        }
+        // 자동 connect 못 했으면 페어링 성공 + 수동 연결 안내.
+        redirectResult(true, Messages.t(sess.language, "adb.pair.okConnectHint"))
     }
 
     post("/adb/connect") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireAdminOrRedirect(sess)) return@post
         val r = adb.connect(requireCsrf()["hostPort"]?.trim().orEmpty())
+        if (!r.ok && adb.isLikelyUnpaired(r.output)) {
+            // v1.59.1 — 포트는 열려 있으나 미페어링 TLS 거부 → 페어링 먼저 안내.
+            redirectResult(false, Messages.t(sess.language, "adb.connect.needPair"))
+            return@post
+        }
         redirectResult(r.ok, r.output)
     }
 

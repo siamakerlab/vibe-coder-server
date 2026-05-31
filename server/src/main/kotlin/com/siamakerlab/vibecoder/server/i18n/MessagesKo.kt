@@ -188,6 +188,10 @@ internal object MessagesKo {
         "adb.pair.code" to "페어링 코드(6자리)",
         "adb.pair.btn" to "페어링",
         "adb.connect.addr" to "연결 주소 (IP:포트)",
+        // v1.59.1 — 무선 ADB 연결/페어링 안내.
+        "adb.connect.needPair" to "연결 실패 — 포트는 열려 있으나 페어링되지 않았습니다. Android 11+ 는 먼저 페어링이 필요합니다. 폰의 '코드로 기기 페어링' 화면의 IP:포트(연결 포트와 다름) + 6자리 코드로 위 ① 페어링을 먼저 한 뒤 다시 연결하세요.",
+        "adb.pair.autoConnected" to "페어링 성공 — 자동으로 연결했습니다 (%s).",
+        "adb.pair.okConnectHint" to "페어링 성공. 자동 탐지에서 연결 포트를 찾지 못했습니다 — 무선 디버깅 메인 화면의 IP:포트로 '연결'을 눌러 마무리하세요.",
         "adb.devices.title" to "연결된 기기",
         "adb.devices.empty" to "연결된 기기가 없습니다.",
         "adb.log.none" to "(기기 선택)",

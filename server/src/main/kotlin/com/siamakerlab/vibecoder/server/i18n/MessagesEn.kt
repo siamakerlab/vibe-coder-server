@@ -211,6 +211,10 @@ internal object MessagesEn {
         "adb.pair.code" to "Pairing code (6 digits)",
         "adb.pair.btn" to "Pair",
         "adb.connect.addr" to "Connect address (IP:port)",
+        // v1.59.1 — wireless ADB connect/pair guidance.
+        "adb.connect.needPair" to "Connect failed — the port is open but this host is not paired. Android 11+ requires pairing first. Use the 'Pair device with pairing code' screen on the phone (IP:port differs from the connect port) + the 6-digit code in step ① above, then connect again.",
+        "adb.pair.autoConnected" to "Paired successfully — connected automatically (%s).",
+        "adb.pair.okConnectHint" to "Paired successfully. Couldn't find the connect port via discovery — press 'Connect' with the IP:port shown on the wireless debugging main screen to finish.",
         "adb.devices.title" to "Connected devices",
         "adb.devices.empty" to "No connected devices.",
         "adb.log.none" to "(select a device)",
