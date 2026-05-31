@@ -70,10 +70,10 @@ class McpService(
      * 카탈로그 항목 + 터미널/Claude 가 직접 추가한 비-카탈로그 server 도 포함(감지용).
      */
     fun registeredServerNames(): List<String> =
-        (readMcpJson()?.get("mcpServers") as? JsonObject)?.keys?.sorted().orEmpty()
+        readUserScopeServers().keys.sorted()
 
-    /** v1.35.0 — 전역 `.mcp.json` 경로 (UI 표시용). */
-    fun globalMcpJsonPath(): Path = mcpJsonPath()
+    /** v1.35.0 — 전역 MCP 설정 경로 (UI 표시용). v1.66.5 — 표준 user config(.claude.json). */
+    fun globalMcpJsonPath(): Path = userConfigPath()
 
     /**
      * v1.37.0 — 도커 **첫 설치(first-run)** 시 기본 MCP 를 자동 등록. 영속 볼륨(`~/.claude`)에
@@ -90,38 +90,22 @@ class McpService(
      * 자동 fetch. 따라서 부팅 시 네트워크 의존/실패 위험 없음(파일 쓰기만).
      */
     fun bootstrapDefaultsIfFirstRun() {
-        val marker = claudeConfigDir().resolve(".vibecoder-mcp-bootstrapped")
-        if (Files.exists(marker)) return
-        try {
-            val current = readMcpJson()
-            val existing = current?.get("mcpServers") as? JsonObject
-            if (existing != null && existing.isNotEmpty()) {
-                log.info { "MCP bootstrap: 기존 .mcp.json server ${existing.keys} 존재 → 자동 등록 skip (사용자 선택 보존)" }
-            } else {
-                var obj: JsonObject = current ?: buildJsonObject { put("mcpServers", buildJsonObject {}) }
-                val ids = McpCatalog.defaultInstallIds
-                for (id in ids) {
-                    val entry = McpCatalog.get(id) ?: continue
-                    obj = registerInMcpJson(obj, entry, emptyMap())
-                }
-                writeMcpJsonAtomic(mcpJsonPath(), obj)
-                log.info { "MCP bootstrap (first-run): 기본 MCP 등록 $ids → ${mcpJsonPath()}" }
-            }
-            Files.createDirectories(marker.parent)
-            Files.writeString(marker, clock.nowIso())
-        } catch (e: Throwable) {
-            log.warn(e) { "MCP 기본 부트스트랩 실패 (무시 — 카탈로그에서 수동 설치 가능)" }
-        }
+        // v1.66.5 — 표준 user-scope 등록으로 일원화. 멱등이라 marker 불필요(이미 등록된 건 skip).
+        //  레거시 .mcp.json(과거 설치분/기본값)을 user-scope 로 이관 + 진짜 첫 실행이면 기본 등록.
+        ensureUserScopeRegistration()
     }
 
     fun detect(id: String): EntryState {
         val e = McpCatalog.get(id) ?: return EntryState(id, Status.UNKNOWN, "카탈로그에 없음")
         val installed = isPackageInstalled(e.pkg)
-        val mcpJson = readMcpJson()
-        val registered = mcpJson?.let { it["mcpServers"] as? JsonObject }?.containsKey(id) == true
-        val configValues = if (registered) extractConfigValues(mcpJson!!, id, e) else emptyMap()
+        // v1.66.5 — 표준 user-scope(`.claude.json` mcpServers) 기준으로 등록 판정.
+        val userServers = readUserScopeServers()
+        val registered = userServers.containsKey(id)
+        val configValues = if (registered) {
+            extractConfigValues(buildJsonObject { put("mcpServers", userServers) }, id, e)
+        } else emptyMap()
         // v1.66.4 — npx 기반 MCP(`npx -y <pkg>`)는 글로벌 설치 없이 on-demand 실행되므로,
-        //  .mcp.json 에 등록만 되어 있어도 "설치됨" 으로 본다(기본 설치 MCP 의 "등록만" 오표시 수정).
+        //  등록만 되어 있어도 "설치됨" 으로 본다(기본 설치 MCP 의 "등록만" 오표시 수정).
         //  글로벌 설치가 필요한(command != npx) 항목만 npm 미설치 시 "등록만" 으로 구분.
         val effectivelyInstalled = installed || (registered && e.command == "npx")
         val status = when {
@@ -131,7 +115,7 @@ class McpService(
         }
         val msg = when (status) {
             Status.INSTALLED -> if (installed) "설치됨 + 등록됨" else "등록됨 (npx on-demand)"
-            Status.REGISTERED_ONLY -> ".mcp.json 에 등록되어 있으나 npm 패키지 미설치"
+            Status.REGISTERED_ONLY -> "등록되어 있으나 npm 패키지 미설치"
             Status.NOT_INSTALLED -> "미설치"
             Status.UNKNOWN -> "확인 불가"
         }
@@ -301,18 +285,23 @@ class McpService(
      */
     fun unregister(ids: List<String>) {
         if (ids.isEmpty()) return
-        val mcpPath = mcpJsonPath()
-        val current = readMcpJson() ?: buildJsonObject { put("mcpServers", buildJsonObject {}) }
-        val servers = (current["mcpServers"] as? JsonObject) ?: buildJsonObject {}
-        val newServers = buildJsonObject {
-            servers.forEach { (k, v) -> if (k !in ids) put(k, v) }
+        // v1.66.5 — 표준 user-scope 에서 제거(`claude mcp remove -s user`).
+        ids.forEach { id -> runClaudeMcp("remove", id, "-s", "user") }
+        // 레거시 .mcp.json 에 남아있던 동일 항목도 정리(있으면).
+        runCatching {
+            val current = readMcpJson()
+            if (current != null) {
+                val servers = (current["mcpServers"] as? JsonObject) ?: buildJsonObject {}
+                if (servers.keys.any { it in ids }) {
+                    val updated = buildJsonObject {
+                        current.forEach { (k, v) -> if (k != "mcpServers") put(k, v) }
+                        put("mcpServers", buildJsonObject { servers.forEach { (k, v) -> if (k !in ids) put(k, v) } })
+                    }
+                    writeMcpJsonAtomic(mcpJsonPath(), updated)
+                }
+            }
         }
-        val updated = buildJsonObject {
-            current.forEach { (k, v) -> if (k != "mcpServers") put(k, v) }
-            put("mcpServers", newServers)
-        }
-        writeMcpJsonAtomic(mcpPath, updated)
-        log.info { "unregistered MCP entries: $ids" }
+        log.info { "unregistered MCP entries (user-scope): $ids" }
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -323,11 +312,6 @@ class McpService(
         taskId: String,
         selections: Map<String, Map<String, String>>,
     ) {
-        val mcpPath = mcpJsonPath()
-        // 누적 mcp.json 시작점 (기존 파일 보존)
-        val initial = readMcpJson() ?: buildJsonObject { put("mcpServers", buildJsonObject {}) }
-        var current: JsonObject = initial
-
         var idx = 0
         for ((id, cfg) in selections) {
             idx++
@@ -342,11 +326,11 @@ class McpService(
                 throw RuntimeException("npm install -g ${entry.pkg} → exit $installExit")
             }
 
-            // 2) .mcp.json entry 갱신 (매번 atomic write — 도중 실패해도 직전까지 보존)
-            current = registerInMcpJson(current, entry, cfg)
-            writeMcpJsonAtomic(mcpPath, current)
+            // 2) v1.66.5 — 표준 user-scope 등록(`claude mcp add-json -s user`). 콘솔/서브에이전트/
+            //    터미널 모두에서 즉시 인식. (과거 .mcp.json 직접 쓰기는 claude 가 안 읽어 안 보였음.)
+            withContext(Dispatchers.IO) { registerUserScope(entry.id, buildServerEntryJson(entry, cfg)) }
             hub.publisher(taskId).emit(WsFrame.Log(taskId, "INFO",
-                "  ✓ ${entry.displayName} 설치 + .mcp.json 등록", clock.nowIso()))
+                "  ✓ ${entry.displayName} 설치 + user-scope 등록", clock.nowIso()))
         }
     }
 
@@ -373,46 +357,91 @@ class McpService(
         proc.exitValue()
     }
 
-    private fun registerInMcpJson(
-        current: JsonObject,
-        entry: McpCatalog.McpEntry,
-        cfg: Map<String, String>,
-    ): JsonObject {
-        // args 치환: @PKG@ → 실제 패키지명, @CONFIG:key@ → cfg[key]
+    /**
+     * v1.66.5 — 카탈로그 항목 → Claude MCP server JSON ({command, args, env}).
+     * placeholder 치환: `@PKG@` → 패키지명, `@CONFIG:key@` → cfg[key].
+     */
+    private fun buildServerEntryJson(entry: McpCatalog.McpEntry, cfg: Map<String, String>): JsonObject {
         val args = entry.argsTemplate.map { arg ->
             arg.replace("@PKG@", entry.pkg).let { a ->
-                Regex("@CONFIG:([^@]+)@").replace(a) { m ->
-                    cfg[m.groupValues[1]].orEmpty()
-                }
+                Regex("@CONFIG:([^@]+)@").replace(a) { m -> cfg[m.groupValues[1]].orEmpty() }
             }
         }
-        // env: 비밀값 + 비 args 사용 config 모두. argsTemplate 에 등장한 키는 env 에서 제외 (중복 방지).
         val argTokens = entry.argsTemplate.joinToString(" ")
         val envEntries = entry.configFields
-            .filter { f ->
-                val v = cfg[f.key].orEmpty()
-                v.isNotEmpty() && !argTokens.contains("@CONFIG:${f.key}@")
-            }
+            .filter { f -> cfg[f.key].orEmpty().isNotEmpty() && !argTokens.contains("@CONFIG:${f.key}@") }
             .associate { it.key to cfg[it.key]!! }
-
-        val serverEntry = buildJsonObject {
+        return buildJsonObject {
             put("command", entry.command)
             put("args", buildJsonArray { args.forEach { add(JsonPrimitive(it)) } })
             if (envEntries.isNotEmpty()) {
-                put("env", buildJsonObject {
-                    envEntries.forEach { (k, v) -> put(k, JsonPrimitive(v)) }
-                })
+                put("env", buildJsonObject { envEntries.forEach { (k, v) -> put(k, JsonPrimitive(v)) } })
             }
         }
-        val mcpServers = (current["mcpServers"] as? JsonObject) ?: buildJsonObject {}
-        val newServers = buildJsonObject {
-            mcpServers.forEach { (k, v) -> if (k != entry.id) put(k, v) }
-            put(entry.id, serverEntry)
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // v1.66.5 — 표준 글로벌(user-scope) 등록. claude 는 CLAUDE_CONFIG_DIR/.mcp.json 을
+    //  MCP 설정으로 자동 인식하지 않으므로(과거 등록은 콘솔에서 안 보였음), 표준 위치
+    //  (`claude mcp add-json -s user` → .claude.json 의 mcpServers)에 등록한다. 이렇게 하면
+    //  콘솔/서브에이전트/터미널/`claude mcp list` 모두에서 일관되게 보인다.
+    // ─────────────────────────────────────────────────────────────────
+
+    private fun claudeCmd(): String = System.getenv("CLAUDE_CMD")?.takeIf { it.isNotBlank() } ?: "claude"
+
+    /** `claude mcp <args...>` 실행 → (exit, output). 30s 타임아웃. */
+    private fun runClaudeMcp(vararg args: String): Pair<Int, String> {
+        return try {
+            val proc = ProcessBuilder(listOf(claudeCmd(), "mcp", *args)).redirectErrorStream(true).start()
+            val out = proc.inputStream.bufferedReader(Charsets.UTF_8).readText()
+            if (!proc.waitFor(30, TimeUnit.SECONDS)) { proc.destroyForcibly(); return -2 to "timeout" }
+            proc.exitValue() to out
+        } catch (e: Throwable) {
+            -1 to (e.message ?: "exec failed")
         }
-        return buildJsonObject {
-            current.forEach { (k, v) -> if (k != "mcpServers") put(k, v) }
-            put("mcpServers", newServers)
-        }
+    }
+
+    /** user-scope 에 등록(이미 있으면 교체). add-json 의 JSON 은 server 객체 그대로. */
+    private fun registerUserScope(name: String, serverJson: JsonObject) {
+        runClaudeMcp("remove", name, "-s", "user")  // 멱등 — 없으면 무시
+        val json = serverJson.toString()
+        val (exit, out) = runClaudeMcp("add-json", name, json, "-s", "user")
+        if (exit != 0) log.warn { "claude mcp add-json $name 실패(exit=$exit): ${out.take(300)}" }
+    }
+
+    private fun userConfigPath(): Path = claudeConfigDir().resolve(".claude.json")
+
+    /** 표준 user-scope mcpServers (`.claude.json` top-level). */
+    private fun readUserScopeServers(): JsonObject {
+        val p = userConfigPath()
+        if (!p.exists()) return buildJsonObject {}
+        return try {
+            val root = Json.parseToJsonElement(Files.readString(p, Charsets.UTF_8)) as? JsonObject
+            (root?.get("mcpServers") as? JsonObject) ?: buildJsonObject {}
+        } catch (_: Throwable) { buildJsonObject {} }
+    }
+
+    /**
+     * v1.66.5 — 표준 user-scope 등록 보장(멱등). 매 startup 호출:
+     *  - 레거시 `.mcp.json` 의 server 중 user-scope 에 없는 것을 이관(기존 설치 호환).
+     *  - 레거시도 user-scope 도 비어있으면(진짜 첫 실행) 기본 MCP 등록.
+     */
+    fun ensureUserScopeRegistration() {
+        runCatching {
+            val userServers = readUserScopeServers()
+            val legacy = readMcpJson()?.get("mcpServers") as? JsonObject ?: buildJsonObject {}
+            if (userServers.isEmpty() && legacy.isEmpty()) {
+                McpCatalog.defaultInstallIds.forEach { id ->
+                    val e = McpCatalog.get(id) ?: return@forEach
+                    registerUserScope(id, buildServerEntryJson(e, emptyMap()))
+                }
+                log.info { "MCP user-scope 기본 등록(first-run): ${McpCatalog.defaultInstallIds}" }
+                return@runCatching
+            }
+            val migrate = legacy.filterKeys { it !in userServers.keys }
+            migrate.forEach { (name, v) -> (v as? JsonObject)?.let { registerUserScope(name, it) } }
+            if (migrate.isNotEmpty()) log.info { "MCP 레거시 .mcp.json → user-scope 이관: ${migrate.keys}" }
+        }.onFailure { log.warn(it) { "MCP user-scope 등록 보장 실패(무시)" } }
     }
 
     private fun isPackageInstalled(pkg: String): Boolean {
