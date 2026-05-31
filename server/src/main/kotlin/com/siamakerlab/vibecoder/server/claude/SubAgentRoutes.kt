@@ -459,6 +459,15 @@ private fun renderSubAgentConsole(
   }
   connect();
 
+  // v1.70.1 — 사용자 프롬프트 카드(2줄 클램프) 클릭 시 펼침/접힘.
+  logEl.addEventListener('click', function(e) {
+    var card = e.target.closest && e.target.closest('.log-line.user');
+    if (!card) return;
+    var sel = window.getSelection && window.getSelection();
+    if (sel && !sel.isCollapsed) return;
+    card.classList.toggle('expanded');
+  });
+
   var inFlight = false;
   function setInFlight(on) { inFlight = on; if (stopBtn) stopBtn.style.display = on ? 'inline-block' : 'none'; }
   async function cancelTurn() {

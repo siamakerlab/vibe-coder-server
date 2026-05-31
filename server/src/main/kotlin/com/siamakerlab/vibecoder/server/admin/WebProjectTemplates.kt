@@ -1587,6 +1587,17 @@ $automationPanelHtml
     }
   }
 
+  // v1.70.1 — 내가 보낸 프롬프트 카드는 기본 2줄 클램프. 카드 클릭 시 펼침/접힘.
+  //           텍스트 선택(drag) 중이거나 복사 버튼 클릭 시엔 토글 안 함.
+  logEl.addEventListener('click', function(e) {
+    if (e.target.closest('.log-copy')) return;
+    var card = e.target.closest('.log-line.user');
+    if (!card) return;
+    var sel = window.getSelection && window.getSelection();
+    if (sel && !sel.isCollapsed) return;  // 드래그 선택 중엔 무시
+    card.classList.toggle('expanded');
+  });
+
   // 필터 체크박스 wiring — 페이지 로드 직후 1회.
   (function initFilter() {
     var cbs = document.querySelectorAll('.filter-cb');
