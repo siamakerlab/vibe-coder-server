@@ -1458,6 +1458,13 @@ internal object MessagesKo {
         "dashboard.card.activity.projects" to "프로젝트",
         "dashboard.card.activity.runningBuilds" to "실행 중 빌드",
         "dashboard.card.activity.devices" to "연결된 디바이스",
+        // v1.63.0 — 무선 ADB 기기 상태 카드.
+        "dashboard.adb.title" to "무선 ADB 기기",
+        "dashboard.adb.statusLabel" to "ADB 상태",
+        "dashboard.adb.available" to "사용 가능",
+        "dashboard.adb.unavailable" to "미설치",
+        "dashboard.adb.connected" to "연결된 기기",
+        "dashboard.adb.manage" to "기기 로그 / 연결 관리 →",
         "dashboard.card.count" to "%d개",
         "dashboard.claudeOk" to "✓ OK",
         "dashboard.claudeMissing" to "✗ 미설치",

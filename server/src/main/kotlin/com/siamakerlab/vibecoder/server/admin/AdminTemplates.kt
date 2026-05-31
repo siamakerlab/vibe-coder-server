@@ -550,7 +550,41 @@ $gitIdentityBanner
 
   ${renderClaudeUsageCard(claudeUsage, lang)}
   ${renderDiskUsageCard(diskSnapshot, lang)}
+
+  <!-- v1.63.0 — 무선 ADB 기기 상태 카드. /api/adb/status 폴링(클라이언트). -->
+  <div class="card" id="adb-card"
+       data-avail="${esc(t("dashboard.adb.available"))}"
+       data-unavail="${esc(t("dashboard.adb.unavailable"))}">
+    <h2>${esc(t("dashboard.adb.title"))}</h2>
+    <dl>
+      <dt>${esc(t("dashboard.adb.statusLabel"))}</dt><dd id="adb-card-avail" class="dim">…</dd>
+      <dt>${esc(t("dashboard.adb.connected"))}</dt><dd id="adb-card-count" class="dim">-</dd>
+    </dl>
+    <p class="hint"><a href="/adb">${esc(t("dashboard.adb.manage"))}</a></p>
+  </div>
 </section>
+<script>
+(function() {
+  var card = document.getElementById('adb-card');
+  if (!card) return;
+  var availEl = document.getElementById('adb-card-avail');
+  var cntEl = document.getElementById('adb-card-count');
+  function tick() {
+    fetch('/api/adb/status', { credentials: 'same-origin' })
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(s) {
+        if (!s) return;
+        if (s.available) { availEl.textContent = card.dataset.avail; availEl.className = 'ok'; }
+        else { availEl.textContent = card.dataset.unavail; availEl.className = 'warn'; }
+        var n = s.connected || 0;
+        cntEl.textContent = n;
+        cntEl.className = n > 0 ? 'ok' : 'dim';
+      }).catch(function() {});
+  }
+  tick();
+  setInterval(tick, 30000);
+})();
+</script>
 """
         )
     }

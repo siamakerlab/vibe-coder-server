@@ -1480,6 +1480,13 @@ internal object MessagesEn {
         "dashboard.card.activity.projects" to "Projects",
         "dashboard.card.activity.runningBuilds" to "Running builds",
         "dashboard.card.activity.devices" to "Connected devices",
+        // v1.63.0 — wireless ADB device status card.
+        "dashboard.adb.title" to "Wireless ADB devices",
+        "dashboard.adb.statusLabel" to "ADB status",
+        "dashboard.adb.available" to "Available",
+        "dashboard.adb.unavailable" to "Not installed",
+        "dashboard.adb.connected" to "Connected devices",
+        "dashboard.adb.manage" to "Device logs / connection →",
         "dashboard.card.count" to "%d",
         "dashboard.claudeOk" to "✓ OK",
         "dashboard.claudeMissing" to "✗ Not installed",
