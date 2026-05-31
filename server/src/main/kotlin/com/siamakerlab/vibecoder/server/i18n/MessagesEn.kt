@@ -102,6 +102,11 @@ internal object MessagesEn {
         "nav.terminal" to "Terminal",
         "nav.settings" to "Settings",
         "nav.logout" to "Sign out",
+        // v1.65.0 — sidebar wireless debugging pill.
+        "nav.adb.title" to "Wireless debug",
+        "nav.adb.devices" to "device(s)",
+        "nav.adb.available" to "Connected",
+        "nav.adb.noDevice" to "Waiting",
 
         // ─────────────────────────────────────────────── settings tabs
         "settings.tab.general" to "General",

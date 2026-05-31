@@ -566,6 +566,9 @@ object WebProjectTemplates {
         page: Int = 1,
         size: Int = 20,
         total: Int = 0,
+        /** v1.64.0 — 행별 앱 versionName(없으면 null) + 런처 아이콘 존재 여부(false면 placeholder). */
+        versions: Map<String, String?> = emptyMap(),
+        appIcons: Map<String, Boolean> = emptyMap(),
     ): String {
         val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
         val errHtml = if (flashErr != null) """<div class="error">${esc(flashErr)}</div>""" else ""
@@ -586,9 +589,17 @@ object WebProjectTemplates {
                 // v1.53.0 — 제일 왼쪽 상태칩. data-pid 로 WS patch 대상 식별, data-state 로 색 분기.
                 val state = statuses[p.id] ?: "ready"
                 val chip = """<span class="pstat pstat-$state" data-pid="${esc(p.id)}" data-state="$state">${esc(t("projects.status.$state"))}</span>"""
+                // v1.64.0 — 앱 아이콘(없으면 placeholder vibe-coder 아이콘) + 이름 우측 버전.
+                val iconSrc = if (appIcons[p.id] == true) "/projects/${p.id.encodeUrlSeg()}/app-icon" else "/static/icon.png"
+                val verBadge = versions[p.id]?.takeIf { it.isNotBlank() }
+                    ?.let { """ <span class="proj-ver">v${esc(it)}</span>""" } ?: ""
                 """<tr class="row-link proj-row" data-pid="${esc(p.id)}">
                     <td><a href="$href" style="$cellLinkStyle">$chip</a></td>
-                    <td><a href="$href" style="$cellLinkStyle"><strong>${esc(p.name)}</strong><br><small class="dim">${esc(p.id)}</small></a></td>
+                    <td><a href="$href" style="$cellLinkStyle;display:flex;align-items:center;gap:10px">
+                        <img class="proj-icon" src="$iconSrc" alt="" loading="lazy"
+                             onerror="this.onerror=null;this.src='/static/icon.png'">
+                        <span style="min-width:0"><strong>${esc(p.name)}</strong>$verBadge<br><small class="dim">${esc(p.id)}</small></span>
+                      </a></td>
                     <td><a href="$href" style="$cellLinkStyle"><code>${esc(p.packageName)}</code></a></td>
                     <td class="proj-handle" title="${esc(t("projects.reorder.handle"))}" aria-label="${esc(t("projects.reorder.handle"))}">☰</td>
                   </tr>"""
@@ -736,6 +747,11 @@ $errHtml
       table.devices td.proj-handle:active { cursor: grabbing; }
       table.devices tr.proj-row.dragging { opacity: 0.55; background: #243049; }
       table.devices tr.proj-row.drop-target td { box-shadow: inset 0 2px 0 var(--accent,#3b82f6); }
+      /* v1.64.0 — 앱 아이콘 + 이름 우측 버전 배지. */
+      .proj-icon { width:30px; height:30px; border-radius:7px; object-fit:cover; flex:none;
+        background:#11151e; border:1px solid #222; }
+      .proj-ver { font-size:11px; color:var(--text-dim); margin-left:6px; font-weight:500;
+        font-family:ui-monospace,Menlo,monospace; }
     </style>
     <table class="devices">
       <thead>

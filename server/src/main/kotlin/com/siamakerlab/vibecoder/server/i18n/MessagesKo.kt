@@ -80,6 +80,11 @@ internal object MessagesKo {
         "nav.terminal" to "터미널",
         "nav.settings" to "설정",
         "nav.logout" to "로그아웃",
+        // v1.65.0 — 사이드바 무선디버깅 pill.
+        "nav.adb.title" to "무선디버깅",
+        "nav.adb.devices" to "대 연결",
+        "nav.adb.available" to "연결됨",
+        "nav.adb.noDevice" to "대기 중",
 
         // ─────────────────────────────────────────────── settings tabs
         "settings.tab.general" to "일반",

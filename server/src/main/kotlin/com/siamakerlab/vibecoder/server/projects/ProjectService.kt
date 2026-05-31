@@ -607,6 +607,50 @@ class ProjectService(
         return null
     }
 
+    /**
+     * v1.64.0 — 모듈 build.gradle(.kts) 의 versionName. 없으면 null (목록 행 "v1.2.3" 표시용).
+     * 파일 IO 실패는 graceful null. "동적" — 매 호출 시 현재 gradle 을 읽음.
+     */
+    fun appVersionName(projectId: String, moduleName: String): String? {
+        if (isGhost(projectId)) return null
+        val moduleDir = runCatching { workspace.projectRoot(projectId) }.getOrNull()
+            ?.resolve(moduleName) ?: return null
+        val re = Regex("""versionName\s*=?\s*["']([^"']+)["']""")
+        for (g in listOf("build.gradle.kts", "build.gradle")) {
+            val gf = moduleDir.resolve(g)
+            if (!Files.isRegularFile(gf)) continue
+            val text = runCatching { Files.readString(gf) }.getOrNull() ?: continue
+            re.find(text)?.let { return it.groupValues[1].take(32) }
+        }
+        return null
+    }
+
+    /**
+     * v1.64.0 — 런처 아이콘 raster(png/webp) 파일. adaptive-icon(xml)만 있으면 null →
+     * 목록은 placeholder(vibe-coder 아이콘) 사용. 큰 density 우선. 반환 경로는
+     * workspace 내부 보장(symlink escape 방어).
+     */
+    fun resolveAppIcon(projectId: String, moduleName: String): Path? {
+        if (isGhost(projectId)) return null
+        val resRoot = runCatching { workspace.projectRoot(projectId) }.getOrNull()
+            ?.resolve(moduleName)?.resolve("src/main/res") ?: return null
+        if (!Files.isDirectory(resRoot)) return null
+        val densities = listOf("xxxhdpi", "xxhdpi", "xhdpi", "hdpi", "mdpi", "")
+        val bases = listOf("mipmap", "drawable")
+        val names = listOf("ic_launcher", "ic_launcher_round", "ic_launcher_foreground")
+        for (d in densities) for (b in bases) {
+            val dir = resRoot.resolve(if (d.isEmpty()) b else "$b-$d")
+            if (!Files.isDirectory(dir)) continue
+            for (n in names) for (ext in listOf("png", "webp")) {
+                val f = dir.resolve("$n.$ext")
+                if (Files.isRegularFile(f)) {
+                    return runCatching { workspace.ensureUnderWorkspace(f.toRealPath()) }.getOrNull()
+                }
+            }
+        }
+        return null
+    }
+
     private fun detectPackageFromClonedRepo(root: Path): String? {
         if (!Files.isDirectory(root)) return null
         val gradleRegex = Regex("""(?:applicationId|namespace)\s*[=]?\s*["']([a-zA-Z][a-zA-Z0-9_.]+)["']""")

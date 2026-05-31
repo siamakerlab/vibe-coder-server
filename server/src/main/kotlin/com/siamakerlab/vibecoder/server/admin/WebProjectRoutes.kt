@@ -98,10 +98,14 @@ fun Routing.webProjectRoutes(
         val list = full.drop(offset).take(size)
         // v1.60.0 — 상태칩 3-state (응답중/대기중/중지됨). 프로세스 생존이 아닌 대화 이력 기반.
         val statuses = list.associate { it.id to projectStatus(it.id, sessionManager, conversationRepo) }
+        // v1.64.0 — 행별 앱 버전(versionName) + 런처 아이콘 존재 여부(없으면 placeholder).
+        val versions = list.associate { it.id to runCatching { projects.appVersionName(it.id, it.moduleName) }.getOrNull() }
+        val appIcons = list.associate { it.id to runCatching { projects.resolveAppIcon(it.id, it.moduleName) != null }.getOrDefault(false) }
         call.respondText(
             WebProjectTemplates.projectsPage(
                 sess.username, list, flashErr = err, flashOk = ok, csrf = sess.csrf, lang = sess.language,
                 statuses = statuses, page = page, size = size, total = total,
+                versions = versions, appIcons = appIcons,
             ),
             ContentType.Text.Html,
         )
@@ -115,6 +119,21 @@ fun Routing.webProjectRoutes(
             projects.reorder(req.offset, req.order)
             call.respond(HttpStatusCode.OK)
         }
+    }
+
+    // v1.64.0 — 프로젝트 런처 아이콘(raster png/webp). 없으면 404 → 목록이 placeholder 사용.
+    get("/projects/{id}/app-icon") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@get
+        val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
+        val moduleName = runCatching { projects.get(id).moduleName }.getOrNull() ?: "app"
+        val icon = runCatching { projects.resolveAppIcon(id, moduleName) }.getOrNull()
+        if (icon == null || !Files.isRegularFile(icon)) {
+            call.respond(HttpStatusCode.NotFound)
+            return@get
+        }
+        call.response.header(HttpHeaders.CacheControl, "private, max-age=60")
+        call.respondFile(icon.toFile())
     }
 
     post("/projects") {

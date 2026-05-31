@@ -76,7 +76,7 @@ object AdminTemplates {
   <link rel="icon" type="image/png" href="/static/icon.png">
   <link rel="manifest" href="/static/manifest.json">
   <meta name="theme-color" content="#0b0d12">
-  <link rel="stylesheet" href="/static/admin.css?v=1.62.0">
+  <link rel="stylesheet" href="/static/admin.css?v=1.64.0">
   <script>
     // v1.6.2 — 사이드바 접힘 상태를 first paint 전에 :root data-attribute 로 적용 (FOUC 회피).
     // CSS 의 :root[data-sidebar-collapsed="1"] .layout 가 grid-template-columns 축소.
@@ -176,11 +176,16 @@ object AdminTemplates {
     ${link("/terminal", t("nav.terminal"), "terminal", "terminal")}
     ${link("/settings/tabs", t("nav.settings"), "settings", "settings")}
   </div>
+  <!-- v1.65.0 — 무선디버깅 상태 pill (Claude 사용량 위). adb 미설치면 hidden. 클릭 시 /adb. -->
+  <a id="adb-pill" class="quota-pill adb-pill" href="/adb" title="${esc(t("nav.adb.title"))}" hidden>
+    <div class="qp-header">
+      <span class="qp-h-title">${esc(t("nav.adb.title"))}</span>
+      <span id="adb-pill-dot" class="adb-dot"></span>
+    </div>
+    <div class="adb-pill-body"><span id="adb-pill-status" class="dim">…</span> · <strong id="adb-pill-n">0</strong> ${esc(t("nav.adb.devices"))}</div>
+  </a>
   <!-- v1.3.2 — 전역 Claude 쿼타 pill. v1.6.2 — header 에 refresh 버튼 + 타임존 제거. -->
   <div id="quota-pill" class="quota-pill" hidden></div>
-  <!-- v1.40.0 — 무선 ADB 연결 기기 뱃지. 연결 0대면 hidden. 클릭 시 /adb. -->
-  <a id="adb-badge" href="/adb" title="ADB" hidden
-     style="display:flex;align-items:center;gap:6px;margin:4px 10px 0;padding:4px 8px;border-radius:6px;background:rgba(105,219,124,0.12);color:var(--ok);font-size:12px;text-decoration:none">📱 <span id="adb-badge-n">0</span></a>
   <div class="user-box">
     $userBoxHtml
     <form method="post" action="/logout">
@@ -259,16 +264,25 @@ object AdminTemplates {
   tick();
   setInterval(tick, 60000);
 
-  // v1.40.0 — ADB 연결 기기 뱃지 폴링.
-  var adbEl = document.getElementById('adb-badge');
-  var adbN = document.getElementById('adb-badge-n');
+  // v1.65.0 — 무선디버깅 pill 폴링. adb 사용 가능 시 노출(연결 0대도 표시), 미설치면 hidden.
+  var adbEl = document.getElementById('adb-pill');
+  var adbN = document.getElementById('adb-pill-n');
+  var adbStatus = document.getElementById('adb-pill-status');
+  var adbDot = document.getElementById('adb-pill-dot');
   if (adbEl && adbN) {
+    var ADB_AVAIL = '${esc(t("nav.adb.available"))}';
+    var ADB_NONE = '${esc(t("nav.adb.noDevice"))}';
     function adbTick() {
       fetch('/api/adb/status', { credentials: 'same-origin' })
         .then(function(r){ return r.ok ? r.json() : null; })
         .then(function(s){
-          if (s && s.connected > 0) { adbN.textContent = s.connected; adbEl.hidden = false; }
-          else { adbEl.hidden = true; }
+          if (!s || !s.available) { adbEl.hidden = true; return; }
+          var n = s.connected || 0;
+          adbN.textContent = n;
+          adbStatus.textContent = n > 0 ? ADB_AVAIL : ADB_NONE;
+          adbStatus.className = n > 0 ? 'ok' : 'dim';
+          if (adbDot) adbDot.className = 'adb-dot' + (n > 0 ? ' on' : '');
+          adbEl.hidden = false;
         })
         .catch(function(){ adbEl.hidden = true; });
     }

@@ -207,6 +207,20 @@ a:hover { color: var(--primary-hover); text-decoration: underline; }
     letter-spacing: 0.4px; text-transform: uppercase;
 }
 .quota-pill .qp-h-title { /* same as qp-header text */ }
+/* v1.65.0 — 무선디버깅 pill (Claude 사용량 위). quota-pill 스타일 재사용 + 자체 body. */
+.adb-pill { text-decoration: none; color: inherit; gap: 6px; }
+.adb-pill:hover .adb-pill-body { color: var(--text); }
+.adb-pill .adb-pill-body { font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 5px; }
+.adb-pill .adb-dot {
+    width: 8px; height: 8px; border-radius: 50%; background: #3a4150; flex: none;
+}
+.adb-pill .adb-dot.on {
+    background: #69db7c;
+    box-shadow: 0 0 0 0 rgba(105,219,124,0.6);
+    animation: pstat-pulse 1.6s ease-in-out infinite;
+}
+:root[data-sidebar-collapsed="1"] .layout .adb-pill,
+.layout.sidebar-collapsed .adb-pill { display: none; }
 .quota-pill .qp-refresh {
     background: transparent; border: none; color: var(--text-dim);
     cursor: pointer; padding: 0 4px; font-size: 14px; line-height: 1;
