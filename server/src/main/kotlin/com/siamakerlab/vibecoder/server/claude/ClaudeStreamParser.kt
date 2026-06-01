@@ -151,12 +151,11 @@ class ClaudeStreamParser(
                     out += ClaudeEvent.ToolUse(toolName, input, toolUseId)
                 }
                 "thinking" -> {
-                    // v1.84.0 — signature-only redacted thinking(thinking="")은 노이즈라
-                    // 드롭(DB 적재 방지 — 운영 1650행). 클라(renderUnknown)도 빈 건 숨겼지만
-                    // 서버 history 엔 Unknown 으로 쌓였다. 내용이 있는 thinking 만 통과
-                    // (renderUnknown 이 💭 collapsible 로 렌더).
-                    val th = b["thinking"]?.jsonPrimitive?.contentOrNull?.trim()
-                    if (!th.isNullOrEmpty()) out += ClaudeEvent.Unknown(b)
+                    // v1.86.0 — 빈 thinking(signature-only)도 통과. 클라(renderUnknown)가
+                    // "💭 Thinking…" 뱃지(이름만)로 렌더한다(사용자 요청 — 숨기지 말고 흔적 표시).
+                    // 내용 있는 thinking 은 💭 + 내용. 절단으로 JSON 깨져도 renderUnknown 이
+                    // 타입 추출 뱃지로 안전 처리.
+                    out += ClaudeEvent.Unknown(b)
                 }
                 else -> out += ClaudeEvent.Unknown(b)
             }

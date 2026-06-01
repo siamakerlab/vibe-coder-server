@@ -748,39 +748,79 @@ table.devices small.dim { font-size: 11px; }
    - 90px label column 제거 → 단일 column + 짧은 ASCII prefix (::before pseudo).
    - 카드 사이 border 제거, padding tight (dense terminal feel).
    - role 별 색상 prefix 만 색 — 본문은 모노스페이스 흰색. */
+/* v1.86.0 — 채팅 버블 레이아웃. 각 메시지를 말풍선으로 감싼다.
+   user=우측 강조 / assistant=좌측 중립(마크다운) / tool=좌측 인셋 /
+   sys=중앙 pill / thinking·뱃지=좌측 흐린 작은 버블. */
 .console-log .log-line {
-    display: block;
-    padding: 1px 0 1px 1.6em;
-    position: relative;
+    display: flex;
+    margin: 6px 0;
+    align-items: flex-start;
     border-bottom: none;
 }
-.console-log .log-line::before {
-    position: absolute;
-    left: 0;
-    top: 1px;
-    font-family: inherit;
-    font-weight: 600;
-    white-space: pre;
-    user-select: none;
+.console-log .log-line::before { display: none; }
+.console-log .log-label { display: none; }
+.console-log .log-content {
+    display: flex; flex-direction: column; min-width: 0;
+    max-width: 82%;
+    padding: 7px 12px;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.05);
 }
-.console-log .user::before      { content: '> ';   color: var(--primary, #6aa9ff); }
-.console-log .assistant::before { content: '⏺ ';   color: #5ed3a1; }
-.console-log .tool::before      { content: '⏺ ';   color: #cfa763; }
-.console-log .tool-out::before  { content: '  ⎿ '; color: #8ea0c2; padding-left: 0.4em; }
-.console-log .tool-err::before  { content: '  ⎿ '; color: var(--danger, #ff6b6b); padding-left: 0.4em; }
-.console-log .sys::before       { content: '⎯ ';   color: #6c7a93; }
-.console-log .err::before       { content: '! ';   color: var(--danger, #ff6b6b); font-weight: 700; }
-/* v1.70.0 — thinking(사고 과정) 행: 흐릿한 이탤릭으로 본문과 구분. */
-.console-log .thinking::before  { content: '💭 '; color: #8a7fb0; }
-.console-log .thinking          { opacity: 0.72; font-style: italic; }
-
-/* v1.21.0 — 기존 .log-label 은 server 측에서 여전히 emit (script 가 사용) 하지만
-   시각적으로는 hide. role 정보는 ::before prefix + class 색으로 표현. */
-.console-log .log-label {
-    display: none;
-}
-.console-log .log-content { display: flex; flex-direction: column; min-width: 0; }
 .console-log .log-body { white-space: pre-wrap; word-break: break-word; }
+
+/* 내 프롬프트 — 우측 강조 버블 */
+.console-log .user { justify-content: flex-end; }
+.console-log .user .log-content {
+    background: rgba(106,169,255,0.16);
+    border-color: rgba(106,169,255,0.30);
+    border-bottom-right-radius: 4px;
+}
+/* claude 응답 — 좌측 중립 버블 (마크다운 렌더) */
+.console-log .assistant .log-content {
+    background: rgba(94,211,161,0.09);
+    border-color: rgba(94,211,161,0.18);
+    border-bottom-left-radius: 4px;
+}
+/* 도구 호출/결과 — 좌측 인셋, 작은 모노 버블 */
+.console-log .tool .log-content {
+    background: rgba(207,167,99,0.09);
+    border-color: rgba(207,167,99,0.16);
+    font-size: 0.92em; max-width: 90%;
+}
+.console-log .tool-out .log-content {
+    background: rgba(142,160,194,0.08);
+    border-color: rgba(142,160,194,0.14);
+    font-size: 0.92em; max-width: 90%;
+}
+.console-log .tool-err .log-content,
+.console-log .err .log-content {
+    background: rgba(255,107,107,0.11);
+    border-color: rgba(255,107,107,0.26);
+}
+/* 시스템/완료/replay — 중앙 작은 pill */
+.console-log .sys { justify-content: center; }
+.console-log .sys .log-content {
+    background: rgba(108,122,147,0.15);
+    border: none;
+    font-size: 0.82em;
+    padding: 3px 11px;
+    border-radius: 11px;
+    color: #9aa7bd;
+    max-width: 90%;
+    text-align: center;
+}
+/* thinking / 파싱 불가 — 좌측 흐린 작은 뱃지(이름만) */
+.console-log .thinking { justify-content: flex-start; }
+.console-log .thinking .log-content {
+    background: rgba(138,127,176,0.14);
+    border-color: rgba(138,127,176,0.22);
+    font-style: italic;
+    opacity: 0.85;
+    font-size: 0.88em;
+    padding: 4px 10px;
+    border-radius: 11px;
+}
 
 /* v1.7.9 — 응답 카드 내부 하단 meta: 시각 + 복사 버튼. 우측 정렬. */
 .console-log .log-meta {

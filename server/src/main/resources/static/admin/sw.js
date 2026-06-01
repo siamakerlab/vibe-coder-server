@@ -9,7 +9,9 @@
 // SSR pages (always fresh).
 //
 // Bump CACHE_VERSION on each release to invalidate old SW caches.
-const CACHE_VERSION = 'vibe-coder-v0.50.0';
+// v1.86.0 — v0.50.0 → v1.86.0. 구 SW 가 console-render.js?v=1.85.0(null 버전)을
+// cache-first 로 박제해 ?v 캐시버스트가 무력화되던 문제 회수(아래 fetch 의 ?v= 우회와 짝).
+const CACHE_VERSION = 'vibe-coder-v1.86.0';
 const STATIC_CACHE = `static-${CACHE_VERSION}`;
 const STATIC_ASSETS = [
   '/static/admin.css',
@@ -52,6 +54,13 @@ self.addEventListener('fetch', (event) => {
       url.pathname.startsWith('/ws/') ||
       url.pathname.startsWith('/admin/')) {
     return;  // default network passthrough
+  }
+
+  // v1.86.0 — 버전 쿼리(?v=)가 붙은 자산(console-render.js, admin.css 등)은 HTML 의
+  // ?v 가 캐시버스트 SSOT 이므로 SW 캐시를 우회(network)한다. cache-first 로 박제하면
+  // ?v 가 바뀌어도 구버전(예: null 혼입 console-render.js)이 계속 서빙되는 문제 발생.
+  if (url.pathname.startsWith('/static/') && url.search.indexOf('v=') !== -1) {
+    return;  // network passthrough — 브라우저 HTTP 캐시(?v 기반)만 사용
   }
 
   // Static assets — cache-first.
