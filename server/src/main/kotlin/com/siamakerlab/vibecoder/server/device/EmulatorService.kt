@@ -87,20 +87,42 @@ class EmulatorService(
 
     fun isRunning(): Boolean = process?.isAlive == true
 
-    /** 부팅 완료: `getprop sys.boot_completed == 1`. 미부팅/오프라인이면 false. */
+    /** 부팅 완료: `getprop sys.boot_completed == 1`. 미부팅/오프라인이면 false. (직접 adb — 캐시 X) */
     fun booted(): Boolean {
         if (!isRunning()) return false
         val out = adbCmd(listOf("-s", serial, "shell", "getprop", "sys.boot_completed"), 6) ?: return false
         return out.trim() == "1"
     }
 
-    fun status(): Status = Status(
-        available = available(),
-        running = isRunning(),
-        booted = runCatching { booted() }.getOrDefault(false),
-        serial = serial,
-        startedAtIso = startedAt?.toString(),
-    )
+    // v1.73.0 점검 — booted adb 호출 TTL 캐시. 무인증 /api/emulator/status pill 폴링이
+    // 매 호출 adb getprop 를 fork 하지 않도록(코루틴 워커 블로킹 + adb spawn 남용 방지).
+    @Volatile private var bootedCache: Boolean = false
+    @Volatile private var bootedCheckedAt: Long = 0L
+
+    private fun bootedCached(): Boolean {
+        if (!isRunning()) { bootedCache = false; return false }
+        val now = System.currentTimeMillis()
+        if (now - bootedCheckedAt < BOOTED_TTL_MS) return bootedCache
+        val out = adbCmd(listOf("-s", serial, "shell", "getprop", "sys.boot_completed"), 6)
+        bootedCache = out?.trim() == "1"
+        bootedCheckedAt = now
+        return bootedCache
+    }
+
+    /**
+     * 상태 스냅샷. booted 의 adb 호출은 [Dispatchers.IO] 격리 + [BOOTED_TTL_MS] TTL 캐시 —
+     * 라우트(코루틴) 워커를 블로킹하지 않고, pill 폴링이 매번 adb 를 fork 하지 않는다.
+     */
+    suspend fun status(): Status = withContext(Dispatchers.IO) {
+        val running = isRunning()
+        Status(
+            available = available(),
+            running = running,
+            booted = if (running) runCatching { bootedCached() }.getOrDefault(false) else false,
+            serial = serial,
+            startedAtIso = startedAt?.toString(),
+        )
+    }
 
     fun recentLog(): List<String> = synchronized(logTail) { logTail.toList() }
 
@@ -122,12 +144,20 @@ class EmulatorService(
         )
         runCatching {
             val p = ProcessBuilder(args).redirectErrorStream(true).start()
-            // "Do you wish to create a custom hardware profile? [no]" 프롬프트 → no.
+            // v1.73.0 점검(M2) — stdout 을 별도 데몬 스레드로 drain 하면서 stdin 에 "no" 주입.
+            // ("Do you wish to create a custom hardware profile? [no]" 프롬프트 대비.)
+            // avdmanager 출력이 파이프 버퍼를 채워도(stdin 미독 상태) 데드락 나지 않도록 분리.
+            val outText = StringBuilder()
+            val drain = Thread {
+                runCatching { p.inputStream.bufferedReader().forEachLine { synchronized(outText) { outText.appendLine(it) } } }
+            }.apply { isDaemon = true; name = "avd-create-drain"; start() }
             runCatching { p.outputStream.bufferedWriter().use { it.write("no\n"); it.flush() } }
-            val out = p.inputStream.bufferedReader().readText()
-            if (!p.waitFor(120, TimeUnit.SECONDS)) { p.destroyForcibly(); return@runCatching false }
-            log.info { "avdmanager create avd '$avdName': exit=${p.exitValue()} ${out.takeLast(200).replace('\n', ' ')}" }
-            avdExists()
+            val finished = p.waitFor(120, TimeUnit.SECONDS)
+            if (!finished) { p.destroyForcibly() }
+            drain.join(2000)
+            val tail = synchronized(outText) { outText.toString() }.takeLast(200).replace('\n', ' ')
+            log.info { "avdmanager create avd '$avdName': finished=$finished $tail" }
+            finished && avdExists()
         }.getOrElse { log.warn(it) { "avd create 실패" }; false }
     }
 
@@ -215,5 +245,10 @@ class EmulatorService(
             if (!p.waitFor(timeoutSec, TimeUnit.SECONDS)) { p.destroyForcibly(); return null }
             out
         }.getOrElse { log.warn(it) { "adb ${args.firstOrNull()} 실패" }; null }
+    }
+
+    private companion object {
+        /** booted(adb getprop) 결과 캐시 TTL. pill 폴링(30s)·동시 호출의 adb fork 억제. */
+        const val BOOTED_TTL_MS = 4000L
     }
 }

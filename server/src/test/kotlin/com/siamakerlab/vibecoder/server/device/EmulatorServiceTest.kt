@@ -33,10 +33,12 @@ class EmulatorServiceTest {
 
     @Test
     fun `status reflects stopped state with stable serial`() {
-        val st = svc().status()
-        st.running.shouldBeFalse()
-        st.booted.shouldBeFalse()
-        st.serial shouldBe "emulator-5554"
-        st.startedAtIso shouldBe null
+        kotlinx.coroutines.runBlocking {
+            val st = svc().status()
+            st.running.shouldBeFalse()
+            st.booted.shouldBeFalse()
+            st.serial shouldBe "emulator-5554"
+            st.startedAtIso shouldBe null
+        }
     }
 }
