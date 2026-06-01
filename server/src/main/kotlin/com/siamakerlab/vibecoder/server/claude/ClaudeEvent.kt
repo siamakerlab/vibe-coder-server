@@ -66,6 +66,16 @@ sealed class ClaudeEvent {
                 .takeIf { it.isNotEmpty() }?.sum()
     }
 
+    /**
+     * v1.83.0 — CLI 가 보낸 정보성 상태 알림(현재는 `rate_limit_event`). turn 을 끝내지
+     * 않으며 busy 상태도 바꾸지 않는다. 콘솔에 시스템 메시지로만 노출 — 사용자가 "멈춤/
+     * thinking 후 중단" 으로 오해하던 rate limit 대기·재시도를 가시화한다.
+     */
+    data class SystemNote(
+        val code: String,
+        val message: String,
+    ) : ClaudeEvent()
+
     /** CLI emitted a known top-level type we don't model — passed through. */
     data class Unknown(val raw: JsonElement) : ClaudeEvent()
 }

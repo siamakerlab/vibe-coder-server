@@ -309,6 +309,7 @@ class SubAgentSessionManager(
             event.cacheCreationInputTokens?.let { parts += "cache-create ${it}" }
             WsFrame.ConsoleSystem(code = "usage", message = parts.joinToString(" · "), seq = seq)
         }
+        is ClaudeEvent.SystemNote -> WsFrame.ConsoleSystem(code = event.code, message = event.message, seq = seq)
         is ClaudeEvent.Unknown -> WsFrame.ConsoleUnknown(raw = event.raw, seq = seq)
     }
 

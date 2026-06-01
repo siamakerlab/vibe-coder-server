@@ -55,6 +55,16 @@ class ClaudeStreamParser(
             "assistant" -> parseAssistant(obj)
             "user" -> parseUserToolResult(obj)
             "result" -> parseResult(obj)
+            // v1.83.0 — claude 2.x 가 서버측 rate limit 시 내보내는 정보성 이벤트.
+            // 이전엔 Unknown(JSON 노이즈) 으로만 흘러 사용자가 "thinking 후 멈춤" 으로
+            // 오해했다. turn 종료 아님 — 시스템 메시지로 노출해 대기/재시도임을 알린다.
+            "rate_limit_event" -> listOf(
+                ClaudeEvent.SystemNote(
+                    code = "rate_limit",
+                    message = "Anthropic 서버가 요청을 일시적으로 제한하고 있습니다 (rate limit). " +
+                        "Claude CLI 가 자동으로 재시도 중입니다 — 잠시만 기다려 주세요.",
+                ),
+            )
             else -> listOf(ClaudeEvent.Unknown(obj))
         }
     }
