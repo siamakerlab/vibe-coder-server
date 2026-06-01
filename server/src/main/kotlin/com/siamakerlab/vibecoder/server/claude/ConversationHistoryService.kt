@@ -133,6 +133,9 @@ class ConversationHistoryService(
                 content = """{"kind":"system","code":${jsonStr(event.code)},"message":${jsonStr(event.message)}}""",
                 agentName = agentName,
             )
+            // v1.84.0 — 백그라운드 작업 카드는 휘발성(콘솔 live + LogHub replay 로 단기 복원).
+            // DB 영구 적재는 노이즈라 생략.
+            is ClaudeEvent.BackgroundTask -> {}
         }
     }
 

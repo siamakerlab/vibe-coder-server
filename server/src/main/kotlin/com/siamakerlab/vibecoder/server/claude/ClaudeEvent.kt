@@ -76,6 +76,28 @@ sealed class ClaudeEvent {
         val message: String,
     ) : ClaudeEvent()
 
+    /**
+     * v1.84.0 — 백그라운드 작업(Bash run_in_background 등) lifecycle. CLI 가 system
+     * 메시지 subtype `task_started` / `task_updated` / `task_notification` 로 노출한다
+     * (Claude Code TUI 하단 Shell 카드의 데이터 소스). 콘솔에 "실행 중 → 완료" 카드로
+     * 시각화해, claude 가 백그라운드 작업을 띄우고 turn 을 끝내도 진행 상황을 알 수 있게 한다.
+     *
+     * - kind="started": [taskId] 새 작업 시작. description/taskType 동반.
+     * - kind="progress": 진행 갱신(주로 Task 서브에이전트). description 실시간 변경 +
+     *   lastTool/toolUses 진행 메타(예: "Reading Theme.kt · Read · 14 tools").
+     * - kind="updated": [status] 갱신(running/completed/failed 등). patch.status 추출.
+     * - kind="notification": 완료/이벤트 통지(보조).
+     */
+    data class BackgroundTask(
+        val kind: String,
+        val taskId: String,
+        val description: String? = null,
+        val taskType: String? = null,
+        val status: String? = null,
+        val lastTool: String? = null,
+        val toolUses: Int? = null,
+    ) : ClaudeEvent()
+
     /** CLI emitted a known top-level type we don't model — passed through. */
     data class Unknown(val raw: JsonElement) : ClaudeEvent()
 }

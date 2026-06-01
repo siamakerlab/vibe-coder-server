@@ -310,6 +310,11 @@ class SubAgentSessionManager(
             WsFrame.ConsoleSystem(code = "usage", message = parts.joinToString(" · "), seq = seq)
         }
         is ClaudeEvent.SystemNote -> WsFrame.ConsoleSystem(code = event.code, message = event.message, seq = seq)
+        is ClaudeEvent.BackgroundTask -> WsFrame.ConsoleBackgroundTask(
+            kind = event.kind, taskId = event.taskId, description = event.description,
+            taskType = event.taskType, status = event.status,
+            lastTool = event.lastTool, toolUses = event.toolUses, seq = seq,
+        )
         is ClaudeEvent.Unknown -> WsFrame.ConsoleUnknown(raw = event.raw, seq = seq)
     }
 
