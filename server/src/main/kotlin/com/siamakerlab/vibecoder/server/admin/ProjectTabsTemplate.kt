@@ -489,6 +489,8 @@ internal object ProjectTabsTemplate {
             <dt>${esc(t("projects.detail.updated"))}</dt><dd>${esc(project.updatedAt)}</dd>
           </dl>
         </div>
+        <!-- v1.81.0 — 이름/패키지명/폴더명 변경 폼이 있는 설정 페이지 링크(이전엔 동선 누락). -->
+        <a href="/projects/${esc(project.id)}/overview" class="item">${esc(t("tabs.settings.editProject"))}</a>
         <a href="/projects/${esc(project.id)}/zip" class="item">${esc(t("projects.detail.zip"))}</a>
         <a href="/projects/${esc(project.id)}/env-files" target="${esc("tab-env-files")}" class="item">${esc(t("projects.detail.envFiles"))}</a>
         <hr>
