@@ -102,7 +102,7 @@ object AdminTemplates {
   <link rel="icon" type="image/png" href="/static/icon.png">
   <link rel="manifest" href="/static/manifest.json">
   <meta name="theme-color" content="#0b0d12">
-  <link rel="stylesheet" href="/static/admin.css?v=1.78.0">
+  <link rel="stylesheet" href="/static/admin.css?v=1.79.0">
   <script>
     // v1.6.2 — 사이드바 접힘 상태를 first paint 전에 :root data-attribute 로 적용 (FOUC 회피).
     // CSS 의 :root[data-sidebar-collapsed="1"] .layout 가 grid-template-columns 축소.
@@ -178,10 +178,8 @@ object AdminTemplates {
             val cls = if (activeTop == key) "active" else ""
             return """<a href="${esc(href)}" class="${esc(cls)}" data-key="${esc(key)}" title="${esc(label)}">${navIcon(icon)}<span class="nav-label">${esc(label)}</span></a>"""
         }
-        val userBoxHtml: String = if (username != null) {
-            val u = esc(username)
-            "<div class=\"user\">$u</div>"
-        } else ""
+        // v1.79.0 — 사이드바 유저명 표시 제거(운영자 요청). 단일 admin 이라 정보가치 낮음.
+        // username 파라미터는 다른 helper 와의 시그니처 일관성 위해 유지(미사용).
         val csrfInput = CsrfTokens.hiddenInput(csrf)
         return """
 <nav class="sidebar">
@@ -222,7 +220,6 @@ object AdminTemplates {
   <!-- v1.3.2 — 전역 Claude 쿼타 pill. v1.6.2 — header 에 refresh 버튼 + 타임존 제거. -->
   <div id="quota-pill" class="quota-pill" hidden></div>
   <div class="user-box">
-    $userBoxHtml
     <form method="post" action="/logout">
       $csrfInput
       <button type="submit" class="logout">${esc(t("nav.logout"))}</button>
@@ -605,13 +602,15 @@ $gitIdentityBanner
   <!-- v1.74.0 — 서버 리소스 상태(CPU/RAM/프로세스 점유). /api/server/stats 폴링(5s). -->
   <div class="card" id="sys-card">
     <h2>${esc(t("dashboard.sys.title"))}</h2>
-    <!-- v1.78.0 — CPU/메모리/프로세스 CPU 를 원형 게이지(도넛)로 한눈에. r=15.915 → 둘레≈100
-         이라 stroke-dasharray="pct 100" 로 곧장 백분율 호 표현. /api/server/stats 폴링(5s). -->
+    <!-- v1.79.0 — CPU/메모리 도넛. 한 도넛에 2색 중첩: 파랑=서버 전체 사용량(total),
+         초록=vibe-coder 점유분(process, total 의 부분집합이라 위에 겹쳐 그림).
+         r=15.915 → 둘레≈100 이라 stroke-dasharray="pct 100". /api/server/stats 폴링(5s). -->
     <div class="gauges">
       <div class="gauge-box">
         <svg viewBox="0 0 36 36" class="gauge" role="img" aria-label="${esc(t("dashboard.sys.cpu"))}">
           <circle class="gauge-track" cx="18" cy="18" r="15.915"></circle>
-          <circle class="gauge-fill" id="g-cpu" cx="18" cy="18" r="15.915" stroke-dasharray="0 100" transform="rotate(-90 18 18)"></circle>
+          <circle class="gauge-total" id="g-cpu-total" cx="18" cy="18" r="15.915" stroke-dasharray="0 100" transform="rotate(-90 18 18)"></circle>
+          <circle class="gauge-vibe" id="g-cpu-vibe" cx="18" cy="18" r="15.915" stroke-dasharray="0 100" transform="rotate(-90 18 18)"></circle>
           <text class="gauge-txt" id="g-cpu-txt" x="18" y="18">…</text>
         </svg>
         <span class="gauge-label">${esc(t("dashboard.sys.cpu"))}</span>
@@ -619,19 +618,16 @@ $gitIdentityBanner
       <div class="gauge-box">
         <svg viewBox="0 0 36 36" class="gauge" role="img" aria-label="${esc(t("dashboard.sys.ram"))}">
           <circle class="gauge-track" cx="18" cy="18" r="15.915"></circle>
-          <circle class="gauge-fill" id="g-ram" cx="18" cy="18" r="15.915" stroke-dasharray="0 100" transform="rotate(-90 18 18)"></circle>
+          <circle class="gauge-total" id="g-ram-total" cx="18" cy="18" r="15.915" stroke-dasharray="0 100" transform="rotate(-90 18 18)"></circle>
+          <circle class="gauge-vibe" id="g-ram-vibe" cx="18" cy="18" r="15.915" stroke-dasharray="0 100" transform="rotate(-90 18 18)"></circle>
           <text class="gauge-txt" id="g-ram-txt" x="18" y="18">…</text>
         </svg>
         <span class="gauge-label">${esc(t("dashboard.sys.ram"))}</span>
       </div>
-      <div class="gauge-box">
-        <svg viewBox="0 0 36 36" class="gauge" role="img" aria-label="${esc(t("dashboard.sys.procGauge"))}">
-          <circle class="gauge-track" cx="18" cy="18" r="15.915"></circle>
-          <circle class="gauge-fill" id="g-proc" cx="18" cy="18" r="15.915" stroke-dasharray="0 100" transform="rotate(-90 18 18)"></circle>
-          <text class="gauge-txt" id="g-proc-txt" x="18" y="18">…</text>
-        </svg>
-        <span class="gauge-label">${esc(t("dashboard.sys.procGauge"))}</span>
-      </div>
+    </div>
+    <div class="gauge-legend">
+      <span class="lg lg-total">${esc(t("dashboard.sys.legendTotal"))}</span>
+      <span class="lg lg-vibe">${esc(t("dashboard.sys.legendVibe"))}</span>
     </div>
     <dl class="sys-detail">
       <dt>${esc(t("dashboard.sys.ram"))}</dt><dd id="sys-ram" class="dim">…</dd>
@@ -703,15 +699,10 @@ $gitIdentityBanner
   var card = document.getElementById('sys-card');
   if (!card) return;
   function set(id, txt) { var e = document.getElementById(id); if (e) e.textContent = txt; }
-  // 원형 게이지: r=15.915 둘레≈100 → dasharray="pct 100". 75%/90% 임계 색상.
-  function setGauge(fillId, txtId, pct) {
-    var fill = document.getElementById(fillId), txt = document.getElementById(txtId);
-    var v = pct >= 0 ? Math.max(0, Math.min(100, pct)) : 0;
-    if (fill) {
-      fill.setAttribute('stroke-dasharray', v.toFixed(1) + ' 100');
-      fill.style.stroke = pct >= 90 ? '#dc2626' : (pct >= 75 ? '#e08300' : 'var(--accent, #3b82f6)');
-    }
-    if (txt) txt.textContent = pct >= 0 ? Math.round(pct) + '%' : 'N/A';
+  // 호 설정: r=15.915 둘레≈100 → dasharray="pct 100". 색상은 CSS(.gauge-total 파랑/.gauge-vibe 초록).
+  function setArc(id, pct) {
+    var e = document.getElementById(id);
+    if (e) e.setAttribute('stroke-dasharray', (pct >= 0 ? Math.max(0, Math.min(100, pct)) : 0).toFixed(1) + ' 100');
   }
   function fmtUptime(sec) {
     var d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
@@ -722,11 +713,17 @@ $gitIdentityBanner
       .then(function(r) { return r.ok ? r.json() : null; })
       .then(function(s) {
         if (!s) return;
-        setGauge('g-cpu', 'g-cpu-txt', s.cpuPercent);
-        setGauge('g-ram', 'g-ram-txt', s.ramPercent);
-        setGauge('g-proc', 'g-proc-txt', s.processCpuPercent);
+        // CPU: 파랑=시스템 전체, 초록=vibe-coder 프로세스. 중앙 텍스트=전체%.
+        setArc('g-cpu-total', s.cpuPercent);
+        setArc('g-cpu-vibe', s.processCpuPercent);
+        set('g-cpu-txt', (s.cpuPercent >= 0 ? Math.round(s.cpuPercent) : '–') + '%');
+        // 메모리: 파랑=시스템/컨테이너 사용%, 초록=vibe-coder RSS 가 전체 대비 차지하는 %.
+        var ramVibe = s.ramTotalMb > 0 ? (s.processRssMb / s.ramTotalMb * 100) : 0;
+        setArc('g-ram-total', s.ramPercent);
+        setArc('g-ram-vibe', ramVibe);
+        set('g-ram-txt', (s.ramPercent >= 0 ? Math.round(s.ramPercent) : '–') + '%');
         set('sys-ram', s.ramUsedMb + ' / ' + s.ramTotalMb + ' MB (' + (s.ramPercent >= 0 ? s.ramPercent.toFixed(1) + '%' : 'N/A') + ')');
-        set('sys-proc', s.processRssMb + ' MB RSS · heap ' + s.heapUsedMb + '/' + s.heapMaxMb + ' MB');
+        set('sys-proc', s.processRssMb + ' MB RSS · ' + (s.processCpuPercent >= 0 ? s.processCpuPercent.toFixed(1) + '% CPU · ' : '') + 'heap ' + s.heapUsedMb + '/' + s.heapMaxMb + ' MB');
         set('sys-load', (s.loadAvg >= 0 ? s.loadAvg.toFixed(2) : 'N/A') + ' · ' + s.cores + ' cores');
         set('sys-uptime', fmtUptime(s.uptimeSec));
       }).catch(function() {});

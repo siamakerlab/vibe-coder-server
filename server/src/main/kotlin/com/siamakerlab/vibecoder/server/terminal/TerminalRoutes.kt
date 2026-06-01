@@ -272,9 +272,12 @@ fun Routing.terminalRoutes(
  * bind 되어 있음.
  */
 private suspend fun io.ktor.server.routing.RoutingContext.requireApiAdminOrFail(): Boolean {
+    // v1.79.0 — 회귀 회수: v1.45.0 단일 admin 화로 AuthPlugin 이 `userRole` 을 더 이상
+    // 채우지 않아(`DevicePrincipal(device=device)`, userRole=null) strict `userRole=="admin"`
+    // 체크가 **항상 실패 → 터미널 REST 403** 였다. 단일 admin 모델에선 인증된 device 가 곧
+    // admin (`isAdmin` 항상 true). authenticate(AUTH_BEARER) 통과 = 인증 보장.
     val principal = call.principal<DevicePrincipal>()
-    val strictRole = principal?.userRole
-    if (strictRole != "admin") {
+    if (principal == null || !principal.isAdmin) {
         call.respond(HttpStatusCode.Forbidden, mapOf("error" to "admin_required"))
         return false
     }
@@ -343,14 +346,11 @@ private suspend fun io.ktor.server.websocket.DefaultWebSocketServerSession.authe
         return null
     }
     deviceRepo.touchLastSeen(device.id)
-    // 3. admin role.
-    val uid = device.userId
-    val role = uid?.let { userRepo.findById(it)?.role }
-    if (role != "admin") {
-        close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "admin_required"))
-        return null
-    }
-    return uid
+    // 3. v1.79.0 — 회귀 회수: v1.45.0 단일 admin 화로 role 컬럼을 더 이상 관리하지 않아
+    // `userRepo.findById(uid).role=="admin"` 가 깨질 수 있었다(REST 와 동일 원인). 인증된
+    // device = admin. device 는 위에서 이미 resolve(미인증이면 401 close). userId 를 세션
+    // 소유자로 반환(단일 admin 이라 항상 bind).
+    return device.userId
 }
 
 internal object TerminalTemplates {
