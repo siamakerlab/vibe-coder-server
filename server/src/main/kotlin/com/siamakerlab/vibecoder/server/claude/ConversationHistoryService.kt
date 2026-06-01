@@ -124,6 +124,15 @@ class ConversationHistoryService(
                 tokensOut = event.outputTokens?.toInt()?.coerceAtLeast(0),
                 agentName = agentName,
             )
+            // v1.83.0 — CLI 정보성 알림(rate_limit_event 등). /history 에서 rate limit
+            // 발생 시점을 추적할 수 있게 system role 로 적재.
+            is ClaudeEvent.SystemNote -> repo.insert(
+                projectId = projectId,
+                sessionId = sessionId,
+                role = "system",
+                content = """{"kind":"system","code":${jsonStr(event.code)},"message":${jsonStr(event.message)}}""",
+                agentName = agentName,
+            )
         }
     }
 

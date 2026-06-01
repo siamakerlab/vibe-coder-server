@@ -1272,6 +1272,10 @@ $errHtml
   #busy-badge[data-state="idle"] {
     background: rgba(255,255,255,0.06); color: var(--text-dim, #888);
   }
+  /* v1.83.0 — rate-limit 재시도 소진/취소/크래시로 중단된 turn. 빨강 강조. */
+  #busy-badge[data-state="stopped"] {
+    background: rgba(255,107,107,0.18); color: #ff8787;
+  }
 </style>
 <header style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
   <h1 style="margin:0">$titleSuffix
@@ -1855,7 +1859,9 @@ $automationPanelHtml
     } else if (t === 'console_busy_state') {
       // v0.98.0 — 서버 측 busy 전이 알림. 다중 탭/디바이스 + 다른 클라이언트의 prompt
       // 발송 시점 sync. 로컬 inFlight 와 항상 같은 값으로 수렴.
+      // v1.83.0 — state="stopped"(rate-limit 재시도 소진/취소/크래시) 면 "중단됨" 뱃지.
       setInFlight(!!f.busy);
+      if (f.state === 'stopped') showStopped();
     } else if (t === 'console_replay_end') {
       append('sys', 'replay', 'history end — live frames follow', 'replay');
     } else if (t === 'automation_progress') {
@@ -1999,6 +2005,7 @@ $automationPanelHtml
   var busyBadge = document.getElementById('busy-badge');
   var BUSY_RESPONDING = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.busy.responding"))};
   var BUSY_IDLE = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.busy.idle"))};
+  var BUSY_STOPPED = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.busy.stopped"))};
   var BUSY_QUEUED_TPL = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.busy.responding.queued", "___N___"))};
   var QUEUE_ADDED_TPL = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.queue.added", "___N___", "___PREVIEW___"))};
   var QUEUE_DRAINING = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.queue.draining"))};
@@ -2016,6 +2023,14 @@ $automationPanelHtml
       busyBadge.dataset.state = 'idle';
       busyBadge.textContent = BUSY_IDLE;
     }
+  }
+  // v1.83.0 — rate-limit 재시도 소진/취소/크래시로 turn 이 비정상 종료된 상태.
+  // setInFlight(false) 직후 호출돼 idle 뱃지를 "중단됨"(빨강) 으로 덮어쓴다.
+  // 다음 prompt 전송 시 setInFlight(true) 가 다시 responding 으로 자연 복귀.
+  function showStopped() {
+    if (!busyBadge) return;
+    busyBadge.dataset.state = 'stopped';
+    busyBadge.textContent = BUSY_STOPPED;
   }
   // v1.7.12 — 응답중 spinner element. console-log 하단에 표시.
   var spinnerEl = document.getElementById('console-spinner');

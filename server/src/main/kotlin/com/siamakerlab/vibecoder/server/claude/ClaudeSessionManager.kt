@@ -292,7 +292,9 @@ class ClaudeSessionManager(
         // "직전까지 응답중이었다" 를 뜻함 → Done 은 "ready", 프로세스 종료(cancel/
         // crash/idle-during-busy)는 호출부가 "stopped" 전달.
         val st = state ?: if (value) "responding" else "ready"
-        hub.emitConsole(topic(projectId)) { seq -> WsFrame.ConsoleBusyState(busy = value, seq = seq) }
+        // v1.83.0 — 콘솔 페이지도 state 전달(이전엔 busy boolean 만 → "stopped/중단됨"
+        // 구분 불가). rate-limit 재시도 소진 등 비정상 종료를 콘솔 뱃지에 정확 반영.
+        hub.emitConsole(topic(projectId)) { seq -> WsFrame.ConsoleBusyState(busy = value, seq = seq, state = st) }
         // v1.3.0 — cross-project topic 으로도 broadcast. /ws/projects 구독자
         // (workspaces 목록 / 대시보드) 가 실시간으로 busy 뱃지 갱신.
         hub.emitConsole(PROJECTS_TOPIC) { seq ->
@@ -460,6 +462,19 @@ class ClaudeSessionManager(
                 runCatching { writeSessionId(projectId, event.sessionId) }
                     .onFailure { log.warn(it) { "[$projectId] failed to persist session-id" } }
             }
+            // v1.83.0 — claude 가 host stdin 없이 자발적으로 turn 을 재개(background task
+            // 완료 후 자동 속행 등)하면 sendPrompt 를 안 거쳐 busy 가 false 인 채로 프레임만
+            // 흐른다 → 뱃지가 "대기중" 인데 실제론 작업이 진행되는 고착 상태. 활동 프레임
+            // (assistant/tool)이 오는데 busy 가 아니면 busy=true + 미완 마크로 동기화한다.
+            // (Done/ErrorEvent 는 아래에서 종료 처리하므로 제외.)
+            if (busy[projectId] != true &&
+                (event is ClaudeEvent.AssistantMessage ||
+                    event is ClaudeEvent.ToolUse ||
+                    event is ClaudeEvent.ToolResult)
+            ) {
+                markTurnActive(projectId)
+                setBusy(projectId, true)
+            }
             hub.emitConsole(topic(projectId)) { seq -> toWsFrame(event, seq) }
             // v0.16.0 — turn 영구 적재. SessionStarted 는 자체 sessionId 사용 (위에서
             // session.sessionId 가 갱신되기 전이라). 그 외엔 현재 session 의 id.
@@ -571,6 +586,7 @@ class ClaudeSessionManager(
             event.cacheCreationInputTokens?.let { parts += "cache-create ${it}" }
             WsFrame.ConsoleSystem(code = "usage", message = parts.joinToString(" · "), seq = seq)
         }
+        is ClaudeEvent.SystemNote -> WsFrame.ConsoleSystem(code = event.code, message = event.message, seq = seq)
         is ClaudeEvent.Unknown -> WsFrame.ConsoleUnknown(raw = event.raw, seq = seq)
     }
 
@@ -765,7 +781,7 @@ class ClaudeSessionManager(
          * (30/60/120초) 로 최대 [MAX_RATE_LIMIT_RETRIES] 회 "이어서 진행" 프롬프트를 자동
          * 전송(같은 --resume 세션이라 멈춘 곳부터 재개). 초과 시 상태 "중지됨".
          */
-        const val MAX_RATE_LIMIT_RETRIES = 3
+        const val MAX_RATE_LIMIT_RETRIES = 5
         const val RATE_LIMIT_BASE_BACKOFF_MS = 30_000L
         const val RATE_LIMIT_RESUME_PROMPT =
             "Continue from where you left off — the previous turn was interrupted by a temporary " +
