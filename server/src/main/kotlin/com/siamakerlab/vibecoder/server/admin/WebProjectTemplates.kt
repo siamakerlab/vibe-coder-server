@@ -1276,6 +1276,26 @@ $errHtml
   #busy-badge[data-state="stopped"] {
     background: rgba(255,107,107,0.18); color: #ff8787;
   }
+  /* v1.84.0 — 백그라운드 작업 진행 카드 패널. */
+  .bg-tasks {
+    margin-bottom:8px; border:1px solid #2a3a2a; border-radius:8px;
+    background:rgba(105,219,124,0.05); padding:8px 10px;
+  }
+  .bg-tasks-head { font-size:11px; color:var(--text-dim,#888); margin-bottom:6px; font-weight:600; }
+  .bg-task-card {
+    display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:6px;
+    background:rgba(255,255,255,0.03); margin-top:4px; font-size:12px;
+  }
+  .bg-task-card:first-child { margin-top:0; }
+  .bg-task-icon { flex-shrink:0; width:16px; text-align:center; }
+  .bg-task-card[data-status="running"] .bg-task-icon {
+    color:#69db7c; animation:vibe-busy-pulse 1.4s ease-in-out infinite; border-radius:50%;
+  }
+  .bg-task-card[data-status="completed"] .bg-task-icon { color:#69db7c; }
+  .bg-task-card[data-status="failed"] .bg-task-icon { color:#ff8787; }
+  .bg-task-desc { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .bg-task-meta { flex-shrink:0; color:var(--text-dim,#888); font-size:10px; font-family:monospace; }
+  .bg-task-card[data-status="completed"] { opacity:0.7; transition:opacity 0.4s; }
 </style>
 <header style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
   <h1 style="margin:0">$titleSuffix
@@ -1371,6 +1391,13 @@ $authBannerHtml
   v1.3.0 — Todo 요약 패널. <details> 의 open 상태는 localStorage 영속.
   콘솔 카드 표시 여부는 필터의 'todo' 카테고리로 별도 토글 가능.
 -->
+<!-- v1.84.0 — 백그라운드 작업(Bash run_in_background 등) 진행 카드. 실행 중인 task 가
+     있을 때만 표시. claude 가 작업을 띄우고 turn 을 끝내도 진행 상황을 알 수 있게 한다. -->
+<div id="bg-tasks" class="bg-tasks" hidden>
+  <div class="bg-tasks-head">⚙ <span id="bg-tasks-title">${esc(t("console.bgtasks.title"))}</span></div>
+  <div id="bg-tasks-list"></div>
+</div>
+
 <details id="todo-panel" style="margin-bottom:6px;font-size:12px">
   <summary style="cursor:pointer;color:var(--text-dim);padding:4px 0;user-select:none">
     📋 <span id="todo-panel-title">${esc(t("console.todo.title"))}</span>
@@ -1862,6 +1889,9 @@ $automationPanelHtml
       // v1.83.0 — state="stopped"(rate-limit 재시도 소진/취소/크래시) 면 "중단됨" 뱃지.
       setInFlight(!!f.busy);
       if (f.state === 'stopped') showStopped();
+    } else if (t === 'console_background_task') {
+      // v1.84.0 — 백그라운드 작업(Bash run_in_background) 진행 카드.
+      handleBgTask(f);
     } else if (t === 'console_replay_end') {
       append('sys', 'replay', 'history end — live frames follow', 'replay');
     } else if (t === 'automation_progress') {
@@ -2031,6 +2061,66 @@ $automationPanelHtml
     if (!busyBadge) return;
     busyBadge.dataset.state = 'stopped';
     busyBadge.textContent = BUSY_STOPPED;
+  }
+  // v1.84.0 — 백그라운드 작업 카드 패널. task_started → 카드 추가(실행 중 spinner),
+  // task_updated/notification 의 status 가 종료(completed/failed)면 ✓/✗ 후 6초 뒤 제거.
+  var bgTasks = {};  // taskId -> { el, status }
+  var BG_TYPE_LABELS = { local_bash: 'shell' };
+  function bgIcon(status) { return status === 'completed' ? '✓' : (status === 'failed' ? '✗' : '●'); }
+  function refreshBgPanel() {
+    var p = document.getElementById('bg-tasks');
+    if (p) p.hidden = Object.keys(bgTasks).length === 0;
+  }
+  function bgMeta(f) {
+    var parts = [BG_TYPE_LABELS[f.taskType] || f.taskType || 'task', String(f.taskId).slice(0, 8)];
+    if (f.lastTool) parts.push(f.lastTool);
+    if (f.toolUses) parts.push(f.toolUses + ' tools');
+    return parts.join(' · ');
+  }
+  function ensureBgCard(f) {
+    var rec = bgTasks[f.taskId];
+    if (rec) return rec;
+    var list = document.getElementById('bg-tasks-list');
+    if (!list) return null;
+    var card = document.createElement('div');
+    card.className = 'bg-task-card';
+    card.dataset.status = 'running';
+    card.innerHTML = '<span class="bg-task-icon">●</span><span class="bg-task-desc"></span><span class="bg-task-meta"></span>';
+    list.appendChild(card);
+    rec = bgTasks[f.taskId] = { el: card, status: 'running' };
+    refreshBgPanel();
+    return rec;
+  }
+  function handleBgTask(f) {
+    if (!f || !f.taskId) return;
+    if (f.kind === 'started' || f.kind === 'progress') {
+      // task_progress 가 task_started 없이 첫 도착(서브에이전트)해도 카드 생성.
+      var rec = ensureBgCard(f);
+      if (!rec) return;
+      rec.status = 'running';
+      rec.el.dataset.status = 'running';
+      rec.el.querySelector('.bg-task-icon').textContent = '●';
+      if (f.description) rec.el.querySelector('.bg-task-desc').textContent = f.description;
+      rec.el.querySelector('.bg-task-meta').textContent = bgMeta(f);
+    } else {  // 'updated' | 'notification'
+      var rec2 = bgTasks[f.taskId];
+      if (!rec2) return;
+      var st = f.status || (f.kind === 'notification' ? 'completed' : 'running');
+      var active = (st === 'running' || st === 'in_progress' || st === 'started' || st === 'pending');
+      rec2.status = active ? 'running'
+        : ((st === 'failed' || st === 'error' || st === 'killed') ? 'failed' : 'completed');
+      rec2.el.dataset.status = rec2.status;
+      rec2.el.querySelector('.bg-task-icon').textContent = bgIcon(rec2.status);
+      if (!active) {
+        var tid = f.taskId;
+        setTimeout(function() {
+          var r = bgTasks[tid];
+          if (r && r.el && r.el.parentNode) r.el.parentNode.removeChild(r.el);
+          delete bgTasks[tid];
+          refreshBgPanel();
+        }, 6000);
+      }
+    }
   }
   // v1.7.12 — 응답중 spinner element. console-log 하단에 표시.
   var spinnerEl = document.getElementById('console-spinner');

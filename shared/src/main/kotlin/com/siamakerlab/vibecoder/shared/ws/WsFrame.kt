@@ -133,6 +133,28 @@ sealed class WsFrame {
     ) : WsFrame()
 
     /**
+     * v1.84.0 — 백그라운드 작업(Bash run_in_background 등) lifecycle 카드용. CLI 의
+     * system 메시지(task_started/task_updated/task_notification)를 모델링. 콘솔이
+     * "실행 중 → 완료" 카드를 그려, claude 가 백그라운드 작업을 띄우고 turn 을 끝내도
+     * 진행 상황을 시각화한다(Claude Code TUI 하단 Shell 카드 동형).
+     */
+    @Serializable
+    @SerialName("console_background_task")
+    data class ConsoleBackgroundTask(
+        /** "started" | "progress" | "updated" | "notification" */
+        val kind: String,
+        val taskId: String,
+        val description: String? = null,
+        val taskType: String? = null,
+        /** task_updated 의 status (running/completed/failed 등). */
+        val status: String? = null,
+        /** v1.84.0 — task_progress 진행 메타(Task 서브에이전트). */
+        val lastTool: String? = null,
+        val toolUses: Int? = null,
+        val seq: Long,
+    ) : WsFrame()
+
+    /**
      * v0.98.0 — Busy/idle 전환 알림. busy=true 면 사용자 prompt 처리 중
      * (Claude 가 응답을 stream 중), busy=false 면 다음 prompt 대기.
      *

@@ -1461,6 +1461,7 @@ internal object MessagesKo {
         "console.busy.responding" to "● 응답중",
         "console.busy.idle" to "○ 대기중",
         "console.busy.stopped" to "■ 중단됨",
+        "console.bgtasks.title" to "백그라운드 작업",
         "console.busy.responding.queued" to "● 응답중 (대기 %d)",
         "console.queue.added" to "대기열 추가 (#%d): %s",
         "console.queue.draining" to "다음 prompt 자동 발사",

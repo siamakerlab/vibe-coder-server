@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
@@ -47,10 +48,16 @@ class ClaudeStreamParser(
         val type = obj["type"]?.jsonPrimitive?.contentOrNull
         return when (type) {
             "system" -> {
-                // v1.70.0 — thinking_tokens 는 추정 토큰 카운터로 UI/이력 가치가 없는 순수
-                // 노이즈(운영 DB 5792행). emit/적재 모두 생략.
-                if (obj["subtype"]?.jsonPrimitive?.contentOrNull == "thinking_tokens") emptyList()
-                else parseSystem(obj)?.let { listOf(it) } ?: listOf(ClaudeEvent.Unknown(obj))
+                val subtype = obj["subtype"]?.jsonPrimitive?.contentOrNull
+                when (subtype) {
+                    // v1.70.0 — thinking_tokens 는 추정 토큰 카운터로 UI/이력 가치가 없는 순수
+                    // 노이즈(운영 DB 5792행). emit/적재 모두 생략.
+                    "thinking_tokens" -> emptyList()
+                    // v1.84.0 — 백그라운드 작업(Bash run_in_background / Task 서브에이전트) lifecycle.
+                    "task_started", "task_progress", "task_updated", "task_notification" ->
+                        parseBackgroundTask(obj, subtype).let { listOf(it) }
+                    else -> parseSystem(obj)?.let { listOf(it) } ?: listOf(ClaudeEvent.Unknown(obj))
+                }
             }
             "assistant" -> parseAssistant(obj)
             "user" -> parseUserToolResult(obj)
@@ -67,6 +74,38 @@ class ClaudeStreamParser(
             )
             else -> listOf(ClaudeEvent.Unknown(obj))
         }
+    }
+
+    /**
+     * v1.84.0 — system subtype task_started/task_updated/task_notification →
+     * [ClaudeEvent.BackgroundTask]. task_started 는 description/task_type, task_updated 는
+     * patch.status 를 동반한다(예: {"patch":{"status":"completed"}}). task_id 가 없으면
+     * 의미 없는 프레임이라 Unknown 으로 흘린다.
+     */
+    private fun parseBackgroundTask(obj: JsonObject, subtype: String): ClaudeEvent {
+        val taskId = obj["task_id"]?.jsonPrimitive?.contentOrNull
+            ?: return ClaudeEvent.Unknown(obj)
+        val kind = when (subtype) {
+            "task_started" -> "started"
+            "task_progress" -> "progress"
+            "task_updated" -> "updated"
+            else -> "notification"
+        }
+        val patch = runCatching { obj["patch"]?.jsonObject }.getOrNull()
+        val status = patch?.get("status")?.jsonPrimitive?.contentOrNull
+            ?: obj["status"]?.jsonPrimitive?.contentOrNull
+        val usage = runCatching { obj["usage"]?.jsonObject }.getOrNull()
+        return ClaudeEvent.BackgroundTask(
+            kind = kind,
+            taskId = taskId,
+            description = obj["description"]?.jsonPrimitive?.contentOrNull,
+            // task_started 는 task_type(local_bash), task_progress 는 subagent_type(general-purpose).
+            taskType = obj["task_type"]?.jsonPrimitive?.contentOrNull
+                ?: obj["subagent_type"]?.jsonPrimitive?.contentOrNull,
+            status = status,
+            lastTool = obj["last_tool_name"]?.jsonPrimitive?.contentOrNull,
+            toolUses = usage?.get("tool_uses")?.jsonPrimitive?.intOrNull,
+        )
     }
 
     private fun parseSystem(obj: JsonObject): ClaudeEvent? {
@@ -102,8 +141,12 @@ class ClaudeStreamParser(
                     out += ClaudeEvent.ToolUse(toolName, input, toolUseId)
                 }
                 "thinking" -> {
-                    // Internal reasoning — wrap as Unknown for now (UI can render or hide).
-                    out += ClaudeEvent.Unknown(b)
+                    // v1.84.0 — signature-only redacted thinking(thinking="")은 노이즈라
+                    // 드롭(DB 적재 방지 — 운영 1650행). 클라(renderUnknown)도 빈 건 숨겼지만
+                    // 서버 history 엔 Unknown 으로 쌓였다. 내용이 있는 thinking 만 통과
+                    // (renderUnknown 이 💭 collapsible 로 렌더).
+                    val th = b["thinking"]?.jsonPrimitive?.contentOrNull?.trim()
+                    if (!th.isNullOrEmpty()) out += ClaudeEvent.Unknown(b)
                 }
                 else -> out += ClaudeEvent.Unknown(b)
             }
