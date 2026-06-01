@@ -55,6 +55,7 @@ import com.siamakerlab.vibecoder.server.claude.ClaudeSessionManager
 import com.siamakerlab.vibecoder.server.claude.SubAgentSessionManager
 import com.siamakerlab.vibecoder.server.claude.subAgentRoutes
 import com.siamakerlab.vibecoder.server.metrics.metricsRoutes
+import com.siamakerlab.vibecoder.server.metrics.systemStatsRoutes
 import com.siamakerlab.vibecoder.server.security.installRateLimit
 import com.siamakerlab.vibecoder.server.projects.symbolRoutes
 import com.siamakerlab.vibecoder.server.auth.webauthnRoutes
@@ -394,6 +395,8 @@ fun Application.module(ctx: ServerContext) {
         sshKeyRoutes(adminDeps, SshKeyService())
         // v1.3.2 — 전역 (계정 단위) Claude 쿼타 — 사이드바 / Android 헤더용.
         quotaRoutes(ctx.claudeStatusService)
+        // v1.74.0 — 홈 대시보드 "서버 상태" 카드(CPU/RAM/프로세스). 무상태 서비스라 직접 생성.
+        systemStatsRoutes(com.siamakerlab.vibecoder.server.metrics.SystemStatsService())
         // v1.5.0 — Android 키스토어 관리 (설정 → Keystores).
         // v1.8.0 — 같은 service 인스턴스를 BuildService 도 공유 (Gradle signing inject).
         keystoreRoutes(adminDeps, ctx.keystoreService, ctx.projectRepo, ctx.sessionManager)

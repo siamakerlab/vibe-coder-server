@@ -589,6 +589,18 @@ $gitIdentityBanner
     </dl>
   </div>
 
+  <!-- v1.74.0 — 서버 리소스 상태(CPU/RAM/프로세스 점유). /api/server/stats 폴링(5s). -->
+  <div class="card" id="sys-card">
+    <h2>${esc(t("dashboard.sys.title"))}</h2>
+    <dl>
+      <dt>${esc(t("dashboard.sys.cpu"))}</dt><dd id="sys-cpu" class="dim">…</dd>
+      <dt>${esc(t("dashboard.sys.ram"))}</dt><dd id="sys-ram" class="dim">…</dd>
+      <dt>${esc(t("dashboard.sys.process"))}</dt><dd id="sys-proc" class="dim">…</dd>
+      <dt>${esc(t("dashboard.sys.load"))}</dt><dd id="sys-load" class="dim">…</dd>
+      <dt>${esc(t("dashboard.sys.uptime"))}</dt><dd id="sys-uptime" class="dim">…</dd>
+    </dl>
+  </div>
+
   <div class="card">
     <h2>${esc(t("dashboard.card.env"))}</h2>
     <dl>
@@ -644,6 +656,33 @@ $gitIdentityBanner
   }
   tick();
   setInterval(tick, 30000);
+})();
+
+// v1.74.0 — 서버 리소스 카드(CPU/RAM/프로세스 점유) 폴링(5s).
+(function() {
+  var card = document.getElementById('sys-card');
+  if (!card) return;
+  function pctCls(p) { return p >= 90 ? 'warn' : (p >= 75 ? 'dim' : 'ok'); }
+  function set(id, txt, cls) { var e = document.getElementById(id); if (e) { e.textContent = txt; if (cls) e.className = cls; } }
+  function fmtUptime(sec) {
+    var d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
+    return (d > 0 ? d + 'd ' : '') + (h > 0 ? h + 'h ' : '') + m + 'm';
+  }
+  function tick() {
+    fetch('/api/server/stats', { credentials: 'same-origin' })
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(s) {
+        if (!s) return;
+        set('sys-cpu', s.cpuPercent >= 0 ? s.cpuPercent.toFixed(1) + '%' : 'N/A', s.cpuPercent >= 0 ? pctCls(s.cpuPercent) : 'dim');
+        set('sys-ram', s.ramUsedMb + ' / ' + s.ramTotalMb + ' MB (' + s.ramPercent.toFixed(1) + '%)', s.ramPercent >= 0 ? pctCls(s.ramPercent) : 'dim');
+        var proc = (s.processCpuPercent >= 0 ? s.processCpuPercent.toFixed(1) + '% CPU · ' : '') + s.processRssMb + ' MB RSS · heap ' + s.heapUsedMb + '/' + s.heapMaxMb + ' MB';
+        set('sys-proc', proc, 'ok');
+        set('sys-load', (s.loadAvg >= 0 ? s.loadAvg.toFixed(2) : 'N/A') + ' · ' + s.cores + ' cores', 'dim');
+        set('sys-uptime', fmtUptime(s.uptimeSec), 'dim');
+      }).catch(function() {});
+  }
+  tick();
+  setInterval(tick, 5000);
 })();
 </script>
 """

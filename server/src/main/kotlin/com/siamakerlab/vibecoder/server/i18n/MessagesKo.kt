@@ -1529,6 +1529,12 @@ internal object MessagesKo {
         "dashboard.card.activity.devices" to "연결된 디바이스",
         // v1.63.0 — 무선 ADB 기기 상태 카드.
         "dashboard.adb.title" to "무선 ADB 기기",
+        "dashboard.sys.title" to "서버 상태",
+        "dashboard.sys.cpu" to "CPU",
+        "dashboard.sys.ram" to "메모리",
+        "dashboard.sys.process" to "프로세스 (vibe-coder)",
+        "dashboard.sys.load" to "부하 평균",
+        "dashboard.sys.uptime" to "가동 시간",
         "dashboard.adb.statusLabel" to "ADB 상태",
         "dashboard.adb.available" to "사용 가능",
         "dashboard.adb.unavailable" to "미설치",

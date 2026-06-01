@@ -1551,6 +1551,12 @@ internal object MessagesEn {
         "dashboard.card.activity.devices" to "Connected devices",
         // v1.63.0 — wireless ADB device status card.
         "dashboard.adb.title" to "Wireless ADB devices",
+        "dashboard.sys.title" to "Server status",
+        "dashboard.sys.cpu" to "CPU",
+        "dashboard.sys.ram" to "Memory",
+        "dashboard.sys.process" to "Process (vibe-coder)",
+        "dashboard.sys.load" to "Load avg",
+        "dashboard.sys.uptime" to "Uptime",
         "dashboard.adb.statusLabel" to "ADB status",
         "dashboard.adb.available" to "Available",
         "dashboard.adb.unavailable" to "Not installed",

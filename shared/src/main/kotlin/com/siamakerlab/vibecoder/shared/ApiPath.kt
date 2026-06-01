@@ -35,6 +35,10 @@ object ApiPath {
     // 의 scratch 프로젝트 결과 그대로 반환.
     const val SERVER_QUOTA = "/api/server/quota"
 
+    // v1.74.0 — 홈 대시보드 "서버 상태" 카드(CPU/RAM/프로세스 점유). admin 페이지 폴링,
+    // server-internal (Android client 미사용). 저민감(리소스 사용률) → quota 와 동일 무인증.
+    const val SERVER_STATS = "/api/server/stats"
+
     // v1.6.0 — Workspace terminal (PTY bash). security.allowTerminal=true 필요.
     const val TERMINAL_SESSIONS = "/api/terminal/sessions"
     fun terminalSession(id: String) = "/api/terminal/sessions/$id"

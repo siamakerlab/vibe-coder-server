@@ -882,6 +882,7 @@ Wire definitions: `shared/.../ApiPath.kt` + `shared/.../Dtos.kt`. Highlights:
 - `GET  /api/env-setup/mcp`, `POST /api/env-setup/mcp/install | unregister`
 - `POST /api/env-setup/mcp/{mcpId}/file/{fieldKey}` (multipart — Service Account JSON / Apple .p8 etc.)
 - `GET  /api/emulator/status` (**v1.73.0** `{available,running,booted,serial}` — sidebar pill), `POST /emulator/start | stop`
+- `GET  /api/server/stats` (**v1.74.0** CPU / RAM / process(vibe-coder) usage + load + uptime — home dashboard "Server status" card)
 - `GET  /api/settings/git-integrations`, `POST .../register | delete | ssh-keygen`
 - WebSocket: `/ws/projects/{id}/console/logs`, `/ws/projects/{id}/builds/{buildId}/logs`,
   `/ws/env-setup/{taskId}/logs`,
