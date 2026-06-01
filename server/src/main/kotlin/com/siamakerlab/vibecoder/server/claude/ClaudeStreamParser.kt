@@ -56,6 +56,16 @@ class ClaudeStreamParser(
                     // v1.84.0 — 백그라운드 작업(Bash run_in_background / Task 서브에이전트) lifecycle.
                     "task_started", "task_progress", "task_updated", "task_notification" ->
                         parseBackgroundTask(obj, subtype).let { listOf(it) }
+                    // v1.85.0 — 컨텍스트 auto-compaction 경계. claude 가 한도 근처에서 이전
+                    // 대화를 요약 압축할 때 emit. 세션(session-id)은 그대로 유지되므로 정보성
+                    // 알림으로만 노출(사용자가 "왜 앞 내용을 잊은 듯하지?" 를 이해하게).
+                    "compact_boundary" -> listOf(
+                        ClaudeEvent.SystemNote(
+                            code = "compact",
+                            message = "🗜 컨텍스트가 자동으로 압축되었습니다 — 이전 대화가 요약되었고 " +
+                                "세션은 그대로 이어집니다.",
+                        ),
+                    )
                     else -> parseSystem(obj)?.let { listOf(it) } ?: listOf(ClaudeEvent.Unknown(obj))
                 }
             }

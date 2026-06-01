@@ -193,6 +193,10 @@
       return { cls: 'thinking', label: '💭 thinking', body: clip(th, 4000), cat: 'thinking' };
     }
 
+    // v1.85.0 — tool_result 없는 user 메시지(서브에이전트 위임 prompt / 이미지 좌표 메타).
+    // 메인 콘솔엔 해당 Task tool_use 카드로 이미 노출되므로 중복 노이즈 → 숨김.
+    if (type === 'user') return null;
+
     if (type === 'system') {
       var st = o.subtype;
       if (st === 'init' || st === 'thinking_tokens') return null; // init 은 session_started 로 처리됨 / token 추정치는 노이즈
@@ -220,11 +224,85 @@
     return { cls: 'sys', label: type || 'event', body: summarizeInput(o), cat: 'system' };
   }
 
+  // v1.85.0 — 경량 마크다운 → 안전 HTML. 외부 의존성 없음(§3 외부 CDN 미사용).
+  // 핵심: escape 를 먼저 적용하므로 src 안의 raw HTML 은 항상 무력화 → XSS 안전.
+  // 그 후 escape 된 텍스트에만 마크다운 패턴을 HTML 태그로 변환한다.
+  // 코드블록/inline code 는 placeholder 로 먼저 빼내 내부 마크다운 변환을 막는다.
+  function mdEsc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+  function renderMarkdown(src) {
+    src = String(src == null ? '' : src);
+    var blocks = [];   // fenced code blocks
+    src = src.replace(/```([a-zA-Z0-9_+#.-]*)[ \t]*\n?([\s\S]*?)```/g, function (_, lang, code) {
+      var idx = blocks.length;
+      blocks.push({ lang: (lang || '').trim(), code: code.replace(/\n$/, '') });
+      return ' CB' + idx + ' ';
+    });
+    var h = mdEsc(src);
+    var inlines = [];  // inline code
+    h = h.replace(/`([^`\n]+)`/g, function (_, c) {
+      var idx = inlines.length; inlines.push(c); return ' IC' + idx + ' ';
+    });
+    // 헤딩
+    h = h.replace(/^\s*######\s+(.+)$/gm, '<h6>$1</h6>')
+         .replace(/^\s*#####\s+(.+)$/gm, '<h5>$1</h5>')
+         .replace(/^\s*####\s+(.+)$/gm, '<h4>$1</h4>')
+         .replace(/^\s*###\s+(.+)$/gm, '<h3>$1</h3>')
+         .replace(/^\s*##\s+(.+)$/gm, '<h2>$1</h2>')
+         .replace(/^\s*#\s+(.+)$/gm, '<h1>$1</h1>');
+    // 수평선
+    h = h.replace(/^\s*(?:---|\*\*\*|___)\s*$/gm, '<hr>');
+    // 인용 (escape 로 > 는 &gt;)
+    h = h.replace(/^\s*&gt;\s?(.*)$/gm, '<blockquote>$1</blockquote>');
+    // 순서 없는 리스트
+    h = h.replace(/(?:^|\n)((?:[ \t]*[-*+]\s+.*(?:\n|$))+)/g, function (_, blk) {
+      var items = blk.replace(/\n+$/, '').split(/\n/).map(function (li) {
+        return '<li>' + li.replace(/^[ \t]*[-*+]\s+/, '') + '</li>';
+      }).join('');
+      return '\n<ul>' + items + '</ul>\n';
+    });
+    // 순서 있는 리스트
+    h = h.replace(/(?:^|\n)((?:[ \t]*\d+\.\s+.*(?:\n|$))+)/g, function (_, blk) {
+      var items = blk.replace(/\n+$/, '').split(/\n/).map(function (li) {
+        return '<li>' + li.replace(/^[ \t]*\d+\.\s+/, '') + '</li>';
+      }).join('');
+      return '\n<ol>' + items + '</ol>\n';
+    });
+    // bold / italic / strikethrough
+    h = h.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+         .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+         .replace(/~~([^~]+)~~/g, '<del>$1</del>');
+    // 링크 [text](http...) — escape 된 상태라 href 도 안전한 http(s) 만 허용
+    h = h.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+      '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+    // 문단/줄바꿈: 블록 태그 줄은 그대로, 나머지 개행은 <br>
+    h = h.replace(/\n{2,}/g, '\n\n');
+    h = h.split('\n').map(function (line) { return line; }).join('\n');
+    h = h.replace(/\n/g, '<br>');
+    // 블록 태그 주변 과잉 <br> 정리
+    h = h.replace(/<br>\s*(<\/?(?:h[1-6]|ul|ol|li|blockquote|hr|pre)[^>]*>)/g, '$1')
+         .replace(/(<\/?(?:h[1-6]|ul|ol|li|blockquote|hr|pre)[^>]*>)\s*<br>/g, '$1');
+    // inline code 복원
+    h = h.replace(/ IC(\d+) /g, function (_, i) {
+      return '<code class="md-code">' + mdEsc(inlines[i]) + '</code>';
+    });
+    // 코드블록 복원 (highlight.js 는 append 측에서 hljs.highlightElement 로 적용)
+    h = h.replace(/ CB(\d+) /g, function (_, i) {
+      var b = blocks[i];
+      var cls = b.lang ? ' class="language-' + mdEsc(b.lang) + '"' : '';
+      return '<pre class="md-pre"><code' + cls + '>' + mdEsc(b.code) + '</code></pre>';
+    });
+    return h;
+  }
+
   window.VibeConsole = {
     clip: clip,
     summarizeInput: summarizeInput,
     renderToolUse: renderToolUse,
     extractToolResult: extractToolResult,
     renderUnknown: renderUnknown,
+    renderMarkdown: renderMarkdown,
   };
 })();

@@ -107,6 +107,23 @@ object WebProjectTemplates {
      * 닫힘 + XSS 차단. ConversationTurnRow.content 는 raw — tool_use 의 input JSON 그대로
      * 노출되지만 JS 측 renderToolUse 가 라이브 흐름에서 처리하는 것과 동일 의도.
      */
+    /**
+     * v1.85.0 — replay 에서 숨겨야 할 노이즈 unknown 판정(문자열 패턴, JSON 파싱 불요).
+     * content 는 JsonElement.toString() 형태(공백 없는 compact JSON)라 패턴 매칭이 견고하다.
+     * - 빈 thinking(signature-only): live 는 파서 드롭, 과거분은 절단 시 깨진 JSON → raw 노출.
+     * - thinking_tokens: 토큰 추정 노이즈.
+     * - task_*: 백그라운드 카드로 노출(중복).
+     * - type=user: 서브에이전트 위임 prompt / 이미지 좌표 메타(메인은 Task 카드).
+     * 내용 있는 thinking(`"thinking":"…"`)은 제외 대상 아님 → 💭 로 보존.
+     */
+    private fun isNoiseUnknownContent(c: String): Boolean {
+        if (c.contains("\"type\":\"thinking\"") && c.contains("\"thinking\":\"\"")) return true
+        if (c.contains("\"subtype\":\"thinking_tokens\"")) return true
+        if (c.contains("\"subtype\":\"task_")) return true
+        if (c.contains("\"type\":\"user\"")) return true
+        return false
+    }
+
     private fun renderInitialHistoryJson(
         rows: List<com.siamakerlab.vibecoder.server.repo.ConversationTurnRow>,
     ): String {
@@ -116,6 +133,11 @@ object WebProjectTemplates {
         var first = true
         for (row in rows) {
             if (row.role == "usage") continue
+            // v1.85.0 — 과거 DB 에 쌓인 노이즈 unknown 은 inline history 에서 제외. 특히 빈
+            // thinking(signature-only)은 긴 signature 가 maxContent 절단 시 JSON 이 깨져
+            // replay 의 renderUnknown(JSON.parse) 이 실패→raw 노출되던 버그의 원인이었다.
+            // (live 경로는 v1.84.0 파서가 이미 드롭. 여기선 v1.84.0 이전 적재분 처리.)
+            if (row.role == "unknown" && isNoiseUnknownContent(row.content)) continue
             if (!first) sb.append(',')
             first = false
             val raw = row.content
@@ -1296,6 +1318,36 @@ $errHtml
   .bg-task-desc { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .bg-task-meta { flex-shrink:0; color:var(--text-dim,#888); font-size:10px; font-family:monospace; }
   .bg-task-card[data-status="completed"] { opacity:0.7; transition:opacity 0.4s; }
+  /* v1.85.0 — assistant 마크다운 렌더 */
+  .log-body.md { line-height:1.55; }
+  .log-body.md > :first-child { margin-top:0; }
+  .log-body.md > :last-child { margin-bottom:0; }
+  .log-body.md h1,.log-body.md h2,.log-body.md h3,.log-body.md h4,.log-body.md h5,.log-body.md h6 {
+    margin:0.7em 0 0.35em; font-weight:600; line-height:1.3;
+  }
+  .log-body.md h1 { font-size:1.4em; } .log-body.md h2 { font-size:1.25em; }
+  .log-body.md h3 { font-size:1.12em; } .log-body.md h4 { font-size:1.02em; }
+  .log-body.md ul,.log-body.md ol { margin:0.4em 0; padding-left:1.5em; }
+  .log-body.md li { margin:0.15em 0; }
+  .log-body.md code.md-code { background:rgba(255,255,255,0.08); padding:1px 5px; border-radius:4px; font-size:0.9em; }
+  .log-body.md pre.md-pre { background:#161616; border:1px solid #2a2a2a; border-radius:6px; padding:10px 12px; overflow-x:auto; margin:0.5em 0; }
+  .log-body.md pre.md-pre code { background:none; padding:0; font-size:0.88em; line-height:1.45; }
+  .log-body.md blockquote { border-left:3px solid #444; margin:0.5em 0; padding:2px 0 2px 12px; color:var(--text-dim,#aaa); }
+  .log-body.md a { color:#74b9ff; text-decoration:underline; }
+  .log-body.md hr { border:none; border-top:1px solid #333; margin:0.8em 0; }
+  .log-body.md strong { font-weight:600; }
+  /* v1.85.0 — assistant 긴 메시지 접기 */
+  .log-line.assistant .log-content[data-clampable="1"] { position:relative; cursor:pointer; }
+  .log-line.assistant .log-content.clamped .log-body { max-height:360px; overflow:hidden; }
+  .log-line.assistant .log-content.clamped::after {
+    content:'${t("console.message.expand")}'; position:absolute; left:0; right:0; bottom:0;
+    text-align:center; font-size:11px; color:#74b9ff; padding:22px 0 4px;
+    background:linear-gradient(to bottom, transparent, #1e1e1e 75%); pointer-events:none;
+  }
+  .log-line.assistant .log-content[data-clampable="1"]:not(.clamped)::after {
+    content:'${t("console.message.collapse")}'; display:block; text-align:center;
+    font-size:11px; color:#74b9ff; padding:6px 0 2px;
+  }
 </style>
 <header style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
   <h1 style="margin:0">$titleSuffix
@@ -1479,7 +1531,7 @@ $automationPanelHtml
 </div>
 
 <!-- v1.70.0 — 콘솔 친화 렌더러 (tool_use/tool_result/unknown). inline 스크립트보다 먼저 동기 로드. -->
-<script src="/static/console-render.js?v=1.70.0"></script>
+<script src="/static/console-render.js?v=1.85.0"></script>
 <script>
 (function() {
   var projectId = $projectIdJs;
@@ -1605,6 +1657,7 @@ $automationPanelHtml
   // v1.7.7 — Lucide "copy" inline SVG. stroke currentColor → 테마 적응.
   var COPY_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15 H4 a2 2 0 0 1-2-2 V4 a2 2 0 0 1 2-2 h9 a2 2 0 0 1 2 2 v1"/></svg>';
 
+  var MD_CLAMP_PX = 360;  // v1.85.0 — assistant 메시지 접기 임계 높이.
   function append(cls, label, body, cat, opts) {
     cat = cat || 'ws';
     opts = opts || {};
@@ -1615,12 +1668,18 @@ $automationPanelHtml
     row.dataset.filterCat = cat;
     if (!isVisible(cat)) row.style.display = 'none';
     var timeStr = fmtTime(opts.ts);
+    // v1.85.0 — assistant 메시지는 마크다운 렌더(escape 우선 → XSS 안전). 그 외(tool/sys/
+    // err/user)는 raw escape 유지.
+    var isAsst = (cls === 'assistant');
+    var bodyInner = (isAsst && window.VibeConsole && window.VibeConsole.renderMarkdown)
+      ? '<div class="log-body md">' + window.VibeConsole.renderMarkdown(body) + '</div>'
+      : '<div class="log-body">' + escHtml(body) + '</div>';
     // v1.7.9 — meta (시각 + 복사 버튼) 를 응답 카드 내부 하단으로 이동.
     //          .log-content wrapper 안에 .log-body 위 + .log-meta 아래.
     row.innerHTML =
       '<span class="log-label">' + escHtml(label) + '</span>' +
       '<div class="log-content">' +
-        '<div class="log-body">' + escHtml(body) + '</div>' +
+        bodyInner +
         '<div class="log-meta">' +
           '<span class="log-time" title="' + escHtml(timeStr) + '">' + escHtml(timeStr) + '</span>' +
           '<button type="button" class="log-copy" title="Copy" aria-label="Copy">' + COPY_SVG + '</button>' +
@@ -1651,6 +1710,22 @@ $automationPanelHtml
       });
     }
     logEl.appendChild(row);
+    if (isAsst) {
+      // v1.85.0 — 코드블록 syntax highlight (highlight.js 로드됐을 때만).
+      if (window.hljs) {
+        var codeEls = row.querySelectorAll('pre.md-pre > code');
+        for (var ci = 0; ci < codeEls.length; ci++) {
+          try { window.hljs.highlightElement(codeEls[ci]); } catch (e) {}
+        }
+      }
+      // v1.85.0 — 긴 메시지는 접어서 표시. 탭하면 전문 펼침(아래 logEl click 핸들러).
+      var contentEl = row.querySelector('.log-content');
+      var bodyEl = row.querySelector('.log-body');
+      if (contentEl && bodyEl && bodyEl.scrollHeight > MD_CLAMP_PX) {
+        contentEl.dataset.clampable = '1';
+        contentEl.classList.add('clamped');
+      }
+    }
     if (atBottom && row.style.display !== 'none') {
       logEl.scrollTop = logEl.scrollHeight;
     } else if (row.style.display !== 'none') {
@@ -1664,11 +1739,16 @@ $automationPanelHtml
   //           텍스트 선택(drag) 중이거나 복사 버튼 클릭 시엔 토글 안 함.
   logEl.addEventListener('click', function(e) {
     if (e.target.closest('.log-copy')) return;
-    var card = e.target.closest('.log-line.user');
-    if (!card) return;
+    if (e.target.closest('a')) return;  // 마크다운 링크 클릭은 토글 안 함
     var sel = window.getSelection && window.getSelection();
     if (sel && !sel.isCollapsed) return;  // 드래그 선택 중엔 무시
-    card.classList.toggle('expanded');
+    var card = e.target.closest('.log-line.user');
+    if (card) { card.classList.toggle('expanded'); return; }
+    // v1.85.0 — assistant 긴 메시지 카드 탭 → 전문 펼침/접힘.
+    var content = e.target.closest('.log-line.assistant .log-content');
+    if (content && content.dataset.clampable === '1') {
+      content.classList.toggle('clamped');
+    }
   });
 
   // 필터 체크박스 wiring — 페이지 로드 직후 1회.
