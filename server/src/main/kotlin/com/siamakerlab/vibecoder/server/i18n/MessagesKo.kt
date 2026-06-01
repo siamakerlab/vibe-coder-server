@@ -1535,6 +1535,7 @@ internal object MessagesKo {
         "dashboard.sys.process" to "프로세스 (vibe-coder)",
         "dashboard.sys.load" to "부하 평균",
         "dashboard.sys.uptime" to "가동 시간",
+        "dashboard.sys.procGauge" to "프로세스",
         "dashboard.adb.statusLabel" to "ADB 상태",
         "dashboard.adb.available" to "사용 가능",
         "dashboard.adb.unavailable" to "미설치",

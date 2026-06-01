@@ -1557,6 +1557,7 @@ internal object MessagesEn {
         "dashboard.sys.process" to "Process (vibe-coder)",
         "dashboard.sys.load" to "Load avg",
         "dashboard.sys.uptime" to "Uptime",
+        "dashboard.sys.procGauge" to "Process",
         "dashboard.adb.statusLabel" to "ADB status",
         "dashboard.adb.available" to "Available",
         "dashboard.adb.unavailable" to "Not installed",

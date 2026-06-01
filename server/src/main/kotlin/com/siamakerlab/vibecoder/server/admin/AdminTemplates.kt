@@ -102,7 +102,7 @@ object AdminTemplates {
   <link rel="icon" type="image/png" href="/static/icon.png">
   <link rel="manifest" href="/static/manifest.json">
   <meta name="theme-color" content="#0b0d12">
-  <link rel="stylesheet" href="/static/admin.css?v=1.76.0">
+  <link rel="stylesheet" href="/static/admin.css?v=1.78.0">
   <script>
     // v1.6.2 — 사이드바 접힘 상태를 first paint 전에 :root data-attribute 로 적용 (FOUC 회피).
     // CSS 의 :root[data-sidebar-collapsed="1"] .layout 가 grid-template-columns 축소.
@@ -605,8 +605,35 @@ $gitIdentityBanner
   <!-- v1.74.0 — 서버 리소스 상태(CPU/RAM/프로세스 점유). /api/server/stats 폴링(5s). -->
   <div class="card" id="sys-card">
     <h2>${esc(t("dashboard.sys.title"))}</h2>
-    <dl>
-      <dt>${esc(t("dashboard.sys.cpu"))}</dt><dd id="sys-cpu" class="dim">…</dd>
+    <!-- v1.78.0 — CPU/메모리/프로세스 CPU 를 원형 게이지(도넛)로 한눈에. r=15.915 → 둘레≈100
+         이라 stroke-dasharray="pct 100" 로 곧장 백분율 호 표현. /api/server/stats 폴링(5s). -->
+    <div class="gauges">
+      <div class="gauge-box">
+        <svg viewBox="0 0 36 36" class="gauge" role="img" aria-label="${esc(t("dashboard.sys.cpu"))}">
+          <circle class="gauge-track" cx="18" cy="18" r="15.915"></circle>
+          <circle class="gauge-fill" id="g-cpu" cx="18" cy="18" r="15.915" stroke-dasharray="0 100" transform="rotate(-90 18 18)"></circle>
+          <text class="gauge-txt" id="g-cpu-txt" x="18" y="18">…</text>
+        </svg>
+        <span class="gauge-label">${esc(t("dashboard.sys.cpu"))}</span>
+      </div>
+      <div class="gauge-box">
+        <svg viewBox="0 0 36 36" class="gauge" role="img" aria-label="${esc(t("dashboard.sys.ram"))}">
+          <circle class="gauge-track" cx="18" cy="18" r="15.915"></circle>
+          <circle class="gauge-fill" id="g-ram" cx="18" cy="18" r="15.915" stroke-dasharray="0 100" transform="rotate(-90 18 18)"></circle>
+          <text class="gauge-txt" id="g-ram-txt" x="18" y="18">…</text>
+        </svg>
+        <span class="gauge-label">${esc(t("dashboard.sys.ram"))}</span>
+      </div>
+      <div class="gauge-box">
+        <svg viewBox="0 0 36 36" class="gauge" role="img" aria-label="${esc(t("dashboard.sys.procGauge"))}">
+          <circle class="gauge-track" cx="18" cy="18" r="15.915"></circle>
+          <circle class="gauge-fill" id="g-proc" cx="18" cy="18" r="15.915" stroke-dasharray="0 100" transform="rotate(-90 18 18)"></circle>
+          <text class="gauge-txt" id="g-proc-txt" x="18" y="18">…</text>
+        </svg>
+        <span class="gauge-label">${esc(t("dashboard.sys.procGauge"))}</span>
+      </div>
+    </div>
+    <dl class="sys-detail">
       <dt>${esc(t("dashboard.sys.ram"))}</dt><dd id="sys-ram" class="dim">…</dd>
       <dt>${esc(t("dashboard.sys.process"))}</dt><dd id="sys-proc" class="dim">…</dd>
       <dt>${esc(t("dashboard.sys.load"))}</dt><dd id="sys-load" class="dim">…</dd>
@@ -675,8 +702,17 @@ $gitIdentityBanner
 (function() {
   var card = document.getElementById('sys-card');
   if (!card) return;
-  function pctCls(p) { return p >= 90 ? 'warn' : (p >= 75 ? 'dim' : 'ok'); }
-  function set(id, txt, cls) { var e = document.getElementById(id); if (e) { e.textContent = txt; if (cls) e.className = cls; } }
+  function set(id, txt) { var e = document.getElementById(id); if (e) e.textContent = txt; }
+  // 원형 게이지: r=15.915 둘레≈100 → dasharray="pct 100". 75%/90% 임계 색상.
+  function setGauge(fillId, txtId, pct) {
+    var fill = document.getElementById(fillId), txt = document.getElementById(txtId);
+    var v = pct >= 0 ? Math.max(0, Math.min(100, pct)) : 0;
+    if (fill) {
+      fill.setAttribute('stroke-dasharray', v.toFixed(1) + ' 100');
+      fill.style.stroke = pct >= 90 ? '#dc2626' : (pct >= 75 ? '#e08300' : 'var(--accent, #3b82f6)');
+    }
+    if (txt) txt.textContent = pct >= 0 ? Math.round(pct) + '%' : 'N/A';
+  }
   function fmtUptime(sec) {
     var d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
     return (d > 0 ? d + 'd ' : '') + (h > 0 ? h + 'h ' : '') + m + 'm';
@@ -686,12 +722,13 @@ $gitIdentityBanner
       .then(function(r) { return r.ok ? r.json() : null; })
       .then(function(s) {
         if (!s) return;
-        set('sys-cpu', s.cpuPercent >= 0 ? s.cpuPercent.toFixed(1) + '%' : 'N/A', s.cpuPercent >= 0 ? pctCls(s.cpuPercent) : 'dim');
-        set('sys-ram', s.ramUsedMb + ' / ' + s.ramTotalMb + ' MB (' + s.ramPercent.toFixed(1) + '%)', s.ramPercent >= 0 ? pctCls(s.ramPercent) : 'dim');
-        var proc = (s.processCpuPercent >= 0 ? s.processCpuPercent.toFixed(1) + '% CPU · ' : '') + s.processRssMb + ' MB RSS · heap ' + s.heapUsedMb + '/' + s.heapMaxMb + ' MB';
-        set('sys-proc', proc, 'ok');
-        set('sys-load', (s.loadAvg >= 0 ? s.loadAvg.toFixed(2) : 'N/A') + ' · ' + s.cores + ' cores', 'dim');
-        set('sys-uptime', fmtUptime(s.uptimeSec), 'dim');
+        setGauge('g-cpu', 'g-cpu-txt', s.cpuPercent);
+        setGauge('g-ram', 'g-ram-txt', s.ramPercent);
+        setGauge('g-proc', 'g-proc-txt', s.processCpuPercent);
+        set('sys-ram', s.ramUsedMb + ' / ' + s.ramTotalMb + ' MB (' + (s.ramPercent >= 0 ? s.ramPercent.toFixed(1) + '%' : 'N/A') + ')');
+        set('sys-proc', s.processRssMb + ' MB RSS · heap ' + s.heapUsedMb + '/' + s.heapMaxMb + ' MB');
+        set('sys-load', (s.loadAvg >= 0 ? s.loadAvg.toFixed(2) : 'N/A') + ' · ' + s.cores + ' cores');
+        set('sys-uptime', fmtUptime(s.uptimeSec));
       }).catch(function() {});
   }
   tick();

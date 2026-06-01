@@ -946,6 +946,22 @@ table.devices small.dim { font-size: 11px; }
 }
 .back-btn:hover { background: var(--bg-elev); color: var(--text); border-color: var(--accent); }
 .back-btn svg { flex-shrink: 0; }
+
+/* v1.78.0 — 대시보드 서버 상태 원형 게이지(#sys-card). r=15.915 둘레≈100 → dasharray 백분율. */
+#sys-card .gauges {
+    display: flex; gap: 16px; flex-wrap: wrap;
+    justify-content: space-around; margin: 8px 0 16px;
+}
+#sys-card .gauge-box { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.gauge { width: 84px; height: 84px; }
+.gauge-track { fill: none; stroke: var(--border); stroke-width: 3.2; }
+.gauge-fill {
+    fill: none; stroke: var(--accent, #3b82f6); stroke-width: 3.2; stroke-linecap: round;
+    transition: stroke-dasharray .5s ease, stroke .3s ease;
+}
+.gauge-txt { fill: var(--text); font-size: 9px; font-weight: 600; text-anchor: middle; dominant-baseline: central; }
+#sys-card .gauge-label { font-size: 12px; color: var(--text-dim); }
+#sys-card .sys-detail { margin: 0; }
 .chip-danger {
     border-color: var(--danger);
     color: var(--danger);
