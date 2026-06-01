@@ -769,12 +769,17 @@ table.devices small.dim { font-size: 11px; }
 }
 .console-log .log-body { white-space: pre-wrap; word-break: break-word; }
 
-/* 내 프롬프트 — 우측 강조 버블 */
-.console-log .user { justify-content: flex-end; }
+/* v1.86.1 — 내 프롬프트는 버블 대신 과거 sticky 상단고정 + 터미널('> ') 스타일 유지.
+   버블 우측정렬(flex-end)이 .log-line.user 의 position:sticky 와 충돌해 UI 가 깨졌다. */
+.console-log .log-line.user { display: block; }
+.console-log .log-line.user::before {
+    display: inline; position: absolute;
+    content: '> '; color: var(--primary, #6aa9ff);
+    font-weight: 600; white-space: pre; user-select: none;
+}
 .console-log .user .log-content {
-    background: rgba(106,169,255,0.16);
-    border-color: rgba(106,169,255,0.30);
-    border-bottom-right-radius: 4px;
+    background: none; border: none; padding: 0;
+    max-width: 100%; border-radius: 0;
 }
 /* claude 응답 — 좌측 중립 버블 (마크다운 렌더) */
 .console-log .assistant .log-content {
