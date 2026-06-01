@@ -306,9 +306,9 @@ object HistoryTemplates {
         val errHtml = flashErr?.let { """<div class="error">${esc(it)}</div>""" } ?: ""
         val navPath = if (isChat) "/chat" else "/projects"
         val backLink = if (isChat)
-            """<a href="/chat" class="chip chip-link">← Chat</a>"""
+            AdminTemplates.backButton("/chat", "Chat")
         else
-            """<a href="/projects/${esc(projectId)}/console" class="chip chip-link">${esc(t("history.backToConsole"))}</a>"""
+            AdminTemplates.backButton("/projects/${projectId}/console", t("history.backToConsole"))
 
         val sessionOpts = ("""<option value="">(all sessions)</option>""" +
             sessions.joinToString("") { s ->

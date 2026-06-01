@@ -2767,7 +2767,7 @@ ${renderBuildHistoryChart(builds, artifactsByBuild, lang)}
       · <span class="dim">${esc(b.variant)}</span>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <a href="/projects/${esc(p.id)}/builds" class="chip chip-link">${esc(t("build.detail.backToBuilds"))}</a>
+      ${AdminTemplates.backButton("/projects/${p.id}/builds", t("build.detail.backToBuilds"))}
       <a href="/projects/${esc(p.id)}/console" class="chip chip-link">${esc(t("build.detail.toConsole"))}</a>
       $cancelHtml
     </div>

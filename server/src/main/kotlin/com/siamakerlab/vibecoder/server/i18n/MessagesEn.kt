@@ -294,7 +294,7 @@ internal object MessagesEn {
         "common.action" to "Action",
         "common.add" to "Add",
         "common.remove" to "Remove",
-        "history.backToConsole" to "← Back to console",
+        "history.backToConsole" to "Back to console",
         // v1.7.15 — Sub-agent index page.
         "agents.index.heading" to "Sub-agent consoles",
         "agents.index.intro.title" to "Real multi-agent.",
@@ -304,7 +304,7 @@ internal object MessagesEn {
         "agents.badge.running" to "running",
         "agents.badge.idle" to "idle",
         "agents.openConsole" to "Open console →",
-        "agents.backToMainConsole" to "← Main console",
+        "agents.backToMainConsole" to "Main console",
         "agents.manage" to "Manage agent definitions",
         // v1.7.15 — EnvDiagnostics message / detail.
         "diag.jdk.ok" to "java is installed",
@@ -626,7 +626,7 @@ internal object MessagesEn {
         // ── builds page extras (header / nav / stats card) ───────────
         "builds.module" to "Module",
         "builds.task" to "Task",
-        "builds.back" to "← Back to project",
+        "builds.back" to "Back to project",
         "builds.stats.title" to "Build statistics",
         "builds.stats.total" to "Total builds",
         "builds.stats.successRate" to "Success rate",
@@ -637,7 +637,7 @@ internal object MessagesEn {
         // ── build detail page extras ─────────────────────────────────
         "build.detail.heading" to "Build",
         "build.detail.statusLabel" to "Status",
-        "build.detail.backToBuilds" to "← Build list",
+        "build.detail.backToBuilds" to "Build list",
         "build.detail.toConsole" to "Console",
         "build.detail.cancel" to "Cancel build",
         "build.detail.startedAt" to "Started",
@@ -696,7 +696,7 @@ internal object MessagesEn {
         "files.col.uploaded" to "Uploaded",
         "files.action.download" to "Download",
         "files.action.delete" to "Delete",
-        "files.back" to "← Back to project",
+        "files.back" to "Back to project",
         "files.toConsole" to "Console",
 
         // ── git page extras ──────────────────────────────────────────
@@ -715,7 +715,7 @@ internal object MessagesEn {
         "git.commit.onlyTracked" to "Only tracked files (`git add -u`) — new files are not staged",
         "git.commit.push" to "Run `git push origin &lt;branch&gt;` after commit",
         "git.commit.submit" to "Commit & push",
-        "git.back" to "← Back to project",
+        "git.back" to "Back to project",
         "git.toConsole" to "Console",
         "git.bottomHint" to "A basic commit &amp; push is possible on this page. Destructive operations like <code>git reset --hard</code> still go through Claude in the console (no dangerous commands exposed).",
 
@@ -724,7 +724,7 @@ internal object MessagesEn {
         "fileTree.col.name" to "Name",
         "fileTree.col.size" to "Size",
         "fileTree.col.modified" to "Modified",
-        "fileTree.back" to "← Back to project",
+        "fileTree.back" to "Back to project",
         "fileTree.toConsole" to "Console",
         "fileTree.hint" to "Read + light edit only. Binary files / over 1MB / symlinks are blocked. .vibecoder / .gradle / build / node_modules are hidden.",
         // v1.14.0 — file explorer actions.
@@ -873,7 +873,7 @@ internal object MessagesEn {
         "env.login.title" to "Claude web sign-in",
         "env.login.subtitle" to "semi-automatic OAuth",
         "env.login.statusLabel" to "Status",
-        "env.login.backToEnv" to "← Build environment",
+        "env.login.backToEnv" to "Build environment",
         "env.login.intro" to "Complete OAuth purely via the browser. No terminal, no other machine, no file upload. There is no UI for arbitrary shell commands — only a one-line input for the OAuth code.",
         "env.login.urlBlock.title" to "2. Open the URL below in a new tab and authenticate",
         "env.login.urlBlock.newTab" to "Open in new tab ↗",
@@ -887,7 +887,7 @@ internal object MessagesEn {
         "env.login.codeForm.autoReload" to "※ The page does not auto-reload while you are typing. After pasting the code, press \"Submit\" yourself.",
         "env.login.done.title" to "✓ Sign-in complete",
         "env.login.done.desc" to "Credentials saved in vibe's home. Available in the console immediately.",
-        "env.login.done.btn" to "← Back to build environment",
+        "env.login.done.btn" to "Back to build environment",
         "env.login.failed.title" to "✗ Failed",
         "env.login.failed.unknown" to "(unknown cause)",
         "env.login.failed.hint" to "If web sign-in fails, use option B (credentials upload) or option C (API key). <a href=\"/env-setup\">Back to build environment</a>.",
@@ -912,7 +912,7 @@ internal object MessagesEn {
         "env.task.connecting" to "Connecting…",
         "env.task.elapsed" to "Elapsed",
         "env.task.lastActivity" to "lines · last activity",
-        "env.task.backToEnv" to "← Build environment",
+        "env.task.backToEnv" to "Build environment",
         "env.task.intro" to "Install time ranges from a few seconds to tens of minutes depending on task and network. First-time Android SDK install is typically 5–15 min (3–4 GB download).",
         "env.task.liveLog" to "Live log",
         "env.task.justNow" to "just now",
@@ -929,7 +929,7 @@ internal object MessagesEn {
         // ── error blurb ──────────────────────────────────────────────
         "env.error.title" to "Error",
         "env.error.installFailed" to "Install start failed",
-        "env.error.backToEnv" to "← Back to build environment",
+        "env.error.backToEnv" to "Back to build environment",
         "env.error.multipartParse" to "multipart parse failed: %s",
         "env.error.noFile" to "No file selected. Pick the .credentials.json file.",
         "env.error.uploadRejected" to "upload rejected",
@@ -1022,7 +1022,7 @@ internal object MessagesEn {
 
         // ─────────────────────────────────────────────── mcp catalog
         "mcp.subtitle" to "%d total · %d recommended · %d installed",
-        "mcp.backToEnv" to "← Build environment",
+        "mcp.backToEnv" to "Build environment",
         "mcp.howto.title" to "How to use",
         "mcp.howto.step1" to "Select the checkbox of the MCP you want. ★ marks vibe-coder-verified recommendations.",
         "mcp.howto.step2" to "For entries that need a token / API key / URL, fill the input inline.",
@@ -1078,7 +1078,7 @@ internal object MessagesEn {
 
         // ─────────────────────────────────────────────── git integrations
         "gitint.title" to "Git integrations",
-        "gitint.backToSettings" to "← Settings",
+        "gitint.backToSettings" to "Settings",
         "gitint.intro" to "Manage tokens / SSH keys for private repo clones. Registered tokens are used by git CLI automatically (no extra args needed).",
         "gitint.ssh.cardTitle" to "SSH key (for SSH-URL private clone)",
         "gitint.ssh.notGen" to "No SSH key yet.",
@@ -1141,7 +1141,7 @@ internal object MessagesEn {
 
         // ─────────────────────────────────────────────── cors settings (read-only)
         "cors.title" to "CORS policy",
-        "cors.backToSettings" to "← Settings",
+        "cors.backToSettings" to "Settings",
         "cors.intro" to "Cross-Origin Resource Sharing — list of origins external web apps may use to call the vibe-coder API.",
         "cors.current" to "Current state",
         "cors.statusAnyHost" to "anyHost (allow every origin) — LAN-isolated default",

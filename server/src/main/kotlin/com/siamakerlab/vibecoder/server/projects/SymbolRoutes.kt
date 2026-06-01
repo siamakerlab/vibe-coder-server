@@ -136,7 +136,7 @@ fun Routing.symbolRoutes(
 </div>
 
 <div style="margin-top:14px">
-  <a href="/projects/${esc(p.id)}/files" class="chip chip-link">← 파일 브라우저</a>
+  ${AdminTemplates.backButton("/projects/${p.id}/files", "파일 브라우저")}
   <a href="/projects/${esc(p.id)}/console" class="chip chip-link">콘솔로</a>
 </div>
 """

@@ -126,7 +126,7 @@ internal object PromptAutomationTemplates {
       <small class="dim" style="font-size:14px;font-weight:400">${esc(p.name)} (${esc(p.id)})</small>
     </h1>
     <div style="display:flex;gap:8px">
-      <a href="/projects/${esc(p.id)}/automation" class="chip chip-link">← 빌드 자동화</a>
+      ${AdminTemplates.backButton("/projects/${p.id}/automation", "빌드 자동화")}
       <a href="/projects/${esc(p.id)}/console" class="chip chip-link">콘솔</a>
     </div>
   </div>

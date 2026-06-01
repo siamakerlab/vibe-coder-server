@@ -210,7 +210,7 @@ $errHtml
         csrf = csrf,
         embed = embed,
         body = """
-<div class="settings-subnav" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px"><a href="/agents" class="chip chip-link">← 목록</a></div>
+<div style="margin-bottom:14px">${AdminTemplates.backButton("/agents", com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "scope.back"))}</div>
 <header>
   <h1>Edit agent <code>${esc(name)}</code></h1>
 </header>
@@ -223,7 +223,7 @@ $errHtml
   </label>
   <div style="display:flex;gap:6px">
     <button type="submit" class="primary">저장</button>
-    <a href="/agents" class="chip chip-link">← 목록</a>
+    ${AdminTemplates.backButton("/agents", com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "scope.back"))}
   </div>
 </form>
 """,

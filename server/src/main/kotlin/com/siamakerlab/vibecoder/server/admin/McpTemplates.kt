@@ -95,7 +95,7 @@ object McpTemplates {
       <h1 style="margin:0">${esc(t("mcp.title"))}</h1>
       <p class="dim" style="margin:4px 0 0;font-size:13px">${esc(Messages.t(lang, "mcp.subtitle", total, recommended, installedCount))}</p>
     </div>
-    <a href="/env-setup" class="chip chip-link">${esc(t("mcp.backToEnv"))}</a>
+    ${AdminTemplates.backButton("/env-setup", t("mcp.backToEnv"))}
   </div>
 </header>
 

@@ -96,7 +96,7 @@ object GitIntegrationsTemplates {
 <header>
   <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
     <h1 style="margin:0">${esc(t("gitint.title"))}</h1>
-    <a href="/settings" class="chip chip-link">${esc(t("gitint.backToSettings"))}</a>
+    ${AdminTemplates.backButton("/settings", t("gitint.backToSettings"))}
   </div>
   <p class="dim" style="margin:6px 0 0;font-size:13px">
     ${esc(t("gitint.intro"))}

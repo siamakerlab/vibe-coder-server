@@ -270,7 +270,7 @@ internal object MessagesKo {
         "common.action" to "작업",
         "common.add" to "추가",
         "common.remove" to "제거",
-        "history.backToConsole" to "← 콘솔로",
+        "history.backToConsole" to "콘솔로",
         // v1.7.15 — Sub-agent index page.
         "agents.index.heading" to "Sub-agent 콘솔",
         "agents.index.intro.title" to "Real multi-agent.",
@@ -280,7 +280,7 @@ internal object MessagesKo {
         "agents.badge.running" to "실행 중",
         "agents.badge.idle" to "대기",
         "agents.openConsole" to "콘솔 열기 →",
-        "agents.backToMainConsole" to "← 메인 콘솔",
+        "agents.backToMainConsole" to "메인 콘솔",
         "agents.manage" to "Agent 정의 관리",
         // v1.7.15 — EnvDiagnostics message / detail.
         "diag.jdk.ok" to "java 설치됨",
@@ -603,7 +603,7 @@ internal object MessagesKo {
         // ── builds page extras ───────────────────────────────────────
         "builds.module" to "모듈",
         "builds.task" to "Task",
-        "builds.back" to "← 프로젝트로",
+        "builds.back" to "프로젝트로",
         "builds.stats.title" to "빌드 통계",
         "builds.stats.total" to "전체 빌드",
         "builds.stats.successRate" to "성공률",
@@ -614,7 +614,7 @@ internal object MessagesKo {
         // ── build detail page extras ─────────────────────────────────
         "build.detail.heading" to "빌드",
         "build.detail.statusLabel" to "상태",
-        "build.detail.backToBuilds" to "← 빌드 목록",
+        "build.detail.backToBuilds" to "빌드 목록",
         "build.detail.toConsole" to "콘솔로",
         "build.detail.cancel" to "빌드 취소",
         "build.detail.startedAt" to "시작",
@@ -673,7 +673,7 @@ internal object MessagesKo {
         "files.col.uploaded" to "업로드",
         "files.action.download" to "다운로드",
         "files.action.delete" to "삭제",
-        "files.back" to "← 프로젝트로",
+        "files.back" to "프로젝트로",
         "files.toConsole" to "콘솔로",
 
         // ── git page extras ──────────────────────────────────────────
@@ -692,7 +692,7 @@ internal object MessagesKo {
         "git.commit.onlyTracked" to "Only tracked files (`git add -u`) — 새 파일은 stage 안 함",
         "git.commit.push" to "Commit 후 `git push origin &lt;branch&gt;` 실행",
         "git.commit.submit" to "커밋 & 푸시",
-        "git.back" to "← 프로젝트로",
+        "git.back" to "프로젝트로",
         "git.toConsole" to "콘솔로",
         "git.bottomHint" to "본 페이지에서 단순한 commit & push 가 가능합니다. <code>git reset --hard</code> 같은 destructive 작업은 여전히 콘솔에서 Claude 에게 부탁 (위험 명령 노출 안 함).",
 
@@ -701,7 +701,7 @@ internal object MessagesKo {
         "fileTree.col.name" to "이름",
         "fileTree.col.size" to "크기",
         "fileTree.col.modified" to "수정",
-        "fileTree.back" to "← 프로젝트로",
+        "fileTree.back" to "프로젝트로",
         "fileTree.toConsole" to "콘솔로",
         "fileTree.hint" to "읽기 + 가벼운 편집만 지원. 이진 파일/1MB 초과/심볼릭 링크는 차단. .vibecoder / .gradle / build / node_modules 는 숨김.",
         // v1.14.0 — 파일 탐색기 액션.
@@ -852,7 +852,7 @@ internal object MessagesKo {
         "env.login.title" to "Claude 웹 로그인",
         "env.login.subtitle" to "반자동 OAuth",
         "env.login.statusLabel" to "상태",
-        "env.login.backToEnv" to "← 빌드환경",
+        "env.login.backToEnv" to "빌드환경",
         "env.login.intro" to "브라우저만으로 OAuth 인증을 완료합니다. 터미널 / 다른 머신 / 파일 업로드 모두 불요. 사용자가 임의 shell 명령을 칠 수 있는 UI 는 아니며, 정해진 OAuth 코드 한 줄 입력 폼입니다.",
         "env.login.urlBlock.title" to "2. 아래 URL 을 새 탭에서 열어 인증하세요",
         "env.login.urlBlock.newTab" to "새 탭에서 열기 ↗",
@@ -866,7 +866,7 @@ internal object MessagesKo {
         "env.login.codeForm.autoReload" to "※ 입력 중에는 페이지가 자동 갱신되지 않습니다. 코드 입력 후 \"제출\" 버튼을 직접 눌러주세요.",
         "env.login.done.title" to "✓ 로그인 완료",
         "env.login.done.desc" to "자격증명이 vibe 홈에 저장되었습니다. 콘솔에서 즉시 사용 가능합니다.",
-        "env.login.done.btn" to "← 빌드환경으로",
+        "env.login.done.btn" to "빌드환경으로",
         "env.login.failed.title" to "✗ 실패",
         "env.login.failed.unknown" to "원인 미상",
         "env.login.failed.hint" to "웹 로그인이 실패하면 옵션 B(자격증명 업로드) 또는 옵션 C(API 키)를 사용하세요. <a href=\"/env-setup\">빌드환경으로 돌아가기</a>.",
@@ -891,7 +891,7 @@ internal object MessagesKo {
         "env.task.connecting" to "연결 중…",
         "env.task.elapsed" to "경과",
         "env.task.lastActivity" to "줄 · 마지막 활동",
-        "env.task.backToEnv" to "← 빌드환경",
+        "env.task.backToEnv" to "빌드환경",
         "env.task.intro" to "설치 시간은 작업/네트워크에 따라 5초~수십 분까지 다양합니다. Android SDK 첫 설치는 3~4GB 다운로드로 5~15분이 일반적.",
         "env.task.liveLog" to "실시간 로그",
         "env.task.justNow" to "방금",
@@ -908,7 +908,7 @@ internal object MessagesKo {
         // ── error blurb ──────────────────────────────────────────────
         "env.error.title" to "오류",
         "env.error.installFailed" to "설치 시작 실패",
-        "env.error.backToEnv" to "← 빌드환경으로",
+        "env.error.backToEnv" to "빌드환경으로",
         "env.error.multipartParse" to "multipart 파싱 실패: %s",
         "env.error.noFile" to "파일이 선택되지 않았습니다. .credentials.json 을 선택하세요.",
         "env.error.uploadRejected" to "업로드 거부됨",
@@ -1001,7 +1001,7 @@ internal object MessagesKo {
 
         // ─────────────────────────────────────────────── mcp catalog
         "mcp.subtitle" to "총 %d 개 · 추천 %d 개 · 현재 설치 %d 개",
-        "mcp.backToEnv" to "← 빌드환경",
+        "mcp.backToEnv" to "빌드환경",
         "mcp.howto.title" to "사용법",
         "mcp.howto.step1" to "원하는 MCP 의 체크박스를 선택하세요. ★ 표시는 vibe-coder 에서 검증된 추천 항목.",
         "mcp.howto.step2" to "토큰 / API 키 / URL 등이 필요한 항목은 항목 안의 입력란에 직접 채워주세요.",
@@ -1057,7 +1057,7 @@ internal object MessagesKo {
 
         // ─────────────────────────────────────────────── git integrations
         "gitint.title" to "Git 통합",
-        "gitint.backToSettings" to "← 설정",
+        "gitint.backToSettings" to "설정",
         "gitint.intro" to "Private 레포 clone 을 위한 토큰/SSH 키 관리. 등록된 토큰은 git CLI 가 자동으로 사용 (별도 인자 불요).",
         "gitint.ssh.cardTitle" to "SSH 키 (private SSH URL clone 용)",
         "gitint.ssh.notGen" to "SSH 키가 아직 생성되지 않았습니다.",
@@ -1120,7 +1120,7 @@ internal object MessagesKo {
 
         // ─────────────────────────────────────────────── cors settings (read-only)
         "cors.title" to "CORS 정책",
-        "cors.backToSettings" to "← 설정",
+        "cors.backToSettings" to "설정",
         "cors.intro" to "Cross-Origin Resource Sharing — 외부 웹 앱이 vibe-coder API 를 호출할 수 있는 origin 목록.",
         "cors.current" to "현재 상태",
         "cors.statusAnyHost" to "anyHost (모든 origin 허용) — LAN 격리 환경 기본값",

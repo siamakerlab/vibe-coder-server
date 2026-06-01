@@ -113,7 +113,7 @@ $rowsHtml
 </div>
 
 <div style="margin-top:18px">
-  <a href="/projects/${esc(p.id)}/console" class="chip chip-link">${esc(t("agents.backToMainConsole"))}</a>
+  ${AdminTemplates.backButton("/projects/${p.id}/console", t("agents.backToMainConsole"))}
   <a href="/agents" class="chip chip-link">${esc(t("agents.manage"))}</a>
 </div>
 """
@@ -364,7 +364,7 @@ private fun renderSubAgentConsole(
       ${if (sessionId != null) """ <span class="dim">${esc(sessionId.take(12))}…</span>""" else ""}
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <a href="/projects/${esc(projectId)}/agents" class="chip chip-link">← Sub-agent 목록</a>
+      ${AdminTemplates.backButton("/projects/${projectId}/agents", "Sub-agent 목록")}
       <a href="/projects/${esc(projectId)}/console" class="chip chip-link">메인 콘솔 →</a>
       <button type="button" id="stop-btn" class="chip chip-danger" style="display:none">■ 중지</button>
       <form method="post" action="/projects/${esc(projectId)}/agents/${esc(agentName)}/new" style="display:inline"

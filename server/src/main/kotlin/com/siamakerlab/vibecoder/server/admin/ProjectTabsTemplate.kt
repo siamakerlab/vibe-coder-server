@@ -472,7 +472,7 @@ internal object ProjectTabsTemplate {
 
 <div id="project-tabs-root" data-project-id="${esc(project.id)}" data-rail="shown">
   <div class="pt-header">
-    <a href="/projects" style="color:var(--text-dim);text-decoration:none;font-size:12px">← ${esc(t("tabs.backToList"))}</a>
+    ${AdminTemplates.backButton("/projects", t("tabs.backToList"))}
     $projectSwitcher
     <span class="spacer"></span>
     <details class="pt-settings">

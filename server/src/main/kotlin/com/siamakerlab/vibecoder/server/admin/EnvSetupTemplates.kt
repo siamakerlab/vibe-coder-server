@@ -484,7 +484,7 @@ $statusHint
             "DONE" -> """<div class="card" style="margin-top:12px;background:rgba(105,219,124,0.10);border-color:var(--ok)">
               <strong style="color:var(--ok)">${esc(t("env.login.done.title"))}</strong>
               <p style="margin-top:6px">${esc(t("env.login.done.desc"))}</p>
-              <a href="/env-setup" class="chip primary" style="padding:8px 16px;margin-top:8px;display:inline-block">${esc(t("env.login.done.btn"))}</a>
+              ${AdminTemplates.backButton("/env-setup", t("env.login.done.btn"))}
             </div>"""
             "FAILED" -> """<div class="card" style="margin-top:12px;background:rgba(255,150,80,0.08);border-color:var(--warn)">
               <strong style="color:var(--warn)">${esc(t("env.login.failed.title"))}</strong>
@@ -534,7 +534,7 @@ $statusHint
 <div class="card" style="margin-bottom:12px">
   <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
     <div><strong>${esc(t("env.login.statusLabel"))}</strong> · <span id="state-chip" class="$statusCls">${esc(statusText)}</span></div>
-    <a href="/env-setup" class="chip chip-link">${esc(t("env.login.backToEnv"))}</a>
+    ${AdminTemplates.backButton("/env-setup", t("env.login.backToEnv"))}
   </div>
   <p class="hint" style="margin-top:8px">${esc(t("env.login.intro"))}</p>
   $startForm
@@ -674,7 +674,7 @@ $lastLinesBlock
       <span><strong>${esc(t("env.task.elapsed"))}</strong> · <span id="job-elapsed" style="font-variant-numeric:tabular-nums">00:00:00</span></span>
       <span class="dim" style="font-size:12px"><span id="job-lines">0</span> ${esc(t("env.task.lastActivity"))} <span id="job-last">-</span></span>
     </div>
-    <a href="/env-setup" class="chip chip-link">${esc(t("env.task.backToEnv"))}</a>
+    ${AdminTemplates.backButton("/env-setup", t("env.task.backToEnv"))}
   </div>
   <p class="hint" id="progress-hint" style="margin-top:10px">${esc(t("env.task.intro"))}</p>
 </div>
@@ -808,6 +808,6 @@ $lastLinesBlock
         <link rel="stylesheet" href="/static/admin.css?v=1.33.1"></head><body class="layout no-nav">
         <main class="content"><div class="auth-card"><h1>${esc(t("env.error.installFailed"))}</h1>
         <div class="error">${esc(message)}</div>
-        <a href="/env-setup" class="primary-link">${esc(t("env.error.backToEnv"))}</a></div></main></body></html>"""
+        ${AdminTemplates.backButton("/env-setup", t("env.error.backToEnv"))}</div></main></body></html>"""
     }
 }

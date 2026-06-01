@@ -26,6 +26,19 @@ object AdminTemplates {
     private fun jsLitString(s: String): String =
         "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
+    /**
+     * v1.76.0 — 일관된 "뒤로가기" 아이콘 버튼. arrow-left(Lucide) SVG + 라벨, `.back-btn` 스타일.
+     * 프로젝트/설정 통합 탭 sub-page 의 복귀 링크 공통 컴포넌트(이전엔 "← " 텍스트 + chip 으로
+     * 제각각이었음 — 운영자 선호: 아이콘 버튼). [topTarget]=true 면 iframe 을 깨고 부모(top)
+     * 프레임을 이동(탭 페이지로 복귀).
+     */
+    internal fun backButton(href: String, label: String, topTarget: Boolean = false): String {
+        val tgt = if (topTarget) " target=\"_top\"" else ""
+        return """<a href="${esc(href)}"$tgt class="back-btn" title="${esc(label)}" aria-label="${esc(label)}">""" +
+            """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16" aria-hidden="true"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>""" +
+            """<span>${esc(label)}</span></a>"""
+    }
+
     internal fun shell(
         title: String,
         body: String,
@@ -89,7 +102,7 @@ object AdminTemplates {
   <link rel="icon" type="image/png" href="/static/icon.png">
   <link rel="manifest" href="/static/manifest.json">
   <meta name="theme-color" content="#0b0d12">
-  <link rel="stylesheet" href="/static/admin.css?v=1.71.0">
+  <link rel="stylesheet" href="/static/admin.css?v=1.76.0">
   <script>
     // v1.6.2 — 사이드바 접힘 상태를 first paint 전에 :root data-attribute 로 적용 (FOUC 회피).
     // CSS 의 :root[data-sidebar-collapsed="1"] .layout 가 grid-template-columns 축소.

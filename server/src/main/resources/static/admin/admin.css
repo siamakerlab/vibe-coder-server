@@ -936,6 +936,16 @@ table.devices small.dim { font-size: 11px; }
     text-decoration: none;
 }
 .chip-link { color: var(--text-dim); }
+/* v1.76.0 — 일관된 뒤로가기 아이콘 버튼(프로젝트/설정 sub-page 복귀). AdminTemplates.backButton. */
+.back-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 12px; border-radius: 8px;
+    background: var(--bg-card); border: 1px solid var(--border);
+    color: var(--text-dim); text-decoration: none; font-size: 13px; line-height: 1;
+    transition: background .15s, color .15s, border-color .15s;
+}
+.back-btn:hover { background: var(--bg-elev); color: var(--text); border-color: var(--accent); }
+.back-btn svg { flex-shrink: 0; }
 .chip-danger {
     border-color: var(--danger);
     color: var(--danger);
