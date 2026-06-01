@@ -323,6 +323,9 @@ fun main(args: Array<String>) {
     runCatching { promptAutomationRunRepo.reconcileOrphans() }
         .onSuccess { if (it > 0) log.info { "reconciled $it orphaned automation run(s) → stopped" } }
         .onFailure { log.warn(it) { "automation run reconcile failed" } }
+    // v1.82.0 — 재시작으로 끊긴 콘솔 미완 turn 자동 재개 (비동기 — claude spawn 무거움).
+    runCatching { sessionManager.reconcileInterruptedTurnsAsync() }
+        .onFailure { log.warn(it) { "interrupted-turn reconcile 트리거 실패" } }
     // v0.35.0 — 코드 분석 묶음 (wrapper / stats / search).
     val gradleWrapperService = com.siamakerlab.vibecoder.server.build.GradleWrapperService(workspace)
     val codeStatsService = com.siamakerlab.vibecoder.server.projects.CodeStatsService(workspace)
