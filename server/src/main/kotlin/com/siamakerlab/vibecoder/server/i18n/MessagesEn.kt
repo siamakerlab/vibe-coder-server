@@ -1558,6 +1558,8 @@ internal object MessagesEn {
         "dashboard.sys.load" to "Load avg",
         "dashboard.sys.uptime" to "Uptime",
         "dashboard.sys.procGauge" to "Process",
+        "dashboard.sys.legendTotal" to "Server total",
+        "dashboard.sys.legendVibe" to "vibe-coder",
         "dashboard.adb.statusLabel" to "ADB status",
         "dashboard.adb.available" to "Available",
         "dashboard.adb.unavailable" to "Not installed",
