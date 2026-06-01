@@ -42,6 +42,7 @@ fun Routing.globalClaudeMdRoutes(authDeps: AdminRoutesDeps, service: GlobalClaud
                 lang = sess.language,
                 flashOk = flash(call.request.queryParameters["ok"], sess.language),
                 flashErr = call.request.queryParameters["err"],
+                embed = call.isEmbeddedRequest(),
             ),
             ContentType.Text.Html,
         )

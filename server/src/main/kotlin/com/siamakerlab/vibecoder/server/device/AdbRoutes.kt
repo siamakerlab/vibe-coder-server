@@ -2,6 +2,7 @@ package com.siamakerlab.vibecoder.server.device
 
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.AdminTemplates
+import com.siamakerlab.vibecoder.server.admin.isEmbeddedRequest
 import com.siamakerlab.vibecoder.server.admin.requireAdminOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens.requireCsrf
@@ -60,6 +61,7 @@ fun Routing.adbRoutes(
                 devices = if (adb.available()) runCatching { adb.devices() }.getOrElse { emptyList() } else emptyList(),
                 discovered = if (adb.available()) runCatching { adb.discover() }.getOrElse { emptyList() } else emptyList(),
                 ok = ok, err = err, csrf = sess.csrf, lang = sess.language,
+                embed = call.isEmbeddedRequest(),
             ),
             ContentType.Text.Html,
         )

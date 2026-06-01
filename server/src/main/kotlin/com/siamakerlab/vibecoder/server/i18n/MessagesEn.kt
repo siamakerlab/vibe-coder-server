@@ -1287,6 +1287,7 @@ internal object MessagesEn {
         "api.project.overwriteFailed" to "Failed to wipe existing folder: %s",
         "api.project.notFound" to "Project '%s' not registered.",
         "api.project.scratchProtected" to "General Chat workspace cannot be deleted.",
+        "api.project.renameFailed" to "Failed to rename project '%s' folder (filesystem move or DB migration error).",
         "api.project.reorderMismatch" to "Order does not match the current list. Refresh and try again.",
         "api.build.gradleExit" to "gradle exited with code %d.",
         "api.build.apkNotFound" to "No APK under build/outputs/apk/debug.",

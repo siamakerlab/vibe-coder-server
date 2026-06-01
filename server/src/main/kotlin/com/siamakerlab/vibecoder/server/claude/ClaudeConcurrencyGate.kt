@@ -43,9 +43,16 @@ class ClaudeConcurrencyGate(val limit: Int) {
      */
     suspend fun acquire(key: String) {
         val s = semaphore ?: return
-        if (heldKeys.contains(key)) return // 같은 key 가 이미 turn 진행 중 → 중복 확보 금지
-        s.acquire()
-        heldKeys.add(key)
+        // v1.71.0 (정밀점검) — add 를 먼저(atomic) 해서 같은 key 의 동시 acquire 가
+        // 둘 다 contains=false 를 통과해 permit 2개를 소비하는 race 를 차단. 이미 보유/대기
+        // 중이면 즉시 반환(중복 확보 안 함). 대기 중 취소(CancellationException)면 등록 해제.
+        if (!heldKeys.add(key)) return
+        try {
+            s.acquire()
+        } catch (t: Throwable) {
+            heldKeys.remove(key)
+            throw t
+        }
     }
 
     /** [key] 가 보유한 permit 을 반환한다. 보유하고 있지 않으면 no-op (idempotent). */

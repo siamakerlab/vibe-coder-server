@@ -1,6 +1,7 @@
 package com.siamakerlab.vibecoder.server.prompts
 
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
+import com.siamakerlab.vibecoder.server.admin.isEmbeddedRequest
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireWriteAccessOrRedirect
 import com.siamakerlab.vibecoder.server.auth.AUTH_BEARER
@@ -43,7 +44,7 @@ fun Routing.promptRoutes(
         val err = call.request.queryParameters["err"]
         val ok = call.request.queryParameters["ok"]
         call.respondText(
-            PromptTemplates.listPage(sess.username, templates, csrf = sess.csrf, flashErr = err, flashOk = ok, lang = sess.language),
+            PromptTemplates.listPage(sess.username, templates, csrf = sess.csrf, flashErr = err, flashOk = ok, lang = sess.language, embed = call.isEmbeddedRequest()),
             ContentType.Text.Html,
         )
     }

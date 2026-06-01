@@ -38,6 +38,7 @@ fun Routing.pluginRoutes(authDeps: AdminRoutesDeps, plugins: PluginService) {
                 readonlyPlugins = emptyList(), readonlyLabel = "", readonlyManageHref = null,
                 csrf = sess.csrf, lang = sess.language,
                 flashOk = call.request.queryParameters["ok"], flashErr = call.request.queryParameters["err"],
+                embed = call.isEmbeddedRequest(),
             ),
             ContentType.Text.Html,
         )

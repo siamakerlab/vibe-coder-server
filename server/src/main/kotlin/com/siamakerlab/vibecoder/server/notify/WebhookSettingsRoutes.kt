@@ -2,6 +2,7 @@ package com.siamakerlab.vibecoder.server.notify
 
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.AdminTemplates
+import com.siamakerlab.vibecoder.server.admin.isEmbeddedRequest
 import com.siamakerlab.vibecoder.server.admin.requireAdminOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens
@@ -28,7 +29,7 @@ fun Routing.webhookSettingsRoutes(authDeps: AdminRoutesDeps, notifier: WebhookNo
         val ok = call.request.queryParameters["ok"]
         val err = call.request.queryParameters["err"]
         call.respondText(
-            WebhookSettingsTemplates.page(sess.username, cfg, sess.csrf, ok, err, lang = sess.language),
+            WebhookSettingsTemplates.page(sess.username, cfg, sess.csrf, ok, err, lang = sess.language, embed = call.isEmbeddedRequest()),
             ContentType.Text.Html,
         )
     }
@@ -64,8 +65,9 @@ object WebhookSettingsTemplates {
         csrf: String?,
         ok: String?,
         err: String?,
-    
+
         lang: String,
+        embed: Boolean = false,
     ): String {
         val statusBadge = if (cfg.enabled) """<span class="ok">✓ 활성</span>"""
         else """<span class="warn">✗ 비활성</span>"""
@@ -91,6 +93,7 @@ object WebhookSettingsTemplates {
             username = username,
             currentPath = "/settings/webhook",
             csrf = csrf,
+            embed = embed,
             body = """
 <header>
   <h1>Webhook 알림 (Slack / Discord / Telegram) $statusBadge</h1>

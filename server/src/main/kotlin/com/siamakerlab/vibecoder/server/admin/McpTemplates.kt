@@ -45,6 +45,7 @@ object McpTemplates {
         lang: String,
         /** v1.35.0 — 카탈로그에 없지만 .mcp.json 에 등록된 server (터미널/Claude 직접 추가) — 감지 표시용. */
         detectedCustom: List<String> = emptyList(),
+        embed: Boolean = false,
     ): String {
         val t = { key: String -> Messages.t(lang, key) }
         val total = McpCatalog.size
@@ -297,7 +298,8 @@ JSON</pre>
   }
 })();
 </script>
-"""
+""",
+            embed = embed,
         )
     }
 

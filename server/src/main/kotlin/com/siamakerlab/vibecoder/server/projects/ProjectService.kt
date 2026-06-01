@@ -485,7 +485,7 @@ class ProjectService(
         val name = newName.trim()
         require(name.isNotBlank()) { "name required" }
         require(name.length <= 256) { "name too long (max 256)" }
-        if (id == SCRATCH_ID) {
+        if (isGhost(id)) {
             throw ApiException.localized(403, "scratch_protected", messageKey = "api.project.scratchProtected")
         }
         return repo.updateName(id, name) > 0
@@ -500,7 +500,7 @@ class ProjectService(
         require(PACKAGE_NAME_PATTERN.matches(pkg)) {
             "invalid package name (expected like com.example.app): $pkg"
         }
-        if (id == SCRATCH_ID) {
+        if (isGhost(id)) {
             throw ApiException.localized(403, "scratch_protected", messageKey = "api.project.scratchProtected")
         }
         return repo.updatePackageName(id, pkg) > 0
@@ -514,7 +514,7 @@ class ProjectService(
      */
     fun renameFolder(oldId: String, newId: String) {
         val target = newId.trim()
-        if (oldId == SCRATCH_ID) {
+        if (isGhost(oldId)) {
             throw ApiException.localized(403, "scratch_protected", messageKey = "api.project.scratchProtected")
         }
         require(PROJECT_ID_PATTERN.matches(target)) {
@@ -541,12 +541,21 @@ class ProjectService(
             runCatching { Files.move(oldRoot, newRoot) }.getOrElse {
                 log.error(it) { "[rename] project root move failed $oldRoot → $newRoot" }
                 throw ApiException.localized(500, "fs_move_failed",
-                    messageKey = "api.project.notFound", args = listOf(oldId))
+                    messageKey = "api.project.renameFailed", args = listOf(oldId))
             }
         }
-        // 2) 메타/keystore 디렉토리 best-effort 이동.
-        runCatching { if (oldVibe.exists() && newVibe.notExists()) Files.move(oldVibe, newVibe) }
-            .onFailure { log.warn(it) { "[rename] vibecoder dir move failed" } }
+        // 2) 메타(.vibecoder/<id>) 디렉토리 이동 — **필수**(빌드/아티팩트/로그/업로드 보관).
+        //    v1.71.0 (정밀점검 H2): best-effort 였으면 root 만 옮겨지고 DB commit 후 메타가
+        //    옛 경로에 고아로 남았다. 실패 시 root 롤백 + 중단(DB 미변경).
+        if (oldVibe.exists()) {
+            runCatching { if (newVibe.notExists()) Files.move(oldVibe, newVibe) }.getOrElse {
+                log.error(it) { "[rename] vibecoder dir move failed — rolling back root" }
+                runCatching { if (newRoot.exists() && oldRoot.notExists()) Files.move(newRoot, oldRoot) }
+                throw ApiException.localized(500, "fs_move_failed",
+                    messageKey = "api.project.renameFailed", args = listOf(oldId))
+            }
+        }
+        // keystore 디렉토리는 best-effort (없거나 운영자 외부 keystore 사용 케이스 허용).
         if (oldKs != null && newKs != null) runCatching {
             if (oldKs.exists() && newKs.notExists()) { newKs.parent?.createDirectories(); Files.move(oldKs, newKs) }
         }.onFailure { log.warn(it) { "[rename] keystores dir move failed" } }
@@ -559,7 +568,7 @@ class ProjectService(
             runCatching { if (newVibe.exists() && oldVibe.notExists()) Files.move(newVibe, oldVibe) }
             if (oldKs != null && newKs != null) runCatching { if (newKs.exists() && oldKs.notExists()) Files.move(newKs, oldKs) }
             throw ApiException.localized(500, "db_migration_failed",
-                messageKey = "api.project.notFound", args = listOf(oldId))
+                messageKey = "api.project.renameFailed", args = listOf(oldId))
         }
         // 4) source_path 를 새 루트로 갱신.
         runCatching { repo.updateSourcePath(target, newRoot.toString()) }

@@ -38,7 +38,7 @@ fun Routing.sshKeyRoutes(authDeps: AdminRoutesDeps, sshKey: SshKeyService) {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
         if (!requireAdminOrRedirect(sess)) return@get
         call.respondText(
-            SshKeyTemplates.page(sess.username, sshKey.snapshot(), csrf = sess.csrf, lang = sess.language),
+            SshKeyTemplates.page(sess.username, sshKey.snapshot(), csrf = sess.csrf, lang = sess.language, embed = call.isEmbeddedRequest()),
             ContentType.Text.Html,
         )
     }
@@ -102,7 +102,7 @@ internal object SshKeyTemplates {
             .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             .replace("\"", "&quot;").replace("'", "&#39;")
 
-    fun page(username: String, snap: SshKeySnapshot?, csrf: String? = null, lang: String): String {
+    fun page(username: String, snap: SshKeySnapshot?, csrf: String? = null, lang: String, embed: Boolean = false): String {
         val t = { key: String -> Messages.t(lang, key) }
         val csrfHidden = csrf?.let {
             """<input type="hidden" name="_csrf" value="${esc(it)}">"""
@@ -179,6 +179,7 @@ internal object SshKeyTemplates {
             currentPath = "/settings/ssh-key",
             csrf = csrf,
             lang = lang,
+            embed = embed,
             body = """
 <header>
   <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">

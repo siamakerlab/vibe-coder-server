@@ -46,6 +46,7 @@ fun Routing.skillRoutes(authDeps: AdminRoutesDeps, registry: SkillRegistry) {
                 newFormAction = "/settings/skills/save", newNamePattern = "[A-Za-z0-9._\\-]{1,64}",
                 bodyPlaceholder = SKILL_PLACEHOLDER, csrf = sess.csrf, lang = sess.language,
                 flashOk = call.request.queryParameters["ok"], flashErr = call.request.queryParameters["err"],
+                embed = call.isEmbeddedRequest(),
             ),
             ContentType.Text.Html,
         )

@@ -2,6 +2,7 @@ package com.siamakerlab.vibecoder.server.projects
 
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.AdminTemplates
+import com.siamakerlab.vibecoder.server.admin.isEmbeddedRequest
 import com.siamakerlab.vibecoder.server.admin.requireProjectAccessOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import com.siamakerlab.vibecoder.server.auth.AUTH_BEARER
@@ -147,6 +148,7 @@ fun Routing.symbolRoutes(
                 csrf = sess.csrf,
                 body = body,
                 lang = sess.language,
+                embed = call.isEmbeddedRequest(),
             ),
             ContentType.Text.Html,
         )

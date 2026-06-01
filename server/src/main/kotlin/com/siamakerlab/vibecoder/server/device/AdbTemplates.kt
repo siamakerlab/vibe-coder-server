@@ -23,6 +23,7 @@ internal object AdbTemplates {
         err: String?,
         csrf: String?,
         lang: String,
+        embed: Boolean = false,
     ): String {
         val t = { k: String -> Messages.t(lang, k) }
         val okHtml = if (!ok.isNullOrBlank()) """<div class="ok-banner">✓ ${esc(ok)}</div>""" else ""
@@ -34,7 +35,7 @@ internal object AdbTemplates {
 <div class="card"><div class="error">${esc(t("adb.unavailable"))}</div>
   <p class="hint" style="margin-top:8px">${esc(t("adb.unavailable.hint"))}
     <a href="/env-setup">/env-setup</a></p></div>"""
-            return AdminTemplates.shell(title = t("adb.title"), username = username, currentPath = "/adb", csrf = csrf, lang = lang, body = body)
+            return AdminTemplates.shell(title = t("adb.title"), username = username, currentPath = "/adb", csrf = csrf, lang = lang, body = body, embed = embed)
         }
 
         // 자동 탐지 (HOST 네트워크). connect-service / pairing-service 분리.
@@ -146,6 +147,6 @@ $errHtml
 })();
 </script>
 """
-        return AdminTemplates.shell(title = t("adb.title"), username = username, currentPath = "/adb", csrf = csrf, lang = lang, body = body)
+        return AdminTemplates.shell(title = t("adb.title"), username = username, currentPath = "/adb", csrf = csrf, lang = lang, body = body, embed = embed)
     }
 }

@@ -2,6 +2,7 @@ package com.siamakerlab.vibecoder.server.claude
 
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.AdminTemplates
+import com.siamakerlab.vibecoder.server.admin.isEmbeddedRequest
 import com.siamakerlab.vibecoder.server.admin.requireProjectAccessOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import com.siamakerlab.vibecoder.server.projects.ProjectService
@@ -268,6 +269,7 @@ private suspend fun renderHistory(
             flashErr = err,
             csrf = csrf,
             lang = lang,
+            embed = call.isEmbeddedRequest(),
         ),
         ContentType.Text.Html,
     )
@@ -297,6 +299,7 @@ object HistoryTemplates {
         flashErr: String? = null,
         csrf: String? = null,
         lang: String,
+        embed: Boolean = false,
     ): String {
         val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
         val okHtml = flashOk?.let { """<div class="ok-banner">✓ ${esc(it)}</div>""" } ?: ""
@@ -533,6 +536,7 @@ $errHtml
 </p>
 """,
             lang = lang,
+            embed = embed,
         )
     }
 

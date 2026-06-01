@@ -63,6 +63,7 @@ fun Routing.envSetupRoutes(
                 gitFlash = gitFlash,
                 csrf = sess.csrf,
                 lang = sess.language,
+                embed = call.isEmbeddedRequest(),
             ),
             ContentType.Text.Html,
         )
@@ -130,7 +131,7 @@ fun Routing.envSetupRoutes(
         if (!requireAdminOrRedirect(sess)) return@get
         val taskId = call.parameters["taskId"]!!
         call.respondText(
-            EnvSetupTemplates.taskProgressPage(sess.username, taskId, lang = sess.language),
+            EnvSetupTemplates.taskProgressPage(sess.username, taskId, lang = sess.language, embed = call.isEmbeddedRequest()),
             ContentType.Text.Html,
         )
     }
@@ -249,7 +250,7 @@ fun Routing.envSetupRoutes(
         if (!requireAdminOrRedirect(sess)) return@get
         val state = claudeLogin.status()
         call.respondText(
-            EnvSetupTemplates.claudeLoginPage(sess.username, state, csrf = sess.csrf, lang = sess.language),
+            EnvSetupTemplates.claudeLoginPage(sess.username, state, csrf = sess.csrf, lang = sess.language, embed = call.isEmbeddedRequest()),
             ContentType.Text.Html,
         )
     }

@@ -47,17 +47,30 @@ object AdminTemplates {
          * / max-width 제거 + overflow hidden → 자식이 직접 100% 박스 사용.
          */
         fullbleed: Boolean = false,
+        /**
+         * v1.72.0 — iframe 임베드(설정/프로젝트 탭 iframe 의 inner page) 렌더링.
+         * true 면 사이드바 nav + 설정 탭바를 **처음부터 HTML 에 넣지 않는다** (미렌더).
+         * 이전엔 전체 shell(nav 포함)을 그대로 iframe 에 로드한 뒤 project-tabs.js 가
+         * load 후 JS 로 숨겼는데(cleanup), race·실패 시 "페이지 in 페이지"(상단 네비 +
+         * 탭바 + 폼이 통째로 이중 노출)가 빈번했다. 서버가 애초에 크롬을 안 그리므로
+         * 중첩 노출이 구조적으로 불가능 + iframe 마다 quota/adb 폴링·logout 폼 등
+         * 불필요 DOM/스크립트도 생성 안 됨. [ApplicationCall.isEmbeddedRequest] 로 자동 판정.
+         */
+        embed: Boolean = false,
     ): String {
-        val nav = if (showNav) navHtml(currentPath, username, csrf, lang) else ""
-        val layoutCls = if (showNav) "layout" else "layout no-nav"
+        // v1.72.0 — embed(iframe inner) 면 nav/탭바 크롬 미렌더. 부모 탭 UI 가 이미 제공.
+        val showChrome = showNav && !embed
+        val nav = if (showChrome) navHtml(currentPath, username, csrf, lang) else ""
+        val layoutCls = if (showChrome) "layout" else "layout no-nav"
         val contentCls = if (fullbleed) "content fullbleed" else "content"
         // v1.27.3 Q1 회수: fullbleed 페이지 (예: /settings/tabs, /tools/tabs) 는 자체
         // iframe 탭 UI 를 갖는다. 여기에 settings tabBar 까지 주입하면 탭바가 2줄로
         // 중복 노출 (SettingsTabsTemplate 가 currentPath="/settings" 라 topLevelOf=="settings"
         // → maybeTabs 주입 + iframe 내부 .tab-bar 동시). fullbleed 면 외부 tabBar 생략.
         // 일반 settings sub-page (직접 접근, fullbleed=false) 는 그대로 tabBar 노출.
+        // v1.72.0 — embed 면 탭바도 미렌더(showChrome 에 흡수). iframe 내부 중복 탭바 제거.
         val maybeTabs =
-            if (showNav && !fullbleed && SettingsNav.topLevelOf(currentPath) == "settings")
+            if (showChrome && !fullbleed && SettingsNav.topLevelOf(currentPath) == "settings")
                 SettingsNav.tabBar(currentPath, lang)
             else ""
         // v0.12.4 — JS 가 ajax POST 시 CSRF 토큰을 첨부할 수 있도록 meta + global.
@@ -737,6 +750,7 @@ $gitIdentityBanner
         userLanguage: String? = null,
         /** v0.77.0 — 서버 default ("en"/"ko"). dropdown 의 "Use server default (xx)" 라벨. */
         serverDefaultLanguage: String = "en",
+        embed: Boolean = false,
     ): String {
         val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
         val tArgs = { key: String, args: Array<Any?> -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key, *args) }
@@ -809,7 +823,8 @@ $errHtml
   <button type="submit" class="primary">${esc(t("common.save"))}</button>
   <p class="hint">${t("settings.persist.hint")}</p>
 </form>
-"""
+""",
+            embed = embed,
         )
     }
 
@@ -823,6 +838,7 @@ $errHtml
         flashErr: String? = null,
         csrf: String? = null,
         lang: String,
+        embed: Boolean = false,
     ): String {
         val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
         val okHtml = if (flashOk != null) """<div class="ok-banner">${esc(flashOk)}</div>""" else ""
@@ -851,7 +867,8 @@ $errHtml
   </label>
   <button type="submit" class="primary">${esc(t("password.submit"))}</button>
 </form>
-"""
+""",
+            embed = embed,
         )
     }
 
@@ -866,6 +883,7 @@ $errHtml
         flashOk: String? = null,
         csrf: String? = null,
         lang: String,
+        embed: Boolean = false,
     ): String {
         val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
         val okHtml = if (flashOk != null) """<div class="ok-banner">${esc(flashOk)}</div>""" else ""
@@ -893,6 +911,7 @@ $errHtml
             currentPath = "/devices",
             csrf = csrf,
             lang = lang,
+            embed = embed,
             body = """
 <header><h1>${esc(t("devices.title"))}</h1></header>
 $okHtml

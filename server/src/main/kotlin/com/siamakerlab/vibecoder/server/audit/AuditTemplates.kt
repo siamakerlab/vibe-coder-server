@@ -21,6 +21,7 @@ object AuditTemplates {
         total: Long,
         csrf: String? = null,
         lang: String,
+        embed: Boolean = false,
     ): String {
         val actionOpts = ("""<option value="">(all)</option>""" +
             actions.joinToString("") { a ->
@@ -68,6 +69,7 @@ object AuditTemplates {
             username = username,
             currentPath = "/audit",
             csrf = csrf,
+            embed = embed,
             body = """
 <header>
   <h1>감사 로그 <small class="dim" style="font-size:14px;font-weight:400">$total 개</small></h1>

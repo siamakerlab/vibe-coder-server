@@ -11,8 +11,10 @@ import com.siamakerlab.vibecoder.server.i18n.Messages
  *
  * SettingsNav 의 카테고리와 1:1 매핑 — 각 탭의 src 는 그 카테고리의 대표 URL.
  *
- * 같은 origin → inner admin shell 의 `<nav class="sidebar">` / `.settings-tabs`
- * 는 [project-tabs.js] 의 cleanup 이 hide. 시각적으로 단일 페이지.
+ * v1.72.0 — inner page 는 `?_embed=1`(+ 브라우저 표준 Sec-Fetch-Dest:iframe)로 요청되어
+ * 서버가 nav/탭바 크롬을 **처음부터 미렌더**한다([AdminTemplates.shell] embed=true).
+ * 과거의 "load 후 project-tabs.js cleanup 으로 JS hide"(race·실패 시 페이지 in 페이지)를
+ * 대체 — 시각적으로 단일 페이지.
  *
  * localStorage key 는 project-tabs.js 가 `data-project-id` 를 prefix 로 사용
  * 하므로 `data-project-id="__settings__"` 로 별도 namespace.
@@ -50,8 +52,10 @@ internal object SettingsTabsTemplate {
                        title="${esc(t(tab.labelKey))}">${esc(t(tab.labelKey))}</button>"""
         }
         val tabPanes = TABS.joinToString("\n") { tab ->
+            // v1.72.0 — ?_embed=1: inner page 가 nav/탭바 크롬을 미렌더하도록(서버 분기) 하는
+            // 폴백 신호. 주 신호는 브라우저 표준 Sec-Fetch-Dest:iframe(내부 sub-navigation 도 커버).
             """<div class="tab-pane" data-tab="${esc(tab.id)}">
-                <iframe class="tab-frame" src="${esc(tab.src)}" name="${esc(tab.frameName)}"
+                <iframe class="tab-frame" src="${esc(tab.src)}?_embed=1" name="${esc(tab.frameName)}"
                         title="${esc(t(tab.labelKey))}" loading="eager"
                         referrerpolicy="same-origin"></iframe>
               </div>"""
@@ -128,7 +132,7 @@ $tabPanes
   </div>
 </div>
 
-<script src="/static/project-tabs.js?v=1.29.0" defer></script>
+<script src="/static/project-tabs.js?v=1.72.0" defer></script>
 """,
         )
     }

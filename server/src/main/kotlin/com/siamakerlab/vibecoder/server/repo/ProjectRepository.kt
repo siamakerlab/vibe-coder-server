@@ -109,9 +109,6 @@ class ProjectRepository(private val clock: Clock) {
         }
     }
 
-    /** v1.71.0 — source_path(프로젝트 루트 경로) 갱신. 폴더 rename 후 호출. */
-    fun updateSourcePathOnly(id: String, sourcePath: String): Int = updateSourcePath(id, sourcePath)
-
     /**
      * v1.71.0 — 프로젝트 id(=PK=폴더명) 변경. PK 마이그레이션 + 모든 자식 테이블 project_id repoint.
      *
@@ -147,6 +144,9 @@ class ProjectRepository(private val clock: Clock) {
         com.siamakerlab.vibecoder.server.db.BuildWebhookSecrets.update({ com.siamakerlab.vibecoder.server.db.BuildWebhookSecrets.projectId eq oldId }) { it[com.siamakerlab.vibecoder.server.db.BuildWebhookSecrets.projectId] = newId }
         com.siamakerlab.vibecoder.server.db.PromptAutomationRuns.update({ com.siamakerlab.vibecoder.server.db.PromptAutomationRuns.projectId eq oldId }) { it[com.siamakerlab.vibecoder.server.db.PromptAutomationRuns.projectId] = newId }
         com.siamakerlab.vibecoder.server.db.NotificationEvents.update({ com.siamakerlab.vibecoder.server.db.NotificationEvents.projectId eq oldId }) { it[com.siamakerlab.vibecoder.server.db.NotificationEvents.projectId] = newId }
+        // v1.71.0 (정밀점검 C1) — project_acls 는 RESTRICT FK. 미repoint 시 아래 옛 PK DELETE 가
+        // FK 위반으로 throw → 트랜잭션 abort. (멀티유저 제거로 보통 0행이나 업그레이드 DB 대비.)
+        com.siamakerlab.vibecoder.server.db.ProjectAcls.update({ com.siamakerlab.vibecoder.server.db.ProjectAcls.projectId eq oldId }) { it[com.siamakerlab.vibecoder.server.db.ProjectAcls.projectId] = newId }
         Projects.deleteWhere { Projects.id eq oldId }
         true
     }

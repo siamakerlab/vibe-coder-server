@@ -16,8 +16,9 @@ import com.siamakerlab.vibecoder.shared.dto.ProjectDto
  *  1. 5개 핵심 SSR 페이지를 `<iframe>` 으로 모두 한 번에 prerender (Console default
  *     active, 나머지 4개 hidden DOM). 같은 origin 이라 inner contentDocument 조작 가능.
  *  2. 탭 클릭 / URL hash 변경 시 [project-tabs.js] 가 CSS display 토글 — 즉시 전환.
- *  3. iframe.onload 에서 inner admin shell 의 `<nav class="sidebar">` / `.settings-tabs`
- *     를 숨기고 layout grid 를 1-column 으로 압축 — 시각적으로 단일 페이지처럼.
+ *  3. inner page 는 `?_embed=1`(+ 브라우저 표준 Sec-Fetch-Dest:iframe)로 요청되어 서버가
+ *     nav/탭바 크롬을 **처음부터 미렌더**([AdminTemplates.shell] embed=true)하고 layout 도
+ *     no-nav(1-column) — 시각적으로 단일 페이지. (v1.72.0 — 과거 onload JS hide 방식 대체.)
  *  4. iframe 5개가 항상 살아있으므로 WebSocket / SSE connection 도 백그라운드에서 그대로
  *     유지된다 (사용자 명시 선택).
  *
@@ -180,7 +181,9 @@ internal object ProjectTabsTemplate {
         //    project-tabs.js 가 콘솔 load 후 data-src 를 순차로 src 에 옮겨 백그라운드 프리로딩.
         //    프리로드 전 클릭 시엔 activate() 가 즉시 on-demand 로드.
         val tabPanes = TABS.joinToString("\n") { tab ->
-            val src = "/projects/${esc(project.id)}${tab.urlSuffix}"
+            // v1.72.0 — ?_embed=1: inner page 가 nav/탭바 크롬을 미렌더하도록(서버 분기) 하는
+            // 폴백 신호. 주 신호는 브라우저 표준 Sec-Fetch-Dest:iframe(내부 sub-navigation 도 커버).
+            val src = "/projects/${esc(project.id)}${tab.urlSuffix}?_embed=1"
             val srcAttr = if (tab.id == "console")
                 """src="${esc(src)}" loading="eager" fetchpriority="high""""
             else
@@ -511,7 +514,7 @@ $railHtml
   </div>
 </div>
 
-<script src="/static/project-tabs.js?v=1.59.2" defer></script>
+<script src="/static/project-tabs.js?v=1.72.0" defer></script>
 <!-- v1.56.0 — 콤보박스 상태칩 실시간 동기. 목록 페이지와 동일하게 `/ws/projects`
      (단방향) 의 ProjectBusyChanged 로 responding↔ready patch. -->
 <script>

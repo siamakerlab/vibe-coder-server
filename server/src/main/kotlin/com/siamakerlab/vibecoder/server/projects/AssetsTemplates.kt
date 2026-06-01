@@ -31,6 +31,7 @@ internal object AssetsTemplates {
         flash: String?,
         csrf: String?,
         lang: String,
+        embed: Boolean = false,
     ): String {
         val t = { key: String -> Messages.t(lang, key) }
         val csrfHidden = CsrfTokens.hiddenInput(csrf)
@@ -209,6 +210,7 @@ $playCard
 })();
 </script>
 """,
+            embed = embed,
         )
     }
 

@@ -114,6 +114,10 @@ fun Routing.webProjectRoutes(
     conversationRepo: ConversationTurnRepository,
     /** v1.26.0 — 빌드 시작 전 keystore readiness 검사 (운영 정책: 임의 생성 금지). */
     keystoreService: com.siamakerlab.vibecoder.server.admin.KeystoreService,
+    /** v1.71.0 (정밀점검 H4) — 폴더/패키지 변경 idle 가드 + 폴더 이동 전 sub-agent 종료. */
+    subAgentManager: com.siamakerlab.vibecoder.server.claude.SubAgentSessionManager,
+    /** v1.71.0 (정밀점검 H4) — 폴더/패키지 변경 시 자동화 진행 여부 가드. */
+    promptAutomationManager: com.siamakerlab.vibecoder.server.automation.PromptAutomationManager,
 ) {
 
     // ── 목록 + 등록 폼 ────────────────────────────────────────────────
@@ -320,6 +324,7 @@ fun Routing.webProjectRoutes(
                 lang = sess.language,
                 // v1.71.0 — 폴더/패키지 변경은 대기중(turn·빌드 미진행)일 때만.
                 structuralEnabled = !sessionManager.isBusy(id) && !isBuildRunning(buildRepo, id),
+                embed = call.isEmbeddedRequest(),
             ),
             ContentType.Text.Html,
         )
@@ -363,8 +368,9 @@ fun Routing.webProjectRoutes(
         val id = call.parameters["id"]!!
         requireProjectAccessOrThrow(sess, projects, id)
         val newPkg = params["packageName"]?.trim().orEmpty()
-        // 대기중 가드: turn 진행 중 / 빌드 중이면 거부 (alive 프로세스엔 프롬프트를 보낼 것이므로 허용).
-        if (sessionManager.isBusy(id) || isBuildRunning(buildRepo, id)) {
+        // 대기중 가드: turn 진행 중 / 빌드 중 / 자동화 진행 중이면 거부.
+        // (alive 메인 프로세스엔 프롬프트를 보낼 것이므로 허용. 자동화는 sendPrompt 와 충돌.)
+        if (sessionManager.isBusy(id) || isBuildRunning(buildRepo, id) || promptAutomationManager.isActive(id)) {
             call.respondRedirect("/projects/$id/overview?err=${Messages.t(sess.language, "flash.project.rename.notIdle").encodeUrl()}")
             return@post
         }
@@ -394,8 +400,9 @@ fun Routing.webProjectRoutes(
         val id = call.parameters["id"]!!
         requireProjectAccessOrThrow(sess, projects, id)
         val newId = params["newId"]?.trim().orEmpty()
-        // 폴더 이동은 프로세스 cwd 를 옮기므로 완전 idle 필요: turn/빌드 미진행.
-        if (sessionManager.isBusy(id) || isBuildRunning(buildRepo, id)) {
+        // 폴더 이동은 프로세스 cwd 를 옮기므로 완전 idle 필요: turn/빌드/자동화 미진행.
+        // v1.71.0 (정밀점검 H4) — 자동화는 rename 직후에도 옛 id 로 sendPrompt 를 시도하므로 거부.
+        if (sessionManager.isBusy(id) || isBuildRunning(buildRepo, id) || promptAutomationManager.isActive(id)) {
             call.respondRedirect("/projects/$id/overview?err=${Messages.t(sess.language, "flash.project.rename.notIdle").encodeUrl()}")
             return@post
         }
@@ -403,6 +410,10 @@ fun Routing.webProjectRoutes(
             // live claude 프로세스가 옛 폴더를 cwd 로 잡고 있으므로 먼저 종료(세션 재설정).
             // DB 대화 이력은 마이그레이션으로 보존되어 새 콘솔에서 그대로 보임.
             if (sessionManager.isAlive(id)) sessionManager.startNew(id)
+            // v1.71.0 (정밀점검 H4) — sub-agent 프로세스도 옛 폴더를 cwd 로 잡으므로 종료.
+            runCatching {
+                subAgentManager.activeAgentsFor(id).forEach { agent -> subAgentManager.startNew(id, agent) }
+            }.onFailure { log.warn(it) { "sub-agent terminate before folder rename failed for $id" } }
             projects.renameFolder(id, newId)
             log.info { "project folder renamed $id → $newId by ${sess.username}" }
             call.respondRedirect("/projects/$newId/overview?ok=${Messages.t(sess.language, "flash.project.folder.renamed").encodeUrl()}")
@@ -446,6 +457,7 @@ fun Routing.webProjectRoutes(
                 starterPrompt = starterPrompt,
                 initialHistory = history,
                 lang = sess.language,
+                embed = call.isEmbeddedRequest(),
             ),
             ContentType.Text.Html,
         )
@@ -509,6 +521,7 @@ fun Routing.webProjectRoutes(
                 keystorePrefill = keystorePrefill,
                 flashErr = err, flashOk = ok, csrf = sess.csrf,
                 lang = sess.language,
+                embed = call.isEmbeddedRequest(),
             ),
             ContentType.Text.Html,
         )
@@ -608,6 +621,7 @@ fun Routing.webProjectRoutes(
                 comparison = comparison,
                 csrf = sess.csrf,
                 lang = sess.language,
+                embed = call.isEmbeddedRequest(),
             ),
             ContentType.Text.Html,
         )
@@ -738,6 +752,7 @@ fun Routing.webProjectRoutes(
                     sess.username, p, subPath, emptyList(),
                     flashErr = msg, csrf = sess.csrf,
                     lang = sess.language,
+                    embed = call.isEmbeddedRequest(),
                 ),
                 ContentType.Text.Html, HttpStatusCode.BadRequest,
             )
@@ -748,6 +763,7 @@ fun Routing.webProjectRoutes(
                 sess.username, p, subPath, entries,
                 flashErr = err, flashOk = ok, csrf = sess.csrf,
                 lang = sess.language,
+                embed = call.isEmbeddedRequest(),
             ),
             ContentType.Text.Html,
         )
@@ -1080,6 +1096,7 @@ fun Routing.webProjectRoutes(
                     WebProjectTemplates.fileViewPage(
                         sess.username, p, relPath, null,
                         flashErr = msg, csrf = sess.csrf, lang = sess.language,
+                        embed = call.isEmbeddedRequest(),
                     ),
                     ContentType.Text.Html, HttpStatusCode.BadRequest,
                 )
@@ -1089,6 +1106,7 @@ fun Routing.webProjectRoutes(
                 WebProjectTemplates.fileViewPage(
                     sess.username, p, relPath, view = null,
                     imageSizeBytes = sizeOrNull, csrf = sess.csrf, lang = sess.language,
+                    embed = call.isEmbeddedRequest(),
                 ),
                 ContentType.Text.Html,
             )
@@ -1101,6 +1119,7 @@ fun Routing.webProjectRoutes(
                     sess.username, p, relPath, null,
                     flashErr = msg, csrf = sess.csrf,
                     lang = sess.language,
+                    embed = call.isEmbeddedRequest(),
                 ),
                 ContentType.Text.Html, HttpStatusCode.BadRequest,
             )
@@ -1110,6 +1129,7 @@ fun Routing.webProjectRoutes(
             WebProjectTemplates.fileViewPage(
                 sess.username, p, relPath, view, csrf = sess.csrf,
                 lang = sess.language,
+                embed = call.isEmbeddedRequest(),
             ),
             ContentType.Text.Html,
         )
@@ -1196,6 +1216,7 @@ fun Routing.webProjectRoutes(
                 csrf = sess.csrf,
                 commitFlash = flash,
                 lang = sess.language,
+                embed = call.isEmbeddedRequest(),
             ),
             ContentType.Text.Html,
         )

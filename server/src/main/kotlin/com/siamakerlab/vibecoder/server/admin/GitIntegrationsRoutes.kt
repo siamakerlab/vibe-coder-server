@@ -41,7 +41,7 @@ fun Routing.gitIntegrationsRoutes(
         val sshPubKey = cloneSvc.getPublicKeyOrNull()
         val flash = call.request.queryParameters["flash"]
         call.respondText(
-            GitIntegrationsTemplates.page(sess.username, tokens, sshPubKey, flash, csrf = sess.csrf, lang = sess.language),
+            GitIntegrationsTemplates.page(sess.username, tokens, sshPubKey, flash, csrf = sess.csrf, lang = sess.language, embed = call.isEmbeddedRequest()),
             ContentType.Text.Html,
         )
     }

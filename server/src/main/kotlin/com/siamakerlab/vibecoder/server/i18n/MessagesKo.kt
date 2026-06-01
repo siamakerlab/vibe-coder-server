@@ -1265,6 +1265,7 @@ internal object MessagesKo {
         "api.project.overwriteFailed" to "기존 폴더 삭제 실패: %s",
         "api.project.notFound" to "프로젝트 '%s' 가 등록되지 않았습니다.",
         "api.project.scratchProtected" to "General Chat 워크스페이스는 삭제할 수 없습니다.",
+        "api.project.renameFailed" to "프로젝트 '%s' 폴더명 변경에 실패했습니다(파일 이동 또는 DB 마이그레이션 오류).",
         "api.project.reorderMismatch" to "순서 정보가 현재 목록과 일치하지 않습니다. 새로고침 후 다시 시도하세요.",
         "api.build.gradleExit" to "gradle 종료 코드 %d.",
         "api.build.apkNotFound" to "build/outputs/apk/debug 아래에 APK 가 없습니다.",

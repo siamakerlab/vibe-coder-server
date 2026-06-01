@@ -50,6 +50,7 @@ internal object ScopedManagerTemplates {
         lang: String,
         flashOk: String? = null,
         flashErr: String? = null,
+        embed: Boolean = false,
     ): String {
         val t = { key: String -> Messages.t(lang, key) }
         val okHtml = if (!flashOk.isNullOrBlank()) """<div class="ok-banner">✓ ${esc(flashOk)}</div>""" else ""
@@ -123,6 +124,7 @@ $errHtml
         return AdminTemplates.shell(
             title = heading, username = username, currentPath = currentPath,
             csrf = csrf, lang = lang, body = body,
+            embed = embed,
         )
     }
 
@@ -146,6 +148,7 @@ $errHtml
         lang: String,
         flashOk: String? = null,
         flashErr: String? = null,
+        embed: Boolean = false,
     ): String {
         val t = { key: String -> Messages.t(lang, key) }
         val okHtml = if (!flashOk.isNullOrBlank()) """<div class="ok-banner">✓ ${esc(flashOk)}</div>""" else ""
@@ -194,6 +197,7 @@ $errHtml
         return AdminTemplates.shell(
             title = heading, username = username, currentPath = currentPath,
             csrf = csrf, lang = lang, body = body,
+            embed = embed,
         )
     }
 

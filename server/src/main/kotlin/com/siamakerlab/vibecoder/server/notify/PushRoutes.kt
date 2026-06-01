@@ -2,6 +2,7 @@ package com.siamakerlab.vibecoder.server.notify
 
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.AdminTemplates
+import com.siamakerlab.vibecoder.server.admin.isEmbeddedRequest
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireWriteAccessOrRedirect
@@ -99,6 +100,7 @@ fun Routing.pushRoutes(
                 csrf = sess.csrf,
                 body = body,
                 lang = sess.language,
+                embed = call.isEmbeddedRequest(),
             ),
             ContentType.Text.Html,
         )

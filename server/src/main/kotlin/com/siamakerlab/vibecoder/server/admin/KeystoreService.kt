@@ -4,7 +4,6 @@ import com.siamakerlab.vibecoder.server.config.KeystoreDefaults
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.PosixFilePermission
 import java.nio.file.attribute.PosixFilePermissions
 import java.util.Properties
@@ -138,16 +137,30 @@ class KeystoreService(
             throw IllegalArgumentException("invalid_package_name: $newPackageName")
         }
         if (oldPackageName == newPackageName) return 0
+        val suffixes = listOf(".keystore", "-debug.keystore", "-keystore.properties", "-admob.properties")
+        // v1.71.0 (정밀점검 H3) — 대상(newPackage) 파일이 이미 있으면 release 키 덮어쓰기로
+        // 복구 불가한 서명키 손실 위험 → 사전 차단(REPLACE_EXISTING 미사용).
+        suffixes.forEach { suffix ->
+            val dst = keystoreDir.resolve("$newPackageName$suffix")
+            if (Files.exists(keystoreDir.resolve("$oldPackageName$suffix")) && Files.exists(dst)) {
+                throw IllegalStateException("keystore_target_exists: $newPackageName$suffix")
+            }
+        }
         var moved = 0
-        for (suffix in listOf(".keystore", "-debug.keystore", "-keystore.properties", "-admob.properties")) {
+        for (suffix in suffixes) {
             val src = keystoreDir.resolve("$oldPackageName$suffix")
             if (!Files.exists(src)) continue
             val dst = keystoreDir.resolve("$newPackageName$suffix")
-            Files.move(src, dst, StandardCopyOption.REPLACE_EXISTING)
+            Files.move(src, dst)
             moved++
+            // v1.71.0 (정밀점검 M6) — properties 는 storeFile 경로 줄만 치환(전체 substring
+            // 치환은 password/alias 안에 옛 패키지 문자열이 있으면 손상시킴).
             if (suffix.endsWith(".properties")) {
                 runCatching {
-                    Files.writeString(dst, Files.readString(dst).replace(oldPackageName, newPackageName))
+                    val rewritten = Files.readString(dst).lineSequence().joinToString("\n") { line ->
+                        if (line.trimStart().startsWith("storeFile=")) line.replace(oldPackageName, newPackageName) else line
+                    }
+                    Files.writeString(dst, rewritten)
                 }
             }
             runCatching { setPerm(dst, "rw-------") }

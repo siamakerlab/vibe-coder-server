@@ -2,6 +2,7 @@ package com.siamakerlab.vibecoder.server.projects
 
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.AdminTemplates
+import com.siamakerlab.vibecoder.server.admin.isEmbeddedRequest
 import com.siamakerlab.vibecoder.server.admin.requireProjectAccessOrThrow
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireWriteAccessOrRedirect
@@ -47,7 +48,7 @@ fun Routing.codeAnalysisRoutes(
         val ok = call.request.queryParameters["ok"]
         val err = call.request.queryParameters["err"]
         call.respondText(
-            WrapperTemplates.page(sess.username, p, info, ok, err, sess.csrf, lang = sess.language),
+            WrapperTemplates.page(sess.username, p, info, ok, err, sess.csrf, lang = sess.language, embed = call.isEmbeddedRequest()),
             ContentType.Text.Html,
         )
     }
@@ -83,7 +84,7 @@ fun Routing.codeAnalysisRoutes(
         }
         val result = statsService.analyze(id)
         call.respondText(
-            StatsTemplates.page(sess.username, p, result, sess.csrf, lang = sess.language),
+            StatsTemplates.page(sess.username, p, result, sess.csrf, lang = sess.language, embed = call.isEmbeddedRequest()),
             ContentType.Text.Html,
         )
     }
@@ -97,7 +98,7 @@ fun Routing.codeAnalysisRoutes(
         val matches = if (q == null) emptyList()
         else searchService.search(q, projectFilter, caseSensitive)
         call.respondText(
-            SearchTemplates.page(sess.username, sess.csrf, q, projectFilter, caseSensitive, matches, lang = sess.language),
+            SearchTemplates.page(sess.username, sess.csrf, q, projectFilter, caseSensitive, matches, lang = sess.language, embed = call.isEmbeddedRequest()),
             ContentType.Text.Html,
         )
     }
@@ -118,8 +119,9 @@ private object WrapperTemplates {
         ok: String?,
         err: String?,
         csrf: String?,
-    
+
         lang: String,
+        embed: Boolean = false,
     ): String {
         val okHtml = ok?.let { """<div class="ok-banner">✓ ${esc(it)}</div>""" } ?: ""
         val errHtml = err?.let { """<div class="error">${esc(it)}</div>""" } ?: ""
@@ -175,6 +177,7 @@ $errHtml
 </div>
 """,
             lang = lang,
+            embed = embed,
         )
     }
 }
@@ -185,8 +188,9 @@ private object StatsTemplates {
         p: com.siamakerlab.vibecoder.shared.dto.ProjectDto,
         result: CodeStatsService.Result,
         csrf: String?,
-    
+
         lang: String,
+        embed: Boolean = false,
     ): String {
         val rows = if (result.byLanguage.isEmpty()) {
             """<tr><td colspan="4" class="dim" style="text-align:center;padding:14px">no code files indexed</td></tr>"""
@@ -243,6 +247,7 @@ $errBanner
 </p>
 """,
             lang = lang,
+            embed = embed,
         )
     }
 }
@@ -264,8 +269,9 @@ private object SearchTemplates {
         projectFilter: String?,
         caseSensitive: Boolean,
         matches: List<CodeSearchService.Match>,
-    
+
         lang: String,
+        embed: Boolean = false,
     ): String {
         val rows = if (matches.isEmpty() && q != null) {
             """<tr><td colspan="3" class="dim" style="text-align:center;padding:14px">"${esc(q)}" 에 매치되는 줄이 없습니다.</td></tr>"""
@@ -335,6 +341,7 @@ private object SearchTemplates {
 </p>
 """,
             lang = lang,
+            embed = embed,
         )
     }
 }

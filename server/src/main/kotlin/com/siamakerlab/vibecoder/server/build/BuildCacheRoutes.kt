@@ -2,6 +2,7 @@ package com.siamakerlab.vibecoder.server.build
 
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.AdminTemplates
+import com.siamakerlab.vibecoder.server.admin.isEmbeddedRequest
 import com.siamakerlab.vibecoder.server.admin.requireAdminOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens
@@ -34,7 +35,7 @@ fun Routing.buildCacheRoutes(authDeps: AdminRoutesDeps, svc: BuildCacheService) 
         val ok = call.request.queryParameters["ok"]
         val err = call.request.queryParameters["err"]
         call.respondText(
-            BuildCacheTemplates.page(sess.username, sizes, sess.csrf, ok, err, lang = sess.language),
+            BuildCacheTemplates.page(sess.username, sizes, sess.csrf, ok, err, lang = sess.language, embed = call.isEmbeddedRequest()),
             ContentType.Text.Html,
         )
     }
@@ -87,8 +88,9 @@ private object BuildCacheTemplates {
         csrf: String?,
         ok: String?,
         err: String?,
-    
+
         lang: String,
+        embed: Boolean = false,
     ): String {
         val okHtml = ok?.let { """<div class="ok-banner">✓ ${esc(it)}</div>""" } ?: ""
         val errHtml = err?.let { """<div class="error">${esc(it)}</div>""" } ?: ""
@@ -115,6 +117,7 @@ private object BuildCacheTemplates {
             username = username,
             currentPath = "/settings/cache",
             csrf = csrf,
+            embed = embed,
             body = """
 <header>
   <h1>빌드 캐시 관리</h1>

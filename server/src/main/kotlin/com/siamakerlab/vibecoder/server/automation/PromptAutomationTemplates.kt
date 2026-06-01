@@ -32,6 +32,7 @@ internal object PromptAutomationTemplates {
         err: String?,
         csrf: String?,
         lang: String,
+        embed: Boolean = false,
     ): String {
         val okHtml = ok?.let { """<div class="ok-banner">✓ ${esc(it)}</div>""" } ?: ""
         val errHtml = err?.let { """<div class="error">${esc(it)}</div>""" } ?: ""
@@ -213,6 +214,7 @@ $statusCard
   </table>
 </div>
 """,
+            embed = embed,
         )
     }
 }

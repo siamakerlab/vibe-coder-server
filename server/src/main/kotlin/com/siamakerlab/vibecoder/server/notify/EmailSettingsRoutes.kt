@@ -2,6 +2,7 @@ package com.siamakerlab.vibecoder.server.notify
 
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.AdminTemplates
+import com.siamakerlab.vibecoder.server.admin.isEmbeddedRequest
 import com.siamakerlab.vibecoder.server.admin.requireAdminOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens
@@ -28,7 +29,7 @@ fun Routing.emailSettingsRoutes(authDeps: AdminRoutesDeps, notifier: EmailNotifi
         val ok = call.request.queryParameters["ok"]
         val err = call.request.queryParameters["err"]
         call.respondText(
-            EmailSettingsTemplates.page(sess.username, cfg, sess.csrf, ok, err, lang = sess.language),
+            EmailSettingsTemplates.page(sess.username, cfg, sess.csrf, ok, err, lang = sess.language, embed = call.isEmbeddedRequest()),
             ContentType.Text.Html,
         )
     }
@@ -58,8 +59,9 @@ object EmailSettingsTemplates {
         csrf: String?,
         ok: String?,
         err: String?,
-    
+
         lang: String,
+        embed: Boolean = false,
     ): String {
         val statusBadge = if (cfg.enabled)
             """<span class="ok">✓ 활성</span>"""
@@ -160,6 +162,7 @@ VIBECODER_SMTP_TO=ops@example.com,me@personal.com</pre>
 </div>
 """,
             lang = lang,
+            embed = embed,
         )
     }
 }

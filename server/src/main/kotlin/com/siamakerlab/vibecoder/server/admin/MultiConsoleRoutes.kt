@@ -38,7 +38,7 @@ fun Routing.multiConsoleRoutes(authDeps: AdminRoutesDeps, projects: ProjectServi
         val knownIds = ids.filter { id -> runCatching { projects.get(id) }.isSuccess }
         val all = projects.list()
         call.respondText(
-            renderPage(sess.username, sess.csrf, knownIds, all, sess.language),
+            renderPage(sess.username, sess.csrf, knownIds, all, sess.language, call.isEmbeddedRequest()),
             ContentType.Text.Html,
         )
     }
@@ -57,6 +57,7 @@ private fun renderPage(
     selectedIds: List<String>,
     allProjects: List<com.siamakerlab.vibecoder.shared.dto.ProjectDto>,
     lang: String,
+    embed: Boolean = false,
 ): String {
     val t = { key: String -> Messages.t(lang, key) }
     val n = selectedIds.size
@@ -97,6 +98,7 @@ private fun renderPage(
         currentPath = "/multi-console",
         csrf = csrf,
         lang = lang,
+        embed = embed,
         body = """
 <header>
   <h1>Multi-console <small class="dim" style="font-size:14px;font-weight:400">${esc(t("multiconsole.subtitle"))}</small></h1>

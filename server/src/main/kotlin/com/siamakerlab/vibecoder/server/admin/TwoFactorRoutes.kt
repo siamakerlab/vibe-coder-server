@@ -50,7 +50,7 @@ fun Routing.twoFactorRoutes(deps: AdminRoutesDeps, users: AdminUserRepository) {
         }
         if (u.totpEnabled) {
             call.respondText(
-                TwoFactorTemplates.enabledPage(sess.username, sess.csrf, u.totpEnabledAt, sess.language),
+                TwoFactorTemplates.enabledPage(sess.username, sess.csrf, u.totpEnabledAt, sess.language, embed = call.isEmbeddedRequest()),
                 ContentType.Text.Html,
             )
             return@get
@@ -60,7 +60,7 @@ fun Routing.twoFactorRoutes(deps: AdminRoutesDeps, users: AdminUserRepository) {
         val issuer = deps.config.server.name
         val uri = Totp.otpauthUri(issuer, u.username, secret)
         call.respondText(
-            TwoFactorTemplates.disabledPage(sess.username, sess.csrf, secret, uri, sess.language),
+            TwoFactorTemplates.disabledPage(sess.username, sess.csrf, secret, uri, sess.language, embed = call.isEmbeddedRequest()),
             ContentType.Text.Html,
         )
     }
@@ -115,7 +115,7 @@ private object TwoFactorTemplates {
             .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             .replace("\"", "&quot;").replace("'", "&#39;")
 
-    fun disabledPage(username: String, csrf: String?, secret: String, otpauthUri: String, lang: String): String {
+    fun disabledPage(username: String, csrf: String?, secret: String, otpauthUri: String, lang: String, embed: Boolean = false): String {
         val t = { key: String -> Messages.t(lang, key) }
         return AdminTemplates.shell(
             title = t("twofa.title"),
@@ -123,6 +123,7 @@ private object TwoFactorTemplates {
             currentPath = "/2fa",
             csrf = csrf,
             lang = lang,
+            embed = embed,
             body = """
 <header><h1>${esc(t("twofa.heading"))}</h1></header>
 
@@ -158,7 +159,7 @@ private object TwoFactorTemplates {
         )
     }
 
-    fun enabledPage(username: String, csrf: String?, enabledAt: String?, lang: String): String {
+    fun enabledPage(username: String, csrf: String?, enabledAt: String?, lang: String, embed: Boolean = false): String {
         val t = { key: String -> Messages.t(lang, key) }
         return AdminTemplates.shell(
             title = t("twofa.title"),
@@ -166,6 +167,7 @@ private object TwoFactorTemplates {
             currentPath = "/2fa",
             csrf = csrf,
             lang = lang,
+            embed = embed,
             body = """
 <header><h1>${esc(t("twofa.heading"))}</h1></header>
 

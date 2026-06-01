@@ -1,6 +1,7 @@
 package com.siamakerlab.vibecoder.server.audit
 
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
+import com.siamakerlab.vibecoder.server.admin.isEmbeddedRequest
 import com.siamakerlab.vibecoder.server.admin.requireAdminOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import com.siamakerlab.vibecoder.server.repo.AuditLogRepository
@@ -38,6 +39,7 @@ fun Routing.auditRoutes(authDeps: AdminRoutesDeps, repo: AuditLogRepository) {
                 total = total,
                 csrf = sess.csrf,
                 lang = sess.language,
+                embed = call.isEmbeddedRequest(),
             ),
             ContentType.Text.Html,
         )

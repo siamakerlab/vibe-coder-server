@@ -428,6 +428,8 @@ fun Application.module(ctx: ServerContext) {
             projectArchiver = ctx.projectArchiver,
             conversationRepo = ctx.conversationRepo,
             keystoreService = ctx.keystoreService,
+            subAgentManager = ctx.subAgentManager,
+            promptAutomationManager = ctx.promptAutomationManager,
         )
         // v0.28.0 — /settings/cache 라우트.
         buildCacheRoutes(adminDeps, ctx.buildCacheService)

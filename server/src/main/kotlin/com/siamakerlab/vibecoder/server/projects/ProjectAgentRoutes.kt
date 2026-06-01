@@ -2,6 +2,7 @@ package com.siamakerlab.vibecoder.server.projects
 
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.AdminTemplates
+import com.siamakerlab.vibecoder.server.admin.isEmbeddedRequest
 import com.siamakerlab.vibecoder.server.admin.requireProjectAccessOrThrow
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireWriteAccessOrRedirect
@@ -69,6 +70,7 @@ fun Routing.projectAgentRoutes(
                 csrf = sess.csrf, lang = sess.language,
                 flashOk = if (call.request.queryParameters["ok"] != null) call.request.queryParameters["ok"] else null,
                 flashErr = call.request.queryParameters["err"],
+                embed = call.isEmbeddedRequest(),
             ),
             ContentType.Text.Html,
         )

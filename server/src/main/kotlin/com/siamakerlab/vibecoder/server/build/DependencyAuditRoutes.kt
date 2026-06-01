@@ -2,6 +2,7 @@ package com.siamakerlab.vibecoder.server.build
 
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.AdminTemplates
+import com.siamakerlab.vibecoder.server.admin.isEmbeddedRequest
 import com.siamakerlab.vibecoder.server.admin.requireProjectAccessOrThrow
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireWriteAccessOrRedirect
@@ -43,7 +44,7 @@ fun Routing.dependencyAuditRoutes(authDeps: AdminRoutesDeps, projects: ProjectSe
         if (run && !requireWriteAccessOrRedirect(sess)) return@get
         val result = if (run) svc.audit(id, moduleName, configuration) else null
         call.respondText(
-            DependencyAuditTemplates.page(sess.username, p, moduleName, configuration, result, sess.csrf, lang = sess.language),
+            DependencyAuditTemplates.page(sess.username, p, moduleName, configuration, result, sess.csrf, lang = sess.language, embed = call.isEmbeddedRequest()),
             ContentType.Text.Html,
         )
     }
@@ -76,8 +77,9 @@ private object DependencyAuditTemplates {
         configuration: String,
         result: DependencyAudit.Result?,
         csrf: String?,
-    
+
         lang: String,
+        embed: Boolean = false,
     ): String {
         val resultHtml = when {
             result == null -> """<p class="hint">아래 "실행" 버튼으로 의존성 트리를 가져옵니다 (10-90s).</p>"""
@@ -137,6 +139,7 @@ $resultHtml
 </p>
 """,
             lang = lang,
+            embed = embed,
         )
     }
 }

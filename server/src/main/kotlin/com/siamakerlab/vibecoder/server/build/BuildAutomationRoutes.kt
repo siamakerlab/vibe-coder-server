@@ -2,6 +2,7 @@ package com.siamakerlab.vibecoder.server.build
 
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.AdminTemplates
+import com.siamakerlab.vibecoder.server.admin.isEmbeddedRequest
 import com.siamakerlab.vibecoder.server.admin.requireProjectAccessOrThrow
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireWriteAccessOrRedirect
@@ -69,7 +70,7 @@ fun Routing.buildAutomationRoutes(
         val flashErr = call.request.queryParameters["err"]
         val newSecret = call.request.queryParameters["newSecret"]   // 1회 노출
         call.respondText(
-            AutomationTemplates.page(sess.username, p, schedules, secrets, flashOk, flashErr, newSecret, sess.csrf, lang = sess.language),
+            AutomationTemplates.page(sess.username, p, schedules, secrets, flashOk, flashErr, newSecret, sess.csrf, lang = sess.language, embed = call.isEmbeddedRequest()),
             ContentType.Text.Html,
         )
     }
@@ -273,8 +274,9 @@ private object AutomationTemplates {
         err: String?,
         newSecret: String?,
         csrf: String?,
-    
+
         lang: String,
+        embed: Boolean = false,
     ): String {
         val okHtml = ok?.let { """<div class="ok-banner">✓ ${esc(it)}</div>""" } ?: ""
         val errHtml = err?.let { """<div class="error">${esc(it)}</div>""" } ?: ""
@@ -403,6 +405,7 @@ curl -X POST http://&lt;host&gt;:17880/api/webhooks/build/${esc(p.id)} \
 </div>
 """,
             lang = lang,
+            embed = embed,
         )
     }
 }

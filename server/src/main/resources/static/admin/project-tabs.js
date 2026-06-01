@@ -161,43 +161,18 @@
       });
     })();
 
-    // Inner-iframe cleanup: same-origin → reach contentDocument and hide the
-    // nested admin <nav> + tab bar so the layout looks like a single page.
-    // visibility:hidden until cleanup runs, to avoid the nested nav flashing.
+    // v1.72.0 — inner shell 의 nav/탭바 제거는 이제 **서버가 embed 요청에 미렌더**한다
+    // (AdminTemplates.shell(embed=true); ?_embed=1 + 표준 Sec-Fetch-Dest:iframe 로 자동 판정).
+    // 따라서 과거의 "load 후 JS 로 nav 숨김(cleanup) + visibility:hidden 으로 flash 방지"는
+    // 모두 제거했다 — 숨길 nav 자체가 HTML 에 없고, visibility:hidden 잔재는 cleanup 미실행
+    // race 시 iframe 이 영구 invisible 이 되는 새 결함을 만들었다. 남은 책임은 우측 overview
+    // rail 폭만큼 inner .content 우측 패딩을 보정하는 것뿐(applyRailToFrame).
     root.querySelectorAll('iframe.tab-frame').forEach(iframe => {
-      iframe.style.visibility = 'hidden';
-      function cleanup() {
-        try {
-          const doc = iframe.contentDocument;
-          if (!doc) { iframe.style.visibility = 'visible'; return; }
-          // 1. drop the nested sidebar nav + settings tabBar
-          doc.querySelectorAll('nav.sidebar, .settings-tabs').forEach(n => {
-            n.style.display = 'none';
-          });
-          // 2. layout grid → single-column (sidebar slot removed)
-          doc.querySelectorAll('.layout').forEach(l => {
-            l.style.gridTemplateColumns = '1fr';
-          });
-          // 3. tighten body padding — outer page already has padding.
-          if (doc.body) {
-            doc.body.style.margin = '0';
-            doc.body.style.minWidth = '0';
-          }
-          // 4. v1.50.0 — left-align .content + reserve fixed-rail width on the right.
-          applyRailToFrame(iframe);
-        } catch (e) {
-          // cross-origin fallback — should not happen for same-origin SSR.
-          console && console.debug && console.debug('iframe cleanup failed', e);
-        }
-        iframe.style.visibility = 'visible';
-      }
-      iframe.addEventListener('load', cleanup);
-      // v1.27.5 — load race fix: if already complete when we attach (light
-      // sub-pages under defer), run cleanup once now. v1.47.0 — only for frames
-      // that already have a real src (skip about:blank data-src frames not yet loaded).
+      iframe.addEventListener('load', function () { applyRailToFrame(iframe); });
+      // load race: 이미 complete 면(가벼운 sub-page) 한 번 즉시 적용.
       try {
         const d = iframe.contentDocument;
-        if (iframe.getAttribute('src') && d && d.readyState === 'complete') cleanup();
+        if (iframe.getAttribute('src') && d && d.readyState === 'complete') applyRailToFrame(iframe);
       } catch (e) { /* same-origin SSR 이라 도달하지 않음 */ }
     });
 

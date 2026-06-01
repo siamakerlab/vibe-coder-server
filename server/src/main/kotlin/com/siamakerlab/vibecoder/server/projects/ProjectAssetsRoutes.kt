@@ -1,6 +1,7 @@
 package com.siamakerlab.vibecoder.server.projects
 
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
+import com.siamakerlab.vibecoder.server.admin.isEmbeddedRequest
 import com.siamakerlab.vibecoder.server.admin.requireProjectAccessOrThrow
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireWriteAccessOrRedirect
@@ -85,6 +86,7 @@ fun Routing.projectAssetsRoutes(
                 playWarnings = play?.warnings.orEmpty(),
                 flash = call.request.queryParameters["flash"],
                 csrf = sess.csrf, lang = sess.language,
+                embed = call.isEmbeddedRequest(),
             ),
             ContentType.Text.Html,
         )

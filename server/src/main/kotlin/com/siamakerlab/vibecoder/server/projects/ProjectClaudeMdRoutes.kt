@@ -2,6 +2,7 @@ package com.siamakerlab.vibecoder.server.projects
 
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.ClaudeMdTemplates
+import com.siamakerlab.vibecoder.server.admin.isEmbeddedRequest
 import com.siamakerlab.vibecoder.server.admin.requireProjectAccessOrThrow
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireWriteAccessOrRedirect
@@ -63,6 +64,7 @@ fun Routing.projectClaudeMdRoutes(authDeps: AdminRoutesDeps, projects: ProjectSe
                 lang = sess.language,
                 flashOk = if (call.request.queryParameters["ok"] == "saved") t("claudeMd.flash.saved") else null,
                 flashErr = call.request.queryParameters["err"],
+                embed = call.isEmbeddedRequest(),
             ),
             ContentType.Text.Html,
         )

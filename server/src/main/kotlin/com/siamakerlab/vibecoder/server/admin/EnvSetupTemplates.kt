@@ -38,6 +38,7 @@ object EnvSetupTemplates {
         gitFlash: String? = null,
         csrf: String? = null,
         lang: String,
+        embed: Boolean = false,
     ): String {
         val t = { key: String -> Messages.t(lang, key) }
         // 21차 점검 후속 — 빌드환경 페이지 우선순위 재정렬. 이전엔 quick-links → 장문 welcome →
@@ -127,7 +128,8 @@ docker compose up -d --force-recreate</pre>
     </div>
   </details>
 </div>
-"""
+""",
+            embed = embed,
         )
     }
 
@@ -420,6 +422,7 @@ $statusHint
         state: ClaudeLoginService.SessionDto?,
         csrf: String? = null,
         lang: String,
+        embed: Boolean = false,
     ): String {
         val t = { key: String -> Messages.t(lang, key) }
         val (statusText, statusCls) = stateLabel(state?.state, lang)
@@ -504,6 +507,7 @@ $statusHint
             currentPath = "/env-setup",
             csrf = csrf,
             lang = lang,
+            embed = embed,
             body = """
 <header>
   <h1>${esc(t("env.login.title"))} <small class="dim" style="font-size:14px;font-weight:400">${esc(t("env.login.subtitle"))}</small></h1>
@@ -616,7 +620,7 @@ $lastLinesBlock
     // 진행 페이지 (/env-setup/tasks/{taskId})
     // ────────────────────────────────────────────────────────────────────
 
-    fun taskProgressPage(username: String, taskId: String, lang: String): String {
+    fun taskProgressPage(username: String, taskId: String, lang: String, embed: Boolean = false): String {
         val t = { key: String -> Messages.t(lang, key) }
         val safeId = esc(taskId)
         // JS 안에서 쓰일 i18n 문자열은 jsLit 으로 single-quoted literal 화.
@@ -639,6 +643,7 @@ $lastLinesBlock
             username = username,
             currentPath = "/env-setup",
             lang = lang,
+            embed = embed,
             body = """
 <header>
   <h1>${esc(t("env.task.title"))} <small class="dim" style="font-size:14px;font-weight:400">$safeId</small></h1>

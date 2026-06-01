@@ -38,7 +38,7 @@ fun Routing.logSearchRoutes(authDeps: AdminRoutesDeps, svc: LogSearchService) {
             LogMatch(it.projectId, it.buildId, it.lineNumber, it.line)
         }
         call.respondText(
-            renderPage(sess.username, sess.csrf, q, projectFilter, matches, sess.language),
+            renderPage(sess.username, sess.csrf, q, projectFilter, matches, sess.language, call.isEmbeddedRequest()),
             ContentType.Text.Html,
         )
     }
@@ -73,6 +73,7 @@ private fun renderPage(
     projectFilter: String?,
     matches: List<LogMatch>,
     lang: String,
+    embed: Boolean = false,
 ): String {
     val t = { key: String -> Messages.t(lang, key) }
     val rowsHtml = if (matches.isEmpty() && q != null) {
@@ -95,6 +96,7 @@ private fun renderPage(
         currentPath = "/logs",
         csrf = csrf,
         lang = lang,
+        embed = embed,
         body = """
 <header>
   <h1>${esc(t("logsearch.title"))} <small class="dim" style="font-size:14px;font-weight:400">${esc(t("logsearch.subtitle"))}</small></h1>

@@ -2,6 +2,7 @@ package com.siamakerlab.vibecoder.server.auth
 
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.AdminTemplates
+import com.siamakerlab.vibecoder.server.admin.isEmbeddedRequest
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentType
@@ -59,6 +60,7 @@ fun Routing.webauthnRoutes(
                 csrf = sess.csrf,
                 body = renderWebauthnPage(sess.username, sess.userId, creds, passwordlessOnly, sess.csrf),
                 lang = sess.language,
+                embed = call.isEmbeddedRequest(),
             ),
             ContentType.Text.Html,
         )

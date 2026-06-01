@@ -1,6 +1,7 @@
 package com.siamakerlab.vibecoder.server.projects
 
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
+import com.siamakerlab.vibecoder.server.admin.isEmbeddedRequest
 import com.siamakerlab.vibecoder.server.admin.requireProjectAccessOrThrow
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireWriteAccessOrRedirect
@@ -64,6 +65,7 @@ fun Routing.projectSkillRoutes(
                 newFormAction = "/projects/$id/skills/save", newNamePattern = "[A-Za-z0-9._\\-]{1,64}",
                 bodyPlaceholder = SKILL_PLACEHOLDER, csrf = sess.csrf, lang = sess.language,
                 flashOk = call.request.queryParameters["ok"], flashErr = call.request.queryParameters["err"],
+                embed = call.isEmbeddedRequest(),
             ),
             ContentType.Text.Html,
         )

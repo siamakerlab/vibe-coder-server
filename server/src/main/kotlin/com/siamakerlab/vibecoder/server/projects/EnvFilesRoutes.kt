@@ -2,6 +2,7 @@ package com.siamakerlab.vibecoder.server.projects
 
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.AdminTemplates
+import com.siamakerlab.vibecoder.server.admin.isEmbeddedRequest
 import com.siamakerlab.vibecoder.server.admin.requireProjectAccessOrThrow
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireWriteAccessOrRedirect
@@ -49,7 +50,7 @@ fun Routing.envFilesRoutes(authDeps: AdminRoutesDeps, projects: ProjectService, 
         }
         val ok = call.request.queryParameters["ok"]
         val err = call.request.queryParameters["err"]
-        call.respondText(EnvFilesTemplates.page(sess.username, p, files, ok, err, sess.csrf, lang = sess.language), ContentType.Text.Html)
+        call.respondText(EnvFilesTemplates.page(sess.username, p, files, ok, err, sess.csrf, lang = sess.language, embed = call.isEmbeddedRequest()), ContentType.Text.Html)
     }
 
     post("/projects/{id}/env-files/save") {
@@ -124,8 +125,9 @@ internal object EnvFilesTemplates {
         ok: String?,
         err: String?,
         csrf: String?,
-    
+
         lang: String,
+        embed: Boolean = false,
     ): String {
         val okHtml = ok?.let { """<div class="ok-banner">✓ ${esc(it)}</div>""" } ?: ""
         val errHtml = err?.let { """<div class="error">${esc(it)}</div>""" } ?: ""
@@ -176,6 +178,7 @@ $errHtml
 $cards
 """,
             lang = lang,
+            embed = embed,
         )
     }
 }

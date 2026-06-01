@@ -2,6 +2,7 @@ package com.siamakerlab.vibecoder.server.projects
 
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.AdminTemplates
+import com.siamakerlab.vibecoder.server.admin.isEmbeddedRequest
 import com.siamakerlab.vibecoder.server.admin.requireProjectAccessOrThrow
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireWriteAccessOrRedirect
@@ -126,6 +127,7 @@ ${if (!err.isNullOrBlank()) """<div class="error">${esc(err)}</div>""" else ""}
             AdminTemplates.shell(
                 title = t("mcpProject.title"), username = sess.username, currentPath = "/projects",
                 csrf = sess.csrf, lang = sess.language, body = body,
+                embed = call.isEmbeddedRequest(),
             ),
             ContentType.Text.Html,
         )

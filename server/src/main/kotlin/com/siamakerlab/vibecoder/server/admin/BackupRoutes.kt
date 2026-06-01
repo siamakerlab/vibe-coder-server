@@ -49,7 +49,7 @@ fun Routing.backupRoutes(
         val sizes = measureSubdirs(workspace.root)
         val autoBackups = service.listAutoBackups()
         call.respondText(
-            renderPage(sess.username, sess.csrf, sizes, autoBackups, authDeps.config.backup, sess.language),
+            renderPage(sess.username, sess.csrf, sizes, autoBackups, authDeps.config.backup, sess.language, embed = call.isEmbeddedRequest()),
             ContentType.Text.Html,
         )
     }
@@ -144,6 +144,7 @@ private fun renderPage(
     autoBackups: List<BackupService.AutoBackupEntry> = emptyList(),
     backupCfg: com.siamakerlab.vibecoder.server.config.BackupSection? = null,
     lang: String,
+    embed: Boolean = false,
 ): String {
     val t = { key: String -> Messages.t(lang, key) }
     val total = sizes.sumOf { it.bytes }
@@ -241,6 +242,7 @@ ${esc(t("backup.restore.bashComment"))}
 docker compose up -d</pre>
   <p class="hint">${esc(t("backup.restore.hint"))}</p>
 </div>
-"""
+""",
+        embed = embed,
     )
 }

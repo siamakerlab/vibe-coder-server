@@ -292,6 +292,7 @@ fun Routing.adminRoutes(deps: AdminRoutesDeps) {
                 lang = sess.language,
                 userLanguage = user?.language,
                 serverDefaultLanguage = cfg.i18n.defaultLanguage,
+                embed = call.isEmbeddedRequest(),
             ),
             ContentType.Text.Html,
         )
@@ -382,7 +383,7 @@ fun Routing.adminRoutes(deps: AdminRoutesDeps) {
     get("/password") {
         val sess = requireSessionOrRedirect(deps) ?: return@get
         call.respondText(
-            AdminTemplates.passwordPage(sess.username, csrf = sess.csrf, lang = sess.language),
+            AdminTemplates.passwordPage(sess.username, csrf = sess.csrf, lang = sess.language, embed = call.isEmbeddedRequest()),
             ContentType.Text.Html,
         )
     }
@@ -399,6 +400,7 @@ fun Routing.adminRoutes(deps: AdminRoutesDeps) {
                     sess.username, csrf = sess.csrf,
                     flashErr = Messages.t(sess.language, "flash.password.confirmMismatch"),
                     lang = sess.language,
+                    embed = call.isEmbeddedRequest(),
                 ),
                 ContentType.Text.Html,
                 HttpStatusCode.BadRequest,
@@ -414,7 +416,7 @@ fun Routing.adminRoutes(deps: AdminRoutesDeps) {
             val msg = (result.exceptionOrNull() as? ApiException)?.message
                 ?: Messages.t(sess.language, "flash.password.changeFailed")
             call.respondText(
-                AdminTemplates.passwordPage(sess.username, csrf = sess.csrf, flashErr = msg, lang = sess.language),
+                AdminTemplates.passwordPage(sess.username, csrf = sess.csrf, flashErr = msg, lang = sess.language, embed = call.isEmbeddedRequest()),
                 ContentType.Text.Html,
                 HttpStatusCode.BadRequest,
             )
@@ -440,6 +442,7 @@ fun Routing.adminRoutes(deps: AdminRoutesDeps) {
                 sess.username, devices, sess.deviceId,
                 flashOk = ok, csrf = sess.csrf,
                 lang = sess.language,
+                embed = call.isEmbeddedRequest(),
             ),
             ContentType.Text.Html,
         )

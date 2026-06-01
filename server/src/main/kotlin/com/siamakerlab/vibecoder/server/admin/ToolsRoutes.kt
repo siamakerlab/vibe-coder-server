@@ -69,6 +69,7 @@ fun Routing.toolsRoutes(authDeps: AdminRoutesDeps) {
                 csrf = sess.csrf,
                 lang = lang,
                 body = body,
+                embed = call.isEmbeddedRequest(),
             ),
             ContentType.Text.Html,
         )

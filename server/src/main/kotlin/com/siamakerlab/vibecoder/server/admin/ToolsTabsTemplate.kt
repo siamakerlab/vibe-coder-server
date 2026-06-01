@@ -35,8 +35,10 @@ internal object ToolsTabsTemplate {
                        title="${esc(t(tab.labelKey))}">${esc(t(tab.labelKey))}</button>"""
         }
         val tabPanes = TABS.joinToString("\n") { tab ->
+            // v1.72.0 — ?_embed=1: inner page 가 nav/탭바 크롬을 미렌더하도록(서버 분기) 하는
+            // 폴백 신호. 주 신호는 브라우저 표준 Sec-Fetch-Dest:iframe(내부 sub-navigation 도 커버).
             """<div class="tab-pane" data-tab="${esc(tab.id)}">
-                <iframe class="tab-frame" src="${esc(tab.src)}" name="${esc(tab.frameName)}"
+                <iframe class="tab-frame" src="${esc(tab.src)}?_embed=1" name="${esc(tab.frameName)}"
                         title="${esc(t(tab.labelKey))}" loading="eager"
                         referrerpolicy="same-origin"></iframe>
               </div>"""
@@ -113,7 +115,7 @@ $tabPanes
   </div>
 </div>
 
-<script src="/static/project-tabs.js?v=1.29.0" defer></script>
+<script src="/static/project-tabs.js?v=1.72.0" defer></script>
 """,
         )
     }

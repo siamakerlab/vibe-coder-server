@@ -43,6 +43,7 @@ internal object PluginTemplates {
         lang: String,
         flashOk: String?,
         flashErr: String?,
+        embed: Boolean = false,
     ): String {
         val t = { key: String -> Messages.t(lang, key) }
         val okHtml = if (!flashOk.isNullOrBlank()) """<div class="ok-banner">✓ ${esc(flashOk)}</div>""" else ""
@@ -156,6 +157,7 @@ $readonlySection
         return AdminTemplates.shell(
             title = heading, username = username, currentPath = currentPath,
             csrf = csrf, lang = lang, body = body,
+            embed = embed,
         )
     }
 }

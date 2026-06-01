@@ -2,6 +2,7 @@ package com.siamakerlab.vibecoder.server.claude
 
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.AdminTemplates
+import com.siamakerlab.vibecoder.server.admin.isEmbeddedRequest
 import com.siamakerlab.vibecoder.server.admin.requireAdminOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import com.siamakerlab.vibecoder.server.db.ConversationTurns
@@ -41,7 +42,7 @@ fun Routing.globalHistorySearchRoutes(authDeps: AdminRoutesDeps) {
         val role = call.request.queryParameters["role"]?.trim()?.ifBlank { null }
         val rows = if (q == null) emptyList() else searchAll(q, role, limit = 200)
         call.respondText(
-            renderPage(sess.username, sess.csrf, q, role, rows, sess.language),
+            renderPage(sess.username, sess.csrf, q, role, rows, sess.language, call.isEmbeddedRequest()),
             ContentType.Text.Html,
         )
     }
@@ -100,6 +101,7 @@ private fun renderPage(
     role: String?,
     rows: List<ConversationTurnRow>,
     lang: String,
+    embed: Boolean = false,
 ): String {
     val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
     val roleOpts = listOf("", "user", "assistant", "tool_use", "tool_result", "system", "error")
@@ -152,6 +154,7 @@ private fun renderPage(
         username = username,
         currentPath = "/history",
         csrf = csrf,
+        embed = embed,
         body = """
 <header>
   <h1>대화 검색 <small class="dim" style="font-size:14px;font-weight:400">모든 프로젝트 가로지름</small></h1>

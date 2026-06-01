@@ -220,9 +220,11 @@ class ClaudeSessionManager(
     private suspend fun setBusy(projectId: String, value: Boolean, state: String? = null) {
         val prev = busy.put(projectId, value)
         if (prev == value) return
-        // v1.69.0 — turn 종료(busy true→false: Done / cancel / crash / idle) 단일 지점에서
-        // 동시 in-flight permit 반환. idempotent → 다른 종료 경로와 중복돼도 안전.
-        if (prev == true && !value) gate.release(projectId)
+        // v1.71.0 (정밀점검) — permit release 를 busy 전이에 묶지 않는다. busy=true 는
+        // sendPrompt 의 stdin write 직후에야 set 되는데, 그 전에 Done/exit 이 먼저
+        // 도달하면 false-전이가 안 일어나 permit 이 영구 leak (풀 wedge) 됐다. release 는
+        // 종료 sink(Done / onProcessExit / terminateSession / write 실패)에서 직접 호출
+        // (gate.release 는 heldKeys 기반 idempotent — SubAgentSessionManager 와 동일 방식).
         // v1.60.0 — 상태칩 명시 상태. 미지정 시 busy → responding / ready.
         // value 가 실제로 바뀐 경우(prev != value)만 도달하므로, false 전이는
         // "직전까지 응답중이었다" 를 뜻함 → Done 은 "ready", 프로세스 종료(cancel/
@@ -398,6 +400,7 @@ class ClaudeSessionManager(
             history?.event(projectId, sidForRow, event)
             // v0.98.0 — Done 이벤트 시 busy=false. ConsoleBusyState 자동 emit.
             if (event is ClaudeEvent.Done) {
+                gate.release(projectId)  // v1.71.0 — turn 정상 완료 → permit 반환(idempotent).
                 setBusy(projectId, false)
                 // v1.59.0 — 자동화 리스너에 turn 완료 통지 (fire-and-forget, stdout 파싱 비blocking).
                 fireTurnDone(projectId, event.reason)
@@ -438,6 +441,8 @@ class ClaudeSessionManager(
     private fun onProcessExit(projectId: String, proc: Process, session: ProjectSession) {
         val exit = runCatching { proc.exitValue() }.getOrNull()
         val crashed = exit != null && exit != 0
+        // v1.71.0 — 프로세스 종료(crash/clean/intentional) 시 permit 반환(idempotent).
+        gate.release(projectId)
         // v0.98.0 — process exit 시 항상 busy 해제. setBusy 가 suspend 라
         // launch 안에서 호출 (onProcessExit 자체는 비-suspend).
         // v1.60.0 — busy 중 프로세스 종료 = 미완 turn 중단 → "stopped". busy 아니었으면
@@ -476,6 +481,8 @@ class ClaudeSessionManager(
 
     private suspend fun terminateSession(projectId: String) {
         val session = sessions.remove(projectId) ?: return
+        // v1.71.0 — cancel / startNew / idle reap / shutdown / crash 종료 시 permit 반환(idempotent).
+        gate.release(projectId)
         // B1 (21차 점검) — SIGTERM 전에 의도된 종료임을 표식. onProcessExit(readerJob
         // finally) 이 이 session 참조를 그대로 보므로 resume-failure 오판을 차단.
         session.intentionalKill = true

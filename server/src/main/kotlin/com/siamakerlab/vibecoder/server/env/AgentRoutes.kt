@@ -2,6 +2,7 @@ package com.siamakerlab.vibecoder.server.env
 
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.AdminTemplates
+import com.siamakerlab.vibecoder.server.admin.isEmbeddedRequest
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireWriteAccessOrRedirect
 import com.siamakerlab.vibecoder.server.auth.AUTH_BEARER
@@ -40,7 +41,7 @@ fun Routing.agentRoutes(authDeps: AdminRoutesDeps, registry: AgentRegistry) {
         val agents = runCatching { registry.list() }.getOrElse { emptyList() }
         val ok = call.request.queryParameters["ok"]
         val err = call.request.queryParameters["err"]
-        call.respondText(AgentTemplates.listPage(sess.username, agents, ok, err, sess.csrf, lang = sess.language), ContentType.Text.Html)
+        call.respondText(AgentTemplates.listPage(sess.username, agents, ok, err, sess.csrf, lang = sess.language, embed = call.isEmbeddedRequest()), ContentType.Text.Html)
     }
 
     get("/agents/{name}/edit") {
@@ -53,7 +54,7 @@ fun Routing.agentRoutes(authDeps: AdminRoutesDeps, registry: AgentRegistry) {
             call.respondRedirect("/agents?err=${enc("agent '$name' not found")}")
             return@get
         }
-        call.respondText(AgentTemplates.editPage(sess.username, name, body, sess.csrf, lang = sess.language), ContentType.Text.Html)
+        call.respondText(AgentTemplates.editPage(sess.username, name, body, sess.csrf, lang = sess.language, embed = call.isEmbeddedRequest()), ContentType.Text.Html)
     }
 
     post("/agents/save") {
@@ -121,8 +122,9 @@ private object AgentTemplates {
         ok: String?,
         err: String?,
         csrf: String?,
-    
+
         lang: String,
+        embed: Boolean = false,
     ): String {
         val okHtml = ok?.let { """<div class="ok-banner">✓ ${esc(it)}</div>""" } ?: ""
         val errHtml = err?.let { """<div class="error">${esc(it)}</div>""" } ?: ""
@@ -153,6 +155,7 @@ private object AgentTemplates {
             username = username,
             currentPath = "/agents",
             csrf = csrf,
+            embed = embed,
             body = """
 <header>
   <h1>Custom agents <small class="dim" style="font-size:14px;font-weight:400">~/.claude/agents/*.md</small></h1>
@@ -197,13 +200,15 @@ $errHtml
         name: String,
         body: String,
         csrf: String?,
-    
+
         lang: String,
+        embed: Boolean = false,
     ): String = AdminTemplates.shell(
         title = "Edit agent: $name",
         username = username,
         currentPath = "/agents",
         csrf = csrf,
+        embed = embed,
         body = """
 <header>
   <h1>Edit agent <code>${esc(name)}</code></h1>

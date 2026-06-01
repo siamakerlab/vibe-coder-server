@@ -46,7 +46,7 @@ fun Routing.mcpRoutes(
         val detectedCustom = runCatching { mcp.registeredServerNames() }.getOrElse { emptyList() }
             .filter { com.siamakerlab.vibecoder.server.env.McpCatalog.get(it) == null }
         call.respondText(
-            McpTemplates.catalogPage(sess.username, states, flash, csrf = sess.csrf, lang = sess.language, detectedCustom = detectedCustom),
+            McpTemplates.catalogPage(sess.username, states, flash, csrf = sess.csrf, lang = sess.language, detectedCustom = detectedCustom, embed = call.isEmbeddedRequest()),
             ContentType.Text.Html,
         )
     }

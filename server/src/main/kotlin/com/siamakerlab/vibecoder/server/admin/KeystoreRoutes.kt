@@ -54,6 +54,7 @@ fun Routing.keystoreRoutes(
                 flash = flash,
                 csrf = sess.csrf,
                 lang = sess.language,
+                embed = call.isEmbeddedRequest(),
             ),
             ContentType.Text.Html,
         )
@@ -319,6 +320,7 @@ internal object KeystoreTemplates {
         flash: String?,
         csrf: String?,
         lang: String,
+        embed: Boolean = false,
     ): String {
         val t = { key: String -> Messages.t(lang, key) }
         val csrfHidden = csrf?.let { """<input type="hidden" name="_csrf" value="${esc(it)}">""" } ?: ""
@@ -404,6 +406,7 @@ internal object KeystoreTemplates {
             currentPath = "/settings/keystores",
             csrf = csrf,
             lang = lang,
+            embed = embed,
             body = """
 <header>
   <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">

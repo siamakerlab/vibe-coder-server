@@ -2,6 +2,7 @@ package com.siamakerlab.vibecoder.server.projects
 
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.PluginTemplates
+import com.siamakerlab.vibecoder.server.admin.isEmbeddedRequest
 import com.siamakerlab.vibecoder.server.admin.requireAdminOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens.requireCsrf
@@ -54,6 +55,7 @@ fun Routing.projectPluginRoutes(
                 readonlyLabel = t("scope.global"), readonlyManageHref = "/settings/plugins",
                 csrf = sess.csrf, lang = sess.language,
                 flashOk = call.request.queryParameters["ok"], flashErr = call.request.queryParameters["err"],
+                embed = call.isEmbeddedRequest(),
             ),
             ContentType.Text.Html,
         )

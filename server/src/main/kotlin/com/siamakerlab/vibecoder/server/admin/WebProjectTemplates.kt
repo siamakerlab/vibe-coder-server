@@ -884,6 +884,7 @@ $errHtml
         lang: String,
         /** v1.71.0 — 폴더명·패키지명 변경 가능 여부(대기중 = turn/빌드 미진행). */
         structuralEnabled: Boolean = true,
+        embed: Boolean = false,
     ): String {
         val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
         val errHtml = if (flashErr != null) """<div class="error">${esc(flashErr)}</div>""" else ""
@@ -992,7 +993,8 @@ $errHtml
     </table>
   </div>
 </section>
-"""
+""",
+            embed = embed,
         )
     }
 
@@ -1026,6 +1028,7 @@ $errHtml
         /** v1.54.0 — 활성 채팅 표시 제목 (헤더). null 이면 "General Chat". */
         chatTitle: String? = null,
         lang: String,
+        embed: Boolean = false,
     ): String {
         val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
         val statusBadge = when {
@@ -2315,7 +2318,8 @@ $automationPanelHtml
   }
 })();
 </script>$chatShellClose
-"""
+""",
+            embed = embed,
         )
     }
 
@@ -2388,6 +2392,7 @@ $automationPanelHtml
         flashOk: String? = null,
         csrf: String? = null,
         lang: String,
+        embed: Boolean = false,
     ): String {
         val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
         val errHtml = if (flashErr != null) """<div class="error">${esc(flashErr)}</div>""" else ""
@@ -2475,7 +2480,8 @@ ${renderBuildHistoryChart(builds, artifactsByBuild, lang)}
   </thead>
   <tbody>$rowsHtml</tbody>
 </table>
-"""
+""",
+            embed = embed,
         )
     }
 
@@ -2702,6 +2708,7 @@ ${renderBuildHistoryChart(builds, artifactsByBuild, lang)}
         comparison: com.siamakerlab.vibecoder.server.build.BuildService.BuildComparison? = null,
         csrf: String? = null,
         lang: String,
+        embed: Boolean = false,
     ): String {
         val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
         val statusCls = when (b.status.name) {
@@ -2857,7 +2864,8 @@ ${if (attachWs) """
 })();
 </script>
 """ else ""}
-"""
+""",
+            embed = embed,
         )
     }
 
@@ -2954,6 +2962,7 @@ $errHtml
         csrf: String? = null,
         commitFlash: String? = null,
         lang: String,
+        embed: Boolean = false,
     ): String {
         val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
         val unavailableHtml = if (unavailable) {
@@ -3056,7 +3065,8 @@ ${if (status != null && !unavailable) """
   <a href="/projects/${esc(p.id)}/console" class="chip chip-link">${esc(t("git.toConsole"))}</a>
 </p>
 <p class="hint">${t("git.bottomHint")}</p>
-"""
+""",
+            embed = embed,
         )
     }
 
@@ -3073,6 +3083,7 @@ ${if (status != null && !unavailable) """
         flashOk: String? = null,
         csrf: String? = null,
         lang: String,
+        embed: Boolean = false,
     ): String {
         val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
         val errHtml = if (flashErr != null) """<div class="error">${esc(flashErr)}</div>""" else ""
@@ -3224,7 +3235,8 @@ $toolbar
 </div>
 
 <script src="/static/file-tree-select.js" defer></script>
-"""
+""",
+            embed = embed,
         )
     }
 
@@ -3245,6 +3257,7 @@ $toolbar
         imageSizeBytes: Long? = null,
         csrf: String? = null,
         lang: String,
+        embed: Boolean = false,
     ): String {
         val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
         val errHtml = if (flashErr != null) """<div class="error">${esc(flashErr)}</div>""" else ""
@@ -3425,7 +3438,8 @@ $toolbar
 
 $ok
 $bodyHtml
-"""
+""",
+            embed = embed,
         )
     }
 

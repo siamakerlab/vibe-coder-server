@@ -27,7 +27,7 @@ fun Routing.corsSettingsRoutes(authDeps: AdminRoutesDeps) {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
         if (!requireAdminOrRedirect(sess)) return@get
         call.respondText(
-            CorsSettingsTemplates.page(sess.username, authDeps.config.cors, csrf = sess.csrf, lang = sess.language),
+            CorsSettingsTemplates.page(sess.username, authDeps.config.cors, csrf = sess.csrf, lang = sess.language, embed = call.isEmbeddedRequest()),
             ContentType.Text.Html,
         )
     }
@@ -40,7 +40,7 @@ object CorsSettingsTemplates {
             .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             .replace("\"", "&quot;").replace("'", "&#39;")
 
-    fun page(username: String, cors: CorsSection, csrf: String? = null, lang: String): String {
+    fun page(username: String, cors: CorsSection, csrf: String? = null, lang: String, embed: Boolean = false): String {
         val t = { key: String -> Messages.t(lang, key) }
         val hosts = cors.allowedHosts
         val isAnyHost = hosts.contains("*")
@@ -62,6 +62,7 @@ object CorsSettingsTemplates {
             currentPath = "/settings/cors",
             csrf = csrf,
             lang = lang,
+            embed = embed,
             body = """
 <header>
   <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">

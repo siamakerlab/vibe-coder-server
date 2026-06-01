@@ -16,8 +16,9 @@ object PromptTemplates {
         csrf: String? = null,
         flashErr: String? = null,
         flashOk: String? = null,
-    
+
         lang: String,
+        embed: Boolean = false,
     ): String {
         val errHtml = if (flashErr != null) """<div class="error">${esc(flashErr)}</div>""" else ""
         val okHtml = if (flashOk != null) """<div class="ok-banner">${esc(flashOk)}</div>""" else ""
@@ -121,6 +122,7 @@ function prefillEdit(id, title, cat, body) {
 </script>
 """,
             lang = lang,
+            embed = embed,
         )
     }
 

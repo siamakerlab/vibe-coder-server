@@ -33,6 +33,7 @@ object GitIntegrationsTemplates {
         flash: String?,
         csrf: String? = null,
         lang: String,
+        embed: Boolean = false,
     ): String {
         val t = { key: String -> Messages.t(lang, key) }
         val jsCopied = jsLit(t("gitint.ssh.copied"))
@@ -90,6 +91,7 @@ object GitIntegrationsTemplates {
             currentPath = "/settings/git-integrations",
             csrf = csrf,
             lang = lang,
+            embed = embed,
             body = """
 <header>
   <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
