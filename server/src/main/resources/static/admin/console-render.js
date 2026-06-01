@@ -238,12 +238,12 @@
     src = src.replace(/```([a-zA-Z0-9_+#.-]*)[ \t]*\n?([\s\S]*?)```/g, function (_, lang, code) {
       var idx = blocks.length;
       blocks.push({ lang: (lang || '').trim(), code: code.replace(/\n$/, '') });
-      return ' CB' + idx + ' ';
+      return 'CB' + idx + '';
     });
     var h = mdEsc(src);
     var inlines = [];  // inline code
     h = h.replace(/`([^`\n]+)`/g, function (_, c) {
-      var idx = inlines.length; inlines.push(c); return ' IC' + idx + ' ';
+      var idx = inlines.length; inlines.push(c); return 'IC' + idx + '';
     });
     // 헤딩
     h = h.replace(/^\s*######\s+(.+)$/gm, '<h6>$1</h6>')
@@ -285,11 +285,11 @@
     h = h.replace(/<br>\s*(<\/?(?:h[1-6]|ul|ol|li|blockquote|hr|pre)[^>]*>)/g, '$1')
          .replace(/(<\/?(?:h[1-6]|ul|ol|li|blockquote|hr|pre)[^>]*>)\s*<br>/g, '$1');
     // inline code 복원
-    h = h.replace(/ IC(\d+) /g, function (_, i) {
+    h = h.replace(/IC(\d+)/g, function (_, i) {
       return '<code class="md-code">' + mdEsc(inlines[i]) + '</code>';
     });
     // 코드블록 복원 (highlight.js 는 append 측에서 hljs.highlightElement 로 적용)
-    h = h.replace(/ CB(\d+) /g, function (_, i) {
+    h = h.replace(/CB(\d+)/g, function (_, i) {
       var b = blocks[i];
       var cls = b.lang ? ' class="language-' + mdEsc(b.lang) + '"' : '';
       return '<pre class="md-pre"><code' + cls + '>' + mdEsc(b.code) + '</code></pre>';
