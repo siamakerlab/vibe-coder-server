@@ -803,8 +803,8 @@ table.devices small.dim { font-size: 11px; }
     background: rgba(255,107,107,0.11);
     border-color: rgba(255,107,107,0.26);
 }
-/* 시스템/완료/replay — 중앙 작은 pill */
-.console-log .sys { justify-content: center; }
+/* 시스템/완료/replay — 좌측 작은 pill (v1.86.2 — 모든 응답 버블 좌측 정렬) */
+.console-log .sys { justify-content: flex-start; }
 .console-log .sys .log-content {
     background: rgba(108,122,147,0.15);
     border: none;
