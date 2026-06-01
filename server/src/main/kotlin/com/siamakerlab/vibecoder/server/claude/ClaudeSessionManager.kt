@@ -162,6 +162,10 @@ class ClaudeSessionManager(
                     session.stdin.flush()
                 }
                 session.lastActivity = Instant.now()
+                // v1.82.0 — 사용자 prompt → 영속 "미완 turn" 마크 ON(재개 횟수 리셋). 정상 완료 /
+                // 취소 / 새 세션 시 OFF. 서버가 비정상 종료(재시작)되면 마크가 남아 부팅 reconcile
+                // 이 자동 재개. 자동 재개(isAutoResume) 자체는 마크를 건드리지 않는다.
+                if (!isAutoResume) markTurnActive(projectId)
                 // v0.98.0 — prompt 전송 성공 → busy=true. ConsoleEvent.Done 시 false 로 전이.
                 setBusy(projectId, true)
             } catch (e: IOException) {
@@ -179,10 +183,56 @@ class ClaudeSessionManager(
     /** Stop the current process (if any), forget its session-id, clear replay ring. */
     suspend fun startNew(projectId: String) {
         terminateSession(projectId)
+        clearTurnActive(projectId)  // v1.82.0 — 새 세션 시작 → 이전 미완 turn 마크 버림.
         runCatching { sessionIdFile(projectId).deleteIfExists() }
         hub.resetConsole(topic(projectId))
         emitSystem(projectId, "new_session_requested", "Session reset. The next prompt starts a fresh conversation.")
         fireInterrupt(projectId, "new_session")
+    }
+
+    /**
+     * v1.82.0 — 서버 부팅 시 1회 호출(비동기). 재시작/크래시로 끊긴 미완 turn(turn-active 마크
+     * 잔존) 프로젝트마다 "이어서 진행" 프롬프트를 자동 전송(--resume → 멈춘 곳부터). 무거운
+     * claude spawn 이라 부팅을 블로킹하지 않도록 내부 scope 에서 순차 실행(2초 간격, 부하 분산).
+     */
+    fun reconcileInterruptedTurnsAsync() {
+        scope.launch {
+            val ids = projectIdsWithTurnMark()
+            if (ids.isEmpty()) return@launch
+            log.info { "재시작으로 끊긴 미완 turn ${ids.size}개 자동 재개 시도: $ids" }
+            for (pid in ids) {
+                val retries = readTurnActiveRetries(pid) ?: continue
+                if (retries >= MAX_BOOT_RESUME_RETRIES) {
+                    clearTurnActive(pid)
+                    log.warn { "[$pid] 재시작 자동 재개 ${MAX_BOOT_RESUME_RETRIES}회 초과 — 포기" }
+                    runCatching {
+                        emitSystem(pid, "turn_resume_giveup",
+                            "서버 재시작 후 자동 재개가 ${MAX_BOOT_RESUME_RETRIES}회를 초과했습니다. 직접 이어서 진행해 주세요.")
+                    }
+                    continue
+                }
+                runCatching {
+                    turnActiveFile(pid).writeText((retries + 1).toString())  // 부팅 재개 횟수 증가
+                    emitSystem(pid, "turn_auto_resume",
+                        "서버 재시작으로 중단된 작업을 자동으로 이어서 진행합니다 (${retries + 1}/$MAX_BOOT_RESUME_RETRIES).")
+                    sendPrompt(pid, BOOT_RESUME_PROMPT, isAutoResume = true)
+                    log.info { "[$pid] 재시작 끊긴 turn 자동 재개 (${retries + 1}/$MAX_BOOT_RESUME_RETRIES)" }
+                }.onFailure { log.warn(it) { "[$pid] boot resume 실패" } }
+                delay(2_000)  // 순차 spawn 부하 분산
+            }
+        }
+    }
+
+    /** turn-active 마크가 있는 프로젝트 id 목록 (workspace `.vibecoder/<id>/turn-active` 스캔). */
+    private fun projectIdsWithTurnMark(): List<String> {
+        val base = turnActiveFile("__probe__").parent?.parent ?: return emptyList()  // .vibecoder 루트
+        return runCatching {
+            Files.list(base).use { stream ->
+                stream.filter { Files.isDirectory(it) && Files.exists(it.resolve("turn-active")) }
+                    .map { it.fileName.toString() }
+                    .toList()
+            }
+        }.getOrElse { emptyList() }
     }
 
     /**
@@ -201,6 +251,7 @@ class ClaudeSessionManager(
             return
         }
         terminateSession(projectId)
+        clearTurnActive(projectId)  // v1.82.0 — 사용자 명시 중단 → 부팅 자동 재개 대상 아님.
         emitSystem(
             projectId, "turn_cancelled",
             "사용자가 turn 을 중단했습니다. 다음 prompt 는 같은 세션 (--resume) 으로 이어집니다.",
@@ -421,6 +472,7 @@ class ClaudeSessionManager(
             if (event is ClaudeEvent.Done) {
                 gate.release(projectId)  // v1.71.0 — turn 정상 완료 → permit 반환(idempotent).
                 sessions[projectId]?.rateLimitRetry = 0  // v1.80.0 — 정상 완료 → rate-limit 카운터 리셋.
+                clearTurnActive(projectId)  // v1.82.0 — 정상 완료 → 미완 마크 OFF.
                 setBusy(projectId, false)
                 // v1.59.0 — 자동화 리스너에 turn 완료 통지 (fire-and-forget, stdout 파싱 비blocking).
                 fireTurnDone(projectId, event.reason)
@@ -430,10 +482,12 @@ class ClaudeSessionManager(
                 gate.release(projectId)
                 fireTurnDone(projectId, "error:${event.code}")
                 if (isRateLimitError(event)) {
-                    // 서버측 일시 rate limit → 지수 백오프로 "이어서 진행" 자동 재개(busy 는 내부 관리).
+                    // 서버측 일시 rate limit → 지수 백오프로 "이어서 진행" 자동 재개(busy·마크 내부 관리).
                     scheduleRateLimitRetry(projectId)
                 } else {
+                    // v1.82.0 — 에러로 turn 종료(rate-limit 아님) → 미완 마크 OFF(재개 대상 아님).
                     sessions[projectId]?.rateLimitRetry = 0
+                    clearTurnActive(projectId)
                     setBusy(projectId, false, "stopped")
                 }
             }
@@ -461,6 +515,7 @@ class ClaudeSessionManager(
         if (attempt > MAX_RATE_LIMIT_RETRIES) {
             session.rateLimitRetry = 0
             session.retryJob?.cancel(); session.retryJob = null
+            clearTurnActive(projectId)  // v1.82.0 — rate-limit 자동 재개 포기 → 미완 마크 OFF.
             setBusy(projectId, false, "stopped")
             emitSystem(projectId, "rate_limit_giveup",
                 "서버측 rate limit 이 ${MAX_RATE_LIMIT_RETRIES}회 자동 재개 후에도 지속됩니다. " +
@@ -623,6 +678,32 @@ class ClaudeSessionManager(
         f.writeText(id)
     }
 
+    // ── v1.82.0 — turn-active 영속 마크 (서버 재시작으로 끊긴 미완 turn 자동 재개용) ──
+    // 존재 = "이 프로젝트에 정상 완료되지 않은 turn 이 있음". 파일 내용 = 부팅 자동 재개 횟수.
+    // busy 는 메모리라 재시작 시 사라지므로, 영속 파일로 미완 여부를 남긴다.
+    private fun turnActiveFile(projectId: String): Path =
+        workspace.vibecoderDir(projectId).resolve("turn-active")
+
+    /** 사용자 prompt 전송 시 마크 ON (자동 재개 횟수 0 으로 리셋). */
+    private fun markTurnActive(projectId: String) {
+        runCatching {
+            val f = turnActiveFile(projectId)
+            Files.createDirectories(f.parent)
+            f.writeText("0")
+        }.onFailure { log.warn(it) { "[$projectId] turn-active 마크 실패" } }
+    }
+
+    /** turn 정상 완료 / 사용자 취소 / 새 세션 시 마크 OFF. */
+    private fun clearTurnActive(projectId: String) {
+        runCatching { turnActiveFile(projectId).deleteIfExists() }
+    }
+
+    /** 마크가 있으면 자동 재개 횟수, 없으면 null. */
+    private fun readTurnActiveRetries(projectId: String): Int? {
+        val f = turnActiveFile(projectId)
+        return if (f.exists()) f.readText().trim().toIntOrNull() ?: 0 else null
+    }
+
     private fun resolveClaudeCmd(): String {
         val override = System.getenv("CLAUDE_CMD")
         if (!override.isNullOrBlank()) return override
@@ -689,6 +770,14 @@ class ClaudeSessionManager(
         const val RATE_LIMIT_RESUME_PROMPT =
             "Continue from where you left off — the previous turn was interrupted by a temporary " +
             "server-side rate limit (not a usage limit). Resume the in-progress work; do not restart from scratch."
+        /**
+         * v1.82.0 — 서버 재시작으로 끊긴 미완 turn 의 부팅 자동 재개. 무한 재개 방지로 최대
+         * [MAX_BOOT_RESUME_RETRIES] 회(재시작이 반복돼도). 초과 시 마크 제거 + 수동 안내.
+         */
+        const val MAX_BOOT_RESUME_RETRIES = 2
+        const val BOOT_RESUME_PROMPT =
+            "The vibe-coder server was restarted while you were mid-task, so the previous turn was " +
+            "interrupted. Continue from where you left off — resume the in-progress work; do not restart from scratch."
         /**
          * v1.3.0 — Cross-project busy state broadcast topic. workspaces 목록 /
          * 대시보드가 `/ws/projects` 로 구독.
