@@ -1484,6 +1484,8 @@ internal object MessagesEn {
         "console.busy.idle" to "○ Idle",
         "console.busy.stopped" to "■ Stopped",
         "console.bgtasks.title" to "Background tasks",
+        "console.message.expand" to "⌄ Show more",
+        "console.message.collapse" to "⌃ Show less",
         "console.busy.responding.queued" to "● Responding (%d queued)",
         "console.queue.added" to "Queued (#%d): %s",
         "console.queue.draining" to "Sending next queued prompt",
