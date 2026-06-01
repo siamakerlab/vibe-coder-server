@@ -986,6 +986,7 @@ $errHtml
             lang = lang,
             embed = embed,
             body = """
+${SettingsNav.categoryNav("/devices", lang)}
 <header><h1>${esc(t("devices.title"))}</h1></header>
 $okHtml
 <table class="devices">

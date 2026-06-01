@@ -64,6 +64,7 @@ object CorsSettingsTemplates {
             lang = lang,
             embed = embed,
             body = """
+${SettingsNav.categoryNav("/settings/cors", lang)}
 <header>
   <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
     <h1 style="margin:0">${esc(t("cors.title"))}</h1>

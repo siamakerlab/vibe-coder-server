@@ -125,6 +125,7 @@ private object TwoFactorTemplates {
             lang = lang,
             embed = embed,
             body = """
+${SettingsNav.categoryNav("/2fa", lang)}
 <header><h1>${esc(t("twofa.heading"))}</h1></header>
 
 <div class="card">
@@ -169,6 +170,7 @@ private object TwoFactorTemplates {
             lang = lang,
             embed = embed,
             body = """
+${SettingsNav.categoryNav("/2fa", lang)}
 <header><h1>${esc(t("twofa.heading"))}</h1></header>
 
 <div class="card">

@@ -210,6 +210,7 @@ $errHtml
         csrf = csrf,
         embed = embed,
         body = """
+<div class="settings-subnav" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px"><a href="/agents" class="chip chip-link">← 목록</a></div>
 <header>
   <h1>Edit agent <code>${esc(name)}</code></h1>
 </header>

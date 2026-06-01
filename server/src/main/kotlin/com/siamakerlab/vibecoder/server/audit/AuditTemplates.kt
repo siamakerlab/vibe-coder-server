@@ -71,6 +71,7 @@ object AuditTemplates {
             csrf = csrf,
             embed = embed,
             body = """
+${com.siamakerlab.vibecoder.server.admin.SettingsNav.categoryNav("/audit", lang)}
 <header>
   <h1>감사 로그 <small class="dim" style="font-size:14px;font-weight:400">$total 개</small></h1>
   <p class="dim" style="font-size:13px;margin:6px 0 0">운영 행위 추적. 로그인 / 비번 변경 / 디바이스 revoke / 프로젝트 / 빌드 / MCP / settings / git 토큰 / 콘솔 new-cancel.</p>

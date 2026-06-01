@@ -91,7 +91,7 @@ fun Routing.pushRoutes(
     get("/settings/push") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
         val list = subscriptionRepo.list()
-        val body = renderPushSettings(notifier, list, sess.csrf, sess.userId)
+        val body = renderPushSettings(notifier, list, sess.csrf, sess.userId, sess.language)
         call.respondText(
             AdminTemplates.shell(
                 title = "Web Push 알림",
@@ -140,6 +140,7 @@ private fun renderPushSettings(
     list: List<com.siamakerlab.vibecoder.server.repo.PushSubscriptionRow>,
     csrf: String?,
     currentUserId: String,
+    lang: String,
 ): String {
     val rows = if (list.isEmpty()) {
         """<tr><td colspan="4" class="dim" style="padding:14px;text-align:center">
@@ -165,6 +166,7 @@ private fun renderPushSettings(
     }
 
     return """
+${com.siamakerlab.vibecoder.server.admin.SettingsNav.categoryNav("/settings/push", lang)}
 <header>
   <h1>Web Push 알림 <small class="dim" style="font-size:14px;font-weight:400"></small></h1>
 </header>

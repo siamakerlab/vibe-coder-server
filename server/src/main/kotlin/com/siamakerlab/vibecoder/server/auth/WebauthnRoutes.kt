@@ -58,7 +58,7 @@ fun Routing.webauthnRoutes(
                 username = sess.username,
                 currentPath = "/webauthn",
                 csrf = sess.csrf,
-                body = renderWebauthnPage(sess.username, sess.userId, creds, passwordlessOnly, sess.csrf),
+                body = renderWebauthnPage(sess.username, sess.userId, creds, passwordlessOnly, sess.csrf, sess.language),
                 lang = sess.language,
                 embed = call.isEmbeddedRequest(),
             ),
@@ -231,6 +231,7 @@ private fun renderWebauthnPage(
     creds: List<com.siamakerlab.vibecoder.server.repo.WebauthnCredentialRow>,
     passwordlessOnly: Boolean,
     csrf: String?,
+    lang: String,
 ): String {
     val rows = if (creds.isEmpty()) {
         """<tr><td colspan="4" class="dim" style="padding:14px;text-align:center">
@@ -258,6 +259,7 @@ private fun renderWebauthnPage(
         .encodeToString(userId.toByteArray(Charsets.UTF_8)) + "\""
 
     return """
+${com.siamakerlab.vibecoder.server.admin.SettingsNav.categoryNav("/webauthn", lang)}
 <header>
   <h1>WebAuthn (passkey) <small class="dim" style="font-size:14px;font-weight:400">2FA</small></h1>
 </header>

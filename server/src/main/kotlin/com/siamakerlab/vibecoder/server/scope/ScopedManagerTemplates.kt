@@ -214,6 +214,7 @@ $errHtml
     ): String {
         val t = { key: String -> Messages.t(lang, key) }
         val pageBody = """
+<div class="settings-subnav" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px"><a href="${esc(backHref)}" class="chip chip-link">← ${esc(t("scope.back"))}</a></div>
 <header><h1 style="margin:0">${esc(heading)}</h1></header>
 <form method="post" action="${esc(saveAction)}" class="card" style="display:grid;gap:10px">
   ${CsrfTokens.hiddenInput(csrf)}

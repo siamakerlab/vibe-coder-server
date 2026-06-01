@@ -148,7 +148,9 @@ internal object ProjectTabsTemplate {
                 val state = projectStatuses[pr.id] ?: "ready"
                 val chip = """<span class="pstat pstat-$state" data-pid="${esc(pr.id)}" data-state="$state"
                                     title="${esc(t("projects.status.$state"))}">${esc(t("projects.status.$state"))}</span>"""
-                """<a href="/projects/${esc(pr.id)}" class="pt-switch-item${if (active) " active" else ""}"
+                // v1.75.0 — 프로젝트 간 이동 시 이전에 보던 탭과 무관하게 콘솔을 우선 표시
+                // (#console hash → project-tabs.js resolveInitialTab 이 localStorage 보다 hash 우선).
+                """<a href="/projects/${esc(pr.id)}#console" class="pt-switch-item${if (active) " active" else ""}"
                       data-name="${esc((pr.name + " " + pr.id).lowercase())}">
                      $chip
                      <span class="pt-si-name">${esc(pr.name)}</span>
