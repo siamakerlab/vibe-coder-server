@@ -113,8 +113,12 @@ class ClaudeSessionManager(
         }
     }
 
-    /** Send [text] as a user turn. Spawns the session if necessary. */
-    suspend fun sendPrompt(projectId: String, text: String) {
+    /**
+     * Send [text] as a user turn. Spawns the session if necessary.
+     * v1.80.0 — [isAutoResume]=true 면 rate-limit 자동 재개(내부 호출): 재시도 카운터를
+     * 리셋하지 않고 history 적재도 생략. 사용자 prompt(false)는 진행 중인 자동 재개를 취소.
+     */
+    suspend fun sendPrompt(projectId: String, text: String, isAutoResume: Boolean = false) {
         require(text.isNotBlank()) { "prompt text is required" }
         // 실제 stdin 으로 흘러갈 UTF-8 byte size 기준으로 검증. v0.12.3 까지는
         // text.length (char count) 였는데 한국어 등 multi-byte 문자에서는 의도와
@@ -125,8 +129,15 @@ class ClaudeSessionManager(
         }
 
         val session = ensureSession(projectId)
+        // v1.80.0 — 사용자 prompt 면 진행 중인 rate-limit 자동 재개를 취소하고 카운터 리셋.
+        if (!isAutoResume) {
+            session.retryJob?.cancel()
+            session.retryJob = null
+            session.rateLimitRetry = 0
+        }
         // v0.16.0 — user prompt 영구 적재 (sendPrompt 시점의 sessionId 사용).
-        history?.userPrompt(projectId, session.sessionId, text)
+        // 자동 재개 프롬프트는 사용자 입력이 아니므로 history 미적재.
+        if (!isAutoResume) history?.userPrompt(projectId, session.sessionId, text)
         val envelope = buildJsonObject {
             put("type", "user")
             put("message", buildJsonObject {
@@ -292,6 +303,14 @@ class ClaudeSessionManager(
                 }
             }
             add(disallowed)
+            // v1.80.0 — stream-json input 모드 제약 회수: 백그라운드 작업(Bash run_in_background)
+            // 후 turn 을 끝내면 작업이 완료돼도 **자동 재개되지 않는다**(호스트가 stdin 입력을
+            // 제어하는 모드라 CLI 가 스스로 새 turn 을 못 만듦). 사용자가 매번 수동으로 진행
+            // 메시지를 보내야 하던 현상 → 시스템 프롬프트로 "turn 을 끝내지 말고 같은 turn 안에서
+            // 완료까지 기다리라" 강제. ghost(chat)는 Bash 차단이라 무관 → 제외.
+            if (!WorkspacePath.isGhostId(projectId)) {
+                add("--append-system-prompt"); add(BACKGROUND_TASK_GUIDE)
+            }
             if (savedId != null) {
                 add("--resume"); add(savedId)
             }
@@ -401,10 +420,72 @@ class ClaudeSessionManager(
             // v0.98.0 — Done 이벤트 시 busy=false. ConsoleBusyState 자동 emit.
             if (event is ClaudeEvent.Done) {
                 gate.release(projectId)  // v1.71.0 — turn 정상 완료 → permit 반환(idempotent).
+                sessions[projectId]?.rateLimitRetry = 0  // v1.80.0 — 정상 완료 → rate-limit 카운터 리셋.
                 setBusy(projectId, false)
                 // v1.59.0 — 자동화 리스너에 turn 완료 통지 (fire-and-forget, stdout 파싱 비blocking).
                 fireTurnDone(projectId, event.reason)
+            } else if (event is ClaudeEvent.ErrorEvent) {
+                // v1.80.0 — result(is_error=true) 도 turn 종료. 이전엔 busy 해제가 누락돼
+                // 에러 turn 후 콘솔이 "응답 중"에 멈춰 있었다. permit 반환 + 자동화 통지.
+                gate.release(projectId)
+                fireTurnDone(projectId, "error:${event.code}")
+                if (isRateLimitError(event)) {
+                    // 서버측 일시 rate limit → 지수 백오프로 "이어서 진행" 자동 재개(busy 는 내부 관리).
+                    scheduleRateLimitRetry(projectId)
+                } else {
+                    sessions[projectId]?.rateLimitRetry = 0
+                    setBusy(projectId, false, "stopped")
+                }
             }
+        }
+    }
+
+    // v1.80.0 — 서버측 일시 rate limit("Server is temporarily limiting requests", 사용량 한도
+    // 아님) 판정. result(is_error) 의 message/subtype 패턴 매칭.
+    private fun isRateLimitError(event: ClaudeEvent.ErrorEvent): Boolean {
+        val m = (event.message ?: "").lowercase()
+        val c = event.code.lowercase()
+        return m.contains("temporarily limiting") || m.contains("rate limit") ||
+            m.contains("rate-limit") || m.contains("rate_limit") || m.contains("429") ||
+            c.contains("rate") || c.contains("overloaded")
+    }
+
+    /**
+     * v1.80.0 — rate-limit error turn 자동 재개. 지수 백오프(30/60/120초)로 최대
+     * [MAX_RATE_LIMIT_RETRIES] 회 "이어서 진행" 프롬프트를 같은 --resume 세션에 자동 전송
+     * (멈춘 곳부터 재개). 초과 시 자동 재개를 중지하고 상태를 "중지됨" 으로 표시.
+     */
+    private suspend fun scheduleRateLimitRetry(projectId: String) {
+        val session = sessions[projectId] ?: run { setBusy(projectId, false, "stopped"); return }
+        val attempt = session.rateLimitRetry + 1
+        if (attempt > MAX_RATE_LIMIT_RETRIES) {
+            session.rateLimitRetry = 0
+            session.retryJob?.cancel(); session.retryJob = null
+            setBusy(projectId, false, "stopped")
+            emitSystem(projectId, "rate_limit_giveup",
+                "서버측 rate limit 이 ${MAX_RATE_LIMIT_RETRIES}회 자동 재개 후에도 지속됩니다. " +
+                "자동 재개를 중지합니다 — 잠시 후 직접 이어서 진행해 주세요.")
+            return
+        }
+        session.rateLimitRetry = attempt
+        val delayMs = RATE_LIMIT_BASE_BACKOFF_MS shl (attempt - 1)  // 30 / 60 / 120 s
+        session.retryJob?.cancel()
+        // 재개 대기 동안 busy 유지(응답 중 표시) — 사용자에게 진행 예정 안내.
+        setBusy(projectId, true, "responding")
+        emitSystem(projectId, "rate_limit_retry",
+            "서버측 일시 rate limit (사용량 한도 아님). ${delayMs / 1000}초 후 자동으로 이어서 진행합니다 " +
+            "($attempt/$MAX_RATE_LIMIT_RETRIES).")
+        session.retryJob = scope.launch {
+            delay(delayMs)  // 취소(사용자 prompt / cancel / 종료) 시 CancellationException 으로 정상 종료
+            val cur = sessions[projectId]
+            if (cur !== session || cur.process.isAlive != true) {
+                setBusy(projectId, false, "stopped"); return@launch
+            }
+            runCatching { sendPrompt(projectId, RATE_LIMIT_RESUME_PROMPT, isAutoResume = true) }
+                .onFailure {
+                    log.warn(it) { "[$projectId] rate-limit 자동 재개 실패" }
+                    setBusy(projectId, false, "stopped")
+                }
         }
     }
 
@@ -481,6 +562,9 @@ class ClaudeSessionManager(
 
     private suspend fun terminateSession(projectId: String) {
         val session = sessions.remove(projectId) ?: return
+        // v1.80.0 — 예약된 rate-limit 자동 재개가 있으면 취소(cancel / startNew / idle / shutdown).
+        session.retryJob?.cancel()
+        session.retryJob = null
         // v1.71.0 — cancel / startNew / idle reap / shutdown / crash 종료 시 permit 반환(idempotent).
         gate.release(projectId)
         // B1 (21차 점검) — SIGTERM 전에 의도된 종료임을 표식. onProcessExit(readerJob
@@ -570,11 +654,41 @@ class ClaudeSessionManager(
         @Volatile var intentionalKill: Boolean = false,
         /** Last N stderr lines for resume-failure heuristics. */
         val stderrTail: java.util.ArrayDeque<String> = java.util.ArrayDeque(),
+        /** v1.80.0 — 연속 rate-limit 자동 재개 횟수(성공 turn / 사용자 prompt 시 0 으로 리셋). */
+        @Volatile var rateLimitRetry: Int = 0,
+        /** v1.80.0 — 예약된 자동 재개 Job (사용자 개입 / cancel / 종료 시 취소). */
+        @Volatile var retryJob: Job? = null,
     )
 
     companion object {
         const val MAX_PROMPT_BYTES = 32 * 1024
         const val IDLE_CHECK_INTERVAL_MS = 60_000L
+        /**
+         * v1.80.0 — `--append-system-prompt` 로 주입. stream-json input 모드에선 백그라운드
+         * 작업 완료 시 CLI 가 자동 재개되지 않으므로(호스트가 입력 제어), turn 을 끝내지 말고
+         * 같은 turn 안에서 완료까지 기다리도록 유도. 영어로 작성(시스템 프롬프트 준수율).
+         */
+        const val BACKGROUND_TASK_GUIDE =
+            "[vibe-coder console environment] You are running under Claude Code in stream-json " +
+            "mode where the HOST controls stdin. CRITICAL: if you start a background task " +
+            "(e.g. Bash run_in_background:true) and then END your turn to 'wait for it', you will " +
+            "NOT be auto-resumed when it finishes — the user would have to manually send another " +
+            "message every time. So: (1) prefer running long commands synchronously with a larger " +
+            "timeout and finish within a single turn; (2) if you must run something asynchronously, " +
+            "do NOT end the turn — keep polling in the same turn (sleep, then check status/output, " +
+            "repeat) until it completes, then report the result; (3) never conclude a turn with " +
+            "'I'll do this in the background and wait for completion' — you will not be resumed."
+        /**
+         * v1.80.0 — 서버측 일시 rate limit("Server is temporarily limiting requests", 사용량
+         * 한도 아님) 으로 turn 이 error 종료되면, [RATE_LIMIT_BASE_BACKOFF_MS] 지수 백오프
+         * (30/60/120초) 로 최대 [MAX_RATE_LIMIT_RETRIES] 회 "이어서 진행" 프롬프트를 자동
+         * 전송(같은 --resume 세션이라 멈춘 곳부터 재개). 초과 시 상태 "중지됨".
+         */
+        const val MAX_RATE_LIMIT_RETRIES = 3
+        const val RATE_LIMIT_BASE_BACKOFF_MS = 30_000L
+        const val RATE_LIMIT_RESUME_PROMPT =
+            "Continue from where you left off — the previous turn was interrupted by a temporary " +
+            "server-side rate limit (not a usage limit). Resume the in-progress work; do not restart from scratch."
         /**
          * v1.3.0 — Cross-project busy state broadcast topic. workspaces 목록 /
          * 대시보드가 `/ws/projects` 로 구독.
