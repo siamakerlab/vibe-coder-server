@@ -1537,7 +1537,7 @@ $automationPanelHtml
 </div>
 
 <!-- v1.70.0 — 콘솔 친화 렌더러 (tool_use/tool_result/unknown). inline 스크립트보다 먼저 동기 로드. -->
-<script src="/static/console-render.js?v=1.86.0"></script>
+<script src="/static/console-render.js?v=1.86.1"></script>
 <script>
 (function() {
   var projectId = $projectIdJs;

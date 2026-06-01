@@ -102,7 +102,7 @@ object AdminTemplates {
   <link rel="icon" type="image/png" href="/static/icon.png">
   <link rel="manifest" href="/static/manifest.json">
   <meta name="theme-color" content="#0b0d12">
-  <link rel="stylesheet" href="/static/admin.css?v=1.86.0">
+  <link rel="stylesheet" href="/static/admin.css?v=1.86.1">
   <script>
     // v1.6.2 — 사이드바 접힘 상태를 first paint 전에 :root data-attribute 로 적용 (FOUC 회피).
     // CSS 의 :root[data-sidebar-collapsed="1"] .layout 가 grid-template-columns 축소.
@@ -125,9 +125,20 @@ object AdminTemplates {
   <script src="/static/keyboard.js" defer></script>
   <script>
     // v0.39.0 — PWA service worker. Same-origin install only.
+    // v1.86.1 — 구 SW(예: v0.50.0)가 ?v 캐시버스트된 정적 자산(console-render.js 등)을
+    //           cache-first 로 박제하던 문제 자동 회수. 새 SW 가 control 을 잡으면(기존
+    //           SW 가 있던 경우만) 1회 reload 해 즉시 새 자산을 반영한다.
     if ('serviceWorker' in navigator) {
+      if (navigator.serviceWorker.controller) {
+        var __swReloaded = false;
+        navigator.serviceWorker.addEventListener('controllerchange', function() {
+          if (__swReloaded) return; __swReloaded = true; location.reload();
+        });
+      }
       window.addEventListener('load', function() {
-        navigator.serviceWorker.register('/static/sw.js').catch(function(){ /* ignore */ });
+        navigator.serviceWorker.register('/static/sw.js').then(function(reg) {
+          if (reg && reg.update) reg.update();  // 새 sw.js 강제 업데이트 체크
+        }).catch(function(){ /* ignore */ });
       });
     }
   </script>
