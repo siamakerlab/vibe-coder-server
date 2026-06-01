@@ -1784,6 +1784,7 @@ internal object MessagesKo {
         "tabs.symbols" to "심볼",
         // v1.13.0 — Overview 탭 제거, 기능은 sticky 헤더로. 라벨은 settings 드롭다운에서 재사용.
         "tabs.settings.label" to "프로젝트 설정",
+        "tabs.settings.editProject" to "이름·패키지·폴더 변경…",
         "tabs.stats" to "코드 통계",
         "tabs.deps" to "의존성",
         "tabs.wrapper" to "Wrapper",

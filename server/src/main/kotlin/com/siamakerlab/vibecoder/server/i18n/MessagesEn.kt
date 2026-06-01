@@ -1806,6 +1806,7 @@ internal object MessagesEn {
         "tabs.symbols" to "Symbols",
         // v1.13.0 — Overview tab removed, its features moved into the sticky header.
         "tabs.settings.label" to "Project settings",
+        "tabs.settings.editProject" to "Rename (name / package / folder)…",
         "tabs.stats" to "Code stats",
         "tabs.deps" to "Deps",
         "tabs.wrapper" to "Wrapper",
