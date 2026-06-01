@@ -182,14 +182,24 @@
   function renderUnknown(raw) {
     var o = raw;
     if (typeof o === 'string') {
-      try { o = JSON.parse(o); } catch (e) { return { cls: 'sys', label: 'event', body: clip(o, 300), cat: 'system' }; }
+      try { o = JSON.parse(o); }
+      catch (e) {
+        // v1.86.0 — JSON 파싱 불가(예: 긴 thinking signature 가 절단돼 깨진 경우).
+        // raw 노출 대신 깨진 문자열에서 type 만 추출해 이름 뱃지로 표시.
+        var mt = String(o).match(/"type"\s*:\s*"([\w-]+)"/);
+        var tn = mt ? mt[1] : null;
+        if (tn === 'thinking') return { cls: 'thinking', label: '💭 Thinking…', body: '💭 Thinking…', cat: 'thinking' };
+        if (tn) return { cls: 'thinking', label: tn, body: '· ' + tn + ' ·', cat: 'thinking' };
+        return { cls: 'thinking', label: 'event', body: '· event ·', cat: 'thinking' };
+      }
     }
     if (o == null || typeof o !== 'object') return null;
     var type = o.type;
 
     if (type === 'thinking') {
       var th = String(o.thinking || '').trim();
-      if (!th) return null; // signature-only redacted thinking → 노이즈, 숨김
+      // v1.86.0 — 빈 thinking(signature-only)도 "💭 Thinking…" 뱃지(이름만). 내용 있으면 💭 + 내용.
+      if (!th) return { cls: 'thinking', label: '💭 Thinking…', body: '💭 Thinking…', cat: 'thinking' };
       return { cls: 'thinking', label: '💭 thinking', body: clip(th, 4000), cat: 'thinking' };
     }
 

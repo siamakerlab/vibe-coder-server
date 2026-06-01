@@ -110,14 +110,13 @@ object WebProjectTemplates {
     /**
      * v1.85.0 — replay 에서 숨겨야 할 노이즈 unknown 판정(문자열 패턴, JSON 파싱 불요).
      * content 는 JsonElement.toString() 형태(공백 없는 compact JSON)라 패턴 매칭이 견고하다.
-     * - 빈 thinking(signature-only): live 는 파서 드롭, 과거분은 절단 시 깨진 JSON → raw 노출.
      * - thinking_tokens: 토큰 추정 노이즈.
      * - task_*: 백그라운드 카드로 노출(중복).
      * - type=user: 서브에이전트 위임 prompt / 이미지 좌표 메타(메인은 Task 카드).
-     * 내용 있는 thinking(`"thinking":"…"`)은 제외 대상 아님 → 💭 로 보존.
+     * v1.86.0 — thinking 은 더 이상 skip 안 함("💭 Thinking…" 뱃지로 표시). 대신 아래
+     * renderInitialHistoryJson 이 빈 thinking 의 긴 signature 를 버려 경량 마커로 단축한다.
      */
     private fun isNoiseUnknownContent(c: String): Boolean {
-        if (c.contains("\"type\":\"thinking\"") && c.contains("\"thinking\":\"\"")) return true
         if (c.contains("\"subtype\":\"thinking_tokens\"")) return true
         if (c.contains("\"subtype\":\"task_")) return true
         if (c.contains("\"type\":\"user\"")) return true
@@ -140,7 +139,14 @@ object WebProjectTemplates {
             if (row.role == "unknown" && isNoiseUnknownContent(row.content)) continue
             if (!first) sb.append(',')
             first = false
-            val raw = row.content
+            // v1.86.0 — 빈 thinking 의 signature(수천 자)는 버리고 경량 마커로 단축. 그대로
+            // 두면 maxContent 절단으로 JSON 이 깨져 raw 노출되던 문제 → renderUnknown 이
+            // "💭 Thinking…" 뱃지로 렌더할 수 있는 온전한 JSON 만 inline 에 싣는다.
+            val raw = if (row.role == "unknown" &&
+                row.content.contains("\"type\":\"thinking\"") &&
+                row.content.contains("\"thinking\":\"\""))
+                "{\"type\":\"thinking\",\"thinking\":\"\"}"
+            else row.content
             val text = if (raw.length > maxContent)
                 raw.substring(0, maxContent) + " …(+${raw.length - maxContent})"
             else raw
@@ -1531,7 +1537,7 @@ $automationPanelHtml
 </div>
 
 <!-- v1.70.0 — 콘솔 친화 렌더러 (tool_use/tool_result/unknown). inline 스크립트보다 먼저 동기 로드. -->
-<script src="/static/console-render.js?v=1.85.1"></script>
+<script src="/static/console-render.js?v=1.86.0"></script>
 <script>
 (function() {
   var projectId = $projectIdJs;
