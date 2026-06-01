@@ -1537,7 +1537,33 @@ $automationPanelHtml
 </div>
 
 <!-- v1.70.0 — 콘솔 친화 렌더러 (tool_use/tool_result/unknown). inline 스크립트보다 먼저 동기 로드. -->
-<script src="/static/console-render.js?v=1.86.1"></script>
+<script src="/static/console-render.js?v=1.86.3"></script>
+<script>
+  // v1.86.3 — 구 SW 가 console-render.js 를 깨진/구버전(renderMarkdown 부재)으로 박제하면
+  // 마크다운/접기가 동작하지 않는다. 감지 시 SW·캐시를 전부 제거하고 1회 reload(sessionStorage
+  // 가드)해 SW 없는 상태로 최신 자산을 직접 받는다. reload 후 AdminTemplates 의 register 가
+  // 새 SW(?v 우회)를 재설치한다.
+  (function () {
+    if (window.VibeConsole && window.VibeConsole.renderMarkdown) return;
+    try {
+      if (sessionStorage.getItem('__vibeSwPurged')) return;
+      sessionStorage.setItem('__vibeSwPurged', '1');
+    } catch (e) {}
+    var reload = function () { location.reload(); };
+    var ps = [];
+    if (navigator.serviceWorker) {
+      ps.push(navigator.serviceWorker.getRegistrations()
+        .then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); })
+        .catch(function () {}));
+    }
+    if (window.caches) {
+      ps.push(caches.keys()
+        .then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); })
+        .catch(function () {}));
+    }
+    Promise.all(ps).then(reload, reload);
+  })();
+</script>
 <script>
 (function() {
   var projectId = $projectIdJs;
