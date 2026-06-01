@@ -4,11 +4,14 @@ import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.isEmbeddedRequest
 import com.siamakerlab.vibecoder.server.admin.requireAdminOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
+import com.siamakerlab.vibecoder.server.auth.AUTH_BEARER
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens.requireCsrf
+import com.siamakerlab.vibecoder.server.auth.requireDevice
 import com.siamakerlab.vibecoder.shared.ApiPath
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentType
 import io.ktor.server.application.call
+import io.ktor.server.auth.authenticate
 import io.ktor.server.response.respondRedirect
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Routing
@@ -76,15 +79,19 @@ fun Routing.emulatorRoutes(
         call.respondRedirect("/emulator?${if (r.ok) "ok" else "err"}=${enc(r.message)}")
     }
 
-    // 사이드바 pill — 저민감(설치/실행 여부). adb status 와 동일하게 무인증.
-    get(ApiPath.EMULATOR_STATUS) {
-        val s = runCatching { emulator.status() }.getOrElse {
-            EmulatorService.Status(false, false, false, emulator.serial, null)
+    // 사이드바 pill — 설치/실행 여부. v1.77.0 — quota/adb 와 일괄 인증 게이트.
+    // 사이드바 pill 은 fetch(credentials:'same-origin') 로 vibe_session 쿠키 전송 → 통과.
+    authenticate(AUTH_BEARER) {
+        get(ApiPath.EMULATOR_STATUS) {
+            call.requireDevice() // 인증만 강제(단일 admin)
+            val s = runCatching { emulator.status() }.getOrElse {
+                EmulatorService.Status(false, false, false, emulator.serial, null)
+            }
+            call.respondText(
+                """{"available":${s.available},"running":${s.running},"booted":${s.booted},"serial":"${s.serial}"}""",
+                ContentType.Application.Json,
+            )
         }
-        call.respondText(
-            """{"available":${s.available},"running":${s.running},"booted":${s.booted},"serial":"${s.serial}"}""",
-            ContentType.Application.Json,
-        )
     }
 }
 

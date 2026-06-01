@@ -5,8 +5,11 @@ import com.siamakerlab.vibecoder.server.admin.AdminTemplates
 import com.siamakerlab.vibecoder.server.admin.isEmbeddedRequest
 import com.siamakerlab.vibecoder.server.admin.requireAdminOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
+import com.siamakerlab.vibecoder.server.auth.AUTH_BEARER
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens.requireCsrf
 import com.siamakerlab.vibecoder.server.auth.SESSION_COOKIE
+import com.siamakerlab.vibecoder.server.auth.requireDevice
+import io.ktor.server.auth.authenticate
 import com.siamakerlab.vibecoder.server.core.Sha256
 import com.siamakerlab.vibecoder.server.i18n.Messages
 import com.siamakerlab.vibecoder.server.repo.AdminUserRepository
@@ -111,14 +114,18 @@ fun Routing.adbRoutes(
         redirectResult(r.ok, r.output)
     }
 
-    // 사이드바 뱃지 — 저민감(연결 수 + adb 유무). quota endpoint 와 동일하게 무인증.
-    get(ApiPath.ADB_STATUS) {
-        val available = adb.available()
-        val connected = if (available) runCatching { adb.connectedCount() }.getOrElse { 0 } else 0
-        call.respondText(
-            """{"available":$available,"connected":$connected}""",
-            ContentType.Application.Json,
-        )
+    // 사이드바 뱃지 — 연결 수 + adb 유무. v1.77.0 — quota 와 일괄 인증 게이트(미인증 노출 회수).
+    // 사이드바 pill 은 fetch(credentials:'same-origin') 로 vibe_session 쿠키 전송 → 통과.
+    authenticate(AUTH_BEARER) {
+        get(ApiPath.ADB_STATUS) {
+            call.requireDevice() // 인증만 강제(단일 admin)
+            val available = adb.available()
+            val connected = if (available) runCatching { adb.connectedCount() }.getOrElse { 0 } else 0
+            call.respondText(
+                """{"available":$available,"connected":$connected}""",
+                ContentType.Application.Json,
+            )
+        }
     }
 
     // logcat 스트림 — 쿠키 기반 admin 검증(브라우저 핸드셰이크가 vibe_session 전송).
