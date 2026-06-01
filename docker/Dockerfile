@@ -11,11 +11,11 @@
 #
 #   일반 commit push (amd64-only · v0.6.3+ 기본):
 #     docker buildx build --platform linux/amd64 \
-#         -f docker/Dockerfile -t siamakerlab/vibe-coder-server:1.72.0 --push .
+#         -f docker/Dockerfile -t siamakerlab/vibe-coder-server:1.73.0 --push .
 #
 #   마일스톤 multi-arch push (v0.7.0 / v1.0.0 등):
 #     docker buildx build --platform linux/amd64,linux/arm64 \
-#         -f docker/Dockerfile -t siamakerlab/vibe-coder-server:1.72.0 --push .
+#         -f docker/Dockerfile -t siamakerlab/vibe-coder-server:1.73.0 --push .
 
 # ------------------------------------------------------------------------------
 # Stage 1: 서버 빌드 (Gradle installDist)
@@ -62,6 +62,8 @@ LABEL org.opencontainers.image.source="https://github.com/siamakerlab/vibe-coder
 
 # ---- 시스템 패키지 (도구 최소셋) ---------------------------------------------
 # Android SDK / Playwright Chromium / 무거운 MCP들은 doctor가 볼륨에 설치한다.
+# v1.73.0 — 헤드리스 안드로이드 에뮬레이터(swiftshader_indirect) 런타임 라이브러리도 포함
+# (emulator/qemu 가 참조하는 그래픽·오디오·암호 라이브러리). system-image 자체는 볼륨(doctor).
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
         bash \
@@ -82,6 +84,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         wget \
         xz-utils \
         zip \
+        libgl1 \
+        libglx-mesa0 \
+        libgl1-mesa-dri \
+        libegl1 \
+        libpulse0 \
+        libnss3 \
+        libx11-6 \
+        libxcb1 \
+        libxcursor1 \
+        libxrender1 \
+        libxrandr2 \
+        libuuid1 \
+        libexpat1 \
     && rm -rf /var/lib/apt/lists/*
 # util-linux 는 `script` 명령(pty wrapping) 을 제공 — v0.7.0 옵션 A (Claude
 # 반자동 웹 OAuth) 가 `claude auth login` TUI 를 spawn 할 때 필수.

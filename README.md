@@ -777,6 +777,7 @@ carries a CSRF `_csrf` token (v0.12.4+).
 | `/env-setup/mcp` | MCP catalog (60+ entries); **v1.61.0** marketplace cards — per-card Install/Remove + status pill |
 | `/env-setup/claude-login` | Semi-automatic web OAuth |
 | `/env-setup/tasks/{taskId}` | Live install progress (WS) |
+| `/emulator` | **v1.73.0** Headless Android emulator (for Claude Code log analysis) — manual start/stop + status; Claude runs `adb -s emulator-5554 install/logcat` directly. KVM-accelerated (`/dev/kvm`). |
 | `/settings/git-integrations` | PAT tokens + SSH public key (**v0.47.0** admin-only) |
 | `/settings/email` | **v0.17.0** SMTP configuration + trigger matrix (**v0.47.0** admin-only) |
 | `/settings/webhook` | **v0.27.0** Slack / Discord / Telegram webhook configuration + test (**v0.47.0** admin-only) |
@@ -880,6 +881,7 @@ Wire definitions: `shared/.../ApiPath.kt` + `shared/.../Dtos.kt`. Highlights:
 - `POST /api/env-setup/claude-login/start | submit | cancel`, `GET .../status`
 - `GET  /api/env-setup/mcp`, `POST /api/env-setup/mcp/install | unregister`
 - `POST /api/env-setup/mcp/{mcpId}/file/{fieldKey}` (multipart — Service Account JSON / Apple .p8 etc.)
+- `GET  /api/emulator/status` (**v1.73.0** `{available,running,booted,serial}` — sidebar pill), `POST /emulator/start | stop`
 - `GET  /api/settings/git-integrations`, `POST .../register | delete | ssh-keygen`
 - WebSocket: `/ws/projects/{id}/console/logs`, `/ws/projects/{id}/builds/{buildId}/logs`,
   `/ws/env-setup/{taskId}/logs`,

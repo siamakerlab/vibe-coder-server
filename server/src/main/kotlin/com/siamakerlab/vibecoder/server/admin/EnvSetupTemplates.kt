@@ -142,7 +142,8 @@ docker compose up -d --force-recreate</pre>
         SetupComponent.ANDROID_SDK -> 1
         SetupComponent.GRADLE -> 2
         SetupComponent.PLATFORM_TOOLS -> 3
-        SetupComponent.MCP_DEFAULTS -> 4
+        SetupComponent.ANDROID_EMULATOR -> 4
+        SetupComponent.MCP_DEFAULTS -> 5
         else -> 9                            // built-in (JDK/Git/Node/Claude CLI)
     }
 
@@ -327,6 +328,23 @@ git config --global user.email "&lt;email&gt;"
                   <button type="submit" class="primary" style="width:auto;padding:8px 16px">${esc(label)}</button>
                 </form>
                 <p class="hint" style="margin-top:8px;font-size:12px">${esc(t("env.action.gradleNote"))}</p>"""
+            }
+
+            // v1.73.0 — 에뮬레이터(헤드리스). 설치는 SDK 와 같은 vibe-doctor android 흐름.
+            // 실행/AVD 생성은 /emulator. logcat/install 은 Claude 가 콘솔에서 adb 직접.
+            SetupComponent.ANDROID_EMULATOR -> {
+                val label = when (status) {
+                    ComponentStatus.INSTALLED -> t("env.action.emulatorLabel.installed")
+                    ComponentStatus.PARTIAL -> t("env.action.emulatorLabel.partial")
+                    else -> t("env.action.emulatorLabel.missing")
+                }
+                """<form method="post" action="/env-setup/${esc(c.id)}/install" style="margin-top:10px"
+                        onsubmit="return confirm(${jsLit(t("env.action.emulatorConfirm"))})">
+                  ${CsrfTokens.hiddenInput(csrf)}
+                  <button type="submit" class="primary" style="width:auto;padding:8px 16px">${esc(label)}</button>
+                </form>
+                <p class="hint" style="margin-top:8px;font-size:12px">${esc(t("env.action.emulatorNote"))}
+                  <a href="/emulator" class="chip-link" style="margin-left:4px">${esc(t("env.action.emulatorOpen"))}</a></p>"""
             }
         }
     }

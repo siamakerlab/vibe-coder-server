@@ -37,6 +37,7 @@ import com.siamakerlab.vibecoder.server.admin.pluginRoutes
 import com.siamakerlab.vibecoder.server.projects.projectSkillRoutes
 import com.siamakerlab.vibecoder.server.projects.projectPluginRoutes
 import com.siamakerlab.vibecoder.server.device.adbRoutes
+import com.siamakerlab.vibecoder.server.device.emulatorRoutes
 import com.siamakerlab.vibecoder.server.admin.webProjectRoutes
 import com.siamakerlab.vibecoder.server.artifacts.ArtifactService
 import com.siamakerlab.vibecoder.server.artifacts.artifactRoutes
@@ -252,6 +253,8 @@ data class ServerContext(
     val terminalManager: TerminalSessionManager,
     /** v1.40.0 — 무선 ADB 기기 logcat (admin). */
     val adb: com.siamakerlab.vibecoder.server.device.AdbService,
+    /** v1.73.0 — 안드로이드 에뮬레이터(헤드리스, Claude 로그분석용) lifecycle (admin). */
+    val emulator: com.siamakerlab.vibecoder.server.device.EmulatorService,
     /** v1.59.0 — 프롬프트 자동화 (서버 백그라운드 autopilot): 프리셋 저장 / 실행 이력 / 오케스트레이터. */
     val promptAutomationPresetStore: com.siamakerlab.vibecoder.server.automation.PromptAutomationPresetStore,
     val promptAutomationRunRepo: com.siamakerlab.vibecoder.server.repo.PromptAutomationRunRepository,
@@ -400,6 +403,8 @@ fun Application.module(ctx: ServerContext) {
         // owner-only ACL + idle reaper + per-user 한도 (자세히 TerminalSessionManager).
         terminalRoutes(adminDeps, ctx.terminalManager, ctx.deviceRepo, ctx.tokens, ctx.adminUserRepo)
         adbRoutes(adminDeps, ctx.adb, ctx.deviceRepo, ctx.adminUserRepo)
+        // v1.73.0 — 안드로이드 에뮬레이터(헤드리스) 상태/제어. lifecycle 은 ServerMain hoist.
+        emulatorRoutes(adminDeps, ctx.emulator)
         // v0.10.0 — admin SSR 라우트들의 JSON API 이중 노출 (vibe-coder-android wire)
         envSetupApiRoutes(
             envSetup = ctx.envSetup,

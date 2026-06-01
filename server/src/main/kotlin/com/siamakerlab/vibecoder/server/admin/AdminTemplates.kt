@@ -197,6 +197,15 @@ object AdminTemplates {
     </div>
     <div class="adb-pill-body"><span id="adb-pill-status" class="dim">…</span> · <strong id="adb-pill-n">0</strong> ${esc(t("nav.adb.devices"))}</div>
   </a>
+  <!-- v1.73.0 — 안드로이드 에뮬레이터(헤드리스) 실행 상태 pill (무선디버깅 바로 아래).
+       emulator 미설치면 hidden. 클릭 시 /emulator. -->
+  <a id="emulator-pill" class="quota-pill adb-pill" href="/emulator" title="${esc(t("nav.emulator.title"))}" hidden>
+    <div class="qp-header">
+      <span class="qp-h-title">${esc(t("nav.emulator.title"))}</span>
+      <span id="emulator-pill-dot" class="adb-dot"></span>
+    </div>
+    <div class="adb-pill-body"><span id="emulator-pill-status" class="dim">…</span></div>
+  </a>
   <!-- v1.3.2 — 전역 Claude 쿼타 pill. v1.6.2 — header 에 refresh 버튼 + 타임존 제거. -->
   <div id="quota-pill" class="quota-pill" hidden></div>
   <div class="user-box">
@@ -301,6 +310,31 @@ object AdminTemplates {
     }
     adbTick();
     setInterval(adbTick, 30000);
+  }
+
+  // v1.73.0 — 에뮬레이터(헤드리스) pill 폴링. 설치돼 있으면 노출(중지 상태도 표시), 미설치면 hidden.
+  var emuEl = document.getElementById('emulator-pill');
+  var emuStatus = document.getElementById('emulator-pill-status');
+  var emuDot = document.getElementById('emulator-pill-dot');
+  if (emuEl && emuStatus) {
+    var EMU_BOOTED = '${esc(t("nav.emulator.booted"))}';
+    var EMU_BOOTING = '${esc(t("nav.emulator.booting"))}';
+    var EMU_STOPPED = '${esc(t("nav.emulator.stopped"))}';
+    function emuTick() {
+      fetch('/api/emulator/status', { credentials: 'same-origin' })
+        .then(function(r){ return r.ok ? r.json() : null; })
+        .then(function(s){
+          if (!s || !s.available) { emuEl.hidden = true; return; }
+          var label = s.booted ? EMU_BOOTED : (s.running ? EMU_BOOTING : EMU_STOPPED);
+          emuStatus.textContent = label;
+          emuStatus.className = s.booted ? 'ok' : (s.running ? 'dim' : 'dim');
+          if (emuDot) emuDot.className = 'adb-dot' + (s.booted ? ' on' : '');
+          emuEl.hidden = false;
+        })
+        .catch(function(){ emuEl.hidden = true; });
+    }
+    emuTick();
+    setInterval(emuTick, 30000);
   }
 })();
 </script>

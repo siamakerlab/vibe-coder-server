@@ -36,6 +36,24 @@ if [[ "$current_uid" != "$PUID" ]] || [[ "$current_gid" != "$PGID" ]]; then
     usermod  -o -u "$PUID" -g "$PGID" vibe 2>/dev/null || true
 fi
 
+# v1.73.0 — 헤드리스 안드로이드 에뮬레이터 KVM 가속(/dev/kvm). compose 에 device 가
+# 노출돼 있으면, 그 device 의 실제 GID 로 kvm 그룹을 만들어(또는 GID 조정) vibe 를 추가한다.
+# 호스트마다 kvm GID 가 달라(보통 36 또는 108) group_add 하드코딩 대신 동적 매핑.
+if [[ -e /dev/kvm ]]; then
+    kvm_gid="$(stat -c '%g' /dev/kvm 2>/dev/null || echo '')"
+    if [[ -n "$kvm_gid" ]]; then
+        if getent group kvm >/dev/null 2>&1; then
+            groupmod -o -g "$kvm_gid" kvm 2>/dev/null || true
+        else
+            groupadd -o -g "$kvm_gid" kvm 2>/dev/null || true
+        fi
+        usermod -aG kvm vibe 2>/dev/null || true
+        log "KVM 가속 사용 가능 (/dev/kvm gid=${kvm_gid})"
+    fi
+else
+    log "참고: /dev/kvm 없음 — 안드로이드 에뮬레이터는 미가속(매우 느림). compose devices 에 /dev/kvm 추가 권장."
+fi
+
 # ─── 2. 볼륨 소유권 정리 ─────────────────────────────────────────────────────
 # 매번 chown -R 하면 느리므로, 디렉토리만 1회 chown + 새 파일은 vibe가 만들도록.
 # v0.7.0 — 다음을 추가했다 (이미지 업그레이드 시 사라지던 도구들의 영구 위치):

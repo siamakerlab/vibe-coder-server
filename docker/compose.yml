@@ -174,9 +174,13 @@ services:
       start_period: 60s
       retries: 3
 
-    # USB 디바이스로 ADB 사용 시 활성화:
-    # devices:
-    #   - /dev/bus/usb:/dev/bus/usb
+    # v1.73.0 — 헤드리스 안드로이드 에뮬레이터(Claude Code 로그분석용) KVM 가속.
+    # /dev/kvm 노출만 하면 entrypoint 가 device 의 실제 GID 로 kvm 그룹을 만들어 vibe 를
+    # 추가한다(호스트마다 kvm GID 가 달라 group_add 하드코딩 대신 동적 처리). 없으면
+    # 에뮬레이터가 매우 느려 부팅 실패 가능(서버 /emulator 페이지가 안내). 미사용 시 생략 가능.
+    devices:
+      - /dev/kvm:/dev/kvm
+    #   - /dev/bus/usb:/dev/bus/usb   # USB 케이블 ADB 사용 시 추가
 
 # v0.14.0 — named volume 미사용. 모든 영구 데이터는 ./vibe-coder-data/ 안의 bind mount.
 # postgres 데이터도 ./vibe-coder-data/postgres/ 디렉토리 — 백업/이전 시 같은 트리.

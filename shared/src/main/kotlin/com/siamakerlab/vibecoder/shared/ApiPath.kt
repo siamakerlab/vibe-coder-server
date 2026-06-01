@@ -44,6 +44,11 @@ object ApiPath {
     const val ADB_STATUS = "/api/adb/status"
     const val WS_ADB_LOGCAT = "/ws/adb/logcat"
 
+    // v1.73.0 — 안드로이드 에뮬레이터(헤드리스, Claude Code 로그분석용) 실행 상태. admin 전용.
+    // server-internal (Android client 미사용). 사이드바 pill 폴링. /emulator(SSR)·start·stop 은
+    // AdbRoutes 와 동일하게 hardcoded path (SSR 액션은 ApiPath 비등록 관례).
+    const val EMULATOR_STATUS = "/api/emulator/status"
+
     // Projects
     const val PROJECTS = "/api/projects"
     const val PROJECTS_REGISTER = "/api/projects/register"

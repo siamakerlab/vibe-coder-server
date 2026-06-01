@@ -90,6 +90,16 @@ enum class SetupComponent(
         description = "env.comp.platformTools.desc",
         sizeHint = "env.size.platformTools",
     ),
+    // v1.73.0 — 안드로이드 에뮬레이터(헤드리스, Claude 로그분석용). doctorCmd="android" 재사용:
+    // manifest.yml 에 emulator + system-images;android-35;google_apis;x86_64 가 들어가 있어
+    // `vibe-doctor android` 가 SDK 와 함께 설치한다. 실행/AVD 생성은 EmulatorService(/emulator).
+    ANDROID_EMULATOR(
+        id = "android-emulator",
+        displayName = "env.comp.androidEmulator.name",
+        doctorCmd = "android",
+        description = "env.comp.androidEmulator.desc",
+        sizeHint = "env.size.emulator",
+    ),
     MCP_DEFAULTS(
         id = "mcp",
         displayName = "env.comp.mcp.name",
@@ -166,6 +176,7 @@ class EnvSetupService(
         SetupComponent.CLAUDE_AUTH -> probeClaudeAuth(c, lang)
         SetupComponent.ANDROID_SDK -> probeAndroidSdk(c, lang)
         SetupComponent.PLATFORM_TOOLS -> probePlatformTools(c, lang)
+        SetupComponent.ANDROID_EMULATOR -> probeAndroidEmulator(c, lang)
         SetupComponent.MCP_DEFAULTS -> probeMcpDefaults(c, lang)
         SetupComponent.GRADLE -> probeGradle(c, lang)
     }
@@ -266,6 +277,20 @@ class EnvSetupService(
             pt.exists() && adbPresent -> ComponentState(c, ComponentStatus.INSTALLED, t(lang, "probe.platformTools.ok", pt.toString()))
             pt.exists() -> ComponentState(c, ComponentStatus.PARTIAL, t(lang, "probe.platformTools.partial", pt.toString()))
             else -> ComponentState(c, ComponentStatus.MISSING, t(lang, "probe.platformTools.missing", pt.toString()))
+        }
+    }
+
+    // v1.73.0 — 에뮬레이터: emulator 바이너리 + 대상 system-image 존재 여부.
+    private fun probeAndroidEmulator(c: SetupComponent, lang: String): ComponentState {
+        val sdk = androidSdkRoot() ?: return ComponentState(c, ComponentStatus.MISSING, t(lang, "probe.androidSdk.notSet"))
+        val emulatorBin = sdk.resolve("emulator/emulator")
+        val imageDir = sdk.resolve("system-images/android-35/google_apis/x86_64")
+        val hasEmu = emulatorBin.exists()
+        val hasImg = imageDir.exists() && Files.isDirectory(imageDir)
+        return when {
+            hasEmu && hasImg -> ComponentState(c, ComponentStatus.INSTALLED, t(lang, "probe.androidEmulator.ok", sdk.toString()))
+            hasEmu -> ComponentState(c, ComponentStatus.PARTIAL, t(lang, "probe.androidEmulator.noImage"))
+            else -> ComponentState(c, ComponentStatus.MISSING, t(lang, "probe.androidEmulator.missing"))
         }
     }
 

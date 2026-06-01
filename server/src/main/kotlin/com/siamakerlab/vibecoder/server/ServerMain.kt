@@ -422,6 +422,8 @@ fun main(args: Array<String>) {
     )
     // v1.40.0 — 무선 ADB 기기 logcat (admin). adb 없으면 기능 페이지가 안내.
     val adbService = com.siamakerlab.vibecoder.server.device.AdbService()
+    // v1.73.0 — 안드로이드 에뮬레이터(헤드리스, Claude 로그분석용). 미설치/미가속이면 페이지가 안내.
+    val emulatorService = com.siamakerlab.vibecoder.server.device.EmulatorService(adbService)
     val diskMonitor = com.siamakerlab.vibecoder.server.disk.DiskMonitor(
         rootProvider = { workspace.root },
         notifiers = notifiers,
@@ -511,6 +513,7 @@ fun main(args: Array<String>) {
         plugins = pluginService,
         terminalManager = terminalManager,
         adb = adbService,
+        emulator = emulatorService,
         promptAutomationPresetStore = promptAutomationPresetStore,
         promptAutomationRunRepo = promptAutomationRunRepo,
         promptAutomationManager = promptAutomationManager,
@@ -522,6 +525,7 @@ fun main(args: Array<String>) {
         // 전부 누락(PTY/프로세스/코루틴 누수)될 수 있었음.
         runCatching { kotlinx.coroutines.runBlocking { sessionManager.shutdown() } }
         runCatching { kotlinx.coroutines.runBlocking { subAgentManager.shutdown() } }
+        runCatching { kotlinx.coroutines.runBlocking { emulatorService.shutdown() } }
         runCatching { claudeUsageMonitor.shutdown() }
         runCatching { diskMonitor.shutdown() }
         runCatching { kotlinLspService.shutdown() }
