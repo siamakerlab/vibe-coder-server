@@ -1342,6 +1342,11 @@ $errHtml
   .log-body.md a { color:#74b9ff; text-decoration:underline; }
   .log-body.md hr { border:none; border-top:1px solid #333; margin:0.8em 0; }
   .log-body.md strong { font-weight:600; }
+  /* v1.86.4 — 마크다운 테이블 */
+  .log-body.md table.md-table { border-collapse:collapse; margin:0.5em 0; font-size:0.9em; display:block; overflow-x:auto; max-width:100%; }
+  .log-body.md table.md-table th, .log-body.md table.md-table td { border:1px solid #3a3a3a; padding:4px 9px; text-align:left; }
+  .log-body.md table.md-table th { background:rgba(255,255,255,0.06); font-weight:600; }
+  .log-body.md table.md-table tr:nth-child(even) td { background:rgba(255,255,255,0.02); }
   /* v1.85.0 — assistant 긴 메시지 접기 */
   .log-line.assistant .log-content[data-clampable="1"] { position:relative; cursor:pointer; }
   .log-line.assistant .log-content.clamped .log-body { max-height:360px; overflow:hidden; }
@@ -1537,7 +1542,7 @@ $automationPanelHtml
 </div>
 
 <!-- v1.70.0 — 콘솔 친화 렌더러 (tool_use/tool_result/unknown). inline 스크립트보다 먼저 동기 로드. -->
-<script src="/static/console-render.js?v=1.86.3"></script>
+<script src="/static/console-render.js?v=1.86.4"></script>
 <script>
   // v1.86.3 — 구 SW 가 console-render.js 를 깨진/구버전(renderMarkdown 부재)으로 박제하면
   // 마크다운/접기가 동작하지 않는다. 감지 시 SW·캐시를 전부 제거하고 1회 reload(sessionStorage
