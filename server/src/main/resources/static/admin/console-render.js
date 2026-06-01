@@ -255,6 +255,21 @@
     h = h.replace(/`([^`\n]+)`/g, function (_, c) {
       var idx = inlines.length; inlines.push(c); return 'IC' + idx + '';
     });
+    // v1.86.4 — 테이블: header row + separator(|---|---|) + body rows.
+    h = h.replace(
+      /(?:^|\n)([ \t]*\|.+\|[ \t]*)\n[ \t]*\|[ \t:|-]+\|[ \t]*\n((?:[ \t]*\|.+\|[ \t]*(?:\n|$))*)/g,
+      function (_, header, body) {
+        var cells = function (row) {
+          return row.trim().replace(/^\||\|$/g, '').split('|').map(function (c) { return c.trim(); });
+        };
+        var ths = cells(header).map(function (c) { return '<th>' + c + '</th>'; }).join('');
+        var trs = body.replace(/\n+$/, '').split('\n')
+          .filter(function (r) { return r.trim(); })
+          .map(function (row) {
+            return '<tr>' + cells(row).map(function (c) { return '<td>' + c + '</td>'; }).join('') + '</tr>';
+          }).join('');
+        return '\n<table class="md-table"><thead><tr>' + ths + '</tr></thead><tbody>' + trs + '</tbody></table>\n';
+      });
     // 헤딩
     h = h.replace(/^\s*######\s+(.+)$/gm, '<h6>$1</h6>')
          .replace(/^\s*#####\s+(.+)$/gm, '<h5>$1</h5>')
@@ -292,8 +307,8 @@
     h = h.split('\n').map(function (line) { return line; }).join('\n');
     h = h.replace(/\n/g, '<br>');
     // 블록 태그 주변 과잉 <br> 정리
-    h = h.replace(/<br>\s*(<\/?(?:h[1-6]|ul|ol|li|blockquote|hr|pre)[^>]*>)/g, '$1')
-         .replace(/(<\/?(?:h[1-6]|ul|ol|li|blockquote|hr|pre)[^>]*>)\s*<br>/g, '$1');
+    h = h.replace(/<br>\s*(<\/?(?:h[1-6]|ul|ol|li|blockquote|hr|pre|table|thead|tbody|tr|th|td)[^>]*>)/g, '$1')
+         .replace(/(<\/?(?:h[1-6]|ul|ol|li|blockquote|hr|pre|table|thead|tbody|tr|th|td)[^>]*>)\s*<br>/g, '$1');
     // inline code 복원
     h = h.replace(/IC(\d+)/g, function (_, i) {
       return '<code class="md-code">' + mdEsc(inlines[i]) + '</code>';
