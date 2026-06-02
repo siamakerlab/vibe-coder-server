@@ -2077,7 +2077,9 @@ $automationPanelHtml
         append('tool', ru.label, ru.body, isTodoTool ? 'todo' : 'tool_use', opts);
       } else if (role === 'tool_result' || role === 'tool_result_error') {
         var parsed = tryParse(text);
-        var out = parsed != null ? window.VibeConsole.extractToolResult(parsed) : text;
+        // v1.90.16 — parsed 가 null(clip 된 불완전 JSON 등)이어도 extractToolResult 를 거쳐
+        // unescape(\t/\n)가 적용되게 한다. 이전엔 null 이면 raw text 를 직접 써서 escape 가 남았다.
+        var out = window.VibeConsole.extractToolResult(parsed != null ? parsed : text);
         var isErr = (role === 'tool_result_error');
         // v1.90.9 — 복사용 원문 보존(clip 8000 표시).
         opts.raw = out;
