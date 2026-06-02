@@ -545,6 +545,8 @@ internal object MessagesEn {
         "console.quick.title" to "Quick prompts — one click sends immediately",
         "console.quick.continue.label" to "Continue",
         "console.quick.continue.prompt" to "Continue.",
+        "console.quick.restart.label" to "Resume interrupted work",
+        "console.quick.restart.prompt" to "Review the work that was interrupted earlier, find what is still unfinished, and continue it through to completion as originally intended.",
         "console.quick.fixAll.label" to "Fix all",
         "console.quick.fixAll.prompt" to "Fix all the issues you raised.",
         "console.quick.review.label" to "Full review",
