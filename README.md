@@ -10,8 +10,24 @@
 
 This repository contains the server body (Ktor backend) and the operations
 web UI. An Android companion app (`vibe-coder-android`, separate repo) is an
-optional client that points at the same server — every feature works in the
-browser alone.
+optional client that points at the same server — **every feature works in the
+browser alone.**
+
+---
+
+## Table of contents
+
+- [Why this exists](#why-this-exists)
+- [Repository layout](#repository-layout)
+- [Features](#features) — orchestration · history · build · tooling · MCP ·
+  notifications · security · persistence · operations · clients
+- [Quick start](#quick-start-docker-3-minutes)
+- [Running it](#running-it) — compose reference · common ops · data volumes
+- [Reference](#reference) — web routes · JSON API · auth · security boundaries ·
+  build matrix · local build
+- [License & companion repo](#license)
+
+---
 
 ## Why this exists
 
@@ -47,561 +63,252 @@ vibe-coder-server/
 ├─ server/              # Ktor server (Netty), PostgreSQL via Exposed,
 │                       # Claude/Gradle/Git child processes, WS log hub,
 │                       # Admin web UI (SSR HTML)
-└─ docker/              # Slim Docker image + compose + vibe-doctor
+├─ docker/              # Slim Docker image + compose + vibe-doctor
+├─ helm/                # Minimal Kubernetes Helm chart
+├─ cli/                 # Single-file bash REST client (`vibe`)
+└─ vscode-extension/    # VS Code client
 ```
 
-## What's inside (v0.64.0)
+---
 
-### Core orchestration
-- **Claude Code CLI orchestration** — one persistent child process per project,
-  stream-json on stdin/stdout, console log relayed live over WS. Cancel a
-  runaway turn with the ■ stop button (v0.13.0+); session-id is preserved so the
-  next prompt resumes the same conversation.
-- **Friendly tool rendering** — `Bash`, `Read`, `Write`, `Edit`, `Glob`, `Grep`,
-  `TaskCreate/Update`, `WebSearch/Fetch` etc. each get a one-line readable
-  representation in the console instead of raw JSON.
+## Features
+
+Everything below is reachable from the browser UI; most also have a matching
+`/api/*` JSON endpoint for the Android client (see [JSON API](#json-api)).
+For per-release history, see [CHANGELOG.md](CHANGELOG.md).
+
+### Claude Code orchestration
+
+- **Persistent session per project** — one long-lived `claude` child process,
+  stream-json over stdin/stdout, console relayed live over WebSocket. The ■
+  stop button SIGTERMs a runaway turn while preserving the session-id, so the
+  next prompt resumes the same conversation (`--resume`).
+- **Concurrent turn cap** — `claude.maxConcurrentTurns` (default 3) bounds how
+  many turns run at once across **all** project and sub-agent consoles, sharing
+  a single coroutine `Semaphore`. Excess prompts **queue** (never rejected),
+  avoiding Anthropic's server-side 429 throttle from bursting one account/IP.
+  Set `0` for unlimited.
+- **Friendly console rendering** — every stream-json event renders as a
+  human-readable line instead of raw JSON: tool results extract their text,
+  every tool (including `mcp__*`, `Task`, `ToolSearch`, …) gets a one-line
+  summary, `thinking` blocks collapse to a toggleable `💭 thinking`, and
+  sub-agent / rate-limit events are labelled. One shared
+  `static/admin/console-render.js` powers the main console, `/chat`, and
+  sub-agent consoles identically.
+- **Console input** — Enter sends; Shift+Enter / Ctrl+Cmd+Enter inserts a
+  newline; IME composition Enter (Korean etc.) never sends.
 - **Four Claude auth options** — terminal, file upload, API key, **plus** a
   semi-automatic web OAuth (`script -q` PTY wrap, no xterm.js).
-- **Prompt template library** (v0.13.0+) — save reusable prompts at `/prompts`,
-  pull them into any console via the ▼ dropdown. JSON-backed, max 500.
-- **General Chat** (v0.13.0+, multi-session since **v1.54.0**) — `/chat` hosts
-  multiple independent ChatGPT-style chat sessions. A left sidebar lists every
-  chat (auto-titled from the first prompt, rename/delete per item); pick one to
-  continue its conversation or hit "＋ New chat" to start fresh. Each chat is a
-  `__chat_<id>__` ghost project with its own Claude session (`--resume`) and
-  persistent history, reusing the project console UX verbatim.
+- **Prompt template library** — save reusable prompts at `/prompts`, pull them
+  into any console via the ▼ dropdown. JSON-backed, max 500.
+- **General Chat** — `/chat` hosts multiple independent ChatGPT-style sessions
+  (left sidebar lists every chat, auto-titled from the first prompt, rename /
+  delete per item). Each chat is a `__chat_<id>__` ghost project with its own
+  Claude session and persistent history, reusing the project console UX.
+- **Prompt suggestions** — prefix autocomplete from this project's past `user`
+  turns.
+- **Prompt automation (server-side autopilot)** — `/projects/{id}/automation/prompts`
+  fires the next prompt on every turn completion in **repeat** (same prompt × N)
+  or **sequence** (list) mode. Runs even with the browser closed; presets are
+  workspace-global; run history is persisted and reconciled on boot.
+- **Custom agents** — `/agents` CRUD over `~/.claude/agents/*.md` (sanitized
+  names, 64 KB body cap, atomic write, audit logged).
+- **Real multi-agent (sub-agent process pool)** — a **separate** Claude child
+  per `(projectId, agentName)` runs in parallel against the same workspace
+  (e.g. a `reviewer` reading while a `frontend` writes Compose). Each agent has
+  its own SSR console (`/projects/{id}/agents/{agent}/console`), WebSocket
+  topic, and session-id file; first prompt auto-prefixes
+  `Use the <agent> sub-agent to …`. Persistent history, idle-30-min SIGTERM
+  with resume.
+- **Agent dispatch dropdown** — `@ Agent dispatch` next to the template picker
+  injects the dispatch prefix into the prompt input (swaps in place, no
+  duplicates).
+- **Multi-console** — `/multi-console?projects=id1,id2,…` shows up to six
+  project consoles in an iframe grid for parallel work.
+
+### Conversation history & search
+
+- **Persistent history** — every prompt, assistant message, and `tool_use`
+  lands in `conversation_turns` with session/turn indices. Browse per-project
+  at `/projects/{id}/history` and scratch chat at `/chat/history`, with
+  pagination and filters.
+- **Agent filter** — history filters to `(main only)` / `(all)` / a specific
+  `@<agent>`; each row carries an `@agent` badge.
+- **Per-turn memo + star** — ☆/★ bookmark toggle and an inline memo editor on
+  each turn; filter `?starred=1` for bookmarked-only.
+- **Memos (global / per-project)** — free-form notes separate from per-turn
+  memos. The sidebar **Memos** page lists all of them as a card grid with a
+  mini dialog for view/edit; the project console rail (below the prompt
+  history) shows global + this-project memos with quick add. A memo with no
+  project is **global** (shown on every project screen); otherwise it's scoped
+  to one project.
+- **Export / import** — `GET /projects/{id}/history/export` downloads a JSON
+  envelope; import restores into another project with session-level idempotency
+  and a dry-run mode. The same envelope feeds the auto-archive.
+- **Auto-archive** — sessions inactive ≥ 30 days are dumped to
+  `<workspace>/.vibecoder/<projectId>/archive/` and their rows pruned.
+- **Full-text search** — per-project history search plus cross-project
+  `/history`. ASCII queries use a PostgreSQL `tsvector` GIN index;
+  Korean / non-ASCII queries route to a `pg_trgm` trigram index. Parameterized
+  binding throughout (no SQL injection).
+- **Prompt cache statistics** — Anthropic `usage` (input / output /
+  cache-read / cache-create) is parsed from the stream and stored; `/usage`
+  shows totals + per-project cache hit-rate, with the raw `/status` text kept
+  below for forward compatibility.
+- **Symbol definition lookup** — `/projects/{id}/symbols` does a best-effort
+  regex scan for Kotlin / Java declarations (`fun`, `class`/`interface`/`object`,
+  `val`/`var`, `typealias`, Java methods/types); hits link to
+  `/projects/{id}/view?path=…&line=N` which smooth-scrolls and flashes the row.
+- **Workspace grep / build-log grep** — `/code-search` scans every project's
+  source tree; `/logs` greps `.vibecoder/<projectId>/logs/*.log`. Both cap
+  matches and link previews back to the file viewer.
 
 ### Build & deploy
-- **MCP catalog** — 60+ Model Context Protocol servers in 10 categories,
-  checkbox multi-select, per-MCP token form, recommended ★, trust tiers.
-  Registered to the standard **user scope** (`claude mcp add-json -s user`,
-  v1.66.5) so the console/sub-agents/`claude mcp list` all see them. The
-  official **Gitea MCP** (`gitea-mcp`, v1.68.0) ships as a bundled Go binary.
-  Per-project MCP tab shows a **live connection-status** card (v1.67.0).
-- **Build environment one-click installer** — Android SDK / Gradle binary &
-  cache / Node + Claude CLI / MCP packages, all persisted under one host
-  directory. New project `CLAUDE.md` is wired to use the installed Gradle to
-  avoid redundant wrapper downloads (v0.14.1+).
-- **Git clone on project register** — public / private (HTTPS PAT or SSH key)
-  with auto-generated ed25519 key pair.
-- **Meaningful APK artifact names** (v1.87.0+) — build outputs are stored as
-  `<packageName>-<variant>-v<versionName>.apk` (e.g.
-  `com.example.app-debug-v1.2.3.apk`) instead of Gradle's default
-  `app-debug.apk`. `versionName` is read via build-tools `aapt`/`aapt2`
-  best-effort; omitted gracefully when unavailable. Download
-  `Content-Disposition` reflects the same name.
+
+- **One-click build environment installer** — Android SDK, Gradle binary &
+  cache, Node + Claude CLI, and MCP packages, all persisted under one host
+  directory. New projects' `CLAUDE.md` is wired to use the installed Gradle to
+  avoid redundant wrapper downloads.
+- **Debug build + APK download** — queued per project; live build log over WS;
+  cancellable. Outputs are stored with meaningful names
+  (`<packageName>-<variant>-v<versionName>.apk`, version read via `aapt`/`aapt2`
+  best-effort), reflected in the download `Content-Disposition`.
+- **Keystore management** — Settings → Keystores generates release / debug /
+  `.properties` / AdMob files per package. Auto-applied to builds in two layers:
+  `BuildService` injects `-Pandroid.injected.signing.*` for the release variant,
+  and "Apply to project" sends a Claude-console prompt that wires
+  `signingConfigs` in `build.gradle.kts`. **Back up the release key — losing it
+  blocks Play Store updates forever.**
+- **APK signature inspection** — `apksigner verify --print-certs` parsed inline
+  on each build detail page (schemes v1–v4, signer DN, SHA-256 fingerprints).
+- **Build insights** — inline SVG history chart (last 30 builds), a statistics
+  card (total / success-rate / avg duration + sparkline + APK-size trend), and a
+  comparison card vs. the previous SUCCESS build (size / duration delta).
+- **Gradle wrapper management** — `/projects/{id}/wrapper` shows the current
+  version and upgrades `distributionUrl` with one form.
+- **Build cache management** — `/settings/cache` shows Gradle / Android / npm
+  cache sizes with per-target clear buttons.
+- **Scheduling & triggers** — cron-style build schedules
+  (`HH:MM` / `*:MM` / `*:*`), plus an external `POST /api/webhooks/build/{id}`
+  authenticated by secret-id + secret (+ optional HMAC-SHA256 signature).
+- **Publishing** — Play Console upload (via `google-play-publisher` MCP) and
+  TestFlight (via `app-store-connect` MCP). MCP-delegated, so signing secrets
+  stay off the server code path.
+- **Headless Android emulator** — `/emulator` starts/stops a KVM-accelerated
+  AVD (`/dev/kvm`) so Claude can run `adb -s emulator-5554 install/logcat`
+  directly for log analysis (no screen).
 
 ### Project tooling
-- **Project settings — rename name / package / folder** (v1.71.0+) — the
-  `/projects/{id}/overview` page edits the display name (anytime), the package
-  name (`applicationId`), and the folder name (project ID). Package and folder
-  changes require the project to be **idle** (no turn or build in progress).
-  Renaming the package updates the DB, renames the keystore files
-  (`<pkg>.keystore` …), and sends a console prompt so Claude refactors the code,
-  source directory structure, manifest and signing references. Renaming the
-  folder moves the workspace directories and migrates the DB primary key across
-  all child tables in one transaction (live session is terminated first).
-- **In-browser file tree + editor** (v0.13.0+) — `/projects/{id}/tree` browses
-  the workspace; `/projects/{id}/view` opens read-only / edit toggle with
-  syntax highlighting via bundled highlight.js (Kotlin / Java / XML / JSON /
-  YAML / Markdown / properties / shell). 1 MB / binary / symlink guards.
-- **Settings persistence** (v0.14.0+) — `/settings` writes `server.yml` with
-  atomic move + `.bak.<ts>` rotation (keeps 5). Restart required for
-  host/port/name; other fields take effect on next read.
 
-### Persistence & security
-- **PostgreSQL backend** (v0.14.0+) — sidecar `postgres:17-alpine` container,
-  Exposed ORM + Hikari pool, JSONB-ready for future history features.
-- **Conversation history** (v0.16.0+) — every prompt, assistant message, and
-  `tool_use` lands in `conversation_turns` with session/turn indices. Browse
-  per-project at `/projects/{id}/history` and scratch chat at `/chat/history`.
-- **CSRF protection on every SSR POST** (v0.12.4+) — HMAC-SHA256 deterministic
-  derivation from the device cookie. REST API (Bearer header) is exempt.
-- **IP-based brute-force throttling** (v0.12.4+) — account lock at 10 fails /
-  15 min, IP block at 30 fails / 24 h. Timing-safe dummy verify on missing users.
-- **Audit log** (v0.15.0+) — every operational action (login / device revoke /
-  project / build / MCP / settings / git token / console new-cancel / git commit)
-  lands in `audit_log` with user, IP, result, ts. `/audit` page with filter +
-  paginate.
-- **JSON API parity** — every admin UI feature is also exposed under `/api/*`
-  with Bearer authentication for the Android companion app.
-
-### Notifications (v0.17.0+, expanded in v0.21 / v0.27 / v0.29)
-- **Email (SMTP)** alerts on build failure / first success, Claude session
-  idle waiting for input, disk / quota thresholds, SSH-key / PAT expiry.
-  Configure host / port / user / password / from at `/settings/email`. Jakarta
-  Mail + Angus, TLS by default. Async fire-and-forget — never blocks the
-  build pipeline.
-- **Slack / Discord / Telegram webhooks** (v0.27.0+) — same triggers, parallel
-  delivery. Configure at `/settings/webhook`. JDK 11+ `HttpClient`, SSRF
-  whitelist (`hooks.slack.com`, `discord.com`/`discordapp.com`, Telegram bot
-  token regex). Test message button per provider.
-- **Claude usage monitoring** (v0.21.0+) — `ClaudeUsageMonitor` polls
-  `claude /status` every 5 min (default), fires a one-shot email + webhook
-  alert on transitioning past `warnThresholdPercent` (80%) or
-  `criticalThresholdPercent` (95%). Dashboard "Claude usage" card with
-  colored bar + reset time + parsed plan/model.
-- **Disk usage monitoring** (v0.29.0+) — `DiskMonitor` polls
-  `Files.getFileStore(workspace.root)` every 10 min, alerts on transitioning
-  past `email.diskUsageWarnPercent` (85% default). Dashboard "Disk usage"
-  card with total/free GB and colored bar.
-- **In-app notification bell** (v1.88.0+) — fixed top-right bell on every admin
-  page with a red unread-count badge. Click opens a mini-panel listing the
-  newest notifications first (build success/failure, Claude task done/stopped/
-  error, usage threshold, system), color-coded by kind, with a "Clear all"
-  button. 30s polling via `GET /api/notifications`; per-item / bulk
-  acknowledge via `POST /api/notifications/ack` and
-  `POST /api/notifications/ack-all`. Claude console turn done / cancel / crash
-  now emit `claude.turn_done` / `claude.stopped` / `claude.error` events
-  (manual turns only; automation runs and ghost projects excluded).
-
-### Security & sessions (v0.26.0+)
-- **2FA (TOTP)** — RFC 6238 implementation with zero external dependencies
-  (JDK `Mac` + custom Base32). Google Authenticator / 1Password / Authy
-  compatible. Setup at `/2fa` (otpauth URI + Base32 secret + 6-digit verify),
-  login flow returns `401 totp_required` after password to prompt for code.
-- **Session idle timeout** — `security.sessionIdleTimeoutMinutes` (default
-  30, `0` = unlimited). Bearer auth + SSR `requireSessionOrRedirect` both
-  enforce: `device.lastSeenAt` older than N min → automatic `device` row
-  delete + redirect to `/login?err=session_timeout`. Audit logged.
-
-### Publishing (v0.22.0–v0.23.0)
-- **Play Console upload** — build detail page has a "Play Console upload"
-  card when status=SUCCESS. Precheck verifies `google-play-publisher` MCP +
-  Service Account JSON. Trigger sends a structured prompt to the project's
-  Claude session ("upload this AAB to internal track"); MCP-delegated
-  approach keeps secrets off the server code path.
-- **TestFlight upload** — same pattern with `app-store-connect` MCP. vibe-coder
-  does not build iOS itself (macOS/Xcode required); user uploads externally
-  produced `.ipa` to the workspace then triggers the upload.
-
-### Quality of life (v0.28.0+)
-- **APK signature inspection** — `apksigner verify --verbose --print-certs`
-  parsed inline on each build detail page (active schemes v1/v2/v3/v4, Signer
-  DN, SHA-256 fingerprints). Graceful when SDK / build-tools missing.
-- **Build cache management** (v0.28.0+) — `/settings/cache` page shows
-  current size of `~/.gradle/caches`, `~/.gradle/daemon`, `~/.android/cache`,
-  `~/.npm/_cacache` with per-target "clear" buttons. CSRF + confirm dialog.
-- **Source zip download** (v0.29.0+) — `GET /projects/{id}/zip` streams the
-  project source as a zip (excludes `.git`, `build`, `.gradle`,
-  `node_modules`, `.idea`, `*.apk`, `*.aab`). Filename auto-generated as
-  `<projectId>-source-<yyyyMMdd-HHmm>.zip`.
-- **Build history chart** (v0.30.0+) — inline SVG line chart on every
-  `/projects/{id}/builds` page; last 30 builds with duration (success line)
-  + status dots + APK size points.
-- **Keyboard shortcuts** (v0.30.0+) — `g p / c / h / e / s / a / d / l` 2-key
-  sequences + `?` help overlay. Disabled when an input is focused.
-
-### Search & cross-project tools (v0.30.0–v0.32.0)
-- **Global conversation search** (v0.30.0+) — `/history` greps every
-  project's `conversation_turns` table. LIKE escape, role filter, ±100 char
-  excerpt with `<mark>` highlight, 200 hit hard cap.
-- **Build log grep** (v0.32.0+) — `/logs` walks
-  `.vibecoder/<projectId>/logs/*.log` (last 2 MB per file scanned).
-  Project filter optional; 200 match cap; highlights match.
-- **Dependency audit** (v0.32.0+) — `/projects/{id}/deps` runs
-  `./gradlew :{module}:dependencies --configuration <cfg>` and extracts
-  `group:name:version` coordinates. CVE matching deferred to a later
-  minor.
-
-### Claude integration (v0.31.0+)
-- **Custom agents UI** — `/agents` CRUD over `~/.claude/agents/*.md`.
-  Sanitized names, 64 KB body cap, atomic write, audit logged.
-- **Conversation export/import** — `GET /projects/{id}/history/export`
-  downloads JSON envelope (schemaVersion 1). `POST .../history/import`
-  (multipart) restores into another project; sessionId-level idempotency
-  + dry-run mode. Same envelope feeds the automatic archive (next bullet).
-- **Conversation auto-archive** (v0.33.0+) — `ConversationArchiver` ticks
-  every 24 h: sessions inactive for ≥ 30 days are dumped to
-  `<workspace>/.vibecoder/<projectId>/archive/session-<sid>.json` and
-  their rows deleted from `conversation_turns`.
-- **Prompt suggestions** — `GET /api/projects/{id}/claude/prompt-suggestions?prefix=…`
-  returns LIKE-prefix matches from this project's `user` turns (60 s
-  in-memory cache).
-- **Concurrent turn cap** (v1.69.0+) — `claude.maxConcurrentTurns` (default 3)
-  limits how many Claude turns run at once across **all** project and sub-agent
-  consoles. Firing prompts across many projects at once otherwise bursts the
-  same account+IP and triggers Anthropic's server-side throttle (HTTP 429
-  *"Server is temporarily limiting requests"*). When the cap is hit, new turns
-  **queue** (not rejected) until a slot frees. A single coroutine `Semaphore`
-  is shared by the main and sub-agent session managers. Set `0` for unlimited;
-  editable at `/settings` (restart to apply).
-- **Console keys** (v1.69.0+) — **Enter sends**, **Ctrl/Cmd+Enter (or
-  Shift+Enter) inserts a newline**. IME composition Enter (Korean etc.) never
-  sends (`isComposing` guard).
-- **Friendly console rendering** (v1.70.0+) — every stream-json event renders as
-  a human-readable line instead of raw JSON: tool results extract their text,
-  every tool (including `mcp__*`, `Task`, `ToolSearch`, …) gets a one-line
-  summary, `thinking` blocks collapse to `💭 thinking` (toggleable), and
-  sub-agent task / rate-limit events are labelled. Shared
-  `/static/admin/console-render.js` powers the main console, `/chat`, and
-  sub-agent consoles identically; `thinking_tokens` noise is dropped server-side.
-
-### Environment & build files (v0.32.0+)
-- **Env files quick edit** — `/projects/{id}/env-files` exposes only a
-  whitelist of 7 files (`local.properties`, `gradle.properties`, `.env`,
-  `.env.local`, `app/build.gradle.kts`, `build.gradle.kts`,
-  `settings.gradle.kts`). Atomic write, 256 KB cap, secret-content warning
-  inline.
-
-### Automation (v0.33.0+)
-- **Cron-style build schedule** — `/projects/{id}/automation` registers
-  `HH:MM` / `*:MM` / `*:*` schedules; `BuildScheduler` ticks every 60 s
-  with per-minute dedupe; audit logged.
-- **External build webhook** — multi-secret `POST /api/webhooks/build/{projectId}`
-  authenticates via `X-Vibe-Secret-Id` + `X-Vibe-Secret` (plaintext, TLS
-  expected) + optional `X-Vibe-Signature` (HMAC-SHA256 over body). 32-byte
-  URL-safe random secrets, SHA-256 stored.
-
-### Backup & CLI (v0.34.0+)
-- **`/backup` SSR** — streams a tar.gz of the entire workspace (`postgres/`,
-  `dev-tools/gradle/caches+daemon`, `npm-cache`, `playwright`, build logs
-  excluded). PostgreSQL backup uses `pg_dump` (page-tear safe), with the
-  exact command rendered inline.
-- **`cli/vibe`** — single-file bash + curl (jq optional). Commands:
-  `login` (auto-handles `totp_required`), `whoami`, `logout`, `projects`,
-  `status`, `console <id> <prompt...>`, `build <id>`. Token in
-  `~/.config/vibe-coder/config` with `0600`. Go/Rust port + WS subscribe on
-  the roadmap.
-
-### Code analysis (v0.35.0+)
-- **Gradle wrapper management** — `/projects/{id}/wrapper` inspects
-  `gradle/wrapper/gradle-wrapper.properties`, shows the current version,
-  and lets you upgrade with a single form. Atomic write; only
-  `distributionUrl` is replaced.
-- **Code statistics** — `/projects/{id}/stats` walks the source tree and
-  reports file count / LoC / size per language across 35+ languages.
-  No external dependency (no `cloc`).
-- **Workspace grep** — `/code-search` line-by-line scans every project's
-  source tree (5 MB / file cap, binary skip, case-sensitive toggle, 200
-  match cap). Match preview links straight to `/projects/{id}/view`.
-
-### Multi-project & multi-agent (v0.36.0+)
-- **Multi-console** — `/multi-console?projects=id1,id2,…` shows up to
-  six project consoles in an iframe grid (cookie auth flows in
-  automatically). Single page for parallel work across projects.
-- **Agent dispatch API** — `GET /api/agents` (Bearer JSON). Console UI
-  and Android client consume the same list for an "agent dropdown" so the
-  user can quickly inject "Use the `<agent>` sub-agent to …" prompts.
-
-### Users & roles — **removed in v1.45.0**
-> Multi-user / roles (`admin` / `member` / `viewer`), the `/users`
-> management UI and the `/api/users*` endpoints were **removed in
-> v1.45.0**. This is a single-operator tool (see project scope): there is
-> exactly one admin and every authenticated session has full access.
-> Authentication itself (login / password / token / 2FA / passkey /
-> rate-limit / IP lockout) is unchanged. The `admin_users.role` column is
-> retained for schema compatibility and is always `admin`.
-
-### Ubuntu 26.04 LTS rebase (v0.38.0+)
-- Base image moved from `eclipse-temurin:17-{jdk,jre}-noble` (24.04 LTS)
-  to `-resolute` (26.04 LTS, "Resolute Raccoon"). JDK 17.0.19 unchanged.
-  LTS support window now runs through 2031-04. No code or wire changes.
-
-### PWA + VS Code extension (v0.39.0+)
-- **PWA** — `static/admin/manifest.json` + `sw.js` (cache-first for
-  `/static/*`, network-only for `/api/*` and `/ws/*`). Mobile browsers can
-  "Add to Home Screen"; desktop can install as a standalone app.
-- **VS Code extension** (`vscode-extension/`, v0.2.0 since server v0.43.0)
-  — Projects TreeView on the activity bar (right-click → "Follow console",
-  "Send prompt", "Trigger debug build"); status-bar item with
-  auto-refresh; live console WebSocket subscribe streamed into an Output
-  Channel; 7 palette commands (`Login` auto-handles `totp_required`).
-  Marketplace-ready (`npm run package`); install with
-  `code --install-extension vibe-coder-0.2.0.vsix`.
-
-### Roles & access — **removed in v1.45.0**
-> The `viewer` role and the SSR/JSON role guards described in earlier
-> versions are gone (single-admin, see above). Admin-only pages
-> (`/audit`, `/settings`, `/backup`, …) still require an authenticated
-> session; there is simply no role distinction to enforce. The guard
-> helpers (`requireWriteAccessOrRedirect`, `requireAdminOrRedirect`, …)
-> remain as inert pass-throughs so call sites compile.
-
-### Agent dispatch UX (v0.41.0+)
-- Console page gains an **`@ Agent dispatch`** dropdown next to the
-  prompt template picker. Loads from `GET /api/agents` (registered
-  `~/.claude/agents/*.md`) and on selection injects
-  `Use the <agent-name> sub-agent to ` prefix into the prompt input.
-- Already-prefixed prompts swap the agent name in place — no duplicate
-  prefixes.
-- Full sub-agent process pool (each agent → its own `claude` child) is
-  tracked separately; this milestone is the UX wrapper around Claude
-  Code's standard sub-agent dispatch.
-
-
-### Real multi-agent (sub-agent process pool, v0.44.0+)
-- **`SubAgentSessionManager`** spawns a **separate** Claude child process per
-  `(projectId, agentName)` tuple — independent of the main project console.
-  Same workspace, parallel execution: e.g. a `reviewer` agent reading the
-  codebase while a `frontend` agent writes Compose UI.
-- **`/projects/{id}/agents`** lists registered `~/.claude/agents/*.md` with
-  live status (`running` / `idle`) and "Open console" links.
-- **`/projects/{id}/agents/{agent}/console`** — per-agent console SSR.
-  Trimmed view of the main console (no slash chips, no template picker —
-  you're already inside an agent). Each gets its own WebSocket topic and
-  session-id file under `.vibecoder/agent-sessions/<agent>.id`.
-- First prompt in a fresh agent session auto-prefixes
-  `Use the <agent> sub-agent to ...` so Claude Code's standard dispatch
-  kicks in. Subsequent prompts reuse the spawned child directly.
-- Idle 30-minute SIGTERM with resume preservation.
-
-### JSON API + WebSocket role guards — **removed in v1.45.0**
-> The viewer/role enforcement on the JSON API and WebSocket layers was
-> removed with the rest of multi-user (single-admin). `requireApiWrite()`
-> / `requireApiAdmin()` / `requireProjectAcl()` remain as inert
-> pass-throughs (authentication is still required). WebSocket
-> `UserPrompt` / `ActionInvoke` frames no longer carry a viewer check.
-
-### Web Push (v0.46.0+ — payload-less, zero external deps)
-- **VAPID P-256 ECDSA keypair** auto-generated and persisted to
-  `<workspace>/.vibecoder/vapid-keys.json` (atomic write, survives restart).
-- **`WebPushNotifier`** builds RFC 8292 VAPID JWT (JOSE ES256 with DER →
-  R||S 64-byte raw conversion) and POSTs to subscription endpoints via
-  `java.net.http.HttpClient`. `410`/`404` → subscription auto-removed
-  from DB.
-- **`/settings/push`** — admin page with "subscribe this browser" /
-  "unsubscribe" buttons, registered-subscription list, and test-send.
-- **Service worker** (`/static/sw.js` v0.46.0) — `push` event →
-  `showNotification`, `notificationclick` → focus dashboard.
-- Integrated with `Notifiers` facade: build result, Claude usage warn,
-  and disk usage warn all broadcast to every registered browser
-  alongside email / webhook.
-- **Known limit**: payload encryption (RFC 8291 AES-128-GCM) deferred —
-  notifications currently show a generic title/body. The plumbing is in
-  place; only the cipher remains.
-
-### Admin guard sweep + `/usage` + Helm chart (v0.47.0+)
-- **Remaining `/settings/*` admin guards** — `/settings/email`,
-  `/settings/webhook`, `/settings/cors`, `/settings/git-integrations`
-  (incl. all 4 POST actions), `/settings/cache` now enforce
-  `requireAdminOrRedirect`. `/2fa` deliberately stays open (personal
-  security).
-- **`/usage` page** — admin-only viewer for Claude `/status` raw output.
-  `ClaudeStatusService` already polls `/status` for threshold alerts;
-  this page re-uses the cached 64 KB raw text per project, with lines
-  containing the word **cache** auto-bolded. When Anthropic ships prompt
-  cache hit/miss stats in `/status`, they appear here with zero server
-  changes.
-- **Helm chart** at `helm/vibe-coder-server/` — minimal viable v1.
-  Single-replica `Deployment` + RWO PVC + optional `postgres` StatefulSet
-  sidecar (or external PG) + optional `Ingress` (WebSocket-friendly
-  nginx annotations). `values.yaml` inline-documented. See
-  `helm/vibe-coder-server/README.md` for quick install.
-
-### WebAuthn (passkey 2FA, v0.48.0+)
-- **`webauthn4j` 0.29.1** wraps the spec heavy lifting (COSE / CBOR /
-  attestation validation, assertion signature verification). ~600 KB
-  transitive (BouncyCastle + Jackson-CBOR) — the only dep added since
-  v0.46.0.
-- **`/webauthn`** — any authenticated user can register / list /
-  delete their own passkeys. Names like "MacBook Touch ID" /
-  "YubiKey 5C". `WebauthnCredentials` table keeps the full attestation
-  object (base64url CBOR) so assertions can rebuild a CredentialRecord.
-- **JSON API**: `POST /api/webauthn/register/{options,verify}` and
-  `POST /api/webauthn/assert/{options,verify}`. The assert path is
-  **unauthenticated** — it's the login itself. It mints a fresh
-  `vibe_session` cookie + Bearer token on success.
-- **Login page integration** — "🔑 Passkey 로 로그인" button next to
-  the password form. Type the username, click, Touch ID / Windows
-  Hello / FIDO2 key prompts; no password required. TOTP and passkey
-  are both available — pick whichever is enabled.
-- **rpId / origin** via new `server.webauthn.{rpId, rpName, origin}`
-  config section. LAN deployments must set them to the actual hostname
-  users type (`vibe.local`) and the full origin (`http://vibe.local:17880`).
-- **Audit**: `auth.passkey.register`, `auth.passkey.login`,
-  `auth.passkey.delete`.
-
-### Sub-agent persistent history (v0.49.0+)
-> The Project ACL layer originally shipped in this section (`project_acls`
-> table, `requireProjectAccessOrRedirect`, `/users/{userId}/projects`
-> editor, per-caller `GET /api/projects` filtering) was **removed in
-> v1.45.0** along with multi-user. The `project_acls` table is retained
-> for schema compatibility but is always empty; `canUserAccess` always
-> returns true. The sub-agent persistence below is unaffected:
-- **`conversation_turns.agent_name`** column (nullable). Main project
-  console writes `null`; the sub-agent process pool (v0.44.0) now
-  tags every persisted turn with the agent name. New
-  `(project_id, agent_name, ts)` index. Existing rows are unaffected
-  (column auto-migrated).
-- **`ConversationHistoryService`** API gains `agentName: String? = null`
-  on `userPrompt`, `event`, `systemNotice`. **`SubAgentSessionManager`**
-  takes a `history: ConversationHistoryService?` and persists every
-  user prompt + Claude event + system notice. Sub-agent conversations
-  survive container restart.
-
-### Web Push payload encryption (v0.50.0+ — RFC 8291)
-- **`Aes128GcmEncrypt`** — pure JDK stdlib implementation (no
-  BouncyCastle / no `web-push-java`). Ephemeral P-256 keypair via
-  `KeyPairGenerator`, ECDH via `KeyAgreement`, HKDF-SHA256 via
-  `Mac("HmacSHA256")`, AES-128-GCM via `Cipher("AES/GCM/NoPadding")`.
-- **Two paths** in `WebPushNotifier.sendOne()`:
-  - subscription has `p256dh` + `auth` → encrypted POST with
-    `Content-Encoding: aes128gcm`. Body layout per RFC 8291:
-    `salt(16) || record_size(4 BE) || keyid_len(1) || as_public(65)
-    || ciphertext`. Padding pattern `payload || 0x02 || zeros` up to
-    4080 bytes plaintext.
-  - missing keys (legacy v0.46.0 row) → payload-less POST. Service
-    worker shows a generic notification (fallback).
-- **`broadcast(title, body, url?)`** — the `Notifiers` facade now
-  passes meaningful URLs (`/projects/{id}/builds/{buildId}`,
-  `/usage`, `/`) so the service-worker's `notificationclick` opens
-  the right page (focus existing tab if its URL matches).
-- **Service worker `v0.50.0`** — `event.data.json()` reads the
-  decrypted plaintext (browser handles aes128gcm transparently),
-  pulls `title` / `body` / `url`, calls `showNotification` with a
-  `data: {url}` payload that the click handler routes to.
-
-### JSON API + WebSocket ACL — **removed in v1.45.0**
-> The per-project ACL check (`requireProjectAcl`, the WebSocket
-> `device.userId → role + ACL` handshake lookup) was **removed in
-> v1.45.0**. The REST/WS endpoints it used to guard (builds, git, files,
-> console, actions, sub-agents, console/agent log sockets) all still
-> exist and now require **only authentication** — every authenticated
-> session reaches every project.
-
-### `/history` agent_name filter (v0.52.0+)
-- The `conversation_turns.agent_name` column added in v0.49.0 is now
-  user-facing. `ConversationTurnRepository.Filter.agentName` has
-  3 modes:
-  - `null` (default) → `agent_name IS NULL` — main console only.
-    **Backward compatible**: every existing caller stays main-only.
-  - `""` (empty string) → no filter — main + every sub-agent.
-  - `"<name>"` → that sub-agent only.
-- `/projects/{id}/history` and `/chat/history` filter form gains an
-  **"Agent (v0.52.0+)"** dropdown driven by
-  `ConversationTurnRepository.distinctAgents(projectId)`:
-  `(main only)` / `(all)` / `@<name>` per registered sub-agent.
-- Each row carries a small `@<agent>` badge so sub-agent origin is
-  visible at a glance.
-- Query param contract: omit `agent=` for main; `?agent=*` for all;
-  `?agent=<name>` for one. Pagination preserves the choice.
-
-### PostgreSQL tsvector + GIN content search (v0.53.0+)
-- The v0.16.0 limitation note ("LIKE — replace with tsvector next
-  cycle") is finally cleared. `conversation_turns.content_tsv` is a
-  PG-12 `GENERATED ALWAYS AS (to_tsvector('simple', content))
-  STORED` column populated automatically by the engine; a GIN index
-  on it makes full-text matches indexed.
-- `Database.init()` runs idempotent raw-SQL migration on every boot
-  (`ALTER TABLE ... ADD COLUMN IF NOT EXISTS` + `CREATE INDEX IF NOT
-  EXISTS`). Existing rows are backfilled as PG generates the
-  `STORED` value on-the-fly. No service interruption.
-- `Filter.q` now translates to `content_tsv @@ plainto_tsquery
-  ('simple', ?)` instead of `LIKE`. Parameter binding via Exposed's
-  `QueryBuilder.registerArgument` keeps the path safe from SQL
-  injection.
-- Performance: hundreds-of-thousands-of-rows search drops from tens
-  of milliseconds to sub-millisecond per `EXPLAIN ANALYZE`.
-- **Trade-off**: `'simple'` tokenizer is language-agnostic — no
-  Korean morphological analysis, no English stemming, no substring
-  match (token-boundary only). For richer language support enable
-  `mecab-ko` / `unaccent` extensions in a future phase.
-
-### Symbol definition lookup (v0.54.0+)
-- **`SymbolFinder`** — best-effort regex scan that recognizes
-  declaration patterns for Kotlin and Java: `fun`,
-  `(class|interface|object)` with modifiers (`open`, `abstract`,
-  `sealed`, `inner`, `data`, `enum`, `annotation`, `value`),
-  `val` / `var`, `typealias`, plus Java methods/types. ~90% of "jump
-  to definition" cases land in single-digit ms; no separate JVM, no
-  cold start, no new dependency.
-- **`/projects/{id}/symbols`** is an admin SSR page with a single
-  identifier input (validated against `[A-Za-z_][A-Za-z0-9_]{0,79}` —
-  no regex injection). Hits link directly to
-  `/projects/{id}/view?path=<rel>&line=<n>`; the file viewer reads
-  the `line` query parameter, smooth-scrolls the highlighted code to
-  the row, and flashes a yellow outline for 1.5 s.
-- **JSON API** `GET /api/projects/{id}/symbols?name=<symbol>` →
-  `{hits:[{relPath, lineNumber, kind, line}]}`. Bearer-authenticated.
-- Console sidebar gets a **`⇢ 정의 검색`** chip so the lookup is
-  reachable from every project workflow.
-- Trade-off: full Kotlin LSP (`kotlin-language-server`) — references,
-  rename, hover — adds a separate JVM (~300 MB image, ~200 MB RAM,
-  10–30 s cold start). For a single-user dev profile (CLAUDE.md §1)
-  the regex approach is the better trade. Real LSP integration is
-  tracked as a separate future phase.
-
-### Operations: Prometheus metrics + rate limit (v0.55.0+ / v0.56.0+)
-- **`MetricsRegistry`** + **`/metrics`** SSR admin endpoint
-  (Prometheus text exposition v0.0.4, zero external deps).
-  11 gauges (`vibe_jvm_*`, `vibe_projects_total`, `vibe_users_total`,
-  `vibe_console_sessions_active`, `vibe_sub_agent_sessions_active`,
-  `vibe_push_subscriptions_total`, `vibe_rate_limit_buckets_active`)
-  + 5 counters (`vibe_build_total{status}`,
-  `vibe_claude_usage_warn_total`, `vibe_disk_usage_warn_total`,
-  `vibe_rate_limit_429_total{path_bucket}`).
-- **Per-IP rate limiter** (token bucket, `installRateLimit` Ktor
-  plugin) — two buckets:
-  - `api` (capacity 120, refill 2 tok/s) covers `/api/`, `/ws/`
-  - `auth` (capacity 10, refill 0.2 tok/s) covers `/login` and
-    `/api/auth/login` (credential-stuffing defense)
-  - Admin Bearer / cookie sessions bypass both
-  - 429 + `Retry-After: <sec>` header + JSON body
-  - Disable with `security.rateLimit.enabled: false` if a reverse
-    proxy (nginx / Cloudflare) already throttles.
-
-### WebAuthn passwordless-only (v0.57.0+)
-- `admin_users.passwordless_only` column. When enabled, `AuthService.
-  login` rejects password / TOTP attempts for users that have at
-  least one passkey — `401 passkey_required` instead. Toggle at
-  `/webauthn`; disabled is always allowed (recovery path). Activating
-  on a user with zero passkeys is refused (lockout protection).
-
-### Build comparison + statistics (v0.58.0+ / v0.59.0+)
-- **Build comparison card** on `/projects/{id}/builds/{buildId}` —
-  vs. previous SUCCESS build. APK size + duration delta with
-  color-coded badges (red = larger / slower).
-- **Build statistics card** on `/projects/{id}/builds` — total,
-  success rate (color badge), avg duration (success only) +
-  inline SVG sparkline of the last 30 statuses + inline SVG
-  polyline of the last 10 APK sizes. All inline, zero new deps.
-
-### Backup automation (v0.60.0+)
-- **`BackupScheduler`** — cron-driven (same `HH:MM` / `*:MM` /
-  `*:*` syntax as the build scheduler). Disabled by default; opt
-  in via `backup.enabled: true`.
-- **`BackupService`** consolidates the v0.34.0 manual download with
-  the new scheduled flow. Files land in
-  `<workspace>/.vibecoder/backups/`; rotation keeps the most-recent
-  `retentionCount` (default 7).
-- `/backup` page gains "Run now" button + scheduled-file list +
-  per-file download / delete (path traversal-safe).
-- Exclusion list adds `.vibecoder/backups/` so backups don't
-  self-recurse.
-
-### Conversation memo + star + Korean FTS + Cache stats (v0.61.0+ / v0.62.0+ / v0.63.0+)
-- **memo + star** on every turn — schema columns `user_memo` (text
-  nullable) + `starred` (bool). `/history` row gets ☆/★ toggle +
-  inline memo editor; filter `?starred=1` for bookmarked-only view.
-  `POST /api/projects/{id}/history/{turnId}/star?starred=…` +
-  `.../memo` (body `{"memo":…}`).
-- **Korean / non-ASCII search** — `pg_trgm` extension + GIN
-  trigram index on `conversation_turns.content`. `Filter.q`
-  auto-routes: ASCII → tsvector (Phase 32 path); non-ASCII →
-  `content ILIKE %q%` (trigram-indexed). Same SQL injection
-  defenses (parameter binding + `%/_/\` escape).
-- **Prompt cache statistics** — `ClaudeStreamParser` now parses
-  `usage` from `message.usage` (assistant frames) and the top-level
-  `usage` in `result` frames. Emitted as
-  `ClaudeEvent.UsageReport(inputTokens, outputTokens,
-  cacheReadInputTokens, cacheCreationInputTokens)` and persisted
-  as `conversation_turns(role="usage")` rows. The `/usage` page
-  gains a structured card: total + per-project cache-read /
-  cache-create / hit-rate. The raw `/status` section is kept
-  below for forward compatibility with future Anthropic CLI
-  changes.
-
-### Git + project scaffolding (v0.18.0+)
-- **Git commit + push** — single `POST /api/projects/{id}/git/commit` (and an
-  SSR form) wraps `add → commit → push` with non-interactive auth (PAT via
-  `~/.git-credentials` or SSH `BatchMode=yes`). Push failure keeps the commit
-  so retries are safe. Destructive ops (reset / force-push / branch delete)
-  intentionally not exposed.
-- **Project templates** — `templateId` on register chooses from `empty`,
+- **Register a project** — empty, git clone (public, or private via HTTPS PAT
+  or auto-generated ed25519 SSH key), or a built-in template (`empty`,
   `compose-basic`, `compose-mvvm-hilt`, `compose-mvvm-room`, `wear-os`,
-  `android-tv`. Each template seeds a `starterPrompt` consumed by the first
-  Claude console turn.
+  `android-tv`; each seeds a starter prompt).
+- **Rename name / package / folder** — `/projects/{id}/overview` edits the
+  display name (anytime), the `applicationId`, and the folder/project-id (the
+  last two require the project to be idle). Renaming the package updates the DB,
+  renames keystore files, and prompts Claude to refactor code/manifest/signing;
+  renaming the folder moves workspace dirs and migrates the DB primary key
+  across all child tables in one transaction.
+- **In-browser file tree + editor** — `/projects/{id}/tree` browses the
+  workspace; `/projects/{id}/view` toggles read-only (highlight.js: Kotlin /
+  Java / XML / JSON / YAML / Markdown / properties / shell) and edit. 1 MB /
+  binary / symlink guards.
+- **Env files quick edit** — `/projects/{id}/env-files` edits a whitelist of 7
+  files (`local.properties`, `gradle.properties`, `.env`, `.env.local`, the
+  three `*.gradle.kts`). Atomic write, 256 KB cap, secret-content warning.
+- **Code statistics** — `/projects/{id}/stats` reports file count / LoC / size
+  per language across 35+ languages (no external `cloc`).
+- **Dependency audit** — `/projects/{id}/deps` runs
+  `gradlew :{module}:dependencies` and extracts `group:name:version`.
+- **Source zip download** — `/projects/{id}/zip` streams source only (excludes
+  `.git`, `build`, `.gradle`, `node_modules`, `.idea`, APK/AAB).
+- **Settings persistence** — `/settings` writes `server.yml` with atomic move +
+  `.bak.<ts>` rotation (keeps 5). Host/port/name need a restart; other fields
+  apply on next read.
+
+### MCP integration
+
+- **Catalog** — 60+ Model Context Protocol servers in 10 categories, checkbox
+  multi-select, per-MCP token form, recommended ★, trust tiers. The marketplace
+  view (`/env-setup/mcp`) has per-card Install/Remove + a status pill.
+- **User-scope registration** — `claude mcp add-json -s user` so the console,
+  sub-agents, and `claude mcp list` all see them.
+- **Bundled Gitea MCP** — `gitea-mcp` ships as a Go binary.
+- **Per-project MCP tab** — `/projects/{id}/mcp` edits `.mcp.json` and shows a
+  live connection-status card.
+
+### Notifications
+
+- **Channels** — Email (SMTP, `/settings/email`), Slack / Discord / Telegram
+  webhooks (`/settings/webhook`, SSRF-whitelisted), browser **Web Push** (VAPID,
+  RFC 8291 AES-128-GCM encrypted payloads, pure JDK, `/settings/push`), and an
+  in-app **notification bell** on every page (unread badge, mini-panel, 30s
+  polling, ack / clear-all).
+- **Triggers** — build success/failure, Claude turn done/stopped/error, Claude
+  usage thresholds, disk thresholds, Claude idle waiting for input, SSH-key /
+  PAT expiry.
+- **Monitors** — `ClaudeUsageMonitor` polls `claude /status` (one-shot alert
+  past warn/critical %, dashboard card); `DiskMonitor` polls the workspace file
+  store (alert past warn %, dashboard card).
+
+### Authentication & security
+
+Single-operator tool: **exactly one admin**, created at `/setup`. Every
+authenticated session has full access — authentication itself is the only
+boundary. See [Auth](#auth) and [Security boundaries](#security-boundaries) for
+detail.
+
+- **Login** — username + password (BCrypt cost-12), Bearer token + `vibe_session`
+  cookie.
+- **2FA (TOTP)** — RFC 6238, zero deps, Google Authenticator / 1Password / Authy
+  compatible (`/2fa`).
+- **WebAuthn / passkey** — `webauthn4j`, phishing-resistant 2FA alternative
+  (`/webauthn`), with an optional passwordless-only mode per user.
+- **Session idle timeout**, **CSRF on every SSR POST**, **WebSocket Origin
+  check**, **per-IP rate limit**, **brute-force lockout** (account + IP), and an
+  **audit log** (`/audit`) of every operational action.
+
+### Persistence
+
+- **PostgreSQL 17** sidecar container, Exposed ORM + Hikari pool. Schema is
+  created/migrated idempotently on boot (`createMissingTablesAndColumns` + raw
+  `IF NOT EXISTS` migrations), so upgrades need no manual DB steps.
+- **All persistent data under one host directory** (`./vibe-coder-data/`) —
+  workspace, PG data, Android SDK, Gradle cache, MCP packages, Claude auth,
+  SSH key, keystores — so `docker compose pull && up -d` never deletes it (see
+  [Data volumes](#data-persists-across-image-upgrades)).
+- **Backup** — manual one-line tar.gz, a `pg_dump` guide rendered inline, and an
+  optional scheduled backup (`BackupScheduler`, cron syntax, retention rotation)
+  with download/delete from `/backup`.
+
+### Operations & observability
+
+- **Prometheus** — `/metrics` text exposition (zero deps): 11 gauges + 5
+  counters (JVM, projects, sessions, push subs, builds, rate-limit, usage/disk
+  warns).
+- **Per-IP rate limit** — token bucket, separate `api` and `auth` buckets, admin
+  sessions bypass, `429 + Retry-After`. Disable if a reverse proxy already
+  throttles.
+- **Server stats card** — CPU / RAM / process usage + load + uptime on the home
+  dashboard.
+- **Kubernetes** — minimal Helm chart at `helm/vibe-coder-server/`
+  (single-replica Deployment + RWO PVC + optional PG StatefulSet + optional
+  WebSocket-friendly Ingress).
+- **Base image** — `eclipse-temurin:17-jdk-resolute` (Ubuntu 26.04 LTS).
+
+### Clients & integrations
+
+- **PWA** — installable from mobile ("Add to Home Screen") and desktop;
+  service worker caches `/static/*`, network-only for `/api/*` & `/ws/*`.
+- **VS Code extension** (`vscode-extension/`) — Projects TreeView, status-bar
+  item, live console Output Channel, 7 palette commands.
+- **CLI** (`cli/vibe`) — single-file bash + curl REST client for shell
+  automation / CI.
+- **Android companion** (`vibe-coder-android`, separate repo) — shares the
+  `shared/` wire module; optional.
+
+---
 
 ## Quick start (Docker, 3 minutes)
 
@@ -611,7 +318,7 @@ mkdir -p ~/vibe-coder && cd ~/vibe-coder
 curl -fsSL https://raw.githubusercontent.com/siamakerlab/vibe-coder-server/main/docker/compose.yml -o compose.yml
 curl -fsSL https://raw.githubusercontent.com/siamakerlab/vibe-coder-server/main/docker/.env.example -o .env
 
-# Edit .env — REQUIRED: set VIBECODER_DB_PASSWORD to a strong value (v0.14.0+).
+# Edit .env — REQUIRED: set VIBECODER_DB_PASSWORD to a strong value.
 # Also: PUID/PGID (id -u; id -g), host port — defaults work for the rest.
 ${EDITOR:-nano} .env
 
@@ -622,17 +329,20 @@ docker compose up -d            # starts postgres + vibe-coder-server
 #    (Android SDK download, 3-4GB, 5-15 min.)
 # 3. Build environment → "Claude login" card → pick option 0/1/2/3.
 # 4. Build environment → "Git Identity" card → enter user.name / user.email
-#    (v1.9.0+ — persisted at /home/vibe/.config/git/config; without it commits
-#    abort or are recorded with a blank author).
+#    (persisted at /home/vibe/.config/git/config; without it commits abort or
+#    are recorded with a blank author).
 ```
 
-> **v0.14.0+** ships a sidecar PostgreSQL container (`postgres:17-alpine`). The
-> `VIBECODER_DB_PASSWORD` env var is mandatory — compose refuses to start with an
-> empty value. Upgrading from v0.13.x is a fresh start (admin / projects
-> re-created; workspace files preserved on disk). See the v0.14.0 entry in
-> [CHANGELOG.md](CHANGELOG.md) for the exact steps.
+> Ships a sidecar PostgreSQL container (`postgres:17-alpine`).
+> `VIBECODER_DB_PASSWORD` is mandatory — compose refuses to start with an empty
+> value. See [CHANGELOG.md](CHANGELOG.md) for migration notes between major
+> versions.
 
-## Minimum `docker-compose.yaml` (write your own)
+---
+
+## Running it
+
+### Minimum `docker-compose.yaml` (write your own)
 
 ```yaml
 name: vibe-coder
@@ -665,20 +375,18 @@ services:
       PGID: "1000"       # id -g
       TZ: "Asia/Seoul"
       JAVA_OPTS: "-Xmx2g -XX:+UseG1GC -Dfile.encoding=UTF-8"
-      # PostgreSQL connection (v0.14.0+)
       VIBECODER_DB_HOST: postgres
       VIBECODER_DB_NAME: vibecoder
       VIBECODER_DB_USER: vibecoder
       VIBECODER_DB_PASSWORD: ${VIBECODER_DB_PASSWORD:?VIBECODER_DB_PASSWORD must be set}
-      # First-boot admin auto-create (optional; otherwise /setup screen)
+      # First-boot admin auto-create (optional; otherwise use the /setup screen)
       # VIBECODER_ADMIN_USERNAME: "admin"
       # VIBECODER_ADMIN_PASSWORD: "ChangeMe123"
     ports:
       - "17880:17880"
     volumes:
-      # All persistent data lives under one host directory. tar this and
-      # you've backed up everything: workspace + PG data + Android SDK + Gradle +
-      # MCP packages + Playwright + Claude auth.
+      # All persistent data lives under one host directory — tar it and you've
+      # backed up everything (workspace + PG + SDK + Gradle + MCP + Claude auth).
       - ./vibe-coder-data/workspace:/workspace
       - ./vibe-coder-data/server:/data
       - ./vibe-coder-data/dev-tools/android-sdk:/opt/android-sdk
@@ -687,23 +395,11 @@ services:
       - ./vibe-coder-data/dev-tools/npm-cache:/home/vibe/.npm
       - ./vibe-coder-data/dev-tools/playwright:/home/vibe/.cache/ms-playwright
       - ./vibe-coder-data/dev-tools/config:/home/vibe/.config
-      # v1.2.0 — SSH key (vibe-coder uses for git clone/push over SSH). On first
-      # boot the entrypoint auto-generates an ED25519 keypair in this volume; it
-      # is never overwritten on subsequent boots, so the key survives image
-      # upgrades. View / regenerate it under Settings → SSH Key.
+      # SSH key for git over SSH — entrypoint auto-generates an ED25519 keypair
+      # on first boot and never overwrites it. View/regenerate at Settings → SSH Key.
       - ./vibe-coder-data/dev-tools/ssh:/home/vibe/.ssh
-      # v1.5.0 — Android signing keystores. Managed via Settings → Keystores
-      # (one form per package → generates release / debug / properties / AdMob
-      # files). LOSING THE RELEASE KEY blocks Play Store updates forever, so
-      # back up this directory religiously.
-      # v1.8.0 — Keystores are auto-applied to builds in two layers:
-      #   (a) BuildService injects `-Pandroid.injected.signing.*` to Gradle when
-      #       the project's packageName matches a keystore set (release variant
-      #       — debug needs build.gradle.kts edits via (b)).
-      #   (b) Settings → Keystores → "Apply to project" sends a Claude-console
-      #       prompt that edits the project's build.gradle.kts to load
-      #       /home/vibe/keystores/<pkg>-keystore.properties and wires it into
-      #       signingConfigs.{debug,release}. One click per (project, keystore).
+      # Android signing keystores — managed at Settings → Keystores.
+      # BACK THIS UP: losing the release key blocks Play Store updates forever.
       - ./vibe-coder-data/dev-tools/keystores:/home/vibe/keystores
       - ./vibe-coder-data/claude:/home/vibe/.claude
     healthcheck:
@@ -714,12 +410,12 @@ services:
       retries: 3
 ```
 
-## Common operations
+### Common operations
 
 ```bash
-docker compose logs -f vibe-coder-server          # tail server logs
-docker compose restart vibe-coder-server          # restart
-docker exec -it vibe-coder-server bash            # shell (root)
+docker compose logs -f vibe-coder-server             # tail server logs
+docker compose restart vibe-coder-server             # restart
+docker exec -it vibe-coder-server bash               # shell (root)
 docker exec -it --user vibe vibe-coder-server bash   # shell (vibe user)
 docker exec -it --user vibe vibe-coder-server claude --version
 
@@ -728,16 +424,16 @@ docker compose pull
 docker compose up -d --force-recreate
 ```
 
-## Build environment persists across image upgrades ✅
+### Data persists across image upgrades
 
-Since v0.7.0 every persistent path lives under one host directory
-(`./vibe-coder-data/`), so `docker compose pull && up -d` never deletes
-your SDK, Gradle cache, MCP servers, Playwright browsers, or Claude auth.
+Every persistent path lives under one host directory (`./vibe-coder-data/`), so
+`docker compose pull && up -d` never deletes your SDK, Gradle cache, MCP
+servers, Playwright browsers, or Claude auth.
 
 | Data                              | Host path                                           | Container path                  | On recreate |
 |---|---|---|---|
 | Project sources + APKs            | `./vibe-coder-data/workspace/`                      | `/workspace`                    | ✅ kept |
-| **PostgreSQL data (v0.14.0+)**    | `./vibe-coder-data/postgres/`                       | `/var/lib/postgresql/data` (PG container) | ✅ kept |
+| PostgreSQL data                   | `./vibe-coder-data/postgres/`                       | `/var/lib/postgresql/data` (PG container) | ✅ kept |
 | Server logs + build metadata      | `./vibe-coder-data/server/`                         | `/data`                         | ✅ kept |
 | Android SDK (3-4 GB)              | `./vibe-coder-data/dev-tools/android-sdk/`          | `/opt/android-sdk`              | ✅ kept |
 | Gradle dependency cache (1-2 GB)  | `./vibe-coder-data/dev-tools/gradle/`               | `/home/vibe/.gradle`            | ✅ kept |
@@ -745,10 +441,10 @@ your SDK, Gradle cache, MCP servers, Playwright browsers, or Claude auth.
 | npx cache                         | `./vibe-coder-data/dev-tools/npm-cache/`            | `/home/vibe/.npm`               | ✅ kept |
 | Playwright browsers (optional)    | `./vibe-coder-data/dev-tools/playwright/`           | `/home/vibe/.cache/ms-playwright` | ✅ kept |
 | Other tool config                 | `./vibe-coder-data/dev-tools/config/`               | `/home/vibe/.config`            | ✅ kept |
-| **SSH key (v1.2.0+)**             | `./vibe-coder-data/dev-tools/ssh/`                  | `/home/vibe/.ssh`               | ✅ kept |
-| **Android keystores (v1.5.0+)** ⚠️ | `./vibe-coder-data/dev-tools/keystores/`            | `/home/vibe/keystores`          | ✅ kept (back up!) |
-| Claude auth (OAuth / API key / MCP registrations) | `./vibe-coder-data/claude/`         | `/home/vibe/.claude`            | ✅ kept |
-| **Server body** (Ktor + Claude CLI + JDK + Node) | image layer                          | —                               | 🔄 replaced |
+| SSH key                           | `./vibe-coder-data/dev-tools/ssh/`                  | `/home/vibe/.ssh`               | ✅ kept |
+| Android keystores ⚠️              | `./vibe-coder-data/dev-tools/keystores/`            | `/home/vibe/keystores`          | ✅ kept (back up!) |
+| Claude auth (OAuth / API key / MCP) | `./vibe-coder-data/claude/`                       | `/home/vibe/.claude`            | ✅ kept |
+| Server body (Ktor + Claude CLI + JDK + Node) | image layer                              | —                               | 🔄 replaced |
 
 ```bash
 # Backup, one line
@@ -759,258 +455,14 @@ scp vibe-coder-data-*.tar.gz user@newhost:~/vibe-coder/
 ssh user@newhost 'cd ~/vibe-coder && tar xzf vibe-coder-data-*.tar.gz && docker compose up -d'
 ```
 
-⚠️ **`docker compose down -v` removes named volumes.** v0.7.0+ uses bind
-mounts only (no named volumes by default), but watch out if you mixed
-in legacy state. For regular upgrades, always `up -d --force-recreate`.
+⚠️ **`docker compose down -v` removes named volumes.** The bundled compose uses
+bind mounts only (no named volumes), but watch out if you mixed in legacy state.
+For regular upgrades, always `up -d --force-recreate`.
 
-## Web routes (v0.64.0)
+### Build / run locally (without Docker)
 
-All routes below sit at the root (no `/admin/*` prefix). Bearer auth or
-session cookie required except `/setup`, `/login`, `/health`. Every SSR POST
-carries a CSRF `_csrf` token (v0.12.4+).
-
-| Path | Purpose |
-|---|---|
-| `/` | Dashboard (server / environment / activity summary) |
-| `/projects` | Project list + register form; **v1.60.0** drag-reorder (☰ handle) · page size 20/50/100 · 3-state status chips |
-| `/projects/{id}` | Project detail, recent builds |
-| `/projects/{id}/console` | Claude prompt input + live log (WebSocket) + **v1.58.0** quick-prompt bubble buttons (A/B/C/D · continue · fix all · review · go with recommendation) + ▼ template dropdown + ■ stop button |
-| `/projects/{id}/builds` | Queue debug build + APK download; **v1.57.0** inline keystore-create form when none is linked |
-| `POST /projects/{id}/keystore` | **v1.57.0** Create a keystore for this project (package name locked to the project → auto-linked) |
-| `/projects/{id}/builds/{buildId}` | Build detail + live log + cancel |
-| `/projects/{id}/tree` | **v0.13.0** Filesystem browser inside the project workspace |
-| `/projects/{id}/view?path=...` | **v0.13.0** Read-only view (highlight.js) ↔ Edit mode (textarea) |
-| `/projects/{id}/files` | Upload / download / delete (the upload area) |
-| `/projects/{id}/mcp` | Per-project `.mcp.json` editor + **v1.67.0** recognized-MCP + connection-status live card (`/projects/{id}/mcp/status`, `claude mcp list`) |
-| `/projects/{id}/git` | git status / diff / log (read-only) + **v0.18.0** commit & push form |
-| `/projects/{id}/history` | **v0.16.0** Persistent prompt/response history (filter / paginate) |
-| `/memos` | **v1.91.0** Memos (global / per-project) — card grid + mini dialog view/edit; "New memo" picks scope (global / a project) |
-| `/chat`, `/chat?c=<id>` | **v0.13.0** General Chat; **v1.54.0** multi-session sidebar (each chat = `__chat_<id>__` ghost) |
-| `POST /chat/new`, `/chat/{id}/rename`, `/chat/{id}/delete` | **v1.54.0** create / rename / delete a chat session |
-| `/chat/history` | **v0.16.0** Scratch-project persistent history |
-| `/prompts` | **v0.13.0** Prompt template CRUD (used by the ▼ dropdown) |
-| `/env-setup` | Build-environment status + one-click installers |
-| `/env-setup/mcp` | MCP catalog (60+ entries); **v1.61.0** marketplace cards — per-card Install/Remove + status pill |
-| `/env-setup/claude-login` | Semi-automatic web OAuth |
-| `/env-setup/tasks/{taskId}` | Live install progress (WS) |
-| `/emulator` | **v1.73.0** Headless Android emulator (for Claude Code log analysis) — manual start/stop + status; Claude runs `adb -s emulator-5554 install/logcat` directly. KVM-accelerated (`/dev/kvm`). |
-| `/settings/git-integrations` | PAT tokens + SSH public key (**v0.47.0** admin-only) |
-| `/settings/email` | **v0.17.0** SMTP configuration + trigger matrix (**v0.47.0** admin-only) |
-| `/settings/webhook` | **v0.27.0** Slack / Discord / Telegram webhook configuration + test (**v0.47.0** admin-only) |
-| `/settings/cache` | **v0.28.0** Gradle / Android / npm cache size + per-target cleanup (**v0.47.0** admin-only) |
-| `/settings/cors` | Read-only CORS policy viewer (**v0.47.0** admin-only) |
-| `/2fa` | **v0.26.0** Two-factor TOTP enable / disable |
-| `/audit` | **v0.15.0** Operational audit log (filter / paginate) |
-| `/projects/{id}/zip` | **v0.29.0** Streaming source-only zip download |
-| `/projects/{id}/env-files` | **v0.32.0** Whitelist-edit `local.properties` / `.env` / `build.gradle.kts` |
-| `/projects/{id}/deps` | **v0.32.0** Gradle dependency tree + coord extraction |
-| `/projects/{id}/automation` | **v0.33.0** Cron schedule + webhook secret management |
-| `/projects/{id}/automation/prompts` | **v1.59.0** Prompt automation — repeat/sequence presets, start/stop, run history |
-| `/history` | **v0.30.0** Cross-project conversation search |
-| `/logs` | **v0.32.0** Build log grep across all projects |
-| `/agents` | **v0.31.0** Custom `.agents/*.md` CRUD |
-| `/backup` | **v0.34.0** Workspace tar.gz backup + restore guide |
-| `/projects/{id}/wrapper` | **v0.35.0** Gradle wrapper version + upgrade |
-| `/projects/{id}/stats` | **v0.35.0** Code statistics (LoC / languages) |
-| `/code-search` | **v0.35.0** Workspace-wide grep |
-| `/multi-console` | **v0.36.0** N-pane multi-project console (iframe grid) |
-| `/projects/{id}/agents` | **v0.44.0** Sub-agent index (per project) — registered agents + live status + open-console |
-| `/projects/{id}/agents/{agent}/console` | **v0.44.0** Per-agent console (independent Claude child) |
-| `/settings/push` | **v0.46.0** Web Push (VAPID) — subscribe / unsubscribe / list / test; **v0.50.0** payload-encrypted |
-| `/usage` | **v0.47.0** Claude `/status` raw viewer (cache stats visible when Anthropic ships them) — admin |
-| `/webauthn` | **v0.48.0** Passkey (WebAuthn) — register / list / delete; 2FA alternative to TOTP |
-| `/projects/{id}/symbols` | **v0.54.0** Symbol definition lookup (regex; Kotlin/Java) |
-| `/metrics` | **v0.55.0** Prometheus exposition (admin) |
-| `/backup/auto/{name}` | **v0.60.0** Download a scheduled backup file (admin) |
-| `/settings`, `/devices`, `/password` | Operations |
-| `/login`, `/setup`, `/logout` | Auth |
-
-## JSON API (v0.64.0 — for clients like the Android app)
-
-Every UI feature has a matching `/api/*` endpoint with Bearer authentication.
-Wire definitions: `shared/.../ApiPath.kt` + `shared/.../Dtos.kt`. Highlights:
-
-- `GET  /api/server/status`, `GET /api/server/environment`, `GET /api/server/environment/check`
-- `GET  /api/projects`, `POST /api/projects/register` (with `sourceType=clone`
-  for git clone; **v0.18.0+** `templateId` field for built-in scaffolds)
-- `POST /api/projects/reorder` (**v1.60.0** — body `{offset, order:[id…]}`; persists
-  custom project order, reflected in the list and the console switcher)
-- `POST /api/projects/{id}/build/debug`, `GET /api/projects/{id}/builds`
-- `POST /api/projects/{id}/builds/{buildId}/cancel`
-- `POST /api/projects/{id}/claude/console/prompt | new | cancel`
-  (`.../cancel` is **v0.13.0+** — Android `shared/` v0.6.11+ required)
-- `GET  /api/projects/{id}/claude/status`
-- `POST /api/projects/{id}/claude/automation/start | stop`, `GET .../status`
-  (**v1.59.0+** server-side prompt automation — repeat/sequence; fires the next
-  prompt on every turn completion, runs even with the browser closed)
-- `GET/POST /api/prompt-automations`, `PUT/DELETE /api/prompt-automations/{presetId}`
-  (**v1.59.0+** workspace-global automation presets)
-- `GET  /api/prompt-templates` (v0.13.0+ — prompt library)
-- `GET  /api/projects/{id}/history`, `GET /api/chat/history`
-  (**v0.64.0+ JSON variant** — persisted conversation_turns; pagination via
-  `page` / `before` integer cursor; filters `sessionId` / `agent` / `starred`.
-  v0.16.0~v0.63.0 동안엔 SSR HTML `/projects/{id}/history` 만 노출됐고 JSON
-  API 표기는 잘못된 것이었음 — v0.64.0 에서 정식 분리)
-- `POST /api/projects/{id}/git/commit`
-  (**v0.18.0+** — add → commit → optional push; non-interactive auth)
-- `GET  /api/prompt-templates` (**v0.13.0+** — server) / `PROMPT_TEMPLATES` wire
-  constant promoted in **v0.20.0** (`PromptTemplateDto` + list response)
-- `POST /api/auth/login` now accepts optional `totpCode: String` (**v0.26.0+**);
-  returns `401 totp_required` for 2FA-enabled users when missing
-- `GET  /api/projects/{id}/claude/prompt-suggestions?prefix=...&limit=8`
-  (**v0.31.0+** — LIKE prefix match against this project's user turns)
-- `GET  /projects/{id}/history/export` / `POST .../history/import`
-  (**v0.31.0+** SSR session, redirect 응답)
-- `GET  /api/projects/{id}/history/export` / `POST /api/.../history/import`
-  (**v0.64.0+** — JSON variant, Bearer 토큰 인증, `HistoryImportResponseDto` 응답)
-- `GET  /api/history/search?q=<query>&role=<filter>` (**v0.64.0+** — cross-project
-  JSON search; admin only; `HistorySearchResponseDto` 응답; 기존 SSR `/history`
-  HTML 도 그대로 유지)
-- `GET  /api/usage` (**v0.64.0+** — Anthropic token + prompt cache 누적
-  합산 `UsageSummaryDto`; 기존 SSR `/usage` HTML 도 그대로 유지)
-- `POST /api/webhooks/build/{projectId}` (**v0.33.0+** — admin-auth-free
-  external trigger; `X-Vibe-Secret-Id` + `X-Vibe-Secret` + optional
-  `X-Vibe-Signature`)
-- `GET  /api/agents` (**v0.36.0+** — list registered Claude sub-agents for
-  console UI / Android dispatch dropdown)
-- `POST /api/projects/{id}/agents/{agent}/console/prompt | cancel`,
-  `GET /api/projects/{id}/agents/active` (**v0.44.0+** — real multi-agent
-  process pool; each agent gets its own Claude child + WS topic)
-- `POST /api/webauthn/register/options | verify`,
-  `POST /api/webauthn/assert/options | verify`
-  (**v0.48.0+** — passkey registration + login flows; the `assert` path
-  mints a fresh `vibe_session` cookie + Bearer token)
-- `GET  /api/projects/{id}/symbols?name=<symbol>` (**v0.54.0+** —
-  best-effort Kotlin/Java definition lookup; returns `{hits:[...]}`)
-- `POST /api/projects/{id}/history/{turnId}/star?starred=true|false`,
-  `POST /api/projects/{id}/history/{turnId}/memo` (**v0.61.0+** —
-  per-turn bookmark + memo; **v0.64.0+** — Bearer 토큰 dual-auth, `Authorization`
-  헤더 있으면 CSRF skip)
-- `GET  /api/push/vapid-public-key`,
-  `POST /api/push/subscribe`, `DELETE /api/push/subscriptions/{id}`
-  (**v0.46.0+** — browser Web Push; **v0.50.0+** payload-encrypted per
-  RFC 8291)
-- `GET  /api/env-setup/components`, `POST /api/env-setup/install-all`,
-  `POST /api/env-setup/{componentId}/install`
-- `POST /api/env-setup/claude-auth/upload` (multipart)
-- `POST /api/env-setup/claude-auth/api-key`, `DELETE /api/env-setup/claude-auth/api-key/delete`
-- `POST /api/env-setup/claude-login/start | submit | cancel`, `GET .../status`
-- `GET  /api/env-setup/mcp`, `POST /api/env-setup/mcp/install | unregister`
-- `POST /api/env-setup/mcp/{mcpId}/file/{fieldKey}` (multipart — Service Account JSON / Apple .p8 etc.)
-- `GET  /api/emulator/status` (**v1.73.0** `{available,running,booted,serial}` — sidebar pill), `POST /emulator/start | stop`
-- `GET  /api/server/stats` (**v1.74.0** CPU / RAM / process(vibe-coder) usage + load + uptime — home dashboard "Server status" card)
-- `GET  /api/settings/git-integrations`, `POST .../register | delete | ssh-keygen`
-- WebSocket: `/ws/projects/{id}/console/logs`, `/ws/projects/{id}/builds/{buildId}/logs`,
-  `/ws/env-setup/{taskId}/logs`,
-  `/ws/projects/{id}/agents/{agent}/console/logs` (**v0.44.0+** sub-agent)
-
-**Single-admin model (v1.45.0)** — multi-user, roles
-(`admin`/`member`/`viewer`) and Project ACL were **removed** (this is a
-single-operator tool). Every authenticated Bearer token / session reaches
-every endpoint and every project; the only access boundary is
-authentication itself (below). The `requireApiWrite` / `requireApiAdmin`
-/ `requireProjectAcl` guards remain as inert pass-throughs.
-
-## Auth (v0.4.0+, hardened in v0.26.0)
-
-- `POST /api/auth/setup` — first-boot admin creation (only when DB has no admin).
-- `POST /api/auth/login` — `{username, password, totpCode?}` → bearer token +
-  `vibe_session` cookie. `totpCode` is optional unless the user has 2FA
-  enabled; in that case the server returns `401 totp_required` on the first
-  call and `401 invalid_totp` on a bad code.
-- `POST /api/auth/password` — change password.
-- `POST /api/auth/logout` — invalidate the device row (cookie + Bearer header both work).
-
-Passwords are stored as BCrypt cost-12 hashes only. **Brute-force protection**
-(v0.12.4+):
-- Account lock: 10 consecutive failures → 15 min cooldown.
-- IP block: 30 failures from one IP within 24 h → 24 h block (catches
-  credential-stuffing across multiple accounts).
-- Timing-safe dummy verify on missing users (runtime-computed valid BCrypt
-  hash so the response time matches a real verification).
-
-**Two-factor authentication (v0.26.0+)** — RFC 6238 TOTP (HMAC-SHA1, 30 s
-period, 6 digits) self-implemented (zero external deps). Enable at `/2fa`:
-scan the otpauth URI with Google Authenticator / 1Password / Authy, verify a
-6-digit code, secret persisted to `admin_users.totp_secret`. Login then
-requires the code after password. Disable requires a current code.
-
-**WebAuthn / Passkey (v0.48.0+)** — `webauthn4j` 0.29.1, RFC 8292 VAPID-less,
-phishing-resistant alternative to TOTP. Enable at `/webauthn`: click
-"이 디바이스에서 passkey 등록", complete the Touch ID / Windows Hello /
-FIDO2 prompt, full attestation object persisted to `webauthn_credentials`.
-Login page exposes a "🔑 Passkey 로 로그인" button — pick the passkey or
-the password+TOTP path. Configure `server.webauthn.{rpId, rpName, origin}`
-to match the user-facing hostname (LAN: `rpId: "vibe.local"`,
-`origin: "http://vibe.local:17880"`).
-
-**Session idle timeout (v0.26.0+)** — `security.sessionIdleTimeoutMinutes`
-(default 30, `0` = unlimited). Bearer auth + SSR session both check
-`device.lastSeenAt`; if older than N min, the device row is deleted and the
-client is redirected to `/login?err=session_timeout`. Same policy across
-cookie and `Authorization: Bearer …`.
-
-**Single-admin (multi-user removed in v1.45.0)** — this is a
-single-operator tool, so multi-user, the `admin`/`member`/`viewer` roles,
-the `/users` management UI, the `/api/users*` endpoints and the
-`project_acls` per-user restriction were all **removed in v1.45.0**.
-There is exactly one admin (created at `/setup`); every authenticated
-session has full access. The `admin_users.role` column (always `admin`)
-and the empty `project_acls` table are kept for schema compatibility; the
-role/ACL guard helpers remain as inert pass-throughs. Authentication
-(password, 2FA, passkey, idle timeout, brute-force protection) is the
-only access boundary and is unchanged.
-
-## Security boundaries
-
-- **CSRF protection** (v0.12.4+) — every SSR POST carries a hidden `_csrf`
-  HMAC-SHA256 token. REST API (Bearer header, not cookie) is exempt.
-  Multipart uploads carry `_csrf` in the query string.
-- **WebSocket Origin check** (v0.12.4+) — handshake rejects mismatched Origin
-  to defend against cross-site WebSocket hijacking.
-- **Workspace path safety** — `PathSafety.normalizeAndCheck` rejects any
-  read/write outside `/workspace`. Symlinks are not followed
-  (`LinkOption.NOFOLLOW_LINKS`).
-- **Bearer tokens** stored hashed only; plaintext returned to the client once
-  at issue.
-- **WebSocket auth** — cookie automatic on same-origin handshake; Android
-  clients send `{"type":"auth","token":"..."}` as the first frame.
-- **Upload extension blacklist**: `exe`, `bat`, `cmd`, `ps1`, `sh`.
-- **No raw-shell UI.** No release signing. No automation prompts that wait
-  on stdin (CLAUDE.md non-interactive policy templated into every new
-  project's `.claude/settings.json`). `git push` is now exposed (v0.18.0+)
-  but only via the non-interactive commit endpoint described below.
-- **External commands** have hard timeouts; cancellation calls
-  `destroyForcibly`. The `claude` child can be SIGTERM'd mid-turn via the
-  ■ stop button while preserving its session-id (`--resume` later).
-- **Audit log** (v0.15.0+) — `/audit` shows every operational action with
-  user / IP / result / detail for post-incident review.
-- **Git push policy** (v0.18.0+) — the new write endpoint adds `commit` only;
-  `reset`, `force-push`, `branch -d`, and other destructive ops remain
-  off-limits. Auth is non-interactive (`GIT_TERMINAL_PROMPT=0`, SSH
-  `BatchMode=yes`) — no credential prompt ever blocks a request.
-- **Webhook SSRF defense** (v0.27.0+) — only `hooks.slack.com`,
-  `discord.com` / `discordapp.com`, and Telegram (`api.telegram.org` via a
-  bot-token regex `^\d+:[A-Za-z0-9_-]+$`) are accepted. `HttpClient` follows
-  no redirects to prevent cross-host hops.
-
-## Build matrix
-
-| Layer | Version |
-|---|---|
-| Base image | eclipse-temurin:17-jdk-resolute (Ubuntu 26.04 LTS, since v0.38.0) |
-| Gradle wrapper | 9.5.1 |
-| Kotlin | 2.2.20 |
-| Ktor | 3.1.2 |
-| Exposed | 0.55.0 |
-| PostgreSQL JDBC | 42.7.4 |
-| PostgreSQL server | 17-alpine (sidecar container) |
-| JDK toolchain | 17 |
-
-## Build / run locally (without Docker)
-
-You need a reachable PostgreSQL instance (host installation, separate Docker
-container, or a remote PG). Point the server at it via env vars:
+You need a reachable PostgreSQL instance (host install, separate Docker
+container, or remote PG). Point the server at it via env vars:
 
 ```bash
 ./gradlew :server:installDist
@@ -1025,29 +477,215 @@ export VIBECODER_DB_PASSWORD=your-strong-password
 ```
 
 The bundled compose file already provides a `postgres` container — running
-`docker compose up -d postgres` and using the same `.env` is the easiest path.
+`docker compose up -d postgres` and reusing the same `.env` is the easiest path.
 
-```
->>> Vibe Coder Server started
->>> URL         : http://192.168.0.10:17880
-```
+---
+
+## Reference
+
+### Web routes
+
+All routes sit at the root (no `/admin/*` prefix). Bearer auth or session cookie
+required except `/setup`, `/login`, `/health`. Every SSR POST carries a CSRF
+`_csrf` token.
+
+| Path | Purpose |
+|---|---|
+| `/` | Dashboard (server / environment / activity summary + server-stats card) |
+| `/projects` | Project list + register form; drag-reorder (☰), page size 20/50/100, 3-state status chips |
+| `/projects/{id}` | Project tabs (console / builds / files / git / agents / history / …) |
+| `/projects/{id}/console` | Claude prompt input + live log (WS) + quick-prompt buttons + ▼ template dropdown + ■ stop |
+| `/projects/{id}/builds` | Queue debug build + APK download + history chart + statistics; inline keystore-create form when none is linked |
+| `/projects/{id}/builds/{buildId}` | Build detail + live log + cancel + signature + comparison card |
+| `POST /projects/{id}/keystore` | Create a keystore for this project (package locked → auto-linked) |
+| `/projects/{id}/overview` | Edit display name / package / folder |
+| `/projects/{id}/tree` | Filesystem browser inside the project workspace |
+| `/projects/{id}/view?path=…&line=N` | Read-only view (highlight.js) ↔ edit mode |
+| `/projects/{id}/files` | Upload / download / delete |
+| `/projects/{id}/mcp` | Per-project `.mcp.json` editor + live connection-status card |
+| `/projects/{id}/git` | git status / diff / log (read-only) + commit & push form |
+| `/projects/{id}/history` | Persistent prompt/response history (filter / paginate / agent filter) |
+| `/projects/{id}/env-files` | Whitelist-edit `local.properties` / `.env` / `build.gradle.kts` |
+| `/projects/{id}/deps` | Gradle dependency tree + coord extraction |
+| `/projects/{id}/automation` | Cron build schedule + webhook secret management |
+| `/projects/{id}/automation/prompts` | Prompt automation — repeat/sequence presets, start/stop, run history |
+| `/projects/{id}/wrapper` | Gradle wrapper version + upgrade |
+| `/projects/{id}/stats` | Code statistics (LoC / languages) |
+| `/projects/{id}/symbols` | Symbol definition lookup (regex; Kotlin/Java) |
+| `/projects/{id}/zip` | Streaming source-only zip download |
+| `/projects/{id}/agents` | Sub-agent index — registered agents + live status + open-console |
+| `/projects/{id}/agents/{agent}/console` | Per-agent console (independent Claude child) |
+| `/memos` | Memos (global / per-project) — card grid + mini dialog; "New memo" picks scope |
+| `/chat`, `/chat?c=<id>` | General Chat; multi-session sidebar (each chat = `__chat_<id>__` ghost) |
+| `POST /chat/new`, `/chat/{id}/rename`, `/chat/{id}/delete` | Create / rename / delete a chat session |
+| `/chat/history` | Scratch-project persistent history |
+| `/prompts` | Prompt template CRUD (used by the ▼ dropdown) |
+| `/history` | Cross-project conversation search |
+| `/logs` | Build log grep across all projects |
+| `/code-search` | Workspace-wide grep |
+| `/agents` | Custom `.agents/*.md` CRUD |
+| `/multi-console` | N-pane multi-project console (iframe grid) |
+| `/emulator` | Headless Android emulator — start/stop + status (KVM-accelerated) |
+| `/env-setup` | Build-environment status + one-click installers |
+| `/env-setup/mcp` | MCP catalog (60+) — marketplace cards with Install/Remove + status |
+| `/env-setup/claude-login` | Semi-automatic web OAuth |
+| `/env-setup/tasks/{taskId}` | Live install progress (WS) |
+| `/usage` | Claude `/status` + prompt-cache stats card (admin) |
+| `/metrics` | Prometheus exposition (admin) |
+| `/backup`, `/backup/auto/{name}` | Workspace tar.gz backup + scheduled-file download/delete (admin) |
+| `/audit` | Operational audit log (filter / paginate) |
+| `/2fa`, `/webauthn` | Two-factor TOTP / passkey enrollment |
+| `/settings`, `/settings/email`, `/settings/webhook`, `/settings/cache`, `/settings/cors`, `/settings/push`, `/settings/git-integrations` | Configuration (admin) |
+| `/devices`, `/password` | Operations |
+| `/login`, `/setup`, `/logout` | Auth |
+
+### JSON API
+
+Every UI feature has a matching `/api/*` endpoint with Bearer authentication.
+Wire definitions live in `shared/.../ApiPath.kt` + `shared/.../dto/*.kt`.
+Highlights:
+
+**Server & projects**
+- `GET /api/server/status`, `GET /api/server/stats`, `GET /api/server/environment[/check]`
+- `GET /api/projects`, `POST /api/projects/register` (`sourceType=clone`, `templateId`)
+- `POST /api/projects/reorder` (body `{offset, order:[id…]}` — persists custom order)
+
+**Build**
+- `POST /api/projects/{id}/build/debug`, `GET /api/projects/{id}/builds`
+- `POST /api/projects/{id}/builds/{buildId}/cancel`
+- `GET /api/projects/{id}/artifacts/{artifactId}/download`
+- `POST /api/webhooks/build/{projectId}` (external trigger — `X-Vibe-Secret-Id` + `X-Vibe-Secret` + optional `X-Vibe-Signature`)
+
+**Claude console & automation**
+- `POST /api/projects/{id}/claude/console/{prompt|new|cancel}`, `GET .../claude/status`
+- `POST /api/projects/{id}/claude/automation/{start|stop}`, `GET .../status`
+- `GET/POST /api/prompt-automations`, `PUT/DELETE /api/prompt-automations/{presetId}`
+- `GET /api/prompt-templates`
+- `GET /api/projects/{id}/claude/prompt-suggestions?prefix=…`
+- `GET /api/agents`; `POST /api/projects/{id}/agents/{agent}/console/{prompt|cancel}`, `GET /api/projects/{id}/agents/active`
+
+**History, memos & usage**
+- `GET /api/projects/{id}/history`, `GET /api/chat/history` (pagination `page`/`before`; filters `sessionId`/`agent`/`starred`)
+- `GET /api/history/search?q=…&role=…` (cross-project; admin)
+- `GET /api/projects/{id}/history/export`, `POST /api/projects/{id}/history/import` (multipart)
+- `POST /api/projects/{id}/history/{turnId}/star?starred=…`, `POST .../history/{turnId}/memo`
+- `GET /api/memos[?projectId=X]`, `POST /api/memos`, `PUT/DELETE /api/memos/{memoId}` (global / per-project memos)
+- `GET /api/usage` (Anthropic token + prompt-cache totals)
+- `GET /api/projects/{id}/symbols?name=…`
+
+**Git**
+- `POST /api/projects/{id}/git/commit` (add → commit → optional push; non-interactive auth)
+
+**Auth & security**
+- `POST /api/auth/{setup|login|password|logout}` (`login` accepts optional `totpCode`; returns `401 totp_required`)
+- `POST /api/webauthn/register/{options|verify}`, `POST /api/webauthn/assert/{options|verify}` (assert mints a session)
+
+**Environment setup**
+- `GET /api/env-setup/components`, `POST /api/env-setup/install-all`, `POST /api/env-setup/{componentId}/install`
+- `POST /api/env-setup/claude-auth/upload` (multipart), `POST /api/env-setup/claude-auth/api-key`, `DELETE .../api-key/delete`
+- `POST /api/env-setup/claude-login/{start|submit|cancel}`, `GET .../status`
+- `GET /api/env-setup/mcp`, `POST /api/env-setup/mcp/{install|unregister}`, `POST /api/env-setup/mcp/{mcpId}/file/{fieldKey}` (multipart)
+
+**Notifications, push & emulator**
+- `GET /api/notifications`, `POST /api/notifications/{ack|ack-all}`
+- `GET /api/push/vapid-public-key`, `POST /api/push/subscribe`, `DELETE /api/push/subscriptions/{id}`
+- `GET /api/emulator/status`, `POST /emulator/{start|stop}`
+- `GET /api/settings/git-integrations`, `POST .../{register|delete|ssh-keygen}`
+
+**WebSocket**
+- `/ws/projects/{id}/console/logs`, `/ws/projects/{id}/builds/{buildId}/logs`,
+  `/ws/env-setup/{taskId}/logs`, `/ws/projects/{id}/agents/{agent}/console/logs`
+
+### Auth
+
+- `POST /api/auth/setup` — first-boot admin creation (only when DB has no admin).
+- `POST /api/auth/login` — `{username, password, totpCode?}` → Bearer token +
+  `vibe_session` cookie. `totpCode` is required only for 2FA users; the server
+  returns `401 totp_required` then `401 invalid_totp` on a bad code.
+- `POST /api/auth/password` — change password.
+- `POST /api/auth/logout` — invalidate the device row (cookie + Bearer both work).
+
+Passwords are stored as **BCrypt cost-12** hashes only. **Brute-force
+protection:** account lock at 10 consecutive failures (15 min cooldown); IP
+block at 30 failures / 24 h (catches credential-stuffing); timing-safe dummy
+verify on missing users.
+
+**Two-factor (TOTP)** — RFC 6238 (HMAC-SHA1, 30 s, 6 digits), zero deps. Enable
+at `/2fa`; login then requires the code after the password.
+
+**WebAuthn / Passkey** — `webauthn4j`, phishing-resistant. Enable at `/webauthn`
+(Touch ID / Windows Hello / FIDO2); the login page exposes a passkey button.
+Configure `server.webauthn.{rpId, rpName, origin}` to match the user-facing
+hostname (LAN e.g. `rpId: vibe.local`, `origin: http://vibe.local:17880`). An
+optional passwordless-only mode rejects password/TOTP for users with a passkey.
+
+**Session idle timeout** — `security.sessionIdleTimeoutMinutes` (default 30,
+`0` = unlimited); cookie and Bearer both delete the device row past the limit
+and redirect to `/login?err=session_timeout`.
+
+**Single-admin model** — this is a single-operator tool, so multi-user, the
+`admin`/`member`/`viewer` roles, the `/users` UI, the `/api/users*` endpoints
+and per-user project ACLs do not exist. There is exactly one admin; every
+authenticated session has full access. (The `admin_users.role` column and an
+empty `project_acls` table remain for schema compatibility.)
+
+### Security boundaries
+
+- **CSRF** — every SSR POST carries an HMAC-SHA256 `_csrf` token (multipart in
+  the query string). The Bearer-header REST API is exempt.
+- **WebSocket Origin check** — the handshake rejects mismatched Origins
+  (cross-site WebSocket hijacking defense).
+- **Workspace path safety** — `PathSafety` rejects any read/write outside
+  `/workspace`; symlinks are not followed (`NOFOLLOW_LINKS`).
+- **Tokens** — Bearer tokens stored hashed; plaintext returned once at issue.
+  WebSocket auth: cookie automatic on same-origin; Android sends an
+  `{"type":"auth","token":"…"}` first frame.
+- **No raw-shell UI.** No release signing. No automation prompts that wait on
+  stdin (non-interactive policy templated into every new project's
+  `.claude/settings.json`).
+- **External commands** have hard timeouts; cancellation calls
+  `destroyForcibly`; the `claude` child can be SIGTERM'd mid-turn while keeping
+  its session-id.
+- **Git push policy** — only `commit` (+ optional push) is exposed; `reset`,
+  force-push, branch delete and other destructive ops are not. Auth is
+  non-interactive (`GIT_TERMINAL_PROMPT=0`, SSH `BatchMode=yes`).
+- **Webhook SSRF defense** — only `hooks.slack.com`, `discord.com` /
+  `discordapp.com`, and Telegram (`api.telegram.org`, bot-token regex) are
+  accepted; no redirects followed.
+- **Upload extension blacklist** — `exe`, `bat`, `cmd`, `ps1`, `sh`.
+- **Audit log** — `/audit` records every operational action with user / IP /
+  result / detail.
+
+### Build matrix
+
+| Layer | Version |
+|---|---|
+| Base image | `eclipse-temurin:17-jdk-resolute` (Ubuntu 26.04 LTS) |
+| Gradle wrapper | 9.5.1 |
+| Kotlin | 2.2.20 |
+| Ktor | 3.1.2 |
+| Exposed | 0.55.0 |
+| PostgreSQL JDBC | 42.7.4 |
+| PostgreSQL server | 17-alpine (sidecar container) |
+| JDK toolchain | 17 |
+
+---
 
 ## License
 
-[GNU Affero General Public License v3.0](LICENSE). Modifications served over
-a network must release source under the same license. Commercial use allowed
-under copyleft obligations.
+[GNU Affero General Public License v3.0](LICENSE). Modifications served over a
+network must release source under the same license. Commercial use is allowed
+under the copyleft obligations.
 
 ## Companion repository
 
-`vibe-coder-android` — mobile client that talks to the same server. Both
-repos share the `shared/` module (DTOs / ApiPath / WsFrame); update them in
-lockstep when wire changes occur. See `CHANGELOG.md` for the matrix.
+`vibe-coder-android` — mobile client that talks to the same server. Both repos
+share the `shared/` module (DTOs / ApiPath / WsFrame); update them in lockstep
+when wire changes occur. See [CHANGELOG.md](CHANGELOG.md) for the matrix.
 
-## Bundled CLI (`cli/vibe`, v0.34.0+)
+## Bundled tools
 
-Single-file `bash` + `curl` wrapper around the REST API. Useful for shell
-automation and CI without a full client.
+**CLI** (`cli/vibe`) — single-file `bash` + `curl` wrapper around the REST API:
 
 ```bash
 sudo install -m 0755 cli/vibe /usr/local/bin/vibe
@@ -1057,33 +695,14 @@ vibe console my-app "Add a settings screen with a dark mode toggle"
 vibe build my-app
 ```
 
-Token stored at `~/.config/vibe-coder/config` with `chmod 0600`. `jq`
-optional (pretty-prints JSON). Go/Rust port with WebSocket subscribe is on
-the roadmap.
+Token stored at `~/.config/vibe-coder/config` (`chmod 0600`). `jq` optional.
 
-## Bundled VS Code extension (`vscode-extension/`, v0.2.0)
-
-TypeScript multi-file build (`api.ts`, `ws.ts`, `treeview.ts`,
-`extension.ts`). Adds runtime dep on `ws` for WebSocket subscribe.
+**VS Code extension** (`vscode-extension/`) — Projects TreeView (right-click →
+follow console / send prompt / trigger build), status-bar item, live console
+Output Channel, 7 palette commands.
 
 ```bash
 cd vscode-extension
-npm install && npm run package    # → vibe-coder-0.2.0.vsix
-code --install-extension vibe-coder-0.2.0.vsix
-# or dev mode: npm run watch then F5 in VS Code
+npm install && npm run package    # → vibe-coder-*.vsix
+code --install-extension vibe-coder-*.vsix
 ```
-
-Features:
-
-- **Projects sidebar** (activity bar $(rocket)) — TreeView with the last
-  20 builds per project; right-click → "Follow console", "Send prompt",
-  "Trigger debug build".
-- **Status bar item** — `host (vX.Y.Z)`, refreshed every 60 s; click for
-  full status.
-- **Live console** — `Vibe Coder: Follow project console` opens an
-  Output Channel and streams every Claude frame in real time. Re-run on
-  the same project to toggle off.
-- 7 palette commands; **Login** auto-handles `401 totp_required`.
-
-Marketplace publish is one `vsce publish` away (PAT required) — see
-`vscode-extension/README.md`. Not yet listed there.
