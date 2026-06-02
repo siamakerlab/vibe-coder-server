@@ -1348,14 +1348,15 @@ $errHtml
   .log-body.md table.md-table th { background:rgba(255,255,255,0.06); font-weight:600; }
   .log-body.md table.md-table tr:nth-child(even) td { background:rgba(255,255,255,0.02); }
   /* v1.85.0 — assistant 긴 메시지 접기 */
-  .log-line.assistant .log-content[data-clampable="1"] { position:relative; cursor:pointer; }
-  .log-line.assistant .log-content.clamped .log-body { max-height:360px; overflow:hidden; }
-  .log-line.assistant .log-content.clamped::after {
+  /* v1.90.5 — 접기/펼치기를 모든 콘솔 메시지에 적용(이전엔 .assistant 한정). */
+  .log-content[data-clampable="1"] { position:relative; cursor:pointer; }
+  .log-content.clamped .log-body { max-height:360px; overflow:hidden; }
+  .log-content.clamped::after {
     content:'${t("console.message.expand")}'; position:absolute; left:0; right:0; bottom:0;
     text-align:center; font-size:11px; color:#74b9ff; padding:22px 0 4px;
     background:linear-gradient(to bottom, transparent, #1e1e1e 75%); pointer-events:none;
   }
-  .log-line.assistant .log-content[data-clampable="1"]:not(.clamped)::after {
+  .log-content[data-clampable="1"]:not(.clamped)::after {
     content:'${t("console.message.collapse")}'; display:block; text-align:center;
     font-size:11px; color:#74b9ff; padding:6px 0 2px;
   }
@@ -1747,21 +1748,20 @@ $automationPanelHtml
       });
     }
     logEl.appendChild(row);
-    if (isAsst) {
-      // v1.85.0 — 코드블록 syntax highlight (highlight.js 로드됐을 때만).
-      if (window.hljs) {
-        var codeEls = row.querySelectorAll('pre.md-pre > code');
-        for (var ci = 0; ci < codeEls.length; ci++) {
-          try { window.hljs.highlightElement(codeEls[ci]); } catch (e) {}
-        }
+    if (isAsst && window.hljs) {
+      // v1.85.0 — 코드블록 syntax highlight (assistant 마크다운, highlight.js 로드 시).
+      var codeEls = row.querySelectorAll('pre.md-pre > code');
+      for (var ci = 0; ci < codeEls.length; ci++) {
+        try { window.hljs.highlightElement(codeEls[ci]); } catch (e) {}
       }
-      // v1.85.0 — 긴 메시지는 접어서 표시. 탭하면 전문 펼침(아래 logEl click 핸들러).
-      var contentEl = row.querySelector('.log-content');
-      var bodyEl = row.querySelector('.log-body');
-      if (contentEl && bodyEl && bodyEl.scrollHeight > MD_CLAMP_PX) {
-        contentEl.dataset.clampable = '1';
-        contentEl.classList.add('clamped');
-      }
+    }
+    // v1.90.5 — 긴 메시지는 접어서 표시(탭하면 전문 펼침). assistant 뿐 아니라 tool/결과/
+    // system/error/user 등 모든 메시지에 동일 임계(MD_CLAMP_PX)로 적용 — 일관성.
+    var contentEl = row.querySelector('.log-content');
+    var bodyEl = row.querySelector('.log-body');
+    if (contentEl && bodyEl && bodyEl.scrollHeight > MD_CLAMP_PX) {
+      contentEl.dataset.clampable = '1';
+      contentEl.classList.add('clamped');
     }
     if (atBottom && row.style.display !== 'none') {
       logEl.scrollTop = logEl.scrollHeight;
