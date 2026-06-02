@@ -110,14 +110,6 @@ object McpCatalog {
             argsTemplate = listOf("-y", "@PKG@", "@CONFIG:root@"),
         ))
         add(McpEntry(
-            id = "fetch",
-            displayName = "Fetch",
-            pkg = "@modelcontextprotocol/server-fetch",
-            description = "URL 페치 + Markdown 변환. 외부 자료 참조에 필수.",
-            category = Category.DEV_TOOLS, trust = Trust.VERIFIED, recommended = true, defaultInstall = true,
-            homepage = "https://github.com/modelcontextprotocol/servers/tree/main/src/fetch",
-        ))
-        add(McpEntry(
             id = "git",
             displayName = "Git",
             pkg = "@modelcontextprotocol/server-git",
