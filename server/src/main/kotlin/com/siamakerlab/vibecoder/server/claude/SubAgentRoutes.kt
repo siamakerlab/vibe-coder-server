@@ -406,7 +406,7 @@ private fun renderSubAgentConsole(
   .log-body.md table.md-table tr:nth-child(even) td { background:rgba(255,255,255,0.02); }
   /* v1.90.6 — 모든 메시지 접기/펼치기(메인 콘솔과 일관). */
   .log-content[data-clampable="1"] { position:relative; cursor:pointer; }
-  .log-content.clamped .log-body { max-height:360px; overflow:hidden; }
+  .log-content.clamped .log-body { max-height:180px; overflow:hidden; }
   .log-content.clamped::after {
     content:'${t("console.message.expand")}'; position:absolute; left:0; right:0; bottom:0;
     text-align:center; font-size:11px; color:#74b9ff; padding:22px 0 4px;
@@ -468,7 +468,7 @@ private fun renderSubAgentConsole(
     }
     if (atBottom) logEl.scrollTop = logEl.scrollHeight;
   }
-  var CLAMP_PX = 360;
+  var CLAMP_PX = 180;
   function clip(s, n) {
     s = String(s == null ? '' : s);
     return s.length > n ? s.slice(0, n) + ' …(+' + (s.length - n) + ')' : s;
