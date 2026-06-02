@@ -235,7 +235,8 @@ internal object ProjectTabsTemplate {
   }
   #project-tabs-root .pt-header {
     display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-    padding: 10px 16px 8px; border-bottom: 1px solid #1f2330;
+    /* v1.89.1 — 우상단 알림 벨(fixed, 약 56px)과 ⚙ 설정 버튼이 겹치지 않도록 우측 여백 확보. */
+    padding: 10px 64px 8px 16px; border-bottom: 1px solid #1f2330;
   }
   #project-tabs-root .pt-header h1 {
     font-size: 16px; margin: 0; font-weight: 600;
