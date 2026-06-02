@@ -155,8 +155,18 @@
   // (양끝 따옴표 + \n/\t literal escape)로 와서 콘솔에 '\t' '\n' 가 그대로 보이던 문제.
   // 양끝이 따옴표인 유효 JSON 문자열이면 1회 unescape. 아니면 원문 유지(백슬래시 손상 방지).
   function unescapeJsonString(s) {
-    if (typeof s === 'string' && s.length >= 2 && s.charAt(0) === '"' && s.charAt(s.length - 1) === '"') {
+    if (typeof s !== 'string' || s.charAt(0) !== '"') return s;
+    // 완전한 JSON 문자열(양끝 따옴표)이면 정석 파싱.
+    if (s.length >= 2 && s.charAt(s.length - 1) === '"') {
       try { var v = JSON.parse(s); if (typeof v === 'string') return v; } catch (e) {}
+    }
+    // v1.90.15 — clip(…(+N))으로 닫는 따옴표가 잘린 경우: 시작 따옴표 + \n/\t escape 패턴이면
+    // best-effort 수동 unescape. (시작이 따옴표 + escape 동반 = JSON 이중 인코딩으로 간주.)
+    if (/\\[ntr"\\]/.test(s)) {
+      var t = s.slice(1);                       // 시작 따옴표 제거
+      if (t.charAt(t.length - 1) === '"') t = t.slice(0, -1);  // 닫는 따옴표(있으면) 제거
+      return t.replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\r/g, '\r')
+              .replace(/\\"/g, '"').replace(/\\\\/g, '\\');
     }
     return s;
   }
