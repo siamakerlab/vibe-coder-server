@@ -84,6 +84,12 @@ vibe-coder-server/
   avoid redundant wrapper downloads (v0.14.1+).
 - **Git clone on project register** — public / private (HTTPS PAT or SSH key)
   with auto-generated ed25519 key pair.
+- **Meaningful APK artifact names** (v1.87.0+) — build outputs are stored as
+  `<packageName>-<variant>-v<versionName>.apk` (e.g.
+  `com.example.app-debug-v1.2.3.apk`) instead of Gradle's default
+  `app-debug.apk`. `versionName` is read via build-tools `aapt`/`aapt2`
+  best-effort; omitted gracefully when unavailable. Download
+  `Content-Disposition` reflects the same name.
 
 ### Project tooling
 - **Project settings — rename name / package / folder** (v1.71.0+) — the
@@ -139,6 +145,15 @@ vibe-coder-server/
   `Files.getFileStore(workspace.root)` every 10 min, alerts on transitioning
   past `email.diskUsageWarnPercent` (85% default). Dashboard "Disk usage"
   card with total/free GB and colored bar.
+- **In-app notification bell** (v1.88.0+) — fixed top-right bell on every admin
+  page with a red unread-count badge. Click opens a mini-panel listing the
+  newest notifications first (build success/failure, Claude task done/stopped/
+  error, usage threshold, system), color-coded by kind, with a "Clear all"
+  button. 30s polling via `GET /api/notifications`; per-item / bulk
+  acknowledge via `POST /api/notifications/ack` and
+  `POST /api/notifications/ack-all`. Claude console turn done / cancel / crash
+  now emit `claude.turn_done` / `claude.stopped` / `claude.error` events
+  (manual turns only; automation runs and ghost projects excluded).
 
 ### Security & sessions (v0.26.0+)
 - **2FA (TOTP)** — RFC 6238 implementation with zero external dependencies

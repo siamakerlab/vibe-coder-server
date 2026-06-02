@@ -92,6 +92,10 @@ object AdminTemplates {
             """<meta name="csrf-token" content="${esc(csrf)}">
   <script>window.__VIBE_CSRF__ = ${jsLitString(csrf)};</script>"""
         else ""
+        // v1.88.0 — 우상단 알림 벨 (chrome 표시 페이지에만; embed/iframe 은 제외).
+        val notifStyle = if (showChrome) NotificationBell.headStyle() else ""
+        val notifBell = if (showChrome) NotificationBell.bodyHtml(lang) else ""
+        val notifScript = if (showChrome) NotificationBell.bodyScript(lang) else ""
         return """<!doctype html>
 <html lang="${esc(lang)}">
 <head>
@@ -122,6 +126,7 @@ object AdminTemplates {
       if (mq.addEventListener) mq.addEventListener('change', apply);
     })();
   </script>
+  $notifStyle
   <script src="/static/keyboard.js" defer></script>
   <script>
     // v0.39.0 — PWA service worker. Same-origin install only.
@@ -144,6 +149,7 @@ object AdminTemplates {
   </script>
 </head>
 <body>
+  $notifBell
   <div class="$layoutCls">
     $nav
     <main class="$contentCls">
@@ -151,6 +157,7 @@ object AdminTemplates {
       $body
     </main>
   </div>
+  $notifScript
 </body>
 </html>
 """

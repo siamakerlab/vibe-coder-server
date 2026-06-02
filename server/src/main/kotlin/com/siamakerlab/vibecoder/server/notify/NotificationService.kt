@@ -12,7 +12,6 @@ import org.jetbrains.exposed.sql.SqlExpressionBuilder.isNull
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.less
 import org.jetbrains.exposed.sql.and
 import org.jetbrains.exposed.sql.deleteWhere
-import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
@@ -115,6 +114,22 @@ class NotificationService(
         }
     }
 
+    /**
+     * v1.88.0 — 사용자의 **모든** unread 를 ack 처리. 알림 미니창의 "모두 삭제" 버튼용.
+     * delete 가 아닌 ackedAt set (audit 보존 — [ack] 와 동일 정책). 반환: ack 된 건수.
+     */
+    fun ackAll(userId: String?): Int {
+        val key = userId ?: BUCKET_LEGACY
+        val now = clock.nowIso()
+        return transaction {
+            NotificationEvents.update({
+                (NotificationEvents.userId eq key) and NotificationEvents.ackedAt.isNull()
+            }) {
+                it[ackedAt] = now
+            }
+        }
+    }
+
     /** USER_MAX 초과 시 가장 오래된 unread 를 ack 처리 (다음 list 에서 제외). */
     private fun pruneOverCap(uid: String) {
         val unread = NotificationEvents.selectAll().where {
@@ -155,7 +170,7 @@ class NotificationService(
             kind = NotificationKind.BUILD_SUCCESS,
             title = "✓ Build succeeded — $projectId",
             body = "buildId: $buildId",
-            deepLink = "projects/$projectId/builds/$buildId/logs",
+            deepLink = "projects/$projectId/builds/$buildId",
             projectId = projectId,
             userIds = userIds,
         )
@@ -165,7 +180,40 @@ class NotificationService(
             kind = NotificationKind.BUILD_FAILED,
             title = "✗ Build failed — $projectId",
             body = errorMessage?.take(200).orEmpty(),
-            deepLink = "projects/$projectId/builds/$buildId/logs",
+            deepLink = "projects/$projectId/builds/$buildId",
+            projectId = projectId,
+            userIds = userIds,
+        )
+
+    /** v1.88.0 — Claude 콘솔 작업(turn) 완료 알림. */
+    fun emitClaudeTurnDone(projectId: String, projectName: String, userIds: List<String?>) =
+        emit(
+            kind = NotificationKind.CLAUDE_TURN_DONE,
+            title = "✓ 작업 완료 — $projectName",
+            body = "Claude 콘솔 작업이 끝났습니다.",
+            deepLink = "projects/$projectId/console",
+            projectId = projectId,
+            userIds = userIds,
+        )
+
+    /** v1.88.0 — Claude 콘솔 작업이 사용자 중지로 종료. */
+    fun emitClaudeStopped(projectId: String, projectName: String, userIds: List<String?>) =
+        emit(
+            kind = NotificationKind.CLAUDE_STOPPED,
+            title = "■ 작업 중지됨 — $projectName",
+            body = "진행 중이던 Claude 작업이 중지되었습니다.",
+            deepLink = "projects/$projectId/console",
+            projectId = projectId,
+            userIds = userIds,
+        )
+
+    /** v1.88.0 — Claude 프로세스 비정상 종료(오류). */
+    fun emitClaudeError(projectId: String, projectName: String, detail: String?, userIds: List<String?>) =
+        emit(
+            kind = NotificationKind.CLAUDE_ERROR,
+            title = "⚠ 오류 — $projectName",
+            body = detail?.take(200)?.ifBlank { null } ?: "Claude 프로세스가 비정상 종료되었습니다.",
+            deepLink = "projects/$projectId/console",
             projectId = projectId,
             userIds = userIds,
         )

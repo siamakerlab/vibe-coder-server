@@ -317,8 +317,34 @@ fun main(args: Array<String>) {
         sessionManager, promptAutomationRunRepo, hub,
     )
     // turn 완료/중단 hook 주입 (순환의존 방지를 위해 생성 후 setter).
-    sessionManager.turnDoneListener = promptAutomationManager::onTurnDone
-    sessionManager.turnInterruptListener = promptAutomationManager::onInterrupt
+    // v1.88.0 — 자동화(PromptAutomationManager) hook 에 더해 알림(NotificationService) emit 합성.
+    //   단일 var listener 라 합성 필수(덮어쓰면 자동화 깨짐). 자동화 active 중 turn 완료는
+    //   연속이라 알림 과다 → 수동 turn 완료만 알림. ghost(scratch/chat) 프로젝트는 제외.
+    val notifyUserIds: () -> List<String?> = {
+        runCatching { adminUserRepo.listAll().map { it.id as String? } }.getOrDefault(emptyList())
+    }
+    fun notifyProjectName(pid: String): String =
+        runCatching { projects.get(pid).name }.getOrNull()?.ifBlank { null } ?: pid
+    sessionManager.turnDoneListener = { pid, reason ->
+        val wasAutomation = promptAutomationManager.isActive(pid)
+        promptAutomationManager.onTurnDone(pid, reason)
+        if (!wasAutomation && !com.siamakerlab.vibecoder.server.projects.ProjectService.isGhost(pid)) {
+            runCatching { notificationService.emitClaudeTurnDone(pid, notifyProjectName(pid), notifyUserIds()) }
+                .onFailure { log.warn(it) { "[notify] turn-done emit failed for $pid" } }
+        }
+    }
+    sessionManager.turnInterruptListener = { pid, reason ->
+        promptAutomationManager.onInterrupt(pid, reason)
+        if (!com.siamakerlab.vibecoder.server.projects.ProjectService.isGhost(pid)) {
+            runCatching {
+                when (reason) {
+                    "cancelled" -> notificationService.emitClaudeStopped(pid, notifyProjectName(pid), notifyUserIds())
+                    "crashed" -> notificationService.emitClaudeError(pid, notifyProjectName(pid), null, notifyUserIds())
+                    // "new_session" → 사용자 의도적 세션 리셋, 알림 불필요.
+                }
+            }.onFailure { log.warn(it) { "[notify] interrupt emit failed for $pid ($reason)" } }
+        }
+    }
     // 부팅 reconcile — 재시작으로 끊긴 RUNNING run 을 STOPPED 로 정리.
     runCatching { promptAutomationRunRepo.reconcileOrphans() }
         .onSuccess { if (it > 0) log.info { "reconciled $it orphaned automation run(s) → stopped" } }

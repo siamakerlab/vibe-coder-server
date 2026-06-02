@@ -299,8 +299,13 @@
     h = h.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
          .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
          .replace(/~~([^~]+)~~/g, '<del>$1</del>');
-    // 링크 [text](http...) — escape 된 상태라 href 도 안전한 http(s) 만 허용
-    h = h.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+    // 링크 [text](http...) — escape 된 상태라 href 도 안전한 http(s) 만 허용.
+    // v1.86.5 (정밀점검) — URL 캡처에서 " ' < > 를 제외한다. mdEsc 는 & < > 만 escape 하고
+    //   " 는 그대로 두므로, [x](https://a"onmouseover="alert(1)) 처럼 URL 에 " 가 끼면
+    //   href 속성을 탈출해 이벤트 핸들러를 주입할 수 있었다(assistant 메시지=Claude 출력은
+    //   웹검색/clone repo/파일 내용 등 외부 콘텐츠를 포함 → stored XSS 경로). 정상 URL 의
+    //   이 문자들은 %22 등으로 인코딩되므로 raw 등장은 공격 시그널.
+    h = h.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)"'<>]+)\)/g,
       '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
     // 문단/줄바꿈: 블록 태그 줄은 그대로, 나머지 개행은 <br>
     h = h.replace(/\n{2,}/g, '\n\n');

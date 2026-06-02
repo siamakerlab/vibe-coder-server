@@ -34,9 +34,16 @@ class ArtifactService(
         projectId: String,
         buildId: String,
         sourceApk: Path,
+        /** v1.87.0 — 산출물 파일명 `<packageName>-<variant>-v<versionName>.apk` 용. */
+        packageName: String,
+        variant: String = "debug",
     ): ArtifactRow {
         val targetDir = workspace.debugArtifactDir(projectId, buildId)
-        val targetApk = targetDir.resolve(sourceApk.fileName.toString())
+        // v1.87.0 — Gradle 기본 이름(app-debug.apk) 대신 의미있는 파일명으로 저장.
+        // versionName 은 aapt best-effort (미상 시 버전 생략).
+        val versionName = ApkBadgingReader.versionName(sourceApk)
+        val fileName = apkFileName(packageName, variant, versionName)
+        val targetApk = targetDir.resolve(fileName)
         Files.copy(sourceApk, targetApk, StandardCopyOption.REPLACE_EXISTING)
         val sha = Sha256.hashFile(targetApk)
         val size = targetApk.fileSize()
@@ -54,7 +61,7 @@ class ArtifactService(
             artifactId = artifact.id,
             projectId = projectId,
             buildId = buildId,
-            variant = "debug",
+            variant = variant,
             status = "success",
             fileName = artifact.fileName,
             sizeBytes = size,
@@ -120,6 +127,23 @@ class ArtifactService(
             stream.sorted(Comparator.reverseOrder())
                 .forEach { p -> runCatching { Files.deleteIfExists(p) } }
         }
+    }
+
+    /**
+     * v1.87.0 — 산출물 APK 파일명: `<packageName>-<variant>-v<versionName>.apk`.
+     * versionName 미상(aapt 부재 등) 시 버전 부분 생략. 파일시스템 안전 문자만 남기고
+     * 나머지는 `_` 로 치환(패키지명의 `.` 와 versionName 의 `.` 는 안전 문자라 유지).
+     *
+     * 예: `com.example.app-debug-v1.2.3.apk`, 버전 미상 시 `com.example.app-debug.apk`.
+     */
+    internal fun apkFileName(packageName: String, variant: String, versionName: String?): String {
+        val base = buildString {
+            append(packageName.ifBlank { "app" })
+            append('-').append(variant.ifBlank { "debug" })
+            if (!versionName.isNullOrBlank()) append("-v").append(versionName)
+        }
+        val safe = base.replace(Regex("[^A-Za-z0-9._-]"), "_")
+        return "$safe.apk"
     }
 
     fun toDto(row: ArtifactRow): ArtifactDto = ArtifactDto(
