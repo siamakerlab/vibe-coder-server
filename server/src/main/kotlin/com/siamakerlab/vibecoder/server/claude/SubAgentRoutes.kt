@@ -148,7 +148,7 @@ $rowsHtml
 
         val alive = manager.isAlive(id, agentName)
         val sessionId = manager.currentSessionId(id, agentName)
-        val body = renderSubAgentConsole(p.id, p.name, agentName, agentBody, alive, sessionId, sess.csrf)
+        val body = renderSubAgentConsole(p.id, p.name, agentName, agentBody, alive, sessionId, sess.csrf, sess.language)
         call.respondText(
             AdminTemplates.shell(
                 title = "${p.name} · @$agentName",
@@ -342,7 +342,10 @@ private fun renderSubAgentConsole(
     isAlive: Boolean,
     sessionId: String?,
     csrf: String?,
+    lang: String,
 ): String {
+    // v1.90.6 — clamp(접기/펼치기) 라벨 i18n.
+    val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
     val statusBadge = when {
         isAlive -> """<span class="ok">running</span>"""
         sessionId != null -> """<span class="dim">idle (will resume)</span>"""
@@ -401,6 +404,18 @@ private fun renderSubAgentConsole(
   .log-body.md table.md-table th, .log-body.md table.md-table td { border:1px solid #3a3a3a; padding:4px 9px; text-align:left; }
   .log-body.md table.md-table th { background:rgba(255,255,255,0.06); font-weight:600; }
   .log-body.md table.md-table tr:nth-child(even) td { background:rgba(255,255,255,0.02); }
+  /* v1.90.6 — 모든 메시지 접기/펼치기(메인 콘솔과 일관). */
+  .log-content[data-clampable="1"] { position:relative; cursor:pointer; }
+  .log-content.clamped .log-body { max-height:360px; overflow:hidden; }
+  .log-content.clamped::after {
+    content:'${t("console.message.expand")}'; position:absolute; left:0; right:0; bottom:0;
+    text-align:center; font-size:11px; color:#74b9ff; padding:22px 0 4px;
+    background:linear-gradient(to bottom, transparent, #1e1e1e 75%); pointer-events:none;
+  }
+  .log-content[data-clampable="1"]:not(.clamped)::after {
+    content:'${t("console.message.collapse")}'; display:block; text-align:center;
+    font-size:11px; color:#74b9ff; padding:6px 0 2px;
+  }
 </style>
 <div id="console-log" class="console-log" aria-live="polite"></div>
 
@@ -439,11 +454,21 @@ private fun renderSubAgentConsole(
     // code review 같은 마크다운 응답이 raw 로 보였다(메인 콘솔 v1.85.0 renderMarkdown 미반영분).
     var bodyHtml = (cls === 'assistant' && window.VibeConsole && window.VibeConsole.renderMarkdown)
       ? '<div class="log-body md">' + window.VibeConsole.renderMarkdown(body) + '</div>'
-      : '<span class="log-body">' + escHtml(body) + '</span>';
-    row.innerHTML = '<span class="log-label">' + escHtml(label) + '</span>' + bodyHtml;
+      : '<div class="log-body">' + escHtml(body) + '</div>';
+    // v1.90.6 — 메인 콘솔과 동일하게 .log-content wrapper + 길이 기반 접기/펼치기.
+    row.innerHTML = '<span class="log-label">' + escHtml(label) + '</span>' +
+      '<div class="log-content">' + bodyHtml + '</div>';
     logEl.appendChild(row);
+    // user 프롬프트는 별도 2줄 클램프(.log-line.user.expanded)가 있어 제외.
+    var contentEl = row.querySelector('.log-content');
+    var bodyEl = row.querySelector('.log-body');
+    if (cls !== 'user' && contentEl && bodyEl && bodyEl.scrollHeight > CLAMP_PX) {
+      contentEl.dataset.clampable = '1';
+      contentEl.classList.add('clamped');
+    }
     if (atBottom) logEl.scrollTop = logEl.scrollHeight;
   }
+  var CLAMP_PX = 360;
   function clip(s, n) {
     s = String(s == null ? '' : s);
     return s.length > n ? s.slice(0, n) + ' …(+' + (s.length - n) + ')' : s;
@@ -519,11 +544,13 @@ private fun renderSubAgentConsole(
 
   // v1.70.1 — 사용자 프롬프트 카드(2줄 클램프) 클릭 시 펼침/접힘.
   logEl.addEventListener('click', function(e) {
-    var card = e.target.closest && e.target.closest('.log-line.user');
-    if (!card) return;
     var sel = window.getSelection && window.getSelection();
-    if (sel && !sel.isCollapsed) return;
-    card.classList.toggle('expanded');
+    if (sel && !sel.isCollapsed) return;  // 텍스트 선택 중엔 토글 안 함
+    var card = e.target.closest && e.target.closest('.log-line.user');
+    if (card) { card.classList.toggle('expanded'); return; }
+    // v1.90.6 — 그 외 메시지: 접힌 콘텐츠 클릭 시 펼침/접힘(메인 콘솔과 일관).
+    var content = e.target.closest && e.target.closest('.log-content[data-clampable="1"]');
+    if (content) content.classList.toggle('clamped');
   });
 
   var inFlight = false;
