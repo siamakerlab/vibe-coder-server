@@ -169,6 +169,12 @@ For per-release history, see [CHANGELOG.md](CHANGELOG.md).
   cache, Node + Claude CLI, and MCP packages, all persisted under one host
   directory. New projects' `CLAUDE.md` is wired to use the installed Gradle to
   avoid redundant wrapper downloads.
+- **Pre-installed image tooling** — the runtime image ships ImageMagick,
+  Pillow (`python3-pil` + NumPy), `rsvg-convert`, `cwebp`/`dwebp`,
+  `poppler-utils`, Ghostscript, and `optipng`/`pngquant`/`jpegoptim` so Claude
+  can manipulate screenshots, mockups, icons, and APK resources out of the box.
+  Anything else installs via the `vibe` user's passwordless sudo
+  (`sudo apt-get install <pkg>`).
 - **Debug build + APK download** — queued per project; live build log over WS;
   cancellable. Outputs are stored with meaningful names
   (`<packageName>-<variant>-v<versionName>.apk`, version read via `aapt`/`aapt2`

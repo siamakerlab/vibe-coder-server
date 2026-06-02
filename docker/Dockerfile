@@ -11,11 +11,11 @@
 #
 #   일반 commit push (amd64-only · v0.6.3+ 기본):
 #     docker buildx build --platform linux/amd64 \
-#         -f docker/Dockerfile -t siamakerlab/vibe-coder-server:1.91.0 --push .
+#         -f docker/Dockerfile -t siamakerlab/vibe-coder-server:1.92.0 --push .
 #
 #   마일스톤 multi-arch push (v0.7.0 / v1.0.0 등):
 #     docker buildx build --platform linux/amd64,linux/arm64 \
-#         -f docker/Dockerfile -t siamakerlab/vibe-coder-server:1.91.0 --push .
+#         -f docker/Dockerfile -t siamakerlab/vibe-coder-server:1.92.0 --push .
 
 # ------------------------------------------------------------------------------
 # Stage 1: 서버 빌드 (Gradle installDist)
@@ -100,6 +100,44 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 # util-linux 는 `script` 명령(pty wrapping) 을 제공 — v0.7.0 옵션 A (Claude
 # 반자동 웹 OAuth) 가 `claude auth login` TUI 를 spawn 할 때 필수.
+
+# ---- 이미지 처리 도구 (v1.92.0) ----------------------------------------------
+# Claude Code 가 스크린샷 / 디자인 mockup / 아이콘 / APK 리소스 등을 다룰 때
+# 바로 쓸 수 있도록 기본 image 도구를 박는다. vibe 유저는 NOPASSWD sudo 로
+# 추가 패키지(`sudo apt-get install ...`)를 언제든 설치할 수 있으므로, 여기엔
+# "거의 항상 쓰는 핵심셋"만 둔다. ffmpeg / inkscape 등 무거운 도구는 필요 시
+# 사용자가 apt 로 설치.
+#   - imagemagick      : convert / mogrify / identify (래스터 변환·리사이즈·합성)
+#   - python3 + pillow : PIL 기반 스크립트 (python3-pil = Pillow, PEP 668 때문에
+#                        pip 대신 apt 패키지 사용). numpy 동반 설치.
+#   - librsvg2-bin     : rsvg-convert (SVG → PNG, Android 벡터 아이콘 워크플로)
+#   - webp             : cwebp / dwebp (WebP 인·디코딩)
+#   - poppler-utils    : pdftoppm / pdfinfo (PDF → 이미지)
+#   - ghostscript      : ImageMagick 의 PDF/PostScript delegate
+#   - optipng/pngquant/jpegoptim : 무손실·유손실 최적화
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        imagemagick \
+        python3 \
+        python3-pip \
+        python3-pil \
+        python3-numpy \
+        librsvg2-bin \
+        webp \
+        poppler-utils \
+        ghostscript \
+        optipng \
+        pngquant \
+        jpegoptim \
+    && rm -rf /var/lib/apt/lists/*
+# 일부 배포판의 ImageMagick policy.xml 은 Ghostscript CVE-2016-3714 완화를 위해
+# PDF/PS/EPS coder 를 막아둔다(`convert x.pdf y.png` → "not authorized" 에러).
+# 현재 resolute(IM7 7.1.2) 기본 정책엔 해당 차단이 없어 사실상 no-op 이지만,
+# 베이스 이미지 교체/IM6 회귀 시에도 PDF/PS 변환이 보장되도록 방어적으로 정책
+# 줄을 제거한다. 본 컨테이너는 1인 신뢰 LAN 도구이고 입력은 사용자 본인 자산뿐.
+RUN set -eux; \
+    for p in /etc/ImageMagick-6/policy.xml /etc/ImageMagick-7/policy.xml; do \
+        [ -f "$p" ] && sed -i -E '/<policy[^>]*pattern="(PDF|PS|PS2|PS3|EPS|XPS)"/d' "$p" || true; \
+    done
 
 # ---- Node.js 20 LTS + Claude Code CLI ----------------------------------------
 # Node는 Claude CLI와 MCP 실행에 필요하므로 이미지에 포함 (전체 ~150MB).
