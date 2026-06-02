@@ -18,27 +18,31 @@ internal object NotificationBell {
     /** `<head>` 에 들어갈 인라인 스타일. */
     fun headStyle(): String = """
 <style>
+  /* v1.90.3 — admin.css 실제 CSS 변수(--bg-card/--text/--bg-elev/--text-dim/--border/
+     --danger/--shadow)로 통일. 이전엔 --card/--fg/--muted 등 존재하지 않는 변수명을 써서
+     항상 fallback 하드코딩 색이 적용 → 다른 UI(사이드바 nav 등)와 색이 미묘하게 달랐다.
+     아이콘은 사이드바 nav-icon 과 동일 톤(20px, opacity 0.85, stroke 2). */
   .vibe-notif { position: fixed; top: 12px; right: 16px; z-index: 1200; }
   .vibe-notif-btn {
-    /* v1.90.2 — 버튼은 적당한 크기를 유지하고 아이콘을 키워 버튼을 채운다(비율 개선). */
     position: relative; width: 38px; height: 38px; border-radius: 50%;
-    border: 1px solid var(--border, #2a2f3a); background: var(--card, #161a22);
-    color: var(--fg, #e5e7eb); cursor: pointer; display: flex;
-    align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(0,0,0,.25);
+    border: 1px solid var(--border); background: var(--bg-card);
+    color: var(--text); cursor: pointer; display: flex;
+    align-items: center; justify-content: center; box-shadow: var(--shadow);
   }
-  .vibe-notif-btn svg { width: 24px; height: 24px; }
-  .vibe-notif-btn:hover { background: var(--card-hover, #1d2230); }
-  .vibe-notif-btn.has-unread { color: #f87171; border-color: #f8717155; }
+  .vibe-notif-btn svg { width: 20px; height: 20px; opacity: 0.85; }
+  .vibe-notif-btn:hover { background: var(--bg-elev); }
+  .vibe-notif-btn:hover svg { opacity: 1; }
+  .vibe-notif-btn.has-unread { color: var(--danger); border-color: var(--danger); }
   .vibe-notif-badge {
     position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px;
-    padding: 0 5px; border-radius: 9px; background: #ef4444; color: #fff;
+    padding: 0 5px; border-radius: 9px; background: var(--danger); color: #fff;
     font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
-    box-shadow: 0 0 0 2px var(--bg, #0b0d12);
+    box-shadow: 0 0 0 2px var(--bg);
   }
   .vibe-notif-panel {
     position: absolute; top: 48px; right: 0; width: 360px; max-width: calc(100vw - 32px);
     max-height: 70vh; display: flex; flex-direction: column;
-    background: var(--card, #161a22); border: 1px solid var(--border, #2a2f3a);
+    background: var(--bg-card); border: 1px solid var(--border);
     border-radius: 12px; box-shadow: 0 12px 32px rgba(0,0,0,.45); overflow: hidden;
   }
   /* v1.89.1 — author display:flex 가 hidden 속성(display:none)을 이겨 패널이 상시
@@ -46,29 +50,29 @@ internal object NotificationBell {
   .vibe-notif-panel[hidden] { display: none; }
   .vibe-notif-head {
     padding: 12px 14px; font-weight: 600; font-size: 14px;
-    border-bottom: 1px solid var(--border, #2a2f3a); color: var(--fg, #e5e7eb);
+    border-bottom: 1px solid var(--border); color: var(--text);
   }
   .vibe-notif-list { overflow-y: auto; flex: 1; }
   .vibe-notif-item {
-    padding: 10px 14px; border-bottom: 1px solid var(--border, #21262f);
-    border-left: 3px solid #6b7280; cursor: default;
+    padding: 10px 14px; border-bottom: 1px solid var(--border);
+    border-left: 3px solid var(--text-dim); cursor: default;
   }
   .vibe-notif-item[data-link]:not([data-link=""]) { cursor: pointer; }
-  .vibe-notif-item:hover { background: var(--card-hover, #1d2230); }
-  .vibe-notif-item-title { font-size: 13px; font-weight: 600; color: var(--fg, #e5e7eb); word-break: break-word; }
-  .vibe-notif-item-body { font-size: 12px; color: var(--muted, #9ca3af); margin-top: 2px; word-break: break-word; }
-  .vibe-notif-item-ts { font-size: 11px; color: var(--muted, #6b7280); margin-top: 4px; }
-  .vibe-notif-empty { padding: 28px 14px; text-align: center; color: var(--muted, #6b7280); font-size: 13px; }
+  .vibe-notif-item:hover { background: var(--bg-elev); }
+  .vibe-notif-item-title { font-size: 13px; font-weight: 600; color: var(--text); word-break: break-word; }
+  .vibe-notif-item-body { font-size: 12px; color: var(--text-dim); margin-top: 2px; word-break: break-word; }
+  .vibe-notif-item-ts { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+  .vibe-notif-empty { padding: 28px 14px; text-align: center; color: var(--text-dim); font-size: 13px; }
   .vibe-notif-foot {
     display: flex; justify-content: flex-end; padding: 8px 12px;
-    border-top: 1px solid var(--border, #2a2f3a);
+    border-top: 1px solid var(--border);
   }
   .vibe-notif-clear {
-    background: transparent; border: 1px solid var(--border, #2a2f3a);
-    color: var(--muted, #9ca3af); font-size: 12px; padding: 5px 12px;
-    border-radius: 8px; cursor: pointer;
+    background: transparent; border: 1px solid var(--border);
+    color: var(--text-dim); font-size: 12px; padding: 5px 12px;
+    border-radius: var(--radius); cursor: pointer;
   }
-  .vibe-notif-clear:hover { color: #f87171; border-color: #f8717155; }
+  .vibe-notif-clear:hover { color: var(--danger); border-color: var(--danger); }
   @media (max-width: 768px) { .vibe-notif { top: 8px; right: 10px; } }
 </style>"""
 
@@ -78,7 +82,7 @@ internal object NotificationBell {
         val titleLabel = if (ko) "알림" else "Notifications"
         val clearLabel = if (ko) "모두 삭제" else "Clear all"
         // Lucide "bell".
-        val bell = """<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>"""
+        val bell = """<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>"""
         return """
 <div id="vibe-notif" class="vibe-notif">
   <button id="vibe-notif-btn" class="vibe-notif-btn" type="button" aria-label="${esc(titleLabel)}" title="${esc(titleLabel)}">
@@ -117,16 +121,18 @@ internal object NotificationBell {
   var open = false;
 
   function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  // v1.90.3 — admin.css 팔레트(--ok/--primary/--danger/--warn/--text-dim)와 동일 hex.
+  // JS 인라인 style 이라 CSS 변수 대신 같은 값을 직접 사용(테마 일관).
   function kindColor(k){
     switch(k){
-      case 'build.success': return '#22c55e';
-      case 'claude.turn_done': return '#3b82f6';
+      case 'build.success': return '#69db7c';   /* --ok */
+      case 'claude.turn_done': return '#5e9eff'; /* --primary */
       case 'build.failed':
-      case 'claude.error': return '#ef4444';
+      case 'claude.error': return '#ff6b6b';     /* --danger */
       case 'claude.stopped':
-      case 'usage.threshold': return '#f59e0b';
-      case 'system': return '#6b7280';
-      default: return '#6b7280';
+      case 'usage.threshold': return '#ffa94d';  /* --warn */
+      case 'system': return '#8b94a8';           /* --text-dim */
+      default: return '#8b94a8';
     }
   }
   function relTime(ts){
