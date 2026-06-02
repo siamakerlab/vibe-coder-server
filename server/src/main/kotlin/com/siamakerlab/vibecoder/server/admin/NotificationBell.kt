@@ -20,13 +20,13 @@ internal object NotificationBell {
 <style>
   .vibe-notif { position: fixed; top: 12px; right: 16px; z-index: 1200; }
   .vibe-notif-btn {
-    /* v1.90.1 — 버튼:아이콘 비율 조정(이전 40px 버튼 + 20px 아이콘 → 아이콘이 작아 보임). */
-    position: relative; width: 36px; height: 36px; border-radius: 50%;
+    /* v1.90.2 — 버튼은 적당한 크기를 유지하고 아이콘을 키워 버튼을 채운다(비율 개선). */
+    position: relative; width: 38px; height: 38px; border-radius: 50%;
     border: 1px solid var(--border, #2a2f3a); background: var(--card, #161a22);
     color: var(--fg, #e5e7eb); cursor: pointer; display: flex;
     align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(0,0,0,.25);
   }
-  .vibe-notif-btn svg { width: 22px; height: 22px; }
+  .vibe-notif-btn svg { width: 24px; height: 24px; }
   .vibe-notif-btn:hover { background: var(--card-hover, #1d2230); }
   .vibe-notif-btn.has-unread { color: #f87171; border-color: #f8717155; }
   .vibe-notif-badge {
@@ -78,7 +78,7 @@ internal object NotificationBell {
         val titleLabel = if (ko) "알림" else "Notifications"
         val clearLabel = if (ko) "모두 삭제" else "Clear all"
         // Lucide "bell".
-        val bell = """<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>"""
+        val bell = """<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>"""
         return """
 <div id="vibe-notif" class="vibe-notif">
   <button id="vibe-notif-btn" class="vibe-notif-btn" type="button" aria-label="${esc(titleLabel)}" title="${esc(titleLabel)}">
