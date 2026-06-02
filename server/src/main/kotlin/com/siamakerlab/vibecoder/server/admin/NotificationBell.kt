@@ -22,14 +22,17 @@ internal object NotificationBell {
      동일 스타일: 원형/그림자/채운 배경이 아니라 **사각(radius 4px) + 테두리 + 투명 배경 +
      dim 색**. 이전 원형 버튼은 형태 자체가 달라 "같은 스타일"로 안 보였다. */
   .vibe-notif { position: fixed; top: 12px; right: 16px; z-index: 1200; }
-  .vibe-notif-btn {
+  /* v1.90.11 — id 셀렉터(specificity 1,0,0)로 admin.css 의 강한 button 규칙
+     'button:not(.primary):not(.danger):not(.chip):not(.logout):not(.tab)'(0,5,1) 을 이긴다.
+     이전엔 .vibe-notif-btn(0,1,0) 이 그 규칙에 져서 radius/padding/bg 가 무시되어 왔다. */
+  #vibe-notif-btn {
     position: relative; cursor: pointer; padding: 6px 8px; font-size: 12px;
     color: var(--text-dim, #888); border: 1px solid #1f2330; border-radius: 4px;
     background: transparent; display: flex; align-items: center; justify-content: center;
   }
-  .vibe-notif-btn svg { width: 18px; height: 18px; }
-  .vibe-notif-btn:hover { color: var(--text, #ddd); border-color: #2a3145; }
-  .vibe-notif-btn.has-unread { color: var(--danger); border-color: var(--danger); }
+  #vibe-notif-btn svg { width: 18px; height: 18px; }
+  #vibe-notif-btn:hover { color: var(--text, #ddd); border-color: #2a3145; }
+  #vibe-notif-btn.has-unread { color: var(--danger); border-color: var(--danger); }
   .vibe-notif-badge {
     position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px;
     padding: 0 5px; border-radius: 9px; background: var(--danger); color: #fff;
