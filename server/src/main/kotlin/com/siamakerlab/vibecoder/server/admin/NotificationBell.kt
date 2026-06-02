@@ -18,20 +18,17 @@ internal object NotificationBell {
     /** `<head>` 에 들어갈 인라인 스타일. */
     fun headStyle(): String = """
 <style>
-  /* v1.90.3 — admin.css 실제 CSS 변수(--bg-card/--text/--bg-elev/--text-dim/--border/
-     --danger/--shadow)로 통일. 이전엔 --card/--fg/--muted 등 존재하지 않는 변수명을 써서
-     항상 fallback 하드코딩 색이 적용 → 다른 UI(사이드바 nav 등)와 색이 미묘하게 달랐다.
-     아이콘은 사이드바 nav-icon 과 동일 톤(20px, opacity 0.85, stroke 2). */
+  /* v1.90.6 — 콘솔 우상단 "프로젝트 설정 버튼"(ProjectTabsTemplate 의 .pt-settings summary)과
+     동일 스타일: 원형/그림자/채운 배경이 아니라 **사각(radius 4px) + 테두리 + 투명 배경 +
+     dim 색**. 이전 원형 버튼은 형태 자체가 달라 "같은 스타일"로 안 보였다. */
   .vibe-notif { position: fixed; top: 12px; right: 16px; z-index: 1200; }
   .vibe-notif-btn {
-    position: relative; width: 38px; height: 38px; border-radius: 50%;
-    border: 1px solid var(--border); background: var(--bg-card);
-    color: var(--text); cursor: pointer; display: flex;
-    align-items: center; justify-content: center; box-shadow: var(--shadow);
+    position: relative; cursor: pointer; padding: 6px 8px; font-size: 12px;
+    color: var(--text-dim, #888); border: 1px solid #1f2330; border-radius: 4px;
+    background: transparent; display: flex; align-items: center; justify-content: center;
   }
-  .vibe-notif-btn svg { width: 20px; height: 20px; opacity: 0.85; }
-  .vibe-notif-btn:hover { background: var(--bg-elev); }
-  .vibe-notif-btn:hover svg { opacity: 1; }
+  .vibe-notif-btn svg { width: 18px; height: 18px; }
+  .vibe-notif-btn:hover { color: var(--text, #ddd); border-color: #2a3145; }
   .vibe-notif-btn.has-unread { color: var(--danger); border-color: var(--danger); }
   .vibe-notif-badge {
     position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px;
@@ -82,7 +79,7 @@ internal object NotificationBell {
         val titleLabel = if (ko) "알림" else "Notifications"
         val clearLabel = if (ko) "모두 삭제" else "Clear all"
         // Lucide "bell".
-        val bell = """<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>"""
+        val bell = """<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>"""
         return """
 <div id="vibe-notif" class="vibe-notif">
   <button id="vibe-notif-btn" class="vibe-notif-btn" type="button" aria-label="${esc(titleLabel)}" title="${esc(titleLabel)}">
