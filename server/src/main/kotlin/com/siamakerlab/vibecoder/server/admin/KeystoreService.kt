@@ -111,6 +111,128 @@ class KeystoreService(
         )
     }
 
+    /**
+     * v1.93.0 — 인증서 SHA 지문 열람 (Firebase / Google Sign-In / Maps API 등록용).
+     *
+     * release / debug 키스토어를 `keytool -list -v` 로 읽어 SHA-1 / SHA-256 / MD5 +
+     * 만료일을 추출. store password 는 `<pkg>-keystore.properties` 에서 가져온다
+     * (운영자가 생성한 키스토어는 이 properties 를 항상 동반). 비밀번호를 모르면
+     * available=false 로 반환 — 호출자(라우트)가 안내 문구 표시. keytool 호출이
+     * 무거워(프로세스 spawn) 프로젝트 탭 첫 렌더가 아니라 SHA 섹션을 펼칠 때만 lazy 호출.
+     */
+    fun fingerprints(packageName: String): KeystoreFingerprints {
+        if (!packageNameRegex.matches(packageName)) {
+            return KeystoreFingerprints(false, "invalid_package_name", null, null)
+        }
+        val release = keystoreDir.resolve("$packageName.keystore")
+        if (!Files.exists(release)) return KeystoreFingerprints(false, "no_keystore", null, null)
+        val signing = loadSigning(packageName)
+            ?: return KeystoreFingerprints(false, "password_unknown", null, null)
+        val releaseInfo = runCatching { readCert(release, signing.storePassword, signing.keyAlias) }
+            .onFailure { log.warn(it) { "keytool -list release failed for $packageName" } }
+            .getOrNull()
+        val debugFile = keystoreDir.resolve("$packageName-debug.keystore")
+        val debugInfo = if (Files.exists(debugFile)) {
+            runCatching { readCert(debugFile, signing.storePassword, signing.keyAlias) }
+                .onFailure { log.warn(it) { "keytool -list debug failed for $packageName" } }
+                .getOrNull()
+        } else null
+        val available = releaseInfo != null || debugInfo != null
+        return KeystoreFingerprints(
+            available = available,
+            error = if (available) null else "read_failed",
+            release = releaseInfo,
+            debug = debugInfo,
+        )
+    }
+
+    /** keytool -list -v 출력 파싱 — 단일 alias 의 SHA-1/SHA-256/MD5 + 만료일. */
+    private fun readCert(path: Path, password: String, alias: String): CertInfo {
+        val cmd = listOf(
+            "keytool", "-list", "-v",
+            "-keystore", path.toString(),
+            "-storepass", password,
+            "-alias", alias,
+        )
+        // redirectErrorStream(true) 단일 스트림을 readText() 로 완독 후 waitFor (read→wait 순서라
+        // 버퍼 데드락 없음). exit!=0 이면 출력 일부를 메시지에 실어 throw.
+        val proc = ProcessBuilder(cmd).redirectErrorStream(true).start()
+        val out = proc.inputStream.bufferedReader().readText()
+        if (!proc.waitFor(20, TimeUnit.SECONDS)) {
+            proc.destroyForcibly()
+            throw IllegalStateException("keytool_list_timeout for ${path.fileName}")
+        }
+        if (proc.exitValue() != 0) {
+            throw IllegalStateException("keytool_list_failed (exit=${proc.exitValue()}): ${out.take(300)}")
+        }
+        fun grab(vararg labels: String): String? {
+            for (raw in out.lineSequence()) {
+                val line = raw.trim()
+                for (lbl in labels) {
+                    if (line.startsWith(lbl, ignoreCase = true)) {
+                        return line.substring(lbl.length).trim().ifBlank { null }
+                    }
+                }
+            }
+            return null
+        }
+        val validUntil = out.lineSequence()
+            .firstOrNull { it.contains("until:", ignoreCase = true) }
+            ?.substringAfter("until:")?.trim()?.ifBlank { null }
+        return CertInfo(
+            sha1 = grab("SHA1:", "SHA-1:"),
+            sha256 = grab("SHA256:", "SHA-256:"),
+            md5 = grab("MD5:"),
+            validUntil = validUntil,
+        )
+    }
+
+    /** v1.93.0 — `<pkg>-admob.properties` 읽기. 없으면 빈 [AdmobIds]. 키스토어 존재와 독립. */
+    fun readAdmob(packageName: String): AdmobIds {
+        val admob = keystoreDir.resolve("$packageName-admob.properties")
+        if (!Files.exists(admob)) return AdmobIds()
+        val p = Properties()
+        runCatching { Files.newBufferedReader(admob).use { p.load(it) } }
+            .onFailure { log.warn(it) { "admob read failed for $packageName" } }
+        return AdmobIds(
+            appId = p.getProperty("admobAppId").orEmpty(),
+            appOpenUnitId = p.getProperty("appOpenAdUnitId").orEmpty(),
+            bannerUnitId = p.getProperty("bannerAdUnitId").orEmpty(),
+            nativeUnitId = p.getProperty("nativeAdUnitId").orEmpty(),
+        )
+    }
+
+    /**
+     * v1.93.0 — `<pkg>-admob.properties` 갱신 (키스토어 재생성 없이 광고 ID 만 단독 저장).
+     * 4개 ID 가 모두 비면 파일 삭제 (admobExists=false 로). create() 와 같은 key 이름 사용.
+     */
+    fun saveAdmob(packageName: String, ids: AdmobIds) {
+        if (!packageNameRegex.matches(packageName)) {
+            throw IllegalArgumentException("invalid_package_name: $packageName")
+        }
+        val admob = keystoreDir.resolve("$packageName-admob.properties")
+        val allBlank = ids.appId.isBlank() && ids.appOpenUnitId.isBlank() &&
+            ids.bannerUnitId.isBlank() && ids.nativeUnitId.isBlank()
+        if (allBlank) {
+            runCatching { Files.deleteIfExists(admob) }
+            return
+        }
+        Files.createDirectories(keystoreDir)
+        runCatching { setPerm(keystoreDir, "rwx------") }
+        Files.writeString(
+            admob,
+            buildString {
+                appendLine("# v1.93.0 — AdMob IDs (프로젝트 키스토어 탭에서 관리)")
+                if (ids.appId.isNotBlank()) appendLine("admobAppId=${ids.appId}")
+                if (ids.appOpenUnitId.isNotBlank()) appendLine("appOpenAdUnitId=${ids.appOpenUnitId}")
+                if (ids.bannerUnitId.isNotBlank()) appendLine("bannerAdUnitId=${ids.bannerUnitId}")
+                if (ids.nativeUnitId.isNotBlank()) appendLine("nativeAdUnitId=${ids.nativeUnitId}")
+            },
+        )
+        runCatching { setPerm(admob, "rw-------") }
+        log.info { "AdMob IDs saved: $packageName" }
+    }
+
     private fun entryFor(packageName: String): KeystoreEntry {
         val release = keystoreDir.resolve("$packageName.keystore")
         val debug = keystoreDir.resolve("$packageName-debug.keystore")
@@ -364,6 +486,26 @@ data class AdmobIds(
     val appOpenUnitId: String = "",
     val bannerUnitId: String = "",
     val nativeUnitId: String = "",
+)
+
+/** v1.93.0 — 단일 인증서의 지문 + 만료일 (keytool -list -v 파싱 결과). */
+data class CertInfo(
+    val sha1: String?,
+    val sha256: String?,
+    val md5: String?,
+    val validUntil: String?,
+)
+
+/**
+ * v1.93.0 — release/debug 키스토어 지문 묶음.
+ * [available] = 비밀번호를 알고 최소 하나를 읽었는지. false 면 [error] 사유
+ * (`no_keystore` / `password_unknown` / `read_failed` / `invalid_package_name`).
+ */
+data class KeystoreFingerprints(
+    val available: Boolean,
+    val error: String?,
+    val release: CertInfo?,
+    val debug: CertInfo?,
 )
 
 /**
