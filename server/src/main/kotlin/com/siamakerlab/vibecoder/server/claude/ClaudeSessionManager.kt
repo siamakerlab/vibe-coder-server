@@ -153,7 +153,13 @@ class ClaudeSessionManager(
 
         // v1.69.0 — 동시 in-flight 상한 도달 시 permit 이 빌 때까지 대기(queue). 무제한이면 즉시 통과.
         // release 는 setBusy(true→false) 전이 단일 지점(아래 catch 의 write 실패 포함)에서 idempotent 하게.
-        gate.acquire(projectId)
+        // v1.90.0 — 상한 도달로 대기에 들어가면 콘솔에 안내(다른 프로젝트 turn 종료 시 자동 순차 진행).
+        gate.acquire(projectId) {
+            emitSystem(
+                projectId, "rate_limit_waiting",
+                "동시 작업 한도(${gate.limit}개)에 도달해 대기 중입니다. 다른 작업이 끝나면 순서대로 자동 진행됩니다.",
+            )
+        }
         session.stdinMutex.withLock {
             try {
                 withContext(Dispatchers.IO) {

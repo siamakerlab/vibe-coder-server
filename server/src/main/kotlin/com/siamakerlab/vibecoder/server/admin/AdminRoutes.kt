@@ -54,6 +54,11 @@ data class AdminRoutesDeps(
     val gitConfig: com.siamakerlab.vibecoder.server.env.GitConfigService,
     /** v1.42.0 — 언어 변경 시 전역 CLAUDE.md 를 해당 언어 시드로 적용(미편집 시에만). */
     val globalClaudeMd: com.siamakerlab.vibecoder.server.env.GlobalClaudeMdService,
+    /**
+     * v1.90.0 — `/settings` 저장 직후 호출되는 런타임 반영 콜백. ServerMain 이 ConfigHolder
+     * 갱신 + 즉시 반영 가능한 값(동시성 한도 등) 적용을 수행한다. null 이면 no-op(테스트).
+     */
+    val onConfigSaved: ((ServerConfig) -> Unit)? = null,
 )
 
 /**
@@ -268,7 +273,8 @@ fun Routing.adminRoutes(deps: AdminRoutesDeps) {
     get("/settings") {
         val sess = requireSessionOrRedirect(deps) ?: return@get
         if (!requireAdminOrRedirect(sess)) return@get
-        val cfg = deps.config
+        // v1.90.0 — startup snapshot(deps.config) 대신 런타임 holder 를 그려 저장값 즉시 표시.
+        val cfg = com.siamakerlab.vibecoder.server.config.ConfigHolder.current
         val view = AdminTemplates.SettingsView(
             serverName = cfg.server.name,
             serverPort = cfg.server.port,
@@ -327,8 +333,8 @@ fun Routing.adminRoutes(deps: AdminRoutesDeps) {
         if (!requireAdminOrRedirect(sess)) return@post
         val params = requireCsrf()
 
-        // 파싱 — 부재/빈 값은 기존 값 유지
-        val cur = deps.config
+        // 파싱 — 부재/빈 값은 기존 값 유지. v1.90.0 — 최신 런타임 holder 기준으로 copy.
+        val cur = com.siamakerlab.vibecoder.server.config.ConfigHolder.current
         val newConfig = try {
             cur.copy(
                 server = cur.server.copy(
@@ -376,6 +382,9 @@ fun Routing.adminRoutes(deps: AdminRoutesDeps) {
             call.respondRedirect("/settings?err=${java.net.URLEncoder.encode(Messages.t(sess.language, "flash.settings.saveFailed", e.message ?: ""), "UTF-8")}")
             return@post
         }
+        // v1.90.0 — 저장 성공 → 런타임 반영(ConfigHolder 갱신 + 동시성 한도 등 즉시 적용).
+        runCatching { deps.onConfigSaved?.invoke(newConfig) }
+            .onFailure { log.warn(it) { "onConfigSaved 콜백 실패(파일 저장은 완료됨)" } }
         log.info { "settings persisted by ${sess.username} → ${result.targetPath} (backup=${result.backupPath})" }
         call.respondRedirect("/settings?ok=1")
     }
