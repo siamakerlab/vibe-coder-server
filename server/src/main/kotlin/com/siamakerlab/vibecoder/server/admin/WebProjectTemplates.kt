@@ -1544,6 +1544,11 @@ $automationPanelHtml
   <a href="/agents" class="chip chip-link" style="font-size:11px;margin-left:0;flex-shrink:0">${esc(t("console.agent.manage"))}</a>
 </div>
 
+<!-- v1.90.12 — 코드블록 syntax highlight (assistant 마크다운 + tool 결과). 동기 로드해
+     append 시점에 window.hljs 준비. 이전엔 콘솔이 highlight.js 를 로드하지 않아 hljs 부재로
+     highlight 가 항상 skip 됐다. -->
+<link rel="stylesheet" href="/static/highlight-github-dark.min.css">
+<script src="/static/highlight.min.js"></script>
 <!-- v1.70.0 — 콘솔 친화 렌더러 (tool_use/tool_result/unknown). inline 스크립트보다 먼저 동기 로드. -->
 <script src="/static/console-render.js?v=1.90.10"></script>
 <script>
