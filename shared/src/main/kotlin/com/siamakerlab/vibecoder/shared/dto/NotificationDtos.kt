@@ -77,6 +77,10 @@ object NotificationKind {
     const val BUILD_SUCCESS = "build.success"
     const val BUILD_FAILED = "build.failed"
     const val CLAUDE_TURN_DONE = "claude.turn_done"
+    /** v1.88.0 — Claude 콘솔 turn 이 사용자 취소(중지)로 끝남. */
+    const val CLAUDE_STOPPED = "claude.stopped"
+    /** v1.88.0 — Claude 프로세스 비정상 종료(크래시 등) — 오류 알림. */
+    const val CLAUDE_ERROR = "claude.error"
     const val USAGE_THRESHOLD = "usage.threshold"
     const val SYSTEM = "system"
 }

@@ -11,6 +11,8 @@ import com.siamakerlab.vibecoder.server.repo.UploadedFileRepository
 import com.siamakerlab.vibecoder.shared.dto.ProjectDto
 import com.siamakerlab.vibecoder.shared.dto.RegisterProjectRequestDto
 import io.github.oshai.kotlinlogging.KotlinLogging
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.transactions.transaction
 import java.nio.file.Files
 import java.nio.file.Path
@@ -476,6 +478,14 @@ class ProjectService(
             promptAutomationRunRepo?.deleteForProject(id)
             projectAclRepo?.deleteAllForProject(id)
             buildRepo.deleteForProject(id)
+            // v1.86.5 (정밀점검) — NotificationEvents 정리. FK 가 없어(projectId nullable)
+            // 미정리 시 FK violation 은 안 났지만 삭제된 프로젝트의 알림이 고아로 잔존해
+            // 알림함에 깨진 deepLink 로 남고, 같은 projectId 재사용 시 옛 알림이 섞였다.
+            // renameId 는 이미 NotificationEvents 를 repoint 하므로 delete↔renameId 대칭 복원.
+            // projectId == id 인 행만 삭제 — projectId NULL(글로벌 알림)은 보존.
+            com.siamakerlab.vibecoder.server.db.NotificationEvents.deleteWhere {
+                com.siamakerlab.vibecoder.server.db.NotificationEvents.projectId eq id
+            }
             repo.delete(id) > 0
         }
     }

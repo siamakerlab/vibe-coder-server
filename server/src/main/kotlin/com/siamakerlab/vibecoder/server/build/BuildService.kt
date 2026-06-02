@@ -89,7 +89,7 @@ class BuildService(
                     val apk = ApkFinder.findLatestDebug(java.nio.file.Path.of(row.sourcePath), row.moduleName)
                         ?: throw ApiException.localized(500, "apk_not_found", messageKey = "api.build.apkNotFound")
                     logger.info("Found APK: $apk")
-                    val artifact = artifactService.storeDebugApk(projectId, buildId, apk)
+                    val artifact = artifactService.storeDebugApk(projectId, buildId, apk, row.packageName, variant = "debug")
                     buildRepo.attachArtifact(buildId, artifact.id)
                     logger.info("Stored artifact ${artifact.id} (sha256=${artifact.sha256.take(12)}..., size=${artifact.sizeBytes} bytes)")
                 } finally {

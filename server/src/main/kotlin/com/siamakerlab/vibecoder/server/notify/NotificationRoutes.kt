@@ -42,6 +42,12 @@ fun Routing.notificationRoutes(svc: NotificationService, fcm: FcmSender? = null)
             svc.ack(device.userId, req.ids)
             call.respond(HttpStatusCode.NoContent)
         }
+        // v1.88.0 — 알림 미니창 "모두 삭제": 모든 unread 일괄 ack.
+        post(ApiPath.NOTIFICATIONS_ACK_ALL) {
+            val device = call.requireDevice().device
+            svc.ackAll(device.userId)
+            call.respond(HttpStatusCode.NoContent)
+        }
         post(ApiPath.FCM_TOKEN_REGISTER) {
             val device = call.requireDevice().device
             val req = call.receive<FcmTokenRegisterRequestDto>()

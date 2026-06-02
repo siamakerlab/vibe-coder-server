@@ -286,6 +286,8 @@ object ApiPath {
     // ─────────────────────────────────────────────────────────────────────
     const val NOTIFICATIONS = "/api/notifications"
     const val NOTIFICATIONS_ACK = "/api/notifications/ack"
+    /** v1.88.0 — 모든 unread 일괄 ack (알림 미니창 "모두 삭제"). */
+    const val NOTIFICATIONS_ACK_ALL = "/api/notifications/ack-all"
     /** v0.68.0 — Optional FCM token 등록 (Firebase 설정 시만 의미). */
     const val FCM_TOKEN_REGISTER = "/api/notifications/fcm-token"
 
