@@ -147,6 +147,8 @@ class ProjectRepository(private val clock: Clock) {
         // v1.71.0 (정밀점검 C1) — project_acls 는 RESTRICT FK. 미repoint 시 아래 옛 PK DELETE 가
         // FK 위반으로 throw → 트랜잭션 abort. (멀티유저 제거로 보통 0행이나 업그레이드 DB 대비.)
         com.siamakerlab.vibecoder.server.db.ProjectAcls.update({ com.siamakerlab.vibecoder.server.db.ProjectAcls.projectId eq oldId }) { it[com.siamakerlab.vibecoder.server.db.ProjectAcls.projectId] = newId }
+        // v1.91.0 — Memos.projectId 는 nullable FK. 프로젝트 전용 메모만 repoint (전역 메모는 NULL → 매칭 안 됨).
+        com.siamakerlab.vibecoder.server.db.Memos.update({ com.siamakerlab.vibecoder.server.db.Memos.projectId eq oldId }) { it[com.siamakerlab.vibecoder.server.db.Memos.projectId] = newId }
         Projects.deleteWhere { Projects.id eq oldId }
         true
     }

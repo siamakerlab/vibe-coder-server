@@ -7,6 +7,7 @@ import com.siamakerlab.vibecoder.server.actions.projectActionRoutes
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.adminRoutes
 import com.siamakerlab.vibecoder.server.admin.backupRoutes
+import com.siamakerlab.vibecoder.server.admin.memosRoutes
 import com.siamakerlab.vibecoder.server.admin.logSearchRoutes
 import com.siamakerlab.vibecoder.server.admin.multiConsoleRoutes
 import com.siamakerlab.vibecoder.server.build.buildAutomationRoutes
@@ -67,6 +68,7 @@ import com.siamakerlab.vibecoder.server.claude.globalHistorySearchRoutes
 import com.siamakerlab.vibecoder.server.claude.historyRoutes
 import com.siamakerlab.vibecoder.server.claude.jsonHistoryRoutes
 import com.siamakerlab.vibecoder.server.claude.jsonUsageRoutes
+import com.siamakerlab.vibecoder.server.memo.jsonMemoRoutes
 import com.siamakerlab.vibecoder.server.projects.jsonProjectZipRoutes
 import com.siamakerlab.vibecoder.server.projects.projectTemplateRoutes
 import com.siamakerlab.vibecoder.server.admin.jsonAdminRoutes
@@ -265,6 +267,8 @@ data class ServerContext(
     val promptAutomationPresetStore: com.siamakerlab.vibecoder.server.automation.PromptAutomationPresetStore,
     val promptAutomationRunRepo: com.siamakerlab.vibecoder.server.repo.PromptAutomationRunRepository,
     val promptAutomationManager: com.siamakerlab.vibecoder.server.automation.PromptAutomationManager,
+    /** v1.91.0 — 독립 메모 (전역/프로젝트별). */
+    val memoRepo: com.siamakerlab.vibecoder.server.repo.MemoRepository,
 )
 
 fun Application.module(ctx: ServerContext) {
@@ -466,6 +470,10 @@ fun Application.module(ctx: ServerContext) {
         jsonHistoryRoutes(ctx.projects, ctx.conversationRepo, ctx.conversationExport)
         // v0.64.0 — Phase 43. /api/usage Anthropic 토큰/캐시 합산 JSON.
         jsonUsageRoutes(ctx.projects, ctx.conversationRepo)
+        // v1.91.0 — 독립 메모 (전역/프로젝트별) JSON API.
+        jsonMemoRoutes(ctx.projects, ctx.memoRepo)
+        // v1.91.0 — 독립 메모 카드형 목록 SSR (좌측 사이드바 "Memos").
+        memosRoutes(adminDeps, ctx.projects)
         // v0.31.0 — `.agents/` 디렉토리 UI.
         agentRoutes(adminDeps, ctx.agentRegistry)
         // v0.32.0 — Env files + 의존성 audit + 로그 검색.

@@ -39,6 +39,8 @@ internal object SettingsNav {
             p == "/" -> "dashboard"
             p.startsWith("/projects") -> "projects"
             p.startsWith("/chat") -> "chat"
+            // v1.91.0 — 독립 메모 (전역/프로젝트별) 카드형 목록. 사이드바 "Memos".
+            p.startsWith("/memos") -> "memos"
             p == "/tools" || p.startsWith("/tools/") -> "tools"
             p.startsWith("/multi-console") -> "tools"
             p == "/adb" || p.startsWith("/adb/") -> "tools"
