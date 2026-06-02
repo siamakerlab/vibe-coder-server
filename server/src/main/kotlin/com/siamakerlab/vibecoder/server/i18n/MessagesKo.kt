@@ -522,6 +522,8 @@ internal object MessagesKo {
         "console.quick.title" to "빠른 프롬프트 — 클릭하면 바로 전송됩니다",
         "console.quick.continue.label" to "계속",
         "console.quick.continue.prompt" to "계속 진행해줘",
+        "console.quick.restart.label" to "중단된 작업 재시작",
+        "console.quick.restart.prompt" to "이전에 진행하다 중단된 작업을 점검하고, 아직 마무리되지 않은 부분을 찾아 처음 의도대로 이어서 완료해줘.",
         "console.quick.fixAll.label" to "모두 수정",
         "console.quick.fixAll.prompt" to "지적된 사항을 모두 수정해줘",
         "console.quick.review.label" to "정밀 리뷰",

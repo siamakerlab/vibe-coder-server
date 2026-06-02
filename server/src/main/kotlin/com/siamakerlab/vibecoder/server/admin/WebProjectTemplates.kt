@@ -1100,7 +1100,8 @@ $errHtml
             }
             val textKeys = buildList {
                 add("continue")
-                if (!isChat) { add("fixAll"); add("review") }
+                // v1.91.3 — 코드 작업 전용 (대화 전용 General Chat 제외).
+                if (!isChat) { add("restart"); add("fixAll"); add("review") }
                 add("recommended")
             }
             val textBtns = textKeys.joinToString("") { key ->
