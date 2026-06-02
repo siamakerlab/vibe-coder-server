@@ -229,6 +229,7 @@ internal object MessagesKo {
         // v1.31.3 — quicklinks card 제거(카테고리 sub-nav 로 분산). categoryNav 재사용
         // chip 라벨만 유지.
         "settings.quicklinks.cors" to "CORS",
+        "settings.quicklinks.notifPrefs" to "앱 내 알림",
         "settings.quicklinks.email" to "이메일 알림",
         "settings.quicklinks.webhook" to "Webhook",
         "settings.quicklinks.push" to "Push 알림",

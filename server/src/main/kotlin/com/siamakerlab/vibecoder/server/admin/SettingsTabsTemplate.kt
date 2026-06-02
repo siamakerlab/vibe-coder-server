@@ -132,7 +132,7 @@ $tabPanes
   </div>
 </div>
 
-<script src="/static/project-tabs.js?v=1.72.0" defer></script>
+<script src="/static/project-tabs.js?v=1.89.0" defer></script>
 """,
         )
     }

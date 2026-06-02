@@ -518,7 +518,7 @@ $railHtml
   </div>
 </div>
 
-<script src="/static/project-tabs.js?v=1.72.0" defer></script>
+<script src="/static/project-tabs.js?v=1.89.0" defer></script>
 <!-- v1.56.0 — 콤보박스 상태칩 실시간 동기. 목록 페이지와 동일하게 `/ws/projects`
      (단방향) 의 ProjectBusyChanged 로 responding↔ready patch. -->
 <script>

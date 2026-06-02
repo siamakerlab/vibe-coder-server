@@ -31,6 +31,8 @@ import org.jetbrains.exposed.sql.update
  */
 class NotificationService(
     private val clock: Clock,
+    /** v1.89.0 — kind 별 수신 on/off. null 이면 전부 수신(테스트/기본). */
+    private val prefs: NotificationPrefsStore? = null,
 ) {
 
     companion object {
@@ -47,6 +49,8 @@ class NotificationService(
         projectId: String? = null,
         userIds: List<String?> = emptyList(),
     ) {
+        // v1.89.0 — 사용자가 끈 kind 는 적재 자체를 skip.
+        if (prefs?.isEnabled(kind) == false) return
         val now = clock.nowIso()
         val targets = if (userIds.isEmpty()) listOf(BUCKET_LEGACY)
         else userIds.map { it ?: BUCKET_LEGACY }.distinct()
