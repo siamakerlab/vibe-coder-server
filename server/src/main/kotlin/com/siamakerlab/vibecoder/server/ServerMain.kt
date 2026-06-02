@@ -107,6 +107,9 @@ fun main(args: Array<String>) {
         server = loaded.server.copy(port = overrides.port ?: loaded.server.port),
         workspace = loaded.workspace.copy(root = overrides.workspace ?: loaded.workspace.root),
     )
+    // v1.90.0 — 런타임 설정 SSOT 초기화. /settings 저장 시 ConfigHolder.update 로 갱신돼
+    // 폼 표시 + 즉시 반영(동시성 한도 등)에 쓰인다.
+    com.siamakerlab.vibecoder.server.config.ConfigHolder.init(config)
 
     val workspaceRoot = Path.of(config.workspace.root).toAbsolutePath().normalize()
     val workspace = WorkspacePath(workspaceRoot)
@@ -464,6 +467,11 @@ fun main(args: Array<String>) {
 
     val ctx = ServerContext(
         config = config,
+        // v1.90.0 — /settings 저장 직후 런타임 반영: holder 갱신 + 동시성 한도 즉시 적용.
+        onConfigSaved = { saved ->
+            com.siamakerlab.vibecoder.server.config.ConfigHolder.update(saved)
+            claudeGate.setLimit(saved.claude.maxConcurrentTurns)
+        },
         workspace = workspace,
         deviceRepo = deviceRepo,
         adminUserRepo = adminUserRepo,

@@ -108,7 +108,13 @@ class SubAgentSessionManager(
         }.toString()
 
         // v1.69.0 — 메인 콘솔과 공유하는 동시 in-flight 상한. 도달 시 permit 대기(queue).
-        gate.acquire(key.id)
+        // v1.90.0 — 대기 진입 시 콘솔 안내(다른 작업 종료 시 자동 순차 진행).
+        gate.acquire(key.id) {
+            emitSystem(
+                key, "rate_limit_waiting",
+                "동시 작업 한도(${gate.limit}개)에 도달해 대기 중입니다. 다른 작업이 끝나면 순서대로 자동 진행됩니다.",
+            )
+        }
         session.stdinMutex.withLock {
             try {
                 withContext(Dispatchers.IO) {

@@ -128,6 +128,8 @@ import kotlinx.serialization.json.JsonPrimitive
 
 data class ServerContext(
     val config: ServerConfig,
+    /** v1.90.0 — `/settings` 저장 직후 런타임 반영 콜백(ConfigHolder.update + 동시성 한도 등). */
+    val onConfigSaved: (ServerConfig) -> Unit,
     val workspace: WorkspacePath,
     val deviceRepo: DeviceRepository,
     val adminUserRepo: AdminUserRepository,
@@ -365,6 +367,7 @@ fun Application.module(ctx: ServerContext) {
         )
         val adminDeps = AdminRoutesDeps(
             config = ctx.config,
+            onConfigSaved = ctx.onConfigSaved,
             serverName = ctx.config.server.name,
             serverVersion = ctx.config.server.version,
             workspaceRoot = ctx.workspace.root.toString(),
