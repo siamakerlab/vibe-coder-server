@@ -1383,14 +1383,39 @@ $errHtml
 
 $authBannerHtml
 
-<!-- v0.97.0 — 콘솔 메시지 필터. 엑셀 필터 스타일. mandatory 항목은 disabled. -->
-<details id="console-filter" style="margin-bottom:6px;font-size:12px">
-  <summary style="cursor:pointer;color:var(--text-dim);padding:4px 0;user-select:none">
+<!-- v1.91.4 — 콘솔 메시지 필터(버튼 → 다이얼로그) + 자동 스크롤 토글을 한 줄에.
+     좌측 필터 버튼 클릭 시 모달이 뜨고, 우측 끝에 자동 스크롤 토글. 필터 체크박스
+     로직(.filter-cb / #filter-summary / #filter-reset)은 그대로 — 모달 안으로 이동만. -->
+<style>
+  #filter-modal { position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.55); padding:16px; }
+  #filter-modal[hidden] { display:none; }
+  #filter-modal .filter-box { background:#15171c; border:1px solid #2a2a2a; border-radius:10px; padding:16px 18px; width:100%; max-width:520px; max-height:85vh; overflow-y:auto; box-shadow:0 12px 40px rgba(0,0,0,0.5); box-sizing:border-box; }
+  #filter-modal .filter-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+  #filter-modal .filter-head strong { font-size:14px; }
+  #filter-modal .filter-x { background:transparent; border:0; color:var(--text-dim); font-size:16px; cursor:pointer; line-height:1; padding:2px 6px; }
+  #filter-modal .filter-x:hover { color:var(--text); }
+</style>
+<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+  <button type="button" id="filter-open" class="chip chip-link"
+          style="font-size:11px;padding:4px 11px;display:inline-flex;align-items:center;gap:5px"
+          title="${esc(t("console.filter.title"))}">
     🔍 ${esc(t("console.filter.title"))} <span id="filter-summary" class="dim" style="font-size:11px"></span>
-  </summary>
-  <div style="padding:8px 10px;background:rgba(255,255,255,0.03);border:1px solid #2a2a2a;border-radius:6px;margin-top:4px">
+  </button>
+  <label for="autoscroll-toggle" style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-dim);cursor:pointer;user-select:none;margin-left:auto"
+         title="${esc(t("console.autoscroll.tip"))}">
+    <input type="checkbox" id="autoscroll-toggle" style="margin:0">
+    📌 ${esc(t("console.autoscroll"))}
+  </label>
+</div>
+
+<div id="filter-modal" hidden>
+  <div class="filter-box" role="dialog" aria-modal="true" aria-label="${esc(t("console.filter.title"))}">
+    <div class="filter-head">
+      <strong>🔍 ${esc(t("console.filter.title"))}</strong>
+      <button type="button" id="filter-close" class="filter-x" aria-label="${esc(t("memos.close"))}">✕</button>
+    </div>
     <p class="hint" style="margin:0 0 8px;font-size:11px">${esc(t("console.filter.hint"))}</p>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">
       <div>
         <div class="dim" style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">${esc(t("console.filter.mandatory"))}</div>
         <label style="display:block;padding:2px 0;opacity:0.7;cursor:not-allowed"><input type="checkbox" class="filter-cb" data-cat="assistant" checked disabled> ${esc(t("console.filter.cat.assistant"))}</label>
@@ -1409,22 +1434,11 @@ $authBannerHtml
         <label style="display:block;padding:2px 0;cursor:pointer"><input type="checkbox" class="filter-cb" data-cat="thinking" checked> ${esc(t("console.filter.cat.thinking"))}</label>
       </div>
     </div>
-    <div style="margin-top:6px;display:flex;justify-content:flex-end">
+    <div style="margin-top:12px;display:flex;justify-content:flex-end;gap:8px">
       <button type="button" id="filter-reset" class="chip chip-link" style="font-size:11px;padding:3px 10px">${esc(t("console.filter.reset"))}</button>
+      <button type="button" id="filter-done" class="chip" style="font-size:11px;padding:3px 12px">${esc(t("memos.close"))}</button>
     </div>
   </div>
-</details>
-
-<!-- v1.20.0 — 자동 스크롤 모드 토글. ON 이면 새 메시지 도착 시 사용자 스크롤
-     위치 무시하고 항상 최하단. OFF 면 v1.6.4 의 stick-to-bottom (사용자가
-     하단에 있을 때만 따라감). 사용자 선호는 localStorage 영속, default ON.
-     prompt 전송 직후엔 토글 무관 항상 스크롤 (sendPrompt 안에서 명시 호출). -->
-<div style="display:flex;justify-content:flex-end;align-items:center;gap:6px;margin-bottom:4px">
-  <label for="autoscroll-toggle" style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-dim);cursor:pointer;user-select:none"
-         title="${esc(t("console.autoscroll.tip"))}">
-    <input type="checkbox" id="autoscroll-toggle" style="margin:0">
-    📌 ${esc(t("console.autoscroll"))}
-  </label>
 </div>
 
 <!-- v1.6.4 — 스크롤 + 우하단 jump-to-bottom 버튼 wrapper. -->
@@ -1837,6 +1851,17 @@ $automationPanelHtml
         applyFilterToAll();
       });
     }
+    // v1.91.4 — 필터 버튼 → 다이얼로그 토글.
+    var fModal = document.getElementById('filter-modal');
+    var fOpen = document.getElementById('filter-open');
+    function closeFilter() { if (fModal) fModal.hidden = true; }
+    if (fOpen && fModal) fOpen.addEventListener('click', function() { fModal.hidden = false; });
+    var fClose = document.getElementById('filter-close');
+    var fDone = document.getElementById('filter-done');
+    if (fClose) fClose.addEventListener('click', closeFilter);
+    if (fDone) fDone.addEventListener('click', closeFilter);
+    if (fModal) fModal.addEventListener('click', function(e) { if (e.target === fModal) closeFilter(); });
+    document.addEventListener('keydown', function(e) { if (e.key === 'Escape' && fModal && !fModal.hidden) closeFilter(); });
     updateFilterSummary();
   })();
 
