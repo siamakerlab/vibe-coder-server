@@ -379,6 +379,29 @@ private fun renderSubAgentConsole(
   </p>
 </div>
 
+<!-- v1.90.4 — 마크다운 렌더 스타일(메인 콘솔 WebProjectTemplates 와 동기). sub-agent
+     응답(assistant)도 renderMarkdown 적용하므로 동일 .md 스타일 필요. -->
+<style>
+  .log-body.md { line-height:1.55; }
+  .log-body.md > :first-child { margin-top:0; }
+  .log-body.md > :last-child { margin-bottom:0; }
+  .log-body.md h1,.log-body.md h2,.log-body.md h3,.log-body.md h4,.log-body.md h5,.log-body.md h6 { margin:0.6em 0 0.3em; line-height:1.3; }
+  .log-body.md h1 { font-size:1.4em; } .log-body.md h2 { font-size:1.25em; }
+  .log-body.md h3 { font-size:1.12em; } .log-body.md h4 { font-size:1.02em; }
+  .log-body.md ul,.log-body.md ol { margin:0.4em 0; padding-left:1.5em; }
+  .log-body.md li { margin:0.15em 0; }
+  .log-body.md code.md-code { background:rgba(255,255,255,0.08); padding:1px 5px; border-radius:4px; font-size:0.9em; }
+  .log-body.md pre.md-pre { background:#161616; border:1px solid #2a2a2a; border-radius:6px; padding:10px 12px; overflow-x:auto; margin:0.5em 0; }
+  .log-body.md pre.md-pre code { background:none; padding:0; font-size:0.88em; line-height:1.45; }
+  .log-body.md blockquote { border-left:3px solid #444; margin:0.5em 0; padding:2px 0 2px 12px; color:var(--text-dim,#aaa); }
+  .log-body.md a { color:#74b9ff; text-decoration:underline; }
+  .log-body.md hr { border:none; border-top:1px solid #333; margin:0.8em 0; }
+  .log-body.md strong { font-weight:600; }
+  .log-body.md table.md-table { border-collapse:collapse; margin:0.5em 0; font-size:0.9em; display:block; overflow-x:auto; max-width:100%; }
+  .log-body.md table.md-table th, .log-body.md table.md-table td { border:1px solid #3a3a3a; padding:4px 9px; text-align:left; }
+  .log-body.md table.md-table th { background:rgba(255,255,255,0.06); font-weight:600; }
+  .log-body.md table.md-table tr:nth-child(even) td { background:rgba(255,255,255,0.02); }
+</style>
 <div id="console-log" class="console-log" aria-live="polite"></div>
 
 <form id="prompt-form" class="prompt-form" autocomplete="off">
@@ -411,7 +434,13 @@ private fun renderSubAgentConsole(
     var atBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 10;
     var row = document.createElement('div');
     row.className = 'log-line ' + cls;
-    row.innerHTML = '<span class="log-label">' + escHtml(label) + '</span><span class="log-body">' + escHtml(body) + '</span>';
+    // v1.90.4 — 메인 콘솔과 동일하게 assistant(sub-agent 응답)는 마크다운 렌더(escape 우선 →
+    // XSS 안전). 그 외(tool/sys/err)는 raw escape. 이전엔 sub-agent 콘솔이 전부 escHtml 이라
+    // code review 같은 마크다운 응답이 raw 로 보였다(메인 콘솔 v1.85.0 renderMarkdown 미반영분).
+    var bodyHtml = (cls === 'assistant' && window.VibeConsole && window.VibeConsole.renderMarkdown)
+      ? '<div class="log-body md">' + window.VibeConsole.renderMarkdown(body) + '</div>'
+      : '<span class="log-body">' + escHtml(body) + '</span>';
+    row.innerHTML = '<span class="log-label">' + escHtml(label) + '</span>' + bodyHtml;
     logEl.appendChild(row);
     if (atBottom) logEl.scrollTop = logEl.scrollHeight;
   }

@@ -1823,7 +1823,10 @@ $automationPanelHtml
 
   // Claude 응답에 'Not logged in' 같은 인증 실패 패턴이 보이면 즉시 폼을 disable 하고
   // 빨간 배너를 띄운다. 진단 (EnvDiagnostics) 이 false positive 였을 때의 라이브 fallback.
-  var AUTH_FAIL_RE = /(not logged in|please run \/login|invalid api key|unauthorized|authentication required)/i;
+  // v1.90.4 — CLI 특유 문구만 매칭. 이전엔 'unauthorized'/'authentication required'/
+  // 'invalid api key' 같은 일반 단어까지 포함해, 결제/인증을 다루는 프로젝트에서 Claude 가
+  // 정상 출력한 코드·설명이 "CLI 로그인 필요" 로 오탐됐다(입력창까지 잠김).
+  var AUTH_FAIL_RE = /(not logged in|please run \/login|run ['"`]?claude login['"`]?|invalid api key[^.\n]{0,40}\/login)/i;
   function detectAuthFailure(text) {
     if (!text) return false;
     if (AUTH_FAIL_RE.test(String(text))) { showAuthBanner(); return true; }
@@ -1971,8 +1974,9 @@ $automationPanelHtml
     if (t === 'console_session_started') {
       append('sys', 'session', 'started ' + (f.sessionId || '').slice(0,12) + (f.model ? ' · ' + f.model : ''), 'session');
     } else if (t === 'console_assistant') {
+      // v1.90.4 — Claude 응답 본문은 인증 상태와 무관(코드/설명에 'login' 등이 정상 등장).
+      // CLI 로그인 실패 감지는 서버 진단성 error/system 프레임에서만 수행한다.
       append('assistant', 'assistant', f.text || '', 'assistant');
-      detectAuthFailure(f.text);
     } else if (t === 'console_tool_use') {
       var rendered = renderToolUse(f.toolName, f.input);
       // v1.3.0 — task 계열 tool 은 별도 'todo' 카테고리로 분류해 콘솔/패널 양쪽에 반영.
@@ -1984,7 +1988,7 @@ $automationPanelHtml
       var out = window.VibeConsole.extractToolResult(f.output);
       var resultLabel = f.isError ? 'tool-err' : '✓ result';
       append(f.isError ? 'tool-err' : 'tool-out', resultLabel, clip(out, 4000), 'tool_result');
-      detectAuthFailure(out);
+      // v1.90.4 — tool 결과(파일 내용/명령 출력)에도 'unauthorized' 등이 정상 등장하므로 감지 제외.
     } else if (t === 'console_error') {
       append('err', 'error', (f.code || '') + ': ' + (f.message || ''), 'error');
       detectAuthFailure(f.message);
