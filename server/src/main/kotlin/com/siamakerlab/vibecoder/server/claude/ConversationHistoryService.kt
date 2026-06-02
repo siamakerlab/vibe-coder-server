@@ -49,6 +49,14 @@ class ConversationHistoryService(
     }
 
     /**
+     * v1.91.5 — 새 세션 첫 턴에서 sessionId=null 로 저장된 메인 콘솔 turn 을 init 이벤트로
+     * 확정된 실제 session_id 로 backfill. 콘솔 복원 시 직전 프롬프트 누락 방지.
+     */
+    fun adoptNullSession(projectId: String, sessionId: String) = safe {
+        repo.adoptNullSession(projectId, sessionId)
+    }
+
+    /**
      * ClaudeEvent (system/init / assistant / tool_use / tool_result / done / error / unknown)
      * 적재. partial assistant chunks 는 skip — 전체 turn 의 final assistant message 만
      * 한 row (스트리밍 중간 token 누적은 LogHub 으로만 흘림).

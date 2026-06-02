@@ -83,15 +83,18 @@ fun Routing.memosRoutes(authDeps: AdminRoutesDeps, projects: ProjectService) {
     font:inherit; padding:8px 10px; box-sizing:border-box; width:100%;
   }
   .memo-field textarea { min-height:160px; resize:vertical; line-height:1.45; }
-  .memo-modal-foot { display:flex; gap:8px; align-items:center; margin-top:4px; }
-  .memo-modal-foot .spacer { flex:1; }
-  .memo-btn { border:0; border-radius:6px; padding:8px 14px; font:inherit; cursor:pointer; }
-  .memo-btn.primary { background:var(--accent,#6aa9ff); color:#0b0d12; font-weight:600; }
-  .memo-btn.primary:hover { filter:brightness(1.08); }
-  .memo-btn.ghost { background:transparent; color:var(--text-dim,#888); border:1px solid #1f2330; }
-  .memo-btn.ghost:hover { color:var(--text,#ddd); border-color:#2a3145; }
-  .memo-btn.danger { background:transparent; color:#ff9e9e; border:1px solid #3a2424; }
-  .memo-btn.danger:hover { background:#2c1a1a; }
+  /* v1.91.5 — #memo-modal ID prefix 로 admin.css 의 button:not(...) 전역(specificity 0,5,1)
+     을 확실히 이긴다(ID → 1,1,0). 이전엔 .memo-btn(0,1,0)이 져서 닫기 버튼이 큰 padding +
+     테두리를 받고, footer 가 넘쳐 버튼이 두 줄로 깨지거나 저장 버튼이 과하게 커 보였다. */
+  #memo-modal .memo-modal-foot { display:flex; gap:8px; align-items:center; margin-top:4px; flex-wrap:nowrap; }
+  #memo-modal .memo-modal-foot .spacer { flex:1; }
+  #memo-modal .memo-btn { border:0; border-radius:6px; padding:8px 14px; font:inherit; cursor:pointer; width:auto; white-space:nowrap; box-sizing:border-box; line-height:1.2; flex:0 0 auto; }
+  #memo-modal .memo-btn.primary { background:var(--accent,#6aa9ff); color:#0b0d12; font-weight:600; }
+  #memo-modal .memo-btn.primary:hover { filter:brightness(1.08); }
+  #memo-modal .memo-btn.ghost { background:transparent; color:var(--text-dim,#888); border:1px solid #1f2330; }
+  #memo-modal .memo-btn.ghost:hover { color:var(--text,#ddd); border-color:#2a3145; }
+  #memo-modal .memo-btn.danger { background:transparent; color:#ff9e9e; border:1px solid #3a2424; }
+  #memo-modal .memo-btn.danger:hover { background:#2c1a1a; }
   .memo-err { color:#ff6b6b; font-size:12px; min-height:14px; }
 </style>
 
