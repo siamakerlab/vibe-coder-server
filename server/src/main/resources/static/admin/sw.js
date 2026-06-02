@@ -11,7 +11,7 @@
 // Bump CACHE_VERSION on each release to invalidate old SW caches.
 // v1.86.0 — v0.50.0 → v1.86.0. 구 SW 가 console-render.js?v=1.85.0(null 버전)을
 // cache-first 로 박제해 ?v 캐시버스트가 무력화되던 문제 회수(아래 fetch 의 ?v= 우회와 짝).
-const CACHE_VERSION = 'vibe-coder-v1.86.5';
+const CACHE_VERSION = 'vibe-coder-v1.90.10';
 const STATIC_CACHE = `static-${CACHE_VERSION}`;
 const STATIC_ASSETS = [
   '/static/admin.css',

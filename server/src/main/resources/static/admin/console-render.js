@@ -32,7 +32,11 @@
       if (v == null) vs = '';
       else if (typeof v === 'string') vs = clip(v, 80);
       else if (Array.isArray(v)) vs = '[' + v.length + ']';
-      else if (typeof v === 'object') vs = '{…}';
+      else if (typeof v === 'object') {
+        // v1.90.10 — 중첩 객체도 키 일부 노출(이전엔 '{…}' 라 내용 전무).
+        var ks = Object.keys(v);
+        vs = ks.length ? '{' + ks.slice(0, 3).join(', ') + (ks.length > 3 ? ', …' : '') + '}' : '{}';
+      }
       else vs = String(v);
       parts.push(key + '=' + vs);
     }
@@ -217,8 +221,10 @@
         return { cls: done ? 'tool-out' : 'tool', label: done ? '✓ task' : 'task·' + (o.status || ''),
                  body: clip(o.summary || o.output_file || '', 300), cat: 'todo' };
       }
-      if (st === 'task_updated')
-        return { cls: 'tool', label: '… task', body: clip(o.summary || ('status=' + (o.status || '')), 200), cat: 'todo' };
+      // v1.90.10 — task_progress 도 task_updated 와 동일하게 todo 카드로(이전엔 미처리 →
+      // 'system·task_progress' generic 노출). description fallback 추가.
+      if (st === 'task_updated' || st === 'task_progress')
+        return { cls: 'tool', label: '… task', body: clip(o.summary || o.description || ('status=' + (o.status || '')), 200), cat: 'todo' };
       return { cls: 'sys', label: 'system·' + (st || '?'), body: summarizeInput(o), cat: 'system' };
     }
 
