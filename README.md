@@ -232,6 +232,13 @@ For per-release history, see [CHANGELOG.md](CHANGELOG.md).
 - **Settings persistence** — `/settings` writes `server.yml` with atomic move +
   `.bak.<ts>` rotation (keeps 5). Host/port/name need a restart; other fields
   apply on next read.
+- **Per-project Keystore tab** — `/projects/{id}/keystore` manages that project's
+  signing keystore and AdMob unit IDs scoped to its `applicationId`: status,
+  collapsible **SHA-1 / SHA-256 / MD5 fingerprints** (lazy `keytool -list`, for
+  Firebase / Google Sign-In / Maps registration), AdMob ID editing
+  (independent of the keystore), create / delete, and a one-click "apply signing
+  to build.gradle.kts" Claude prompt. Shares the same `KeystoreService` as the
+  global `/settings/keystores` page.
 
 ### MCP integration
 

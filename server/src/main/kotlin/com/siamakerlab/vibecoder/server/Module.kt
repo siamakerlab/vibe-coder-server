@@ -17,6 +17,7 @@ import com.siamakerlab.vibecoder.server.build.dependencyAuditRoutes
 import com.siamakerlab.vibecoder.server.projects.codeAnalysisRoutes
 import com.siamakerlab.vibecoder.server.projects.envFilesRoutes
 import com.siamakerlab.vibecoder.server.projects.projectClaudeMdRoutes
+import com.siamakerlab.vibecoder.server.projects.projectKeystoreRoutes
 import com.siamakerlab.vibecoder.server.projects.projectAssetsRoutes
 import com.siamakerlab.vibecoder.server.projects.projectAgentRoutes
 import com.siamakerlab.vibecoder.server.projects.projectMcpRoutes
@@ -479,6 +480,9 @@ fun Application.module(ctx: ServerContext) {
         // v0.32.0 — Env files + 의존성 audit + 로그 검색.
         envFilesRoutes(adminDeps, ctx.projects, ctx.workspace)
         projectClaudeMdRoutes(adminDeps, ctx.projects, ctx.workspace)
+        // v1.93.0 — 프로젝트 키스토어 탭 (키스토어/AdMob/ SHA 지문). 전역 페이지와 같은
+        // KeystoreService 인스턴스 공유 — 빌드 서명 inject 와 SSOT.
+        projectKeystoreRoutes(adminDeps, ctx.projects, ctx.keystoreService, ctx.sessionManager)
         // v1.65.0 — 스토어 자산(앱 아이콘/그래픽/스크린샷) 탭.
         projectAssetsRoutes(adminDeps, ctx.projects, ctx.workspace, ctx.sessionManager, ctx.playPublishService)
         projectAgentRoutes(adminDeps, ctx.projects, ctx.workspace, ctx.agentRegistry)

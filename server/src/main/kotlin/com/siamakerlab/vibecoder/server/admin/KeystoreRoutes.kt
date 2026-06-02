@@ -204,7 +204,7 @@ fun Routing.keystoreRoutes(
             return@post
         }
 
-        val prompt = buildApplySigningPrompt(project, service, entry)
+        val prompt = buildApplySigningPrompt(project.id, project.moduleName, service, entry)
         val sent = runCatching {
             sessionManager.sendPrompt(projectId, prompt)
         }.onFailure { log.warn(it) { "apply-signing prompt failed for $projectId / $pkg" } }
@@ -226,8 +226,9 @@ fun Routing.keystoreRoutes(
  * 지시가 전송됨. 비밀번호는 본문에 포함되지 않으며, properties 파일 경로 + 표준
  * Gradle 패턴 (Properties.load + signingConfigs) 만 안내.
  */
-private fun buildApplySigningPrompt(
-    project: ProjectRow,
+internal fun buildApplySigningPrompt(
+    projectId: String,
+    moduleName: String,
     service: KeystoreService,
     entry: KeystoreEntry,
 ): String {
@@ -235,7 +236,6 @@ private fun buildApplySigningPrompt(
     val propsPath = service.propertiesPath(pkg)
     val storePath = service.storeFilePath(pkg)
     val debugStorePath = storePath.parent.resolve("$pkg-debug.keystore")
-    val moduleName = project.moduleName
     val debugVariantLine = if (entry.debugExists) {
         "- 디버그 키스토어도 같은 set 에 있음 (`$debugStorePath`). debug variant 도 같은 properties 의 password / alias 를 재사용하되 storeFile 만 `$pkg-debug.keystore` 로 지정."
     } else {
@@ -244,7 +244,7 @@ private fun buildApplySigningPrompt(
     return """
 [vibe-coder-server / 키스토어 자동 적용]
 
-프로젝트 `${project.id}` 의 안드로이드 모듈 `$moduleName` 의 build.gradle.kts 를 다음 키스토어로 영구 서명되게 수정해 주세요.
+프로젝트 `$projectId` 의 안드로이드 모듈 `$moduleName` 의 build.gradle.kts 를 다음 키스토어로 영구 서명되게 수정해 주세요.
 
 대상 패키지: $pkg
 키스토어 set (호스트 영속 볼륨 `/home/vibe/keystores/` 안에 위치):

@@ -60,6 +60,8 @@ internal object ProjectTabsTemplate {
         Tab("history", "tabs.history", "/history", "tab-history"),
     )
     private val OVERFLOW_TABS = listOf(
+        // v1.93.0 — 프로젝트 스코프 키스토어/AdMob/SHA 지문 탭.
+        Tab("keystore", "tabs.keystore", "/keystore", "tab-keystore"),
         Tab("symbols", "tabs.symbols", "/symbols", "tab-symbols"),
         Tab("stats", "tabs.stats", "/stats", "tab-stats"),
         Tab("deps", "tabs.deps", "/deps", "tab-deps"),

@@ -1833,6 +1833,7 @@ internal object MessagesEn {
         "tabs.agents" to "Agents",
         // v1.12.0 — Pages that used to live in the More dropdown are now prerendered tabs.
         "tabs.history" to "History",
+        "tabs.keystore" to "Keystore",
         "tabs.symbols" to "Symbols",
         // v1.13.0 — Overview tab removed, its features moved into the sticky header.
         "tabs.settings.label" to "Project settings",
