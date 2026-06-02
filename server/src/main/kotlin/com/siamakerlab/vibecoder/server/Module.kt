@@ -72,6 +72,7 @@ import com.siamakerlab.vibecoder.server.projects.projectTemplateRoutes
 import com.siamakerlab.vibecoder.server.admin.jsonAdminRoutes
 import com.siamakerlab.vibecoder.server.admin.toolsRoutes
 import com.siamakerlab.vibecoder.server.notify.notificationRoutes
+import com.siamakerlab.vibecoder.server.notify.notificationSettingsRoutes
 import com.siamakerlab.vibecoder.server.notify.emailSettingsRoutes
 import com.siamakerlab.vibecoder.server.notify.webhookSettingsRoutes
 import com.siamakerlab.vibecoder.server.config.ServerConfig
@@ -224,6 +225,8 @@ data class ServerContext(
     val backupService: com.siamakerlab.vibecoder.server.admin.BackupService,
     /** v0.68.0 — Phase 47 polling-based notification (Android Group C). */
     val notificationService: com.siamakerlab.vibecoder.server.notify.NotificationService,
+    /** v1.89.0 — 알림 kind 별 수신 on/off (`/settings/notifications`). */
+    val notificationPrefsStore: com.siamakerlab.vibecoder.server.notify.NotificationPrefsStore,
     /** v0.70.0 — Phase 49 #1 LogSearchService 추출. SSR + JSON 양측 reuse. */
     val logSearchService: com.siamakerlab.vibecoder.server.admin.LogSearchService,
     /** v0.70.0 — Phase 49 #14 APK 시그너처 on-demand verify. */
@@ -504,6 +507,7 @@ fun Application.module(ctx: ServerContext) {
         // v0.68.0 — Phase 47 polling-based notification (Android Group C).
         // v0.72.0 — Phase 52 #4: FCM 실 발송 wiring.
         notificationRoutes(ctx.notificationService, ctx.fcmSender)
+        notificationSettingsRoutes(adminDeps, ctx.notificationPrefsStore)
         // v0.69.0 — Phase 48 UI 리뉴얼: /tools hub.
         toolsRoutes(adminDeps)
         // v0.67.0 — Phase 46 Group B: admin / 운영 JSON API (Bearer, admin only).

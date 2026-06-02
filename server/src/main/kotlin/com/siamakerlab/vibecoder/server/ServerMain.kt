@@ -173,7 +173,9 @@ fun main(args: Array<String>) {
         onGoneSubscription = { id -> runCatching { pushSubscriptionRepo.deleteById(id) } },
     )
     // v0.68.0 — Phase 47 polling-based notification (Android Group C).
-    val notificationService = com.siamakerlab.vibecoder.server.notify.NotificationService(clock)
+    // v1.89.0 — 알림 kind 별 수신 on/off (workspace JSON, 즉시 반영).
+    val notificationPrefsStore = com.siamakerlab.vibecoder.server.notify.NotificationPrefsStore(workspace)
+    val notificationService = com.siamakerlab.vibecoder.server.notify.NotificationService(clock, notificationPrefsStore)
     // v0.72.0 — Phase 52 #4 FCM 실 발송 (Firebase env var 시 활성).
     val fcmSender = com.siamakerlab.vibecoder.server.notify.FcmSender()
     val notifiers = com.siamakerlab.vibecoder.server.notify.Notifiers(
@@ -532,6 +534,7 @@ fun main(args: Array<String>) {
         rateLimitAuth = rateLimitAuth,
         backupService = backupService,
         notificationService = notificationService,
+        notificationPrefsStore = notificationPrefsStore,
         logSearchService = logSearchService,
         apkVerifier = apkVerifier,
         fcmSender = fcmSender,

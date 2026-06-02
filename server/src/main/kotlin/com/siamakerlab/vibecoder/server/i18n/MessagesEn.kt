@@ -253,6 +253,7 @@ internal object MessagesEn {
         // categoryNav 가 재사용하는 chip 라벨만 유지 (title/body/keystores/sshKey/cache/
         // gitIntegrations 는 dead 제거 — buildEnv chip 은 env.subsettings.* 사용).
         "settings.quicklinks.cors" to "CORS",
+        "settings.quicklinks.notifPrefs" to "In-app alerts",
         "settings.quicklinks.email" to "Email alerts",
         "settings.quicklinks.webhook" to "Webhook",
         "settings.quicklinks.push" to "Push notifications",

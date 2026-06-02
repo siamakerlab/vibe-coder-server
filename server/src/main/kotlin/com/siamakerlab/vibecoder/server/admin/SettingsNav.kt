@@ -107,6 +107,7 @@ internal object SettingsNav {
             p == "/settings/email" -> "notifications"
             p == "/settings/webhook" -> "notifications"
             p == "/settings/push" -> "notifications"
+            p == "/settings/notifications" -> "notifications"
             // v1.34.6 — MCP 카탈로그를 build-env 에서 별도 탭으로 분리. /env-setup/mcp 는
             // /env-setup prefix 보다 먼저 매칭해야 build-env 가 아닌 mcp 탭으로 간다.
             p == "/env-setup/mcp" || p.startsWith("/env-setup/mcp") -> "mcp"
@@ -153,6 +154,7 @@ internal object SettingsNav {
                 "/settings/cors" to "settings.quicklinks.cors",
             )
             "notifications" -> listOf(
+                "/settings/notifications" to "settings.quicklinks.notifPrefs",
                 "/settings/email" to "settings.quicklinks.email",
                 "/settings/webhook" to "settings.quicklinks.webhook",
                 "/settings/push" to "settings.quicklinks.push",

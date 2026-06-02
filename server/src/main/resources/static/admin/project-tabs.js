@@ -138,7 +138,10 @@
         if (!switcher.open || !filter) return;
         filter.value = '';
         items.forEach(function (it) { it.style.display = ''; });
-        setTimeout(function () { filter.focus(); }, 0);
+        // v1.89.0 — 터치(모바일)에선 자동 포커스가 소프트 키보드를 띄워 불편하므로,
+        // fine pointer(데스크톱 마우스)에서만 검색창에 포커스를 준다.
+        var coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+        if (!coarse) setTimeout(function () { filter.focus(); }, 0);
       });
       if (filter) {
         filter.addEventListener('input', function () {
@@ -156,10 +159,16 @@
           }
         });
       }
-      document.addEventListener('click', function (e) {
-        if (switcher.open && !switcher.contains(e.target)) switcher.open = false;
-      });
     })();
+
+    // ── v1.89.0 — 바깥 클릭 시 프로젝트 화면의 열린 팝업을 모두 닫기 ──────────
+    // 포커스 해제(팝업 바깥 영역 클릭)되면 콤보박스(pt-switcher)·설정(pt-settings)·
+    // 더보기(more-dropdown)를 자동으로 닫는다. <details> 는 기본적으로 바깥 클릭으로
+    // 닫히지 않아 직접 처리. switcher 가 없는 페이지에서도 동작하도록 IIFE 밖에 둔다.
+    document.addEventListener('click', function (e) {
+      root.querySelectorAll('details.pt-switcher[open], details.pt-settings[open], details.more-dropdown[open]')
+        .forEach(function (d) { if (!d.contains(e.target)) d.removeAttribute('open'); });
+    });
 
     // v1.72.0 — inner shell 의 nav/탭바 제거는 이제 **서버가 embed 요청에 미렌더**한다
     // (AdminTemplates.shell(embed=true); ?_embed=1 + 표준 Sec-Fetch-Dest:iframe 로 자동 판정).
