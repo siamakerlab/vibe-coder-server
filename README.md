@@ -784,6 +784,7 @@ carries a CSRF `_csrf` token (v0.12.4+).
 | `/projects/{id}/mcp` | Per-project `.mcp.json` editor + **v1.67.0** recognized-MCP + connection-status live card (`/projects/{id}/mcp/status`, `claude mcp list`) |
 | `/projects/{id}/git` | git status / diff / log (read-only) + **v0.18.0** commit & push form |
 | `/projects/{id}/history` | **v0.16.0** Persistent prompt/response history (filter / paginate) |
+| `/memos` | **v1.91.0** Memos (global / per-project) — card grid + mini dialog view/edit; "New memo" picks scope (global / a project) |
 | `/chat`, `/chat?c=<id>` | **v0.13.0** General Chat; **v1.54.0** multi-session sidebar (each chat = `__chat_<id>__` ghost) |
 | `POST /chat/new`, `/chat/{id}/rename`, `/chat/{id}/delete` | **v1.54.0** create / rename / delete a chat session |
 | `/chat/history` | **v0.16.0** Scratch-project persistent history |

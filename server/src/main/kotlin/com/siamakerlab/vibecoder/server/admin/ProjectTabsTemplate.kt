@@ -133,9 +133,42 @@ internal object ProjectTabsTemplate {
       <div class="pt-rail-h">${esc(t("tabs.rail.history"))}</div>
       <div class="pt-hist-list" data-hist-hint="${esc(t("tabs.rail.history.hint"))}">$historyHtml</div>
     </div>
+    <!-- v1.91.0 — 메모 위젯 (전역 + 이 프로젝트). 프롬프트 히스토리 하단. -->
+    <div class="pt-rail-card pt-memo-card">
+      <div class="pt-rail-h pt-memo-head">
+        <span>${esc(t("tabs.rail.memos"))}</span>
+        <button type="button" class="pt-memo-add" id="pt-memo-add"
+                title="${esc(t("memos.new"))}" aria-label="${esc(t("memos.new"))}">＋</button>
+      </div>
+      <div class="pt-memo-list" id="pt-memo-list"></div>
+    </div>
   </aside>
   <button type="button" class="pt-rail-toggle" id="pt-rail-toggle"
-          title="${esc(t("tabs.rail.hide"))}" data-hide="${esc(t("tabs.rail.hide"))}" data-show="${esc(t("tabs.rail.show"))}">⟩</button>"""
+          title="${esc(t("tabs.rail.hide"))}" data-hide="${esc(t("tabs.rail.hide"))}" data-show="${esc(t("tabs.rail.show"))}">⟩</button>
+  <!-- v1.91.0 — 메모 보기/편집 미니창(다이얼로그). 부모 레이어(fixed) — iframe 무관. -->
+  <div class="pt-memo-modal" id="pt-memo-modal" hidden>
+    <div class="pt-memo-box" role="dialog" aria-modal="true">
+      <h2 id="pt-memo-title"></h2>
+      <div class="pt-memo-field">
+        <label for="pt-memo-scope">${esc(t("memos.label.scope"))}</label>
+        <select id="pt-memo-scope">
+          <option value="__project__">${esc(t("memos.scope.thisProject"))}</option>
+          <option value="">${esc(t("memos.scope.global"))}</option>
+        </select>
+      </div>
+      <div class="pt-memo-field">
+        <label for="pt-memo-content">${esc(t("memos.label.content"))}</label>
+        <textarea id="pt-memo-content" maxlength="16000" placeholder="${esc(t("memos.placeholder"))}"></textarea>
+      </div>
+      <div class="pt-memo-err" id="pt-memo-err"></div>
+      <div class="pt-memo-foot">
+        <button type="button" class="pt-memo-btn danger" id="pt-memo-del" hidden>${esc(t("memos.delete"))}</button>
+        <span class="pt-memo-spacer"></span>
+        <button type="button" class="pt-memo-btn ghost" id="pt-memo-cancel">${esc(t("memos.close"))}</button>
+        <button type="button" class="pt-memo-btn primary" id="pt-memo-save">${esc(t("memos.save"))}</button>
+      </div>
+    </div>
+  </div>"""
 
         // v1.49.0 — 상단 프로젝트명을 <details> 콤보박스로: 클릭 → 다른 프로젝트로 즉시 이동.
         // 현재 프로젝트는 active 표시. 항목이 많으면 상단 필터 input 으로 즉시 검색(project-tabs.js).
@@ -451,6 +484,63 @@ internal object ProjectTabsTemplate {
   }
   #project-tabs-root .pt-hist-item:hover { background: #1a1f2c; border-color: #2a3145; opacity: 1 !important; }
   #project-tabs-root .pt-hist-empty { color: #5a6175; font-size: 12px; padding: 6px 2px; }
+  /* v1.91.0 — 메모 위젯 (프롬프트 히스토리 하단). */
+  #project-tabs-root .pt-memo-card { display: flex; flex-direction: column; flex: 0 0 auto; }
+  #project-tabs-root .pt-memo-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  #project-tabs-root .pt-memo-add {
+    background: transparent; color: var(--text-dim, #888); border: 1px solid #1f2330;
+    border-radius: 5px; width: 22px; height: 22px; line-height: 1; cursor: pointer;
+    font-size: 13px; padding: 0; flex-shrink: 0;
+  }
+  #project-tabs-root .pt-memo-add:hover { color: var(--accent, #6aa9ff); border-color: #2a3145; }
+  #project-tabs-root .pt-memo-list {
+    max-height: 36vh; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;
+  }
+  #project-tabs-root .pt-memo-item {
+    text-align: left; background: #0c0f17; border: 1px solid #1f2330; border-radius: 6px;
+    color: var(--text, #ddd); font: inherit; cursor: pointer; width: 100%; padding: 7px 9px;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  #project-tabs-root .pt-memo-item:hover { background: #1a1f2c; border-color: #2a3145; }
+  #project-tabs-root .pt-memo-item .mi-badge {
+    font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em; padding: 1px 7px;
+    border-radius: 999px; align-self: flex-start;
+  }
+  #project-tabs-root .pt-memo-item .mi-badge.global { background: rgba(106,169,255,0.15); color: var(--accent, #6aa9ff); }
+  #project-tabs-root .pt-memo-item .mi-badge.project { background: rgba(105,219,124,0.13); color: var(--ok, #69db7c); }
+  #project-tabs-root .pt-memo-item .mi-body {
+    font-size: 12px; line-height: 1.35; white-space: pre-wrap; word-break: break-word;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  #project-tabs-root .pt-memo-empty { color: #5a6175; font-size: 12px; padding: 6px 2px; }
+  /* 메모 미니창(다이얼로그) */
+  #project-tabs-root .pt-memo-modal {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 400;
+    display: flex; align-items: center; justify-content: center; padding: 16px;
+  }
+  #project-tabs-root .pt-memo-modal[hidden] { display: none; }
+  #project-tabs-root .pt-memo-box {
+    background: #131722; border: 1px solid #2a3145; border-radius: 10px; padding: 18px;
+    width: 100%; max-width: 460px; max-height: 85vh; overflow-y: auto;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.5); display: flex; flex-direction: column; gap: 11px;
+  }
+  #project-tabs-root .pt-memo-box h2 { margin: 0; font-size: 14px; }
+  #project-tabs-root .pt-memo-field { display: flex; flex-direction: column; gap: 5px; }
+  #project-tabs-root .pt-memo-field label { font-size: 10px; color: #5a6175; text-transform: uppercase; letter-spacing: 0.04em; }
+  #project-tabs-root .pt-memo-field select, #project-tabs-root .pt-memo-field textarea {
+    background: #0c0f17; border: 1px solid #2a3145; border-radius: 6px; color: var(--text, #ddd);
+    font: inherit; padding: 8px 10px; box-sizing: border-box; width: 100%;
+  }
+  #project-tabs-root .pt-memo-field textarea { min-height: 150px; resize: vertical; line-height: 1.45; }
+  #project-tabs-root .pt-memo-foot { display: flex; gap: 8px; align-items: center; margin-top: 2px; }
+  #project-tabs-root .pt-memo-spacer { flex: 1; }
+  #project-tabs-root .pt-memo-btn { border: 0; border-radius: 6px; padding: 8px 13px; font: inherit; cursor: pointer; }
+  #project-tabs-root .pt-memo-btn.primary { background: var(--accent, #6aa9ff); color: #0b0d12; font-weight: 600; }
+  #project-tabs-root .pt-memo-btn.ghost { background: transparent; color: var(--text-dim, #888); border: 1px solid #1f2330; }
+  #project-tabs-root .pt-memo-btn.ghost:hover { color: var(--text, #ddd); border-color: #2a3145; }
+  #project-tabs-root .pt-memo-btn.danger { background: transparent; color: #ff9e9e; border: 1px solid #3a2424; }
+  #project-tabs-root .pt-memo-btn.danger:hover { background: #2c1a1a; }
+  #project-tabs-root .pt-memo-err { color: #ff6b6b; font-size: 11px; min-height: 13px; }
   /* rail 접기/펼치기 토글 — rail 좌측 가장자리 손잡이. */
   /* v1.50.1 — 토글을 rail 세로 중앙에 배치(이전 top:8px 는 콘솔 헤더의 "새 세션" 버튼과
      겹쳐 오클릭 위험). transform 으로 세로 중앙 정렬. */
@@ -555,6 +645,114 @@ $railHtml
     ws.onerror = function() { try { ws.close(); } catch (e) {} };
   }
   connect();
+})();
+</script>
+<!-- v1.91.0 — rail 메모 위젯 (전역 + 이 프로젝트). /api/memos JSON API (same-origin cookie). -->
+<script>
+(function () {
+  var PID = ${jsLit(project.id)};
+  var L = {
+    global: ${jsLit(t("memos.scope.global"))},
+    thisProject: ${jsLit(t("memos.scope.thisProject"))},
+    titleNew: ${jsLit(t("memos.new"))},
+    titleEdit: ${jsLit(t("memos.edit"))},
+    empty: ${jsLit(t("memos.empty.short"))},
+    confirmDel: ${jsLit(t("memos.deleteConfirm"))},
+    errEmpty: ${jsLit(t("memos.error.empty"))},
+    errGeneric: ${jsLit(t("memos.error.generic"))}
+  };
+  var listEl = document.getElementById('pt-memo-list');
+  var modal = document.getElementById('pt-memo-modal');
+  if (!listEl || !modal) return;
+  var titleEl = document.getElementById('pt-memo-title');
+  var scopeEl = document.getElementById('pt-memo-scope');
+  var contentEl = document.getElementById('pt-memo-content');
+  var errEl = document.getElementById('pt-memo-err');
+  var delBtn = document.getElementById('pt-memo-del');
+  var editingId = null;
+
+  function api(method, url, body) {
+    return fetch(url, {
+      method: method, credentials: 'same-origin',
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined
+    });
+  }
+
+  function render(memos) {
+    listEl.textContent = '';
+    if (!memos.length) {
+      var e = document.createElement('div');
+      e.className = 'pt-memo-empty'; e.textContent = L.empty;
+      listEl.appendChild(e); return;
+    }
+    memos.forEach(function (m) {
+      var item = document.createElement('button');
+      item.type = 'button'; item.className = 'pt-memo-item';
+      var badge = document.createElement('span');
+      if (m.projectId) { badge.className = 'mi-badge project'; badge.textContent = L.thisProject; }
+      else { badge.className = 'mi-badge global'; badge.textContent = L.global; }
+      var body = document.createElement('span');
+      body.className = 'mi-body'; body.textContent = m.content;
+      item.appendChild(badge); item.appendChild(body);
+      item.addEventListener('click', function () { openEdit(m); });
+      listEl.appendChild(item);
+    });
+  }
+
+  function load() {
+    api('GET', '/api/memos?projectId=' + encodeURIComponent(PID))
+      .then(function (r) { return r.json(); })
+      .then(function (d) { render((d && d.memos) || []); })
+      .catch(function () { render([]); });
+  }
+
+  function open() { errEl.textContent = ''; modal.hidden = false; setTimeout(function () { contentEl.focus(); }, 0); }
+  function close() { modal.hidden = true; editingId = null; }
+
+  function openNew() {
+    editingId = null; titleEl.textContent = L.titleNew;
+    scopeEl.value = '__project__'; contentEl.value = ''; delBtn.hidden = true; open();
+  }
+  function openEdit(m) {
+    editingId = m.id; titleEl.textContent = L.titleEdit;
+    scopeEl.value = m.projectId ? '__project__' : ''; contentEl.value = m.content;
+    delBtn.hidden = false; open();
+  }
+  function scopePid() { return scopeEl.value === '__project__' ? PID : null; }
+
+  function save() {
+    var content = contentEl.value.trim();
+    if (!content) { errEl.textContent = L.errEmpty; return; }
+    var url, method, req;
+    if (editingId) {
+      method = 'PUT'; url = '/api/memos/' + encodeURIComponent(editingId);
+      req = { content: content, projectId: scopePid(), keepScope: false };
+    } else {
+      method = 'POST'; url = '/api/memos';
+      req = { content: content, projectId: scopePid() };
+    }
+    api(method, url, req).then(function (r) {
+      if (!r.ok) { errEl.textContent = L.errGeneric; return; }
+      close(); load();
+    }).catch(function () { errEl.textContent = L.errGeneric; });
+  }
+  function del() {
+    if (!editingId || !window.confirm(L.confirmDel)) return;
+    api('DELETE', '/api/memos/' + encodeURIComponent(editingId)).then(function (r) {
+      if (!r.ok) { errEl.textContent = L.errGeneric; return; }
+      close(); load();
+    }).catch(function () { errEl.textContent = L.errGeneric; });
+  }
+
+  document.getElementById('pt-memo-add').addEventListener('click', openNew);
+  document.getElementById('pt-memo-save').addEventListener('click', save);
+  document.getElementById('pt-memo-cancel').addEventListener('click', close);
+  delBtn.addEventListener('click', del);
+  modal.addEventListener('click', function (e) { if (e.target === modal) close(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !modal.hidden) close(); });
+
+  load();
 })();
 </script>
 """,

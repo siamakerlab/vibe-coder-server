@@ -182,6 +182,8 @@ object AdminTemplates {
             "settings" -> """<circle cx="12" cy="12" r="3"/><path d="M19.4 15 a1.65 1.65 0 0 0 .33 1.82 l.06.06 a2 2 0 1 1-2.83 2.83 l-.06-.06 a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51 V21 a2 2 0 0 1-4 0 v-.09 A1.65 1.65 0 0 0 9 19.4 a1.65 1.65 0 0 0-1.82.33 l-.06.06 a2 2 0 1 1-2.83-2.83 l.06-.06 a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1 H3 a2 2 0 0 1 0-4 h.09 A1.65 1.65 0 0 0 4.6 9 a1.65 1.65 0 0 0-.33-1.82 l-.06-.06 a2 2 0 1 1 2.83-2.83 l.06.06 a1.65 1.65 0 0 0 1.82.33 H9 a1.65 1.65 0 0 0 1-1.51 V3 a2 2 0 0 1 4 0 v.09 a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33 l.06-.06 a2 2 0 1 1 2.83 2.83 l-.06.06 a1.65 1.65 0 0 0-.33 1.82 V9 a1.65 1.65 0 0 0 1.51 1 H21 a2 2 0 0 1 0 4 h-.09 a1.65 1.65 0 0 0-1.51 1 z"/>"""
             // v1.27.0 — Lucide "terminal-square" (단순화). > prompt + horizontal cursor.
             "terminal" -> """<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9 L10 12 L7 15"/><path d="M12 16 H17"/>"""
+            // v1.91.0 — Lucide "notebook-pen" (단순화). 노트 + 점선 라인 + 펜.
+            "notebook" -> """<path d="M5 4 a2 2 0 0 1 2-2 h10 a2 2 0 0 1 2 2 v16 a2 2 0 0 1-2 2 H7 a2 2 0 0 1-2-2 z"/><path d="M2 6 h3"/><path d="M2 12 h3"/><path d="M2 18 h3"/><path d="M9 7 h6"/><path d="M9 11 h4"/>"""
             else -> ""
         }
         return """<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20" aria-hidden="true">$inner</svg>"""
@@ -214,6 +216,7 @@ object AdminTemplates {
     ${link("/", t("nav.home"), "dashboard", "home")}
     ${link("/projects", t("nav.projects"), "projects", "folder")}
     ${link("/chat", t("nav.chat"), "chat", "chat")}
+    ${link("/memos", t("nav.memos"), "memos", "notebook")}
     ${link("/tools/tabs", t("nav.tools"), "tools", "tools")}
     ${link("/terminal", t("nav.terminal"), "terminal", "terminal")}
     ${link("/settings/tabs", t("nav.settings"), "settings", "settings")}

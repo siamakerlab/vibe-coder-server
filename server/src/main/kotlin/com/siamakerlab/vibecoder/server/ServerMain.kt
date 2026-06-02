@@ -209,6 +209,8 @@ fun main(args: Array<String>) {
     // 생성 순서를 ProjectService 앞으로.
     val promptAutomationRunRepo =
         com.siamakerlab.vibecoder.server.repo.PromptAutomationRunRepository(clock)
+    // v1.91.0 — 독립 메모 repo. ProjectService delete cascade 정리에 필요해 생성 순서를 앞으로.
+    val memoRepo = com.siamakerlab.vibecoder.server.repo.MemoRepository(clock)
     val projects = ProjectService(
         workspace, projectRepo, buildRepo, keystoreGen, gitClone,
         artifactRepo = artifactRepo, uploadedFileRepo = uploadedRepo,
@@ -217,6 +219,7 @@ fun main(args: Array<String>) {
         buildScheduleRepo = buildScheduleRepo,
         buildWebhookSecretRepo = buildWebhookSecretRepo,
         promptAutomationRunRepo = promptAutomationRunRepo,
+        memoRepo = memoRepo,
         isBusyOf = sessionManager::isBusy,
     )
     // v1.7.2 — SCRATCH 프로젝트 (__scratch__) 를 server startup 시 자동 ensure.
@@ -557,6 +560,7 @@ fun main(args: Array<String>) {
         promptAutomationPresetStore = promptAutomationPresetStore,
         promptAutomationRunRepo = promptAutomationRunRepo,
         promptAutomationManager = promptAutomationManager,
+        memoRepo = memoRepo,
     )
 
     Runtime.getRuntime().addShutdownHook(Thread {

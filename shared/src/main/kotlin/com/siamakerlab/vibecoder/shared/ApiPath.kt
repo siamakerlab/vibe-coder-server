@@ -430,6 +430,20 @@ object ApiPath {
         "/api/projects/${pathSeg(projectId)}/history/import"
 
     /**
+     * v1.91.0 신규 — 독립 메모 (전역/프로젝트별) 컬렉션.
+     * GET: `?projectId=X` 면 전역 + 프로젝트 X 메모, 없으면 전체. 응답 [MemoListResponseDto].
+     * POST: [MemoCreateRequestDto] body 로 생성. 응답 [MemoDto].
+     * Bearer 토큰 (또는 cookie 세션) 인증. POST 는 write 권한.
+     */
+    const val MEMOS = "/api/memos"
+
+    /**
+     * v1.91.0 신규 — 단일 메모. PUT [MemoUpdateRequestDto] 수정 / DELETE 삭제.
+     * 응답: PUT [MemoDto], DELETE [MemoMutationAckDto].
+     */
+    fun memo(memoId: String) = "/api/memos/${pathSeg(memoId)}"
+
+    /**
      * v0.64.0 — path segment URL encoding helper.
      * `agent` / `projectId` / `turnId` 등 사용자 정의 식별자가 path 에 들어갈 때 사용.
      * form encoding (`+`) 이 아니라 path encoding (`%20`) 이라

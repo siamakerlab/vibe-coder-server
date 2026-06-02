@@ -410,8 +410,33 @@ object PromptAutomationRuns : Table("prompt_automation_runs") {
     }
 }
 
+/**
+ * v1.91.0 — 독립 메모 (전역/프로젝트별).
+ *
+ * `projectId` 가 null 이면 전역 메모(모든 프로젝트 화면에 노출), non-null 이면
+ * 해당 프로젝트 전용. `conversation_turns.user_memo` (turn-scoped 인라인 메모) 와는
+ * 별개의 free-form 메모.
+ *
+ * projectId 는 nullable FK — 전역 메모는 NULL. 프로젝트 삭제 시 ProjectService.delete
+ * 의 단일 transaction 안에서 [com.siamakerlab.vibecoder.server.repo.MemoRepository.deleteForProject]
+ * 로 수동 정리(다른 자식 테이블과 동일 패턴, FK onDelete 미사용).
+ */
+object Memos : Table("memos") {
+    val id = varchar("id", 64)
+    val projectId = varchar("project_id", 64).references(Projects.id).nullable()
+    val content = text("content")
+    val createdAt = varchar("created_at", 64)
+    val updatedAt = varchar("updated_at", 64)
+    override val primaryKey = PrimaryKey(id)
+
+    init {
+        index(isUnique = false, columns = arrayOf(projectId, updatedAt))
+        index(isUnique = false, columns = arrayOf(updatedAt))
+    }
+}
+
 val AllTables = arrayOf(
     AdminUsers, Devices, Projects, Builds, Artifacts, UploadedFiles, AuditLog, ConversationTurns,
     BuildSchedules, BuildWebhookSecrets, PushSubscriptions, WebauthnCredentials, ProjectAcls,
-    NotificationEvents, PromptAutomationRuns,
+    NotificationEvents, PromptAutomationRuns, Memos,
 )
