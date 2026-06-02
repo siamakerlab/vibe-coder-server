@@ -1781,8 +1781,10 @@ $automationPanelHtml
     if (sel && !sel.isCollapsed) return;  // 드래그 선택 중엔 무시
     var card = e.target.closest('.log-line.user');
     if (card) { card.classList.toggle('expanded'); return; }
-    // v1.85.0 — assistant 긴 메시지 카드 탭 → 전문 펼침/접힘.
-    var content = e.target.closest('.log-line.assistant .log-content');
+    // v1.90.8 — 긴 메시지 카드 탭 → 전문 펼침/접힘. v1.90.5 에서 clamp 를 모든 메시지로
+    // 확장했으나 이 토글 핸들러만 .assistant 한정이 남아, tool 결과 등은 접히기만 하고
+    // 펼쳐지지 않았다. 셀렉터를 모든 .log-content 로 일치시킨다.
+    var content = e.target.closest('.log-content');
     if (content && content.dataset.clampable === '1') {
       content.classList.toggle('clamped');
     }
