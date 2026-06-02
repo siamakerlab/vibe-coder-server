@@ -361,7 +361,7 @@ docker compose up -d            # boots postgres + vibe-coder-server
   `starterPrompt` for the first Claude console turn.
 
 
-## Image layout (~600 MB)
+## Image layout (~750 MB)
 
 | Layer | Contents | Size |
 |---|---|---|
@@ -369,7 +369,15 @@ docker compose up -d            # boots postgres + vibe-coder-server
 | OpenJDK 17 (JRE) | runs the vibe-coder server | ~200 MB |
 | Node 20 LTS + Claude Code CLI | Claude child process | ~250 MB |
 | git, curl, unzip, jq, tini, gosu, util-linux, sudo | minimal tooling | ~80 MB |
+| ImageMagick · Pillow (python3) · rsvg · webp · poppler · ghostscript | image tooling (v1.92.0) | ~150 MB |
 | vibe-coder server (Ktor installDist) | app body | ~50 MB |
+
+> **Image tools + sudo** (v1.92.0): ImageMagick, Pillow (`python3-pil` +
+> NumPy), `rsvg-convert`, `cwebp`/`dwebp`, `poppler-utils`, Ghostscript, and
+> `optipng`/`pngquant`/`jpegoptim` are pre-installed so Claude can handle
+> screenshots, mockups, icons, and APK resources out of the box. Anything else
+> installs through the `vibe` user's passwordless sudo
+> (`sudo apt-get update && sudo apt-get install <pkg>`).
 
 **Not bundled** (operator installs into volumes on first run via the
 `/env-setup` page):

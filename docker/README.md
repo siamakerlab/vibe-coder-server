@@ -73,8 +73,16 @@ docker exec -it vibe-coder-server vibe-doctor
 | OpenJDK 17 (JRE) | vibe-coder 서버 실행 | ~200MB |
 | Node 20 LTS + Claude Code CLI | Claude 자식 프로세스 | ~250MB |
 | git, curl, unzip, jq, tini, gosu 등 | 빌드 도구 최소셋 | ~80MB |
+| ImageMagick · Pillow(python3) · rsvg · webp · poppler 등 | 이미지 처리 도구 (v1.92.0) | ~150MB |
 | vibe-coder 서버 (installDist) | Ktor 본체 | ~50MB |
-| **Total** | | **~600MB** |
+| **Total** | | **~750MB** |
+
+> **이미지 도구 + 추가 설치** (v1.92.0): Claude Code 가 스크린샷·mockup·아이콘을
+> 바로 다룰 수 있도록 `imagemagick` / `python3-pil`(Pillow) / `librsvg2-bin` /
+> `webp` / `poppler-utils` / `ghostscript` / `optipng` / `pngquant` / `jpegoptim`
+> 를 기본 포함. 그 외 도구는 `vibe` 유저의 NOPASSWD sudo 로
+> `sudo apt-get update && sudo apt-get install <pkg>` 로 언제든 추가 설치 가능
+> (ffmpeg / inkscape 등).
 
 이미지에 **포함되지 않은 것들** (doctor가 볼륨에 다운로드):
 
