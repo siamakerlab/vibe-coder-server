@@ -151,10 +151,20 @@
     }
   }
 
+  // v1.90.14 — 일부 tool_result output 이 JSON 으로 한 번 더 인코딩된 문자열
+  // (양끝 따옴표 + \n/\t literal escape)로 와서 콘솔에 '\t' '\n' 가 그대로 보이던 문제.
+  // 양끝이 따옴표인 유효 JSON 문자열이면 1회 unescape. 아니면 원문 유지(백슬래시 손상 방지).
+  function unescapeJsonString(s) {
+    if (typeof s === 'string' && s.length >= 2 && s.charAt(0) === '"' && s.charAt(s.length - 1) === '"') {
+      try { var v = JSON.parse(s); if (typeof v === 'string') return v; } catch (e) {}
+    }
+    return s;
+  }
+
   // tool_result content(string | array[{type,text}] | object) → 사람이 읽는 텍스트.
   function extractToolResult(output) {
     if (output == null) return '';
-    if (typeof output === 'string') return output;
+    if (typeof output === 'string') return unescapeJsonString(output);
     if (Array.isArray(output)) {
       var parts = [];
       for (var j = 0; j < output.length; j++) {
