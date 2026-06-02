@@ -720,6 +720,28 @@ object McpCatalog {
             description = "iOS/Android 빌드/사인/배포 자동화 fastlane wrapper. Ruby/fastlane 별도 설치 필요.",
             category = Category.APP_PUBLISH, trust = Trust.EXPERIMENTAL,
         ))
+        add(McpEntry(
+            id = "app-publish",
+            displayName = "App Publish (Play + App Store)",
+            pkg = "app-publish-mcp",
+            description = "Google Play Console + Apple App Store Connect 통합 MCP. 릴리스 / 트랙 업로드 / 스크린샷 / 리뷰 / 구독 등 (Play 35 + Apple 56 도구). 쓰는 플랫폼의 인증값만 채우면 됨.",
+            category = Category.APP_PUBLISH, trust = Trust.EXPERIMENTAL,
+            homepage = "https://github.com/mikusnuz/app-publish-mcp",
+            configFields = listOf(
+                ConfigField("GOOGLE_SERVICE_ACCOUNT_PATH", "Google Play Service Account JSON 파일",
+                    isFile = true, acceptMime = ".json,application/json", required = false,
+                    help = "Google Cloud Console 에서 service account 생성 → Google Play Android Developer API 활성화 → Play Console > 설정 > API 액세스에서 권한 부여 후 JSON 키 다운로드. (Play 안 쓰면 비워둠)"),
+                ConfigField("APPLE_KEY_ID", "Apple App Store Connect Key ID",
+                    "AB12CD34EF", required = false,
+                    help = "App Store Connect > Users and Access > Integrations > App Store Connect API. (App Store 안 쓰면 비워둠)"),
+                ConfigField("APPLE_ISSUER_ID", "Apple Issuer ID",
+                    "12a3b456-...", required = false,
+                    help = "App Store Connect API 페이지 상단의 Issuer ID. (App Store 안 쓰면 비워둠)"),
+                ConfigField("APPLE_P8_PATH", "Apple Private Key 파일 (.p8)",
+                    isFile = true, acceptMime = ".p8", required = false,
+                    help = "App Store Connect > Integrations > API Keys > Generate API Key > Download (.p8). (App Store 안 쓰면 비워둠)"),
+            ),
+        ))
 
         // ─── AI_ASSIST 추가 ──────────────────────────────────────
         add(McpEntry(
