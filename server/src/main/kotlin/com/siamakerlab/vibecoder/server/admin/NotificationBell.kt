@@ -39,6 +39,9 @@ internal object NotificationBell {
     background: var(--card, #161a22); border: 1px solid var(--border, #2a2f3a);
     border-radius: 12px; box-shadow: 0 12px 32px rgba(0,0,0,.45); overflow: hidden;
   }
+  /* v1.89.1 — author display:flex 가 hidden 속성(display:none)을 이겨 패널이 상시
+     열려 보이던 버그. [hidden] 일 때 명시적으로 숨긴다(더 높은 specificity). */
+  .vibe-notif-panel[hidden] { display: none; }
   .vibe-notif-head {
     padding: 12px 14px; font-weight: 600; font-size: 14px;
     border-bottom: 1px solid var(--border, #2a2f3a); color: var(--fg, #e5e7eb);
