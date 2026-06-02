@@ -1,0 +1,1196 @@
+- generic [active] [ref=e1]:
+  - button "알림" [ref=e3] [cursor=pointer]:
+    - img [ref=e4]
+  - generic [ref=e7]:
+    - navigation [ref=e8]:
+      - link "Vibe Coder Vibe Coder" [ref=e9] [cursor=pointer]:
+        - /url: /
+        - img "Vibe Coder" [ref=e10]
+        - generic [ref=e11]: Vibe Coder
+      - button "사이드바 접기/펴기" [ref=e12] [cursor=pointer]: ⇆
+      - generic [ref=e13]:
+        - link "홈" [ref=e14] [cursor=pointer]:
+          - /url: /
+          - img [ref=e15]
+          - generic [ref=e18]: 홈
+        - link "프로젝트" [ref=e19] [cursor=pointer]:
+          - /url: /projects
+          - img [ref=e20]
+          - generic [ref=e22]: 프로젝트
+        - link "채팅" [ref=e23] [cursor=pointer]:
+          - /url: /chat
+          - img [ref=e24]
+          - generic [ref=e26]: 채팅
+        - link "도구" [ref=e27] [cursor=pointer]:
+          - /url: /tools/tabs
+          - img [ref=e28]
+          - generic [ref=e30]: 도구
+        - link "터미널" [ref=e31] [cursor=pointer]:
+          - /url: /terminal
+          - img [ref=e32]
+          - generic [ref=e35]: 터미널
+        - link "설정" [ref=e36] [cursor=pointer]:
+          - /url: /settings/tabs
+          - img [ref=e37]
+          - generic [ref=e40]: 설정
+      - link "무선디버깅 대기 중 · 0 대 연결" [ref=e41] [cursor=pointer]:
+        - /url: /adb
+        - generic [ref=e43]: 무선디버깅
+        - generic [ref=e45]:
+          - generic [ref=e46]: 대기 중
+          - text: ·
+          - strong [ref=e47]: "0"
+          - text: 대 연결
+      - link "에뮬레이터 중지됨" [ref=e48] [cursor=pointer]:
+        - /url: /emulator
+        - generic [ref=e50]: 에뮬레이터
+        - generic [ref=e53]: 중지됨
+      - button "로그아웃" [ref=e57] [cursor=pointer]
+    - main [ref=e58]:
+      - generic [ref=e59]:
+        - heading "콘솔 Monthly Budget (monthly-budget)" [level=1] [ref=e60]
+        - generic [ref=e61]:
+          - generic [ref=e62]: "세션: idle (will resume) 9ff5634b-044…"
+          - button "새 세션" [ref=e64] [cursor=pointer]
+      - group [ref=e65]:
+        - generic "🔍 메시지 필터" [ref=e66] [cursor=pointer]: 🔍 메시지 필터
+      - generic "새 응답 도착 시 사용자 스크롤 위치 무시하고 항상 최하단. OFF 면 사용자가 하단에 있을 때만 따라감. 사용자 선호는 브라우저에 저장됨." [ref=e68] [cursor=pointer]:
+        - checkbox "📌 자동 스크롤" [checked] [ref=e69]
+        - text: 📌 자동 스크롤
+      - generic [ref=e71]:
+        - generic [ref=e73]:
+          - generic [ref=e74]: — 119 previous turn(s) restored —
+          - generic [ref=e75]:
+            - generic "19:05:39" [ref=e76]
+            - button "Copy" [ref=e77] [cursor=pointer]:
+              - img [ref=e78]
+        - generic [ref=e82]:
+          - generic [ref=e83]: started · claude-opus-4-8[1m]
+          - generic [ref=e84]:
+            - generic "12:24:45" [ref=e85]
+            - button "Copy" [ref=e86] [cursor=pointer]:
+              - img [ref=e87]
+        - generic [ref=e91]:
+          - generic [ref=e92]: Anthropic 서버가 요청을 일시적으로 제한하고 있습니다 (rate limit). Claude CLI 가 자동으로 재시도 중입니다 — 잠시만 기다려 주세요.
+          - generic [ref=e93]:
+            - generic "12:24:46" [ref=e94]
+            - button "Copy" [ref=e95] [cursor=pointer]:
+              - img [ref=e96]
+        - generic [ref=e100]:
+          - generic [ref=e101]: 💭 Thinking…
+          - generic [ref=e102]:
+            - generic "12:24:47" [ref=e103]
+            - button "Copy" [ref=e104] [cursor=pointer]:
+              - img [ref=e105]
+        - generic [ref=e109]:
+          - generic [ref=e110]: 이 작업을 시작하겠습니다. 먼저 현재 프로젝트 구조와 설정을 파악하겠습니다.
+          - generic [ref=e111]:
+            - generic "12:24:48" [ref=e112]
+            - button "Copy" [ref=e113] [cursor=pointer]:
+              - img [ref=e114]
+        - generic [ref=e118]:
+          - generic [ref=e119]: /workspace/monthly-budget/app/build.gradle.kts
+          - generic [ref=e120]:
+            - generic "12:24:48" [ref=e121]
+            - button "Copy" [ref=e122] [cursor=pointer]:
+              - img [ref=e123]
+        - generic [ref=e127] [cursor=pointer]:
+          - code [ref=e130]: "1 import java.io.FileInputStream 2 import java.util.Properties 3 4 plugins { 5 // AGP 9 부터 Kotlin 지원 내장 — `org.jetbrains.kotlin.android` 플러그인 불필요. 6 alias(libs.plugins.android.application) 7 alias(libs.plugins.kotlin.compose) 8 alias(libs.plugins.kotlin.serialization) 9 alias(libs.plugins.ksp) 10 alias(libs.plugins.hilt) 11 } 12 13 // 키스토어 정책: CLAUDE.md §7 — `../keystores/` 외부 보관, 비밀번호는 properties 로만 주입. 14 // vibe-coder 컨테이너 영속 볼륨 (`/home/vibe/keystores/`) 의 properties 가 있을 때만 서명 적용. 15 val signingPropsFile = file(\"/home/vibe/keystores/com.siamakerlab.moneyrecord-keystore.properties\") 16 val signingProps = Properties().apply { 17 if (signingPropsFile.exists()) { 18 FileInputStream(signingPropsFile).use { load(it) } 19 } 20 } 21 22 android { 23 namespace = \"com.siamakerlab.moneyrecord\" 24 compileSdk = 36 25 26 defaultConfig { 27 applicationId = \"com.siamakerlab.moneyrecord\" 28 minSdk = 26 29 targetSdk = 36 30 // 정책: CLAUDE.md §3 — versionCode = yymmddrrr, versionName = v<major>.<minor>.<patch> 31 // 갱신은 ./tools/bump-version.sh 로 자동화. 32 versionCode = 260602012 33 versionName = \"v0.2.29\" 34 35 testInstrumentationRunner = \"androidx.test.runner.AndroidJUnitRunner\" 36 vectorDrawables { useSupportLibrary = true } 37 } 38 39 androidResources { 40 // AGP 9 부터 resourceConfigurations 는 deprecated → androidResources.localeFilters 사용. 41 localeFilters += listOf(\"en\", \"ko\", \"lo\") 42 } 43 44 signingConfigs { 45 create(\"release\") { 46 if (signingPropsFile.exists()) { 47 storeFile = file(signingProps.getProperty(\"storeFile\")) 48 storePassword = signingProps.getProperty(\"storePassword\") 49 keyAlias = signingProps.getProperty(\"keyAlias\") 50 keyPassword = signingProps.getProperty(\"keyPassword\") 51 } 52 } 53 getByName(\"debug\") { 54 if (signingPropsFile.exists()) { 55 // 정책 §7: debug / release 동일 서명. storeFile 만 -debug.keystore 로 분리. 56 storeFile = file(\"/home/vibe/keystores/com.siamakerlab.moneyrecord-debug.keystore\") 57 storePassword = signingProps.getProperty(\"storePassword\") 58 keyAlias = signingProps.getProperty(\"keyAlias\") 59 keyPassword = signingProps.getProperty(\"keyPassword\") 60 } 61 } 62 } 63 64 buildTypes { 65 debug { 66 applicationIdSuffix = \".debug\" 67 isDebuggable = true 68 // AdMob 공식 테스트 App ID (디버그 전용 — 정책 §10). 69 manifestPlaceholders[\"admobAppId\"] = \"ca-app-pub-3940256099942544~3347511713\" 70 } 71 release { 72 // R8 코드 축소·난독화·최적화 + 리소스 축소. 빌드 사이즈 + 보안 측면. 73 // proguard-rules.pro 에 reflection/serialization 케이스 명시 keep. 74 isMinifyEnabled = true 75 isShrinkResources = true 76 proguardFiles( 77 getDefaultProguardFile(\"proguard-android-optimize.txt\"), 78 \"proguard-rules.pro\" 79 ) 80 signingConfig = signingConfigs.getByName(\"release\") 81 // 실 AdMob App ID 는 출시 직전 사용자가 본인 AdMob 계정 ID 로 교체. 82 // placeholder 그대로면 AdsConfig.isConfigured 가 false → 광고 로드 시도 자체 차단 (H6). 83 manifestPlaceholders[\"admobAppId\"] = \"ca-app-pub-REPLACE_ME~0000000000\" 84 } 85 } 86 87 compileOptions { 88 sourceCompatibility = JavaVersion.VERSION_17 89 targetCompatibility = JavaVersion.VERSION_17 90 } 91 92 buildFeatures { 93 compose = true 94 buildConfig = true …(+3446)"
+          - generic [ref=e131]:
+            - generic "12:24:49" [ref=e132]
+            - button "Copy" [ref=e133]:
+              - img [ref=e134]
+          - text: ⌄ 더보기
+        - generic [ref=e138]:
+          - generic [ref=e139]: echo "=== source dirs ===" && ls app/src && echo "=== moneyrecord occurrences in files (count) ===" && grep -rl "moneyrecord" app --include="*.kt" --include="*.java" --include="*.xml" --include="*.kts" --include="*.properties" | wc -l
+          - generic [ref=e140]:
+            - generic "12:24:50" [ref=e141]
+            - button "Copy" [ref=e142] [cursor=pointer]:
+              - img [ref=e143]
+        - generic [ref=e147]:
+          - code [ref=e150]: === source dirs === main test === moneyrecord occurrences in files (count) === 568
+          - generic [ref=e151]:
+            - generic "12:24:50" [ref=e152]
+            - button "Copy" [ref=e153] [cursor=pointer]:
+              - img [ref=e154]
+        - generic [ref=e158]:
+          - generic [ref=e159]: 💭 Thinking…
+          - generic [ref=e160]:
+            - generic "12:24:54" [ref=e161]
+            - button "Copy" [ref=e162] [cursor=pointer]:
+              - img [ref=e163]
+        - generic [ref=e167]:
+          - generic [ref=e168]: echo "=== main java/kotlin dirs ===" && ls app/src/main 2>/dev/null && echo "---" && find app/src -maxdepth 4 -type d -name moneyrecord && echo "=== manifest pkg refs ===" && grep -rn "com\.siamakerlab\.moneyrecord" app/src --include="*.xml" | head -50
+          - generic [ref=e169]:
+            - generic "12:24:54" [ref=e170]
+            - button "Copy" [ref=e171] [cursor=pointer]:
+              - img [ref=e172]
+        - generic [ref=e176]:
+          - code [ref=e179]: === main java/kotlin dirs === AndroidManifest.xml java res --- === manifest pkg refs ===
+          - generic [ref=e180]:
+            - generic "12:24:55" [ref=e181]
+            - button "Copy" [ref=e182] [cursor=pointer]:
+              - img [ref=e183]
+        - generic [ref=e187]:
+          - generic [ref=e188]: 💭 Thinking…
+          - generic [ref=e189]:
+            - generic "12:24:58" [ref=e190]
+            - button "Copy" [ref=e191] [cursor=pointer]:
+              - img [ref=e192]
+        - generic [ref=e196]:
+          - generic [ref=e197]: 소스 트리와 참조 위치를 더 자세히 확인하겠습니다.
+          - generic [ref=e198]:
+            - generic "12:24:59" [ref=e199]
+            - button "Copy" [ref=e200] [cursor=pointer]:
+              - img [ref=e201]
+        - generic [ref=e205]:
+          - generic [ref=e206]: echo "=== java tree top ===" && find app/src/main/java/com/siamakerlab/moneyrecord -maxdepth 1 && echo "=== test tree ===" && find app/src/test -type d && echo "=== file types containing moneyrecord ===" && grep -rl "moneyrecord" app --include="*.kt" --include="*.xml" --include="*.kts" --include="*.pro" | sed 's/.*\.//' | sort | uniq -c && echo "=== non-package moneyrecord refs (xml/manifest/pro/k …(+92)
+          - generic [ref=e207]:
+            - generic "12:25:02" [ref=e208]
+            - button "Copy" [ref=e209] [cursor=pointer]:
+              - img [ref=e210]
+        - generic [ref=e214] [cursor=pointer]:
+          - code [ref=e217]: "<persisted-output> Output too large (78.3KB). Full output saved to: /home/vibe/.claude/projects/-workspace-monthly-budget/9ff5634b-044e-4902-9260-f6fa1253de64/tool-results/bst4e1th4.txt Preview (first 2KB): === java tree top === app/src/main/java/com/siamakerlab/moneyrecord app/src/main/java/com/siamakerlab/moneyrecord/di app/src/main/java/com/siamakerlab/moneyrecord/core app/src/main/java/com/siamakerlab/moneyrecord/domain app/src/main/java/com/siamakerlab/moneyrecord/DuoBudgetApp.kt app/src/main/java/com/siamakerlab/moneyrecord/data app/src/main/java/com/siamakerlab/moneyrecord/ui app/src/main/java/com/siamakerlab/moneyrecord/MainActivity.kt === test tree === app/src/test app/src/test/java app/src/test/java/com app/src/test/java/com/siamakerlab app/src/test/java/com/siamakerlab/moneyrecord app/src/test/java/com/siamakerlab/moneyrecord/domain app/src/test/java/com/siamakerlab/moneyrecord/domain/cycle app/src/test/java/com/siamakerlab/moneyrecord/data app/src/test/java/com/siamakerlab/moneyrecord/data/sync app/src/test/java/com/siamakerlab/moneyrecord/data/drive app/src/test/java/com/siamakerlab/moneyrecord/data/ads app/src/test/java/com/siamakerlab/moneyrecord/ui app/src/test/java/com/siamakerlab/moneyrecord/ui/screen app/src/test/java/com/siamakerlab/moneyrecord/ui/screen/howto app/src/test/java/com/siamakerlab/moneyrecord/ui/screen/fixed === file types containing moneyrecord === 108 kt 1 kts 161 pro 17 xml === non-package moneyrecord refs (xml/manifest/pro/kts) === app/build/generated/ksp/debug/resources/META-INF/proguard/com_siamakerlab_moneyrecord_ui_screen_fixed_FixedExpensesViewModel_HiltModules_BindsModule_LazyClassKeys.pro:1:-keep,allowobfuscation,allowshrinking class com.siamakerlab.moneyrecord.ui.screen.fixed.FixedExpensesViewModel app/build/generated/ksp/debug/resources/META-INF/proguard/com_siamakerlab_moneyrecord_ui_screen_settings_SettingsViewModel_HiltModules_BindsModule_LazyClassKeys.pro:1:-keep,allowobfuscation,allowshrinking class com.siamakerlab.moneyrecord.ui.screen.settings.SettingsViewModel ... </persisted-output>"
+          - generic [ref=e218]:
+            - generic "12:25:02" [ref=e219]
+            - button "Copy" [ref=e220]:
+              - img [ref=e221]
+          - text: ⌄ 더보기
+        - generic [ref=e225]:
+          - generic [ref=e226]: 💭 Thinking…
+          - generic [ref=e227]:
+            - generic "12:25:05" [ref=e228]
+            - button "Copy" [ref=e229] [cursor=pointer]:
+              - img [ref=e230]
+        - generic [ref=e234]:
+          - generic [ref=e235]:
+            - text: 생성된
+            - code [ref=e236]: app/build/
+            - text: 디렉토리를 제외하고 실제 소스 파일만 확인하겠습니다.
+          - generic [ref=e237]:
+            - generic "12:25:06" [ref=e238]
+            - button "Copy" [ref=e239] [cursor=pointer]:
+              - img [ref=e240]
+        - generic [ref=e244]:
+          - generic [ref=e245]: echo "=== source files (excl build) with moneyrecord ===" && grep -rl "moneyrecord" app/src --include="*.kt" --include="*.xml" | wc -l && echo "=== xml refs in src (non-package) ===" && grep -rn "com\.siamakerlab\.moneyrecord" app/src --include="*.xml" && echo "=== manifest ===" && cat app/src/main/AndroidManifest.xml && echo "=== kts other than build.gradle ===" && grep -rln "moneyrecord" --inclu …(+242)
+          - generic [ref=e246]:
+            - generic "12:25:09" [ref=e247]
+            - button "Copy" [ref=e248] [cursor=pointer]:
+              - img [ref=e249]
+        - generic [ref=e253]:
+          - code [ref=e256]:
+            - text: ===
+            - generic [ref=e257]: source files (excl build) with moneyrecord
+            - text: === 84 ===
+            - generic [ref=e258]: xml refs in src (non-package)
+            - text: ===
+          - generic [ref=e259]:
+            - generic "12:25:09" [ref=e260]
+            - button "Copy" [ref=e261] [cursor=pointer]:
+              - img [ref=e262]
+        - generic [ref=e266]:
+          - generic [ref=e267]: 💭 Thinking…
+          - generic [ref=e268]:
+            - generic "12:25:17" [ref=e269]
+            - button "Copy" [ref=e270] [cursor=pointer]:
+              - img [ref=e271]
+        - generic [ref=e275]:
+          - generic [ref=e276]: cat app/src/main/AndroidManifest.xml
+          - generic [ref=e277]:
+            - generic "12:25:18" [ref=e278]
+            - button "Copy" [ref=e279] [cursor=pointer]:
+              - img [ref=e280]
+        - generic [ref=e284] [cursor=pointer]:
+          - code [ref=e287]:
+            - generic [ref=e288]: <?xml version="1.0" encoding="utf-8"?>
+            - generic [ref=e289]: <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+            - generic [ref=e290]: <uses-permission android:name="android.permission.INTERNET" />
+            - generic [ref=e291]: <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+            - generic [ref=e292]: <application android:name=".DuoBudgetApp" android:allowBackup="true" android:dataExtractionRules="@xml/data_extraction_rules" android:fullBackupContent="@xml/backup_rules" android:icon="@mipmap/ic_launcher" android:label="@string/app_name" android:localeConfig="@xml/locales_config" android:roundIcon="@mipmap/ic_launcher_round" android:supportsRtl="true" android:theme="@style/Theme.DuoBudget">
+            - text: "<!-- AdMob App ID. 정책 §10: - 디버그 빌드: Google 공식 테스트 App ID - 릴리즈 빌드: 본인 AdMob 계정의 실 App ID (없으면 placeholder — 광고 시도 안 함) 값은 app/build.gradle.kts 의 buildTypes 별 manifestPlaceholders[\"admobAppId\"] 로 주입. -->"
+            - generic [ref=e293]: "<meta-data android:name=\"com.google.android.gms.ads.APPLICATION_ID\" android:value=\"${admobAppId}\" />"
+            - generic [ref=e294]: <activity android:name=".MainActivity" android:exported="true" android:label="@string/app_name" android:theme="@style/Theme.DuoBudget">
+            - generic [ref=e295]: <intent-filter>
+            - generic [ref=e296]: <action android:name="android.intent.action.MAIN" />
+            - generic [ref=e297]: <category android:name="android.intent.category.LAUNCHER" />
+            - generic [ref=e298]: </intent-filter>
+            - generic [ref=e299]: </activity>
+            - generic [ref=e300]: </application>
+            - generic [ref=e301]: </manifest>
+          - generic [ref=e302]:
+            - generic "12:25:18" [ref=e303]
+            - button "Copy" [ref=e304]:
+              - img [ref=e305]
+          - text: ⌄ 더보기
+        - generic [ref=e309]:
+          - generic [ref=e310]: echo "=== root config refs ===" ; grep -rln "moneyrecord" . --include="*.kts" --include="*.toml" --include="*.md" --include="*.properties" --include="*.xml" --include="*.json" 2>/dev/null | grep -v "/build/" ; echo "=== END ==="
+          - generic [ref=e311]:
+            - generic "12:25:19" [ref=e312]
+            - button "Copy" [ref=e313] [cursor=pointer]:
+              - img [ref=e314]
+        - generic [ref=e318]:
+          - code [ref=e321]: === root config refs === ./docs/HOW_TO_SHARE.md ./CLAUDE.md ./CHANGELOG.md ./README.md ./app/build.gradle.kts === END ===
+          - generic [ref=e322]:
+            - generic "12:25:19" [ref=e323]
+            - button "Copy" [ref=e324] [cursor=pointer]:
+              - img [ref=e325]
+        - generic [ref=e329]:
+          - generic [ref=e330]: 💭 Thinking…
+          - generic [ref=e331]:
+            - generic "12:25:30" [ref=e332]
+            - button "Copy" [ref=e333] [cursor=pointer]:
+              - img [ref=e334]
+        - generic [ref=e338]:
+          - generic [ref=e339]:
+            - text: "계획이 명확해졌습니다. 정리하면:"
+            - list [ref=e340]:
+              - listitem [ref=e341]:
+                - code [ref=e342]: build.gradle.kts
+                - text: ": namespace, applicationId, keystore 경로 3곳"
+              - listitem [ref=e343]:
+                - text: "소스 디렉토리 이동:"
+                - code [ref=e344]: main/java
+                - text: ","
+                - code [ref=e345]: test/java
+                - text: (androidTest 없음)
+              - listitem [ref=e346]:
+                - code [ref=e347]: .kt
+                - text: 파일의 package/import 갱신
+              - listitem [ref=e348]: "XML/Manifest: fully-qualified 참조 없음(상대 클래스명 사용) — 변경 불필요"
+              - listitem [ref=e349]: 문서(CHANGELOG 등)는 의무 시퀀스에 따라 별도 처리
+            - text: 작업을 진행하겠습니다. 먼저 디렉토리를 이동합니다.
+          - generic [ref=e350]:
+            - generic "12:25:33" [ref=e351]
+            - button "Copy" [ref=e352] [cursor=pointer]:
+              - img [ref=e353]
+        - generic [ref=e357]:
+          - generic [ref=e358]: cd /workspace/monthly-budget git mv app/src/main/java/com/siamakerlab/moneyrecord app/src/main/java/com/siamakerlab/monthlybudget git mv app/src/test/java/com/siamakerlab/moneyrecord app/src/test/java/com/siamakerlab/monthlybudget echo "=== moved. verify ===" ls app/src/main/java/com/siamakerlab/ ls app/src/test/java/com/siamakerlab/
+          - generic [ref=e359]:
+            - generic "12:25:35" [ref=e360]
+            - button "Copy" [ref=e361] [cursor=pointer]:
+              - img [ref=e362]
+        - generic [ref=e366]:
+          - code [ref=e369]: === moved. verify === monthlybudget monthlybudget
+          - generic [ref=e370]:
+            - generic "12:25:35" [ref=e371]
+            - button "Copy" [ref=e372] [cursor=pointer]:
+              - img [ref=e373]
+        - generic [ref=e377]:
+          - generic [ref=e378]:
+            - text: 디렉토리 이동 완료. 이제 모든
+            - code [ref=e379]: .kt
+            - text: 파일의 package/import 선언을 갱신합니다.
+          - generic [ref=e380]:
+            - generic "12:25:37" [ref=e381]
+            - button "Copy" [ref=e382] [cursor=pointer]:
+              - img [ref=e383]
+        - generic [ref=e387]:
+          - generic [ref=e388]: "cd /workspace/monthly-budget # .kt 파일의 패키지 참조 일괄 치환 (src 하위만) grep -rl \"com\\.siamakerlab\\.moneyrecord\" app/src --include=\"*.kt\" | while read f; do sed -i 's/com\\.siamakerlab\\.moneyrecord/com.siamakerlab.monthlybudget/g' \"$f\" done echo \"=== remaining in src .kt ===\" grep -rn \"moneyrecord\" app/src --include=\"*.kt\" | wc -l echo \"=== sanity: a package line ===\" head -1 app/src/main/java/com/siamak …(+35)"
+          - generic [ref=e389]:
+            - generic "12:25:39" [ref=e390]
+            - button "Copy" [ref=e391] [cursor=pointer]:
+              - img [ref=e392]
+        - generic [ref=e396]:
+          - code [ref=e399]: "=== remaining in src .kt === 0 === sanity: a package line === package com.siamakerlab.monthlybudget"
+          - generic [ref=e400]:
+            - generic "12:25:40" [ref=e401]
+            - button "Copy" [ref=e402] [cursor=pointer]:
+              - img [ref=e403]
+        - generic [ref=e407]:
+          - generic [ref=e408]:
+            - text: 이제
+            - code [ref=e409]: build.gradle.kts
+            - text: 를 갱신합니다.
+          - generic [ref=e410]:
+            - generic "12:25:42" [ref=e411]
+            - button "Copy" [ref=e412] [cursor=pointer]:
+              - img [ref=e413]
+        - generic [ref=e417]:
+          - generic [ref=e418]: cd /workspace/monthly-budget sed -i 's/com\.siamakerlab\.moneyrecord/com.siamakerlab.monthlybudget/g' app/build.gradle.kts echo "=== refs now ===" grep -n "siamakerlab" app/build.gradle.kts
+          - generic [ref=e419]:
+            - generic "12:25:43" [ref=e420]
+            - button "Copy" [ref=e421] [cursor=pointer]:
+              - img [ref=e422]
+        - generic [ref=e426]:
+          - code [ref=e429]: "=== refs now === 15:val signingPropsFile = file(\"/home/vibe/keystores/com.siamakerlab.monthlybudget-keystore.properties\") 23: namespace = \"com.siamakerlab.monthlybudget\" 27: applicationId = \"com.siamakerlab.monthlybudget\" 56: storeFile = file(\"/home/vibe/keystores/com.siamakerlab.monthlybudget-debug.keystore\")"
+          - generic [ref=e430]:
+            - generic "12:25:43" [ref=e431]
+            - button "Copy" [ref=e432] [cursor=pointer]:
+              - img [ref=e433]
+        - generic [ref=e437]:
+          - generic [ref=e438]: 💭 Thinking…
+          - generic [ref=e439]:
+            - generic "12:25:47" [ref=e440]
+            - button "Copy" [ref=e441] [cursor=pointer]:
+              - img [ref=e442]
+        - generic [ref=e446]:
+          - generic [ref=e447]: 키스토어 파일이 새 이름으로 존재하는지, properties 내용도 확인합니다.
+          - generic [ref=e448]:
+            - generic "12:25:47" [ref=e449]
+            - button "Copy" [ref=e450] [cursor=pointer]:
+              - img [ref=e451]
+        - generic [ref=e455]:
+          - generic [ref=e456]: ls -la /home/vibe/keystores/ 2>/dev/null | grep -i siamakerlab; echo "=== properties content (storeFile path) ==="; cat /home/vibe/keystores/com.siamakerlab.monthlybudget-keystore.properties 2>/dev/null
+          - generic [ref=e457]:
+            - generic "12:25:48" [ref=e458]
+            - button "Copy" [ref=e459] [cursor=pointer]:
+              - img [ref=e460]
+        - generic [ref=e464] [cursor=pointer]:
+          - code [ref=e467]: "-rw------- 1 vibe vibe 4404 May 31 17:49 com.siamakerlab.base64-debug.keystore -rw------- 1 vibe vibe 290 May 31 17:49 com.siamakerlab.base64-keystore.properties -rw------- 1 vibe vibe 4404 May 31 17:49 com.siamakerlab.base64.keystore -rw------- 1 vibe vibe 4404 Jun 2 08:45 com.siamakerlab.imageresizer-debug.keystore -rw------- 1 vibe vibe 296 Jun 2 08:45 com.siamakerlab.imageresizer-keystore.properties -rw------- 1 vibe vibe 4404 Jun 2 08:45 com.siamakerlab.imageresizer.keystore -rw------- 1 vibe vibe 4404 May 30 23:27 com.siamakerlab.monthlybudget-debug.keystore -rw------- 1 vibe vibe 297 Jun 2 12:24 com.siamakerlab.monthlybudget-keystore.properties -rw------- 1 vibe vibe 4404 May 30 23:27 com.siamakerlab.monthlybudget.keystore -rw------- 1 vibe vibe 4404 Jun 2 08:46 com.siamakerlab.pocketmind-debug.keystore -rw------- 1 vibe vibe 294 Jun 2 08:46 com.siamakerlab.pocketmind-keystore.properties -rw------- 1 vibe vibe 4404 Jun 2 08:46 com.siamakerlab.pocketmind.keystore -rw------- 1 vibe vibe 4404 Jun 2 08:45 com.siamakerlab.pomodoro-debug.keystore -rw------- 1 vibe vibe 292 Jun 2 08:45 com.siamakerlab.pomodoro-keystore.properties -rw------- 1 vibe vibe 4404 Jun 2 08:45 com.siamakerlab.pomodoro.keystore -rw------- 1 vibe vibe 4404 Jun 1 12:21 com.siamakerlab.regextester-debug.keystore -rw------- 1 vibe vibe 295 Jun 1 12:21 com.siamakerlab.regextester-keystore.properties -rw------- 1 vibe vibe 4404 Jun 1 12:21 com.siamakerlab.regextester.keystore -rw------- 1 vibe vibe 4404 May 31 23:09 com.siamakerlab.starreading-debug.keystore -rw------- 1 vibe vibe 295 May 31 23:09 com.siamakerlab.starreading-keystore.properties -rw------- 1 vibe vibe 4404 May 31 23:09 com.siamakerlab.starreading.keystore -rw------- 1 vibe vibe 213 May 27 08:10 com.siamakerlab.vibecoder-admob.properties -rw------- 1 vibe vibe 2768 May 27 08:49 com.siamakerlab.vibecoder-debug.keystore -rw------- 1 vibe vibe 152 May 27 08:10 com.siamakerlab.vibecoder-keystore.properties -rw------- 1 vibe vibe 2768 May 27 08:10 com.siamakerlab.vibecoder.keystore -rw------- 1 vibe vibe 4404 Jun 2 08:44 com.siamakerlab.videotrimmer-debug.keystore -rw------- 1 vibe vibe 296 Jun 2 08:44 com.siamakerlab.videotrimmer-keystore.properties -rw------- 1 vibe vibe 4404 Jun 2 08:44 com.siamakerlab.videotrimmer.keystore -rw------- 1 vibe vibe 4404 Jun 2 08:44 com.siamakerlab.vllmclient-debug.keystore -rw------- 1 vibe vibe 294 Jun 2 08:44 com.siamakerlab.vllmclient-keystore.properties -rw------- 1 vibe vibe 4404 Jun 2 08:44 com.siamakerlab.vllmclient.keystore === properties content (storeFile path) === # v1.5.0 — auto-generated by vibe-coder-server /settings/keystores # Android Gradle signing config — host path mounted at /home/vibe/keystores storeFile=/home/vibe/keystores/com.siamakerlab.monthlybudget.keystore storePassword=Phua0618Qooki621121 keyAlias=key0 keyPassword=Phua0618Qooki621121"
+          - generic [ref=e468]:
+            - generic "12:25:48" [ref=e469]
+            - button "Copy" [ref=e470]:
+              - img [ref=e471]
+          - text: ⌄ 더보기
+        - generic [ref=e475]:
+          - generic [ref=e476]: 💭 Thinking…
+          - generic [ref=e477]:
+            - generic "12:25:54" [ref=e478]
+            - button "Copy" [ref=e479] [cursor=pointer]:
+              - img [ref=e480]
+        - generic [ref=e484]:
+          - generic [ref=e485]:
+            - text: 모든 키스토어가 올바르게 rename 되었고 properties도 새 경로를 가리킵니다. 빈 옛 디렉토리는
+            - code [ref=e486]: git mv
+            - text: 로 정리되었습니다. src 전체에서 잔존 참조를 최종 확인 후 빌드합니다.
+          - generic [ref=e487]:
+            - generic "12:25:56" [ref=e488]
+            - button "Copy" [ref=e489] [cursor=pointer]:
+              - img [ref=e490]
+        - generic [ref=e494]:
+          - generic [ref=e495]: cd /workspace/monthly-budget echo "=== any moneyrecord left in src (all types) ==="; grep -rn "moneyrecord" app/src | wc -l echo "=== old dir exists? ==="; ls app/src/main/java/com/siamakerlab/moneyrecord 2>&1 | head -1; ls app/src/test/java/com/siamakerlab/moneyrecord 2>&1 | head -1 echo "=== androidTest? ==="; ls app/src/androidTest 2>&1 | head -1 echo "=== gradle version ==="; gradle --version …(+35)
+          - generic [ref=e496]:
+            - generic "12:25:58" [ref=e497]
+            - button "Copy" [ref=e498] [cursor=pointer]:
+              - img [ref=e499]
+        - generic [ref=e503]:
+          - code [ref=e506]: "=== any moneyrecord left in src (all types) === 0 === old dir exists? === ls: cannot access 'app/src/main/java/com/siamakerlab/moneyrecord': No such file or directory ls: cannot access 'app/src/test/java/com/siamakerlab/moneyrecord': No such file or directory === androidTest? === ls: cannot access 'app/src/androidTest': No such file or directory === gradle version === Gradle 9.5.1"
+          - generic [ref=e507]:
+            - generic "12:25:59" [ref=e508]
+            - button "Copy" [ref=e509] [cursor=pointer]:
+              - img [ref=e510]
+        - generic [ref=e514]:
+          - generic [ref=e515]:
+            - text: 모든 참조가 정리되었습니다. 이제 빌드를 진행합니다. 옛 패키지를 참조하는 생성물(
+            - code [ref=e516]: app/build
+            - text: )도 제거 후 빌드합니다.
+          - generic [ref=e517]:
+            - generic "12:26:02" [ref=e518]
+            - button "Copy" [ref=e519] [cursor=pointer]:
+              - img [ref=e520]
+        - generic [ref=e524]:
+          - generic [ref=e525]: rm -rf app/build && ./gradlew assembleDebug --no-daemon 2>&1 | tail -40
+          - generic [ref=e526]:
+            - generic "12:26:03" [ref=e527]
+            - button "Copy" [ref=e528] [cursor=pointer]:
+              - img [ref=e529]
+        - generic [ref=e533]:
+          - generic [ref=e534]: started · claude-opus-4-8
+          - generic [ref=e535]:
+            - generic "12:27:00" [ref=e536]
+            - button "Copy" [ref=e537] [cursor=pointer]:
+              - img [ref=e538]
+        - generic [ref=e542]:
+          - generic [ref=e543]: 💭 Thinking…
+          - generic [ref=e544]:
+            - generic "12:27:03" [ref=e545]
+            - button "Copy" [ref=e546] [cursor=pointer]:
+              - img [ref=e547]
+        - generic [ref=e551]:
+          - generic [ref=e552]: 서버 재시작으로 빌드가 중단되었습니다(exit 137 = 프로세스 강제 종료). 변경 사항은 그대로 있는지 먼저 확인하고 빌드를 다시 실행하겠습니다.
+          - generic [ref=e553]:
+            - generic "12:27:05" [ref=e554]
+            - button "Copy" [ref=e555] [cursor=pointer]:
+              - img [ref=e556]
+        - generic [ref=e560]:
+          - generic [ref=e561]: cd /workspace/monthly-budget echo "=== build.gradle refs ==="; grep -n "siamakerlab" app/build.gradle.kts echo "=== src moneyrecord left ==="; grep -rn "moneyrecord" app/src | wc -l echo "=== dirs ==="; ls app/src/main/java/com/siamakerlab/ app/src/test/java/com/siamakerlab/
+          - generic [ref=e562]:
+            - generic "12:27:06" [ref=e563]
+            - button "Copy" [ref=e564] [cursor=pointer]:
+              - img [ref=e565]
+        - generic [ref=e569]:
+          - code [ref=e572]: "=== build.gradle refs === 15:val signingPropsFile = file(\"/home/vibe/keystores/com.siamakerlab.monthlybudget-keystore.properties\") 23: namespace = \"com.siamakerlab.monthlybudget\" 27: applicationId = \"com.siamakerlab.monthlybudget\" 56: storeFile = file(\"/home/vibe/keystores/com.siamakerlab.monthlybudget-debug.keystore\") === src moneyrecord left === 0 === dirs === app/src/main/java/com/siamakerlab/: monthlybudget app/src/test/java/com/siamakerlab/: monthlybudget"
+          - generic [ref=e573]:
+            - generic "12:27:06" [ref=e574]
+            - button "Copy" [ref=e575] [cursor=pointer]:
+              - img [ref=e576]
+        - generic [ref=e580]:
+          - generic [ref=e581]: Anthropic 서버가 요청을 일시적으로 제한하고 있습니다 (rate limit). Claude CLI 가 자동으로 재시도 중입니다 — 잠시만 기다려 주세요.
+          - generic [ref=e582]:
+            - generic "12:27:06" [ref=e583]
+            - button "Copy" [ref=e584] [cursor=pointer]:
+              - img [ref=e585]
+        - generic [ref=e589]:
+          - generic [ref=e590]: 모든 변경이 그대로 유지되고 있습니다. 빌드를 다시 실행합니다(이번엔 메모리 절약을 위해 daemon 미사용 + 단일 워커).
+          - generic [ref=e591]:
+            - generic "12:27:09" [ref=e592]
+            - button "Copy" [ref=e593] [cursor=pointer]:
+              - img [ref=e594]
+        - generic [ref=e598]:
+          - generic [ref=e599]: cd /workspace/monthly-budget rm -rf app/build ./gradlew assembleDebug --no-daemon --max-workers=2 2>&1 | tail -45
+          - generic [ref=e600]:
+            - generic "12:27:10" [ref=e601]
+            - button "Copy" [ref=e602] [cursor=pointer]:
+              - img [ref=e603]
+        - generic [ref=e607] [cursor=pointer]:
+          - code [ref=e610]:
+            - text: "> Task :app:mergeDebugAssets > Task :app:compressDebugAssets FROM-CACHE > Task :app:generateDebugGlobalSynthetics FROM-CACHE > Task :app:checkDebugDuplicateClasses > Task :app:desugarDebugFileDependencies FROM-CACHE > Task :app:mergeExtDexDebug FROM-CACHE > Task :app:mergeLibDexDebug FROM-CACHE > Task :app:checkDebugAarMetadata > Task :app:mapDebugSourceSetPaths > Task :app:compileDebugNavigationResources FROM-CACHE > Task :app:mergeDebugResources FROM-CACHE > Task :app:createDebugCompatibleScreenManifests > Task :app:extractDeepLinksDebug FROM-CACHE > Task :app:processDebugMainManifest FROM-CACHE > Task :app:processDebugManifest FROM-CACHE > Task :app:processDebugManifestForPackage FROM-CACHE > Task :app:processDebugResources FROM-CACHE > Task :app:mergeDebugJniLibFolders > Task :app:mergeDebugNativeLibs > Task :app:stripDebugDebugSymbols Unable to strip the following libraries, packaging them as they are: libandroidx.graphics.path.so, libdatastore_shared_counter.so. Run with --info option to learn more. > Task :app:validateSigningDebug > Task :app:writeDebugAppMetadata > Task :app:writeDebugSigningConfigVersions > Task :app:compileDebugKotlin w: file:///workspace/monthly-budget/app/src/main/java/com/siamakerlab/monthlybudget/ui/ads/AdaptiveBanner.kt:42:26 'val LocalLifecycleOwner: ProvidableCompositionLocal"
+            - generic [ref=e612]: <LifecycleOwner>
+            - text: "' is deprecated. Moved to lifecycle-runtime-compose library in androidx.lifecycle.compose package. > Task :app:compileDebugJavaWithJavac > Task :app:processDebugJavaRes > Task :app:hiltSyncDebug > Task :app:hiltAggregateDepsDebug > Task :app:mergeDebugJavaResource > Task :app:hiltJavaCompileDebug > Task :app:transformDebugClassesWithAsm > Task :app:dexBuilderDebug > Task :app:mergeProjectDexDebug > Task :app:packageDebug > Task :app:createDebugApkListingFileRedirect > Task :app:assembleDebug BUILD SUCCESSFUL in 45s 42 actionable tasks: 22 executed, 20 from cache"
+          - generic [ref=e613]:
+            - generic "12:27:57" [ref=e614]
+            - button "Copy" [ref=e615]:
+              - img [ref=e616]
+          - text: ⌄ 더보기
+        - generic [ref=e620]:
+          - generic [ref=e621]: 💭 Thinking…
+          - generic [ref=e622]:
+            - generic "12:28:13" [ref=e623]
+            - button "Copy" [ref=e624] [cursor=pointer]:
+              - img [ref=e625]
+        - generic [ref=e629]:
+          - generic [ref=e630]:
+            - text: 빌드 성공입니다. signing config(
+            - code [ref=e631]: validateSigningDebug
+            - text: )도 통과했습니다. 이제 의무 시퀀스(버전 갱신 → CHANGELOG → 커밋)를 진행합니다. 패키지명 변경은 CLAUDE.md §3.1 기준
+            - strong [ref=e632]: major
+            - text: 변경입니다. 먼저 bump 스크립트 동작을 확인합니다.
+          - generic [ref=e633]:
+            - generic "12:28:15" [ref=e634]
+            - button "Copy" [ref=e635] [cursor=pointer]:
+              - img [ref=e636]
+        - generic [ref=e640]:
+          - generic [ref=e641]: cd /workspace/monthly-budget; cat tools/bump-version.sh
+          - generic [ref=e642]:
+            - generic "12:28:15" [ref=e643]
+            - button "Copy" [ref=e644] [cursor=pointer]:
+              - img [ref=e645]
+        - generic [ref=e649] [cursor=pointer]:
+          - code [ref=e652]:
+            - text: "#!/usr/bin/env bash # tools/bump-version.sh # Sia Makerlab 버전 정책 (CLAUDE.md §3) 에 따라 versionCode/versionName 자동 갱신. # # versionCode = yymmddrrr (날짜 + 일일 리비전 카운터) # - 오늘 날짜와 같은 yymmdd → rrr +1 # - 날짜가 바뀌었으면 rrr = 001 으로 초기화 # versionName = v<major>.<minor>.<patch> # - tier 판단은 Claude 에게 위임 (사용자 지시). # · major: 호환성 깨짐 # · minor: 새 기능 / 새 모듈 # · patch: 그 외 (기본) # - 자세한 기준: CLAUDE.md §3.1 # # Usage: # ./tools/bump-version.sh # patch (대부분의 변경) # ./tools/bump-version.sh --minor # 새 기능/새 모듈 # ./tools/bump-version.sh --major # 호환성 깨짐 # ./tools/bump-version.sh --set v1.2.3 # 지정값 # ./tools/bump-version.sh --keep-name # versionName 유지 (예외) set -euo pipefail ROOT_DIR="
+            - generic [ref=e653]:
+              - text: "\""
+              - generic [ref=e654]:
+                - text: $(cd
+                - generic [ref=e655]:
+                  - text: "\""
+                  - generic [ref=e656]:
+                    - text: $(dirname
+                    - generic [ref=e657]: "\"${BASH_SOURCE[0]}\""
+                    - text: )
+                  - text: /.."
+                - text: "&& pwd)"
+              - text: "\""
+            - text: GRADLE_FILE=
+            - generic [ref=e658]: "\"$ROOT_DIR/app/build.gradle.kts\""
+            - text: if [[ ! -f
+            - generic [ref=e659]: "\"$GRADLE_FILE\""
+            - text: "]]; then echo"
+            - generic [ref=e660]: "\"✘ build.gradle.kts 를 찾을 수 없습니다: $GRADLE_FILE\""
+            - text: ">&2 exit 1 fi mode=\"patch\" set_to=\"\" keep_name=false while [[ $# -gt 0 ]]; do case"
+            - generic [ref=e661]: "\"$1\""
+            - text: in --patch) mode="patch"; shift;; --minor) mode="minor"; shift;; --major) mode="major"; shift;; --set) mode="set"; set_to=
+            - generic [ref=e662]: "\"${2:-}\""
+            - text: ; shift 2;; --keep-name) keep_name=true; shift;; -h|--help) grep -E '^# '
+            - generic [ref=e663]: "\"$0\""
+            - text: "| sed 's/^# \\{0,1\\}//' exit 0;; *) echo"
+            - generic [ref=e664]: "\"알 수 없는 옵션: $1\""
+            - text: ">&2; exit 2;; esac done # 현재 값 추출 (POSIX 호환: \\s 대신 [[:space:]]) current_code=$(grep -E '^[[:space:]]*versionCode[[:space:]]*=[[:space:]]*[0-9]+'"
+            - generic [ref=e665]: "\"$GRADLE_FILE\""
+            - text: "| head -1 | sed -E 's/.*versionCode[[:space:]]*=[[:space:]]*([0-9]+).*/\\1/') current_name=$(grep -E '^[[:space:]]*versionName[[:space:]]*=[[:space:]]*\"'"
+            - generic [ref=e666]: "\"$GRADLE_FILE\""
+            - text: "| head -1 | sed -E 's/.*versionName[[:space:]]*=[[:space:]]*\"([^\"]+)\".*/\\1/') if [[ -z"
+            - generic [ref=e667]: "\"${current_code:-}\""
+            - text: "|| -z"
+            - generic [ref=e668]: "\"${current_name:-}\""
+            - text: "]]; then echo \"✘ 현재 versionCode/versionName 을 추출하지 못했습니다.\" >&2 exit 1 fi # ─────────────────────── versionCode 계산 ─────────────────────── # Asia/Seoul (KST) 기준 — UTC 사용 시 KST 자정 직후 (00:00~08:59) 에 yymmdd 가 전날로 # 기록되어 Play Console 정렬이 깨짐. 명시적 TZ 로 사용자 위치/컨테이너 TZ 와 무관하게 일관. today_yymmdd=$(TZ=Asia/Seoul date +\"%y%m%d\") current_yymmdd="
+            - generic [ref=e669]: "\"${current_code:0:6}\""
+            - text: current_rrr=
+            - generic [ref=e670]: "\"${current_code:6:3}\""
+            - text: if [[
+            - generic [ref=e671]: "\"$current_yymmdd\""
+            - text: ==
+            - generic [ref=e672]: "\"$today_yymmdd\""
+            - text: "]]; then next_rrr=$(printf \"%03d\" $((10#$current_rrr + 1))) else next_rrr=\"001\" fi new_code="
+            - generic [ref=e673]: "\"${today_yymmdd}${next_rrr}\""
+            - text: "# ─────────────────────── versionName 계산 ─────────────────────── if $keep_name; then new_name="
+            - generic [ref=e674]: "\"$current_name\""
+            - text: elif [[
+            - generic [ref=e675]: "\"$mode\""
+            - text: == "set" ]]; then if [[ !
+            - generic [ref=e676]: "\"$set_to\""
+            - text: =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then echo
+            - generic [ref=e677]: "\"✘ --set 값은 v<major>.<minor>.<patch> 형식이어야 합니다: '$set_to'\""
+            - text: ">&2 exit 2 fi new_name="
+            - generic [ref=e678]: "\"$set_to\""
+            - text: else bare=
+            - generic [ref=e679]: "\"${current_name#v}\""
+            - text: IFS=. read -r major minor patch <<<
+            - generic [ref=e680]: "\"$bare\""
+            - text: case
+            - generic [ref=e681]: "\"$mode\""
+            - text: in patch) patch=$((patch + 1));; minor) minor=$((minor + 1)); patch=0;; major) major=$((major + 1)); minor=0; patch=0;; esac new_name=
+            - generic [ref=e682]: "\"v${major}.${minor}.${patch}\""
+            - text: "fi # ─────────────────────── 파일 갱신 ─────────────────────── tmpfile="
+            - generic [ref=e683]: "\"$(mktemp)\""
+            - text: awk -v new_code=
+            - generic [ref=e684]: "\"$new_code\""
+            - text: "-v new_name="
+            - generic [ref=e685]: "\"$new_name\""
+            - text: "' /^[[:space:]]*versionCode[[:space:]]*=[[:space:]]*[0-9]+/ { sub(/[0-9]+/, new_code) } /^[[:space:]]*versionName[[:space:]]*=[[:space:]]*\"/ { sub(/\"[^\"]+\"/, \"\\\"\" new_name \"\\\"\") } { print } '"
+            - generic [ref=e686]: "\"$GRADLE_FILE\""
+            - text: ">"
+            - generic [ref=e687]: "\"$tmpfile\""
+            - text: mv
+            - generic [ref=e688]: "\"$tmpfile\""
+            - generic [ref=e689]: "\"$GRADLE_FILE\""
+            - text: echo
+            - generic [ref=e690]: "\"✓ versionCode $current_code → $new_code\""
+            - text: echo
+            - generic [ref=e691]: "\"✓ versionName $current_name → $new_name\""
+          - generic [ref=e692]:
+            - generic "12:28:16" [ref=e693]
+            - button "Copy" [ref=e694]:
+              - img [ref=e695]
+          - text: ⌄ 더보기
+        - generic [ref=e699]:
+          - generic [ref=e700]: 💭 Thinking…
+          - generic [ref=e701]:
+            - generic "12:28:25" [ref=e702]
+            - button "Copy" [ref=e703] [cursor=pointer]:
+              - img [ref=e704]
+        - generic [ref=e708]:
+          - generic [ref=e709]:
+            - code [ref=e710]: "--major"
+            - text: 는 0.2.29 → 1.0.0이 되어 "최초 프로덕션" 신호를 잘못 주게 됩니다. CLAUDE.md의 pre-1.0 예외 조항("0.x에서는 파괴적 변경도 MINOR로 처리 가능")과 "모호하면 더 보수적인 단계 선택" 원칙에 따라, 아직 0.x 단계인 점을 고려해
+            - strong [ref=e711]: minor
+            - text: (v0.3.0)로 올립니다.
+          - generic [ref=e712]:
+            - generic "12:28:27" [ref=e713]
+            - button "Copy" [ref=e714] [cursor=pointer]:
+              - img [ref=e715]
+        - generic [ref=e719]:
+          - generic [ref=e720]: cd /workspace/monthly-budget; ./tools/bump-version.sh --minor
+          - generic [ref=e721]:
+            - generic "12:28:27" [ref=e722]
+            - button "Copy" [ref=e723] [cursor=pointer]:
+              - img [ref=e724]
+        - generic [ref=e728]:
+          - code [ref=e731]: ✓ versionCode 260602012 → 260602013 ✓ versionName v0.2.29 → v0.3.0
+          - generic [ref=e732]:
+            - generic "12:28:27" [ref=e733]
+            - button "Copy" [ref=e734] [cursor=pointer]:
+              - img [ref=e735]
+        - generic [ref=e739]:
+          - generic [ref=e740]: 이제 문서의 옛 패키지명 참조를 갱신하고 CHANGELOG를 업데이트합니다. 먼저 문서 내 참조를 확인합니다.
+          - generic [ref=e741]:
+            - generic "12:28:30" [ref=e742]
+            - button "Copy" [ref=e743] [cursor=pointer]:
+              - img [ref=e744]
+        - generic [ref=e748]:
+          - generic [ref=e749]: cd /workspace/monthly-budget; grep -rn "moneyrecord" CLAUDE.md README.md docs/HOW_TO_SHARE.md
+          - generic [ref=e750]:
+            - generic "12:28:31" [ref=e751]
+            - button "Copy" [ref=e752] [cursor=pointer]:
+              - img [ref=e753]
+        - generic [ref=e757]:
+          - code [ref=e760]: "CLAUDE.md:3:> 본 문서는 이 프로젝트(`com.siamakerlab.moneyrecord` / Duo Budget)의 **최우선 규칙**입니다. CLAUDE.md:36:- **패키지 규칙**: `com.siamakerlab.<app-name>` 형식만 허용. 본 앱은 `com.siamakerlab.moneyrecord`. CLAUDE.md:146:- 디버그: `com.siamakerlab.moneyrecord.debug` CLAUDE.md:147:- 릴리즈: `com.siamakerlab.moneyrecord` README.md:3:> Sia Makerlab · `com.siamakerlab.moneyrecord` README.md:56:app/src/main/java/com/siamakerlab/moneyrecord/ README.md:106:# 패키지: com.siamakerlab.moneyrecord.debug README.md:114:# 패키지: com.siamakerlab.moneyrecord README.md:131: - **Android**: 패키지 `com.siamakerlab.moneyrecord` + 디버그/릴리즈 키스토어 SHA-1 README.md:133:4. `app/src/main/java/com/siamakerlab/moneyrecord/data/auth/AuthConfig.kt` 의 `WEB_CLIENT_ID` 교체 docs/HOW_TO_SHARE.md:20: - **Android** 클라이언트: 패키지 `com.siamakerlab.moneyrecord` + 디버그/릴리스 키스토어의 **SHA-1 지문**을 등록. docs/HOW_TO_SHARE.md:22:5. `app/src/main/java/com/siamakerlab/moneyrecord/data/auth/AuthConfig.kt` 의 `WEB_CLIENT_ID` 를 `xxxx.apps.googleusercontent.com` 형태로 교체합니다. docs/HOW_TO_SHARE.md:72: - **Android** client: package name `com.siamakerlab.moneyrecord`, plus the SHA-1 of the keystore you sign with."
+          - generic [ref=e761]:
+            - generic "12:28:31" [ref=e762]
+            - button "Copy" [ref=e763] [cursor=pointer]:
+              - img [ref=e764]
+        - generic [ref=e768]:
+          - generic [ref=e769]: 문서 전반의 옛 패키지명을 일괄 갱신합니다.
+          - generic [ref=e770]:
+            - generic "12:28:33" [ref=e771]
+            - button "Copy" [ref=e772] [cursor=pointer]:
+              - img [ref=e773]
+        - generic [ref=e777]:
+          - generic [ref=e778]: cd /workspace/monthly-budget for f in CLAUDE.md README.md docs/HOW_TO_SHARE.md; do sed -i 's#com\.siamakerlab\.moneyrecord#com.siamakerlab.monthlybudget#g; s#com/siamakerlab/moneyrecord#com/siamakerlab/monthlybudget#g' "$f" done echo "=== remaining moneyrecord in docs/source (excl CHANGELOG history & build) ===" grep -rn "moneyrecord" CLAUDE.md README.md docs/HOW_TO_SHARE.md app/build.gradle.kts …(+8)
+          - generic [ref=e779]:
+            - generic "12:28:36" [ref=e780]
+            - button "Copy" [ref=e781] [cursor=pointer]:
+              - img [ref=e782]
+        - generic [ref=e786]:
+          - code [ref=e789]: === remaining moneyrecord in docs/source (excl CHANGELOG history & build) === 0
+          - generic [ref=e790]:
+            - generic "12:28:36" [ref=e791]
+            - button "Copy" [ref=e792] [cursor=pointer]:
+              - img [ref=e793]
+        - generic [ref=e797]:
+          - generic [ref=e798]: 💭 Thinking…
+          - generic [ref=e799]:
+            - generic "12:28:39" [ref=e800]
+            - button "Copy" [ref=e801] [cursor=pointer]:
+              - img [ref=e802]
+        - generic [ref=e806]:
+          - generic [ref=e807]: 이제 CHANGELOG에 새 버전 항목을 추가합니다. 상단을 확인합니다.
+          - generic [ref=e808]:
+            - generic "12:28:40" [ref=e809]
+            - button "Copy" [ref=e810] [cursor=pointer]:
+              - img [ref=e811]
+        - generic [ref=e815]:
+          - generic [ref=e816]: cd /workspace/monthly-budget; head -30 CHANGELOG.md
+          - generic [ref=e817]:
+            - generic "12:28:40" [ref=e818]
+            - button "Copy" [ref=e819] [cursor=pointer]:
+              - img [ref=e820]
+        - generic [ref=e824] [cursor=pointer]:
+          - code [ref=e827]: "# 변경 이력 (CHANGELOG) 모든 주요 변경 사항을 이 파일에 기록합니다. 형식: [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 준수. 버전 정책: `v<major>.<minor>.<patch>` (자세한 규칙은 [`CLAUDE.md`](CLAUDE.md) §3 참조). --- ## [v0.2.29] — 2026-06-02 ### `versionCode 260602012` · `v0.2.29` — VM 단위 테스트 확대 (Fixed + ShareLink) #### 정책 §18 회귀 방지 — 추가 단위 테스트 ViewModel 의 `viewModelScope` + `Dispatchers.Main` 셋업 없이 핵심 변환 로직만 격리 검증. #### `ShareLinkViewModel` - 변환 로직을 internal top-level 함수 `buildShareLink(folderId: String?): String?` 로 분리. - ViewModel 의 StateFlow `map` 은 이 함수만 호출. - 단위 테스트는 ViewModel 인스턴스화 없이 함수 직접 호출. - 신규 `ShareLinkViewModelTest` (**3 케이스**): - 정상 ID → `https://drive.google.com/drive/folders/<id>` 형식 - null → null - 빈/공백 문자열 → null (정책 §16, 사용자에게 무의미 링크 노출 방지) #### `FixedExpensesViewModel` - `FixedExpensesUiState` 의 `totalExpense / totalIncome` derived property 직접 단위 검증. - 신규 `FixedExpensesUiStateTest` (**4 케이스**): - `totalExpense`: EXPENSE 만 합산, INCOME 무시 - `totalIncome`: INCOME 만 합산, EXPENSE 무시 - 빈 entries → 0"
+          - generic [ref=e828]:
+            - generic "12:28:40" [ref=e829]
+            - button "Copy" [ref=e830]:
+              - img [ref=e831]
+          - text: ⌄ 더보기
+        - generic [ref=e835]:
+          - generic [ref=e836]: "/workspace/monthly-budget/CHANGELOG.md - --- ## [v0.2.29] — 2026-06-02 + --- ## [v0.3.0] — 2026-06-02 ### `versionCode 260602013` · `v0.3.0` — 패키지명 전면 …(+1000)"
+          - generic [ref=e837]:
+            - generic "12:28:54" [ref=e838]
+            - button "Copy" [ref=e839] [cursor=pointer]:
+              - img [ref=e840]
+        - generic [ref=e844]:
+          - generic [ref=e845]: /workspace/monthly-budget/CHANGELOG.md [0, +10]
+          - generic [ref=e846]:
+            - generic "12:28:57" [ref=e847]
+            - button "Copy" [ref=e848] [cursor=pointer]:
+              - img [ref=e849]
+        - generic [ref=e853]:
+          - code [ref=e856]: "1 # 변경 이력 (CHANGELOG) 2 3 모든 주요 변경 사항을 이 파일에 기록합니다. 4 형식: [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 준수. 5 버전 정책: `v<major>.<minor>.<patch>` (자세한 규칙은 [`CLAUDE.md`](CLAUDE.md) §3 참조). 6 7 --- 8 9 ## [v0.2.29] — 2026-06-02 10"
+          - generic [ref=e857]:
+            - generic "12:28:57" [ref=e858]
+            - button "Copy" [ref=e859] [cursor=pointer]:
+              - img [ref=e860]
+        - generic [ref=e864]:
+          - generic [ref=e865]: "/workspace/monthly-budget/CHANGELOG.md - --- ## [v0.2.29] — 2026-06-02 + --- ## [v0.3.0] — 2026-06-02 ### `versionCode 260602013` · `v0.3.0` — 패키지명 전면 …(+975)"
+          - generic [ref=e866]:
+            - generic "12:29:04" [ref=e867]
+            - button "Copy" [ref=e868] [cursor=pointer]:
+              - img [ref=e869]
+        - generic [ref=e873]:
+          - code [ref=e876]: The file /workspace/monthly-budget/CHANGELOG.md has been updated successfully. (file state is current in your context — no need to Read it back)
+          - generic [ref=e877]:
+            - generic "12:29:04" [ref=e878]
+            - button "Copy" [ref=e879] [cursor=pointer]:
+              - img [ref=e880]
+        - generic [ref=e884]:
+          - generic [ref=e885]: 💭 Thinking…
+          - generic [ref=e886]:
+            - generic "12:29:14" [ref=e887]
+            - button "Copy" [ref=e888] [cursor=pointer]:
+              - img [ref=e889]
+        - generic [ref=e893]:
+          - generic [ref=e894]:
+            - text: 이제 git 상태를 확인하고 커밋합니다. 초기 스냅샷에서
+            - code [ref=e895]: proguard-rules.pro
+            - text: 도 수정되어 있었으니 확인합니다.
+          - generic [ref=e896]:
+            - generic "12:29:15" [ref=e897]
+            - button "Copy" [ref=e898] [cursor=pointer]:
+              - img [ref=e899]
+        - generic [ref=e903]:
+          - generic [ref=e904]: cd /workspace/monthly-budget echo "=== proguard moneyrecord refs ==="; grep -n "moneyrecord" app/proguard-rules.pro || echo "none" echo "=== git status short ==="; git status -s | head -40 echo "=== count ==="; git status -s | wc -l
+          - generic [ref=e905]:
+            - generic "12:29:16" [ref=e906]
+            - button "Copy" [ref=e907] [cursor=pointer]:
+              - img [ref=e908]
+        - generic [ref=e912] [cursor=pointer]:
+          - code [ref=e915]: "=== proguard moneyrecord refs === 15:-keep, includedescriptorclasses class com.siamakerlab.moneyrecord.**$$serializer { *; } 16:-keepclasseswithmembers class com.siamakerlab.moneyrecord.** { 44:-keep class com.siamakerlab.moneyrecord.data.local.entity.** { *; } 45:-keep class com.siamakerlab.moneyrecord.data.sync.SyncEventJson { *; } 46:-keep class com.siamakerlab.moneyrecord.data.sync.EntryPayload { *; } 47:-keep class com.siamakerlab.moneyrecord.data.drive.DriveFile { *; } 48:-keep class com.siamakerlab.moneyrecord.data.drive.DriveFileList { *; } 49:-keep class com.siamakerlab.moneyrecord.data.drive.CreateFolderRequest { *; } 50:-keep class com.siamakerlab.moneyrecord.data.drive.CreateFileMetadata { *; } 58:-keepclassmembers enum com.siamakerlab.moneyrecord.domain.model.** { === git status short === M CHANGELOG.md M CLAUDE.md M README.md M app/build.gradle.kts M app/proguard-rules.pro RM app/src/main/java/com/siamakerlab/moneyrecord/DuoBudgetApp.kt -> app/src/main/java/com/siamakerlab/monthlybudget/DuoBudgetApp.kt RM app/src/main/java/com/siamakerlab/moneyrecord/MainActivity.kt -> app/src/main/java/com/siamakerlab/monthlybudget/MainActivity.kt RM app/src/main/java/com/siamakerlab/moneyrecord/core/Logger.kt -> app/src/main/java/com/siamakerlab/monthlybudget/core/Logger.kt RM app/src/main/java/com/siamakerlab/moneyrecord/data/ads/AdsConfig.kt -> app/src/main/java/com/siamakerlab/monthlybudget/data/ads/AdsConfig.kt RM app/src/main/java/com/siamakerlab/moneyrecord/data/ads/AdsGate.kt -> app/src/main/java/com/siamakerlab/monthlybudget/data/ads/AdsGate.kt RM app/src/main/java/com/siamakerlab/moneyrecord/data/ads/AdsInitializer.kt -> app/src/main/java/com/siamakerlab/monthlybudget/data/ads/AdsInitializer.kt RM app/src/main/java/com/siamakerlab/moneyrecord/data/ads/AppOpenAdManager.kt -> app/src/main/java/com/siamakerlab/monthlybudget/data/ads/AppOpenAdManager.kt RM app/src/main/java/com/siamakerlab/moneyrecord/data/ads/ConsentManager.kt -> app/src/main/java/com/siamakerlab/monthlybudget/data/ads/ConsentManager.kt RM app/src/main/java/com/siamakerlab/moneyrecord/data/auth/AccountInfo.kt -> app/src/main/java/com/siamakerlab/monthlybudget/data/auth/AccountInfo.kt RM app/src/main/java/com/siamakerlab/moneyrecord/data/auth/AuthConfig.kt -> app/src/main/java/com/siamakerlab/monthlybudget/data/auth/AuthConfig.kt RM app/src/main/java/com/siamakerlab/moneyrecord/data/auth/GoogleAuthManager.kt -> app/src/main/java/com/siamakerlab/monthlybudget/data/auth/GoogleAuthManager.kt RM app/src/main/java/com/siamakerlab/moneyrecord/data/billing/BillingRepository.kt -> app/src/main/java/com/siamakerlab/monthlybudget/data/billing/BillingRepository.kt RM app/src/main/java/com/siamakerlab/moneyrecord/data/billing/BillingState.kt -> app/src/main/java/com/siamakerlab/monthlybudget/data/billing/BillingState.kt RM app/src/main/java/com/siamakerlab/moneyrecord/data/drive/DriveApi.kt -> app/src/main/java/com/siamakerlab/monthlybudget/data/drive/DriveApi.kt RM app/src/main/java/com/siamakerlab/moneyrecord/data/drive/DriveFolderService.kt -> app/src/main/java/com/siamakerlab/monthlybudget/data/drive/DriveFolderService.kt RM app/src/main/java/com/siamakerlab/moneyrecord/data/drive/DriveModels.kt -> app/src/main/java/com/siamakerlab/monthlybudget/data/drive/DriveModels.kt RM app/src/main/java/com/siamakerlab/moneyrecord/data/export/CsvExporter.kt -> app/src/main/java/com/siamakerlab/monthlybudget/data/export/CsvExporter.kt RM app/src/main/java/com/siamakerlab/moneyrecord/data/local/DatabaseSeed.kt -> app/src/main/java/com/siamakerlab/monthlybudget/data/local/DatabaseSeed.kt RM app/src/main/java/com/siamakerlab/moneyrecord/data/local/DuoBudgetDatabase.kt -> app/src/main/java/com/siamakerlab/monthlybudget/data/local/DuoBudgetDatabase.kt RM app/src/main/java/com/siamakerlab/moneyrecord/data/local/converter/Converters.kt -> app/src/main/java/com/siamakerlab/monthlybudget/data/local/converter/Converters.kt RM app/src/main/java/ …(+2538)"
+          - generic [ref=e916]:
+            - generic "12:29:16" [ref=e917]
+            - button "Copy" [ref=e918]:
+              - img [ref=e919]
+          - text: ⌄ 더보기
+        - generic [ref=e923]:
+          - generic [ref=e924]: 💭 Thinking…
+          - generic [ref=e925]:
+            - generic "12:29:21" [ref=e926]
+            - button "Copy" [ref=e927] [cursor=pointer]:
+              - img [ref=e928]
+        - generic [ref=e932]:
+          - generic [ref=e933]:
+            - code [ref=e934]: proguard-rules.pro
+            - text: 에 옛 패키지 참조가 남아있습니다 — 릴리즈 빌드의 R8 keep 규칙이라 반드시 갱신해야 합니다. 이 파일을 빠뜨렸습니다. 갱신합니다.
+          - generic [ref=e935]:
+            - generic "12:29:23" [ref=e936]
+            - button "Copy" [ref=e937] [cursor=pointer]:
+              - img [ref=e938]
+        - generic [ref=e942]:
+          - generic [ref=e943]: cd /workspace/monthly-budget sed -i 's/com\.siamakerlab\.moneyrecord/com.siamakerlab.monthlybudget/g' app/proguard-rules.pro echo "=== verify proguard ==="; grep -n "siamakerlab" app/proguard-rules.pro echo "=== final full-repo check (excl build/, excl CHANGELOG history) ===" grep -rn "moneyrecord" . --include="*.kt" --include="*.kts" --include="*.pro" --include="*.xml" --include="*.md" --include= …(+90)
+          - generic [ref=e944]:
+            - generic "12:29:25" [ref=e945]
+            - button "Copy" [ref=e946] [cursor=pointer]:
+              - img [ref=e947]
+        - generic [ref=e951]:
+          - code [ref=e954]:
+            - text: === verify proguard === 15:-keep, includedescriptorclasses
+            - generic [ref=e955]: class com.siamakerlab.monthlybudget.**$$serializer
+            - text: "{ *; } 16:-keepclasseswithmembers"
+            - generic [ref=e956]: class com.siamakerlab.monthlybudget.**
+            - text: "{ 44:-keep"
+            - generic [ref=e957]: class com.siamakerlab.monthlybudget.data.local.entity.**
+            - text: "{ *; } 45:-keep"
+            - generic [ref=e958]: class com.siamakerlab.monthlybudget.data.sync.SyncEventJson
+            - text: "{ *; } 46:-keep"
+            - generic [ref=e959]: class com.siamakerlab.monthlybudget.data.sync.EntryPayload
+            - text: "{ *; } 47:-keep"
+            - generic [ref=e960]: class com.siamakerlab.monthlybudget.data.drive.DriveFile
+            - text: "{ *; } 48:-keep"
+            - generic [ref=e961]: class com.siamakerlab.monthlybudget.data.drive.DriveFileList
+            - text: "{ *; } 49:-keep"
+            - generic [ref=e962]: class com.siamakerlab.monthlybudget.data.drive.CreateFolderRequest
+            - text: "{ *; } 50:-keep"
+            - generic [ref=e963]: class com.siamakerlab.monthlybudget.data.drive.CreateFileMetadata
+            - text: "{ *; } 58:-keepclassmembers enum com.siamakerlab.monthlybudget.domain.model.** { === final full-repo check (excl build/, excl CHANGELOG history) ==="
+          - generic [ref=e964]:
+            - generic "12:29:25" [ref=e965]
+            - button "Copy" [ref=e966] [cursor=pointer]:
+              - img [ref=e967]
+        - generic [ref=e971]:
+          - generic [ref=e972]: 💭 Thinking…
+          - generic [ref=e973]:
+            - generic "12:29:31" [ref=e974]
+            - button "Copy" [ref=e975] [cursor=pointer]:
+              - img [ref=e976]
+        - generic [ref=e980]:
+          - generic [ref=e981]:
+            - code [ref=e982]: proguard-rules.pro
+            - text: (릴리즈 R8 규칙)를 변경했으므로, 의무 시퀀스에 따라
+            - code [ref=e983]: assembleRelease
+            - text: 도 검증합니다.
+          - generic [ref=e984]:
+            - generic "12:29:32" [ref=e985]
+            - button "Copy" [ref=e986] [cursor=pointer]:
+              - img [ref=e987]
+        - generic [ref=e991]:
+          - generic [ref=e992]: cd /workspace/monthly-budget ./gradlew assembleRelease --no-daemon --max-workers=2 2>&1 | tail -25
+          - generic [ref=e993]:
+            - generic "12:29:32" [ref=e994]
+            - button "Copy" [ref=e995] [cursor=pointer]:
+              - img [ref=e996]
+        - generic [ref=e1000] [cursor=pointer]:
+          - code [ref=e1003]: "> Task :app:hiltSyncRelease > Task :app:hiltAggregateDepsRelease FROM-CACHE > Task :app:hiltJavaCompileRelease > Task :app:processReleaseJavaRes > Task :app:transformReleaseClassesWithAsm > Task :app:expandReleaseArtProfileWildcards > Task :app:mergeReleaseGeneratedProguardFiles > Task :app:mergeReleaseJavaResource > Task :app:produceReleaseComposeMapping > Task :app:reportReleaseComposeMappingErrors > Task :app:generateReleaseLintVitalReportModel > Task :app:minifyReleaseWithR8 > Task :app:lintVitalAnalyzeRelease > Task :app:lintVitalReportRelease > Task :app:lintVitalRelease > Task :app:mergeReleaseComposeMapping > Task :app:convertShrunkResourcesToBinaryRelease > Task :app:optimizeReleaseResources > Task :app:compileReleaseArtProfile > Task :app:packageRelease > Task :app:createReleaseApkListingFileRedirect > Task :app:assembleRelease BUILD SUCCESSFUL in 3m 28s 56 actionable tasks: 47 executed, 8 from cache, 1 up-to-date"
+          - generic [ref=e1004]:
+            - generic "12:33:01" [ref=e1005]
+            - button "Copy" [ref=e1006]:
+              - img [ref=e1007]
+          - text: ⌄ 더보기
+        - generic [ref=e1011]:
+          - generic [ref=e1012]: 디버그·릴리즈 빌드 모두 성공했습니다. 이제 커밋 및 푸시합니다.
+          - generic [ref=e1013]:
+            - generic "12:33:04" [ref=e1014]
+            - button "Copy" [ref=e1015] [cursor=pointer]:
+              - img [ref=e1016]
+        - generic [ref=e1020]:
+          - generic [ref=e1021]: "cd /workspace/monthly-budget git add -A git commit -q -F - <<'EOF' 패키지명 전면 변경 moneyrecord → monthlybudget (260602013 / v0.3.0) - build.gradle.kts: namespace / applicationId → com.siamakerlab.monthlybudget - signing config 키스토어 properties / debug keystore 경로를 새 applicationId 기준으로 갱신 - src(main/test) com/siamakerlab/moneyrecord 디렉토리를 monthlybudget 로 이동, 전체 .kt package/import 갱신 - proguard-rules.pro …(+331)"
+          - generic [ref=e1022]:
+            - generic "12:33:10" [ref=e1023]
+            - button "Copy" [ref=e1024] [cursor=pointer]:
+              - img [ref=e1025]
+        - generic [ref=e1029]:
+          - generic [ref=e1030]: Anthropic 서버가 요청을 일시적으로 제한하고 있습니다 (rate limit). Claude CLI 가 자동으로 재시도 중입니다 — 잠시만 기다려 주세요.
+          - generic [ref=e1031]:
+            - generic "12:33:10" [ref=e1032]
+            - button "Copy" [ref=e1033] [cursor=pointer]:
+              - img [ref=e1034]
+        - generic [ref=e1038]:
+          - code [ref=e1041]: "=== committed === 6063ffb 패키지명 전면 변경 moneyrecord → monthlybudget (260602013 / v0.3.0) === remote? === origin ssh://git@gitea.wody.kr:2929/wody/money-record.git (fetch) origin ssh://git@gitea.wody.kr:2929/wody/money-record.git (push) ** The server may need to be upgraded. See https://openssh.com/pq.html remote: . Processing 1 references remote: Processed 1 references in total To ssh://gitea.wody.kr:2929/wody/money-record.git 2b60a3e..6063ffb master -> master"
+          - generic [ref=e1042]:
+            - generic "12:33:11" [ref=e1043]
+            - button "Copy" [ref=e1044] [cursor=pointer]:
+              - img [ref=e1045]
+        - generic [ref=e1049] [cursor=pointer]:
+          - generic [ref=e1050]:
+            - text: 모든 작업을 완료하고 커밋·푸시까지 마쳤습니다.
+            - heading "작업 요약" [level=2] [ref=e1051]
+            - text: 패키지명을
+            - code [ref=e1052]: com.siamakerlab.moneyrecord
+            - text: →
+            - code [ref=e1053]: com.siamakerlab.monthlybudget
+            - text: 로 완전히 변경했습니다.
+            - strong [ref=e1054]:
+              - text: "1."
+              - code [ref=e1055]: app/build.gradle.kts
+            - list [ref=e1056]:
+              - listitem [ref=e1057]:
+                - code [ref=e1058]: namespace
+                - text: ","
+                - code [ref=e1059]: applicationId
+                - text: →
+                - code [ref=e1060]: com.siamakerlab.monthlybudget
+            - strong [ref=e1061]: 2. 소스 디렉토리 이동
+            - text: (
+            - code [ref=e1062]: git mv
+            - text: 로 히스토리 보존)
+            - list [ref=e1063]:
+              - listitem [ref=e1064]:
+                - code [ref=e1065]: app/src/main/java/com/siamakerlab/moneyrecord
+                - text: →
+                - code [ref=e1066]: .../monthlybudget
+              - listitem [ref=e1067]:
+                - code [ref=e1068]: app/src/test/java/com/siamakerlab/moneyrecord
+                - text: →
+                - code [ref=e1069]: .../monthlybudget
+              - listitem [ref=e1070]:
+                - text: (
+                - code [ref=e1071]: androidTest
+                - text: 디렉토리는 존재하지 않음)
+            - strong [ref=e1072]:
+              - text: "3."
+              - code [ref=e1073]: package
+              - text: /
+              - code [ref=e1074]: import
+              - text: 갱신
+            - list [ref=e1075]:
+              - listitem [ref=e1076]:
+                - text: 전체
+                - code [ref=e1077]: .kt
+                - text: 파일의 패키지 참조를 새 패키지로 일괄 갱신 (잔존 참조 0)
+            - strong [ref=e1078]: 4. Manifest / XML
+            - list [ref=e1079]:
+              - listitem [ref=e1080]:
+                - code [ref=e1081]: AndroidManifest.xml
+                - text: 은 상대 클래스명(
+                - code [ref=e1082]: .MainActivity
+                - text: ","
+                - code [ref=e1083]: .DuoBudgetApp
+                - text: )만 사용 → 변경 불필요
+              - listitem [ref=e1084]: XML 리소스에 fully-qualified 참조 없음 → 변경 불필요
+            - strong [ref=e1085]: 5. signing config
+            - list [ref=e1086]:
+              - listitem [ref=e1087]:
+                - text: 키스토어 properties 경로, debug keystore 경로를
+                - code [ref=e1088]: com.siamakerlab.monthlybudget-*
+                - text: 기준으로 갱신
+              - listitem [ref=e1089]:
+                - text: 서버가 이미 rename 한 키스토어 4종 확인 완료, properties 의
+                - code [ref=e1090]: storeFile
+                - text: 도 새 경로 가리킴 →
+                - code [ref=e1091]: validateSigningDebug
+                - text: 통과
+            - strong [ref=e1092]: 6. 빌드 검증 + 추가 정리
+            - list [ref=e1093]:
+              - listitem [ref=e1094]:
+                - text: 빈 옛 디렉토리는
+                - code [ref=e1095]: git mv
+                - text: 로 자동 제거됨
+              - listitem [ref=e1096]:
+                - text: 추가로
+                - code [ref=e1097]: proguard-rules.pro
+                - text: 의 R8 keep 규칙(직렬화/Room) 패키지 참조도 갱신 (릴리즈 빌드에 필수)
+              - listitem [ref=e1098]:
+                - text: 문서(
+                - code [ref=e1099]: CLAUDE.md
+                - text: ","
+                - code [ref=e1100]: README.md
+                - text: ","
+                - code [ref=e1101]: docs/HOW_TO_SHARE.md
+                - text: ) 의 패키지명·경로 참조 갱신
+              - listitem [ref=e1102]:
+                - strong [ref=e1103]:
+                  - code [ref=e1104]: assembleDebug
+                  - text: ✅ /
+                  - code [ref=e1105]: assembleRelease
+                  - text: ✅ 모두 BUILD SUCCESSFUL
+            - strong [ref=e1106]: 의무 시퀀스
+            - list [ref=e1107]:
+              - listitem [ref=e1108]:
+                - text: "버전:"
+                - code [ref=e1109]: v0.2.29
+                - text: →
+                - strong [ref=e1110]:
+                  - code [ref=e1111]: v0.3.0
+                - text: / versionCode
+                - code [ref=e1112]: "260602012"
+                - text: →
+                - code [ref=e1113]: "260602013"
+              - listitem [ref=e1114]:
+                - text: pre-1.0 단계라
+                - code [ref=e1115]: "--major"
+                - text: (1.0.0)는 "최초 프로덕션"을 잘못 의미하게 되어, 정책 §3.1 예외("0.x 파괴적 변경은 minor 처리 가능")에 따라 minor 로 처리
+              - listitem [ref=e1116]:
+                - code [ref=e1117]: CHANGELOG.md
+                - text: 에 v0.3.0 항목 추가
+              - listitem [ref=e1118]:
+                - text: 커밋 + push 완료 (
+                - code [ref=e1119]: 6063ffb
+                - text: ", origin/master)"
+            - text: 프로젝트 폴더명은 지시대로 변경하지 않았습니다.
+          - generic [ref=e1120]:
+            - generic "12:33:26" [ref=e1121]
+            - button "Copy" [ref=e1122]:
+              - img [ref=e1123]
+          - text: ⌄ 더보기
+        - generic [ref=e1127]:
+          - generic [ref=e1128]: success
+          - generic [ref=e1129]:
+            - generic "12:33:26" [ref=e1130]
+            - button "Copy" [ref=e1131] [cursor=pointer]:
+              - img [ref=e1132]
+        - generic [ref=e1135] [cursor=pointer]:
+          - text: ">"
+          - generic [ref=e1136]:
+            - generic [ref=e1137]: 전체 코드를 정밀하게 리뷰해줘
+            - generic [ref=e1138]:
+              - generic "12:34:19" [ref=e1139]
+              - button "Copy" [ref=e1140]:
+                - img [ref=e1141]
+        - generic [ref=e1145]:
+          - generic [ref=e1146]: started · claude-opus-4-8
+          - generic [ref=e1147]:
+            - generic "12:34:19" [ref=e1148]
+            - button "Copy" [ref=e1149] [cursor=pointer]:
+              - img [ref=e1150]
+        - generic [ref=e1154]:
+          - generic [ref=e1155]: 💭 Thinking…
+          - generic [ref=e1156]:
+            - generic "12:34:31" [ref=e1157]
+            - button "Copy" [ref=e1158] [cursor=pointer]:
+              - img [ref=e1159]
+        - generic [ref=e1163]:
+          - generic [ref=e1164]: 전체 코드베이스를 정밀 리뷰하겠습니다. 먼저 규모와 구조를 파악한 뒤, 서브시스템별로 병렬 심층 리뷰를 진행하겠습니다.
+          - generic [ref=e1165]:
+            - generic "12:34:32" [ref=e1166]
+            - button "Copy" [ref=e1167] [cursor=pointer]:
+              - img [ref=e1168]
+        - generic [ref=e1172]:
+          - generic [ref=e1173]: "cd /workspace/monthly-budget echo \"=== 전체 .kt 파일 수 / 라인 수 ===\" find app/src/main -name \"*.kt\" | wc -l find app/src/main -name \"*.kt\" -exec cat {} + | wc -l echo \"=== main 패키지 트리 (디렉토리) ===\" find app/src/main/java/com/siamakerlab/monthlybudget -type d | sed 's#app/src/main/java/com/siamakerlab/monthlybudget#.#' echo \"=== 파일 목록 (크기순 상위 30) ===\" find app/src/main -name \"*.kt\" -printf \"%s\\t%p\\n\" | sor …(+77)"
+          - generic [ref=e1174]:
+            - generic "12:34:35" [ref=e1175]
+            - button "Copy" [ref=e1176] [cursor=pointer]:
+              - img [ref=e1177]
+        - generic [ref=e1181] [cursor=pointer]:
+          - code [ref=e1184]: === 전체 .kt 파일 수 / 라인 수 === 75 7338 === main 패키지 트리 (디렉토리) === . ./di ./core ./domain ./domain/cycle ./domain/model ./data ./data/sync ./data/local ./data/local/entity ./data/local/dao ./data/local/converter ./data/prefs ./data/drive ./data/ads ./data/auth ./data/export ./data/billing ./data/repository ./data/update ./ui ./ui/nav ./ui/ads ./ui/theme ./ui/screen ./ui/screen/settings ./ui/screen/manage ./ui/screen/home ./ui/screen/howto ./ui/screen/stats ./ui/screen/history ./ui/screen/calendar ./ui/screen/add ./ui/screen/fixed === 파일 목록 (크기순 상위 30) === 19136 ui/screen/settings/SettingsScreen.kt 15398 ui/screen/add/AddEntryScreen.kt 13504 ui/screen/calendar/CalendarScreen.kt 12666 ui/screen/home/HomeScreen.kt 12646 ui/screen/history/HistoryScreen.kt 12502 ui/screen/stats/StatsScreen.kt 11153 data/billing/BillingRepository.kt 10551 data/auth/GoogleAuthManager.kt 10432 ui/screen/settings/SettingsViewModel.kt 10007 ui/DuoBudgetApp.kt 8616 data/drive/DriveApi.kt 8195 ui/screen/manage/ManageScreens.kt 7913 data/sync/SyncRepository.kt 7524 ui/screen/fixed/FixedExpensesScreen.kt 7261 data/ads/AppOpenAdManager.kt 6690 ui/screen/add/AddEntryViewModel.kt 6528 data/repository/EntryRepository.kt 6289 data/update/InAppUpdateManager.kt 5726 ui/screen/howto/HowToScreen.kt 5182 ui/screen/history/HistoryViewModel.kt 4549 ui/screen/home/HomeViewModel.kt 4547 data/sync/SyncManager.kt 4355 MainActivity.kt 4131 data/export/CsvExporter.kt 4064 data/prefs/AppPreferences.kt 4060 ui/screen/calendar/CalendarViewModel.kt 4023 data/local/dao/EntryDao.kt 4006 domain/cycle/PayCycle.kt 3395 ui/screen/stats/StatsViewModel.kt 3253 data/ads/ConsentManager.kt
+          - generic [ref=e1185]:
+            - generic "12:34:35" [ref=e1186]
+            - button "Copy" [ref=e1187]:
+              - img [ref=e1188]
+          - text: ⌄ 더보기
+        - generic [ref=e1192]:
+          - generic [ref=e1193]: 💭 Thinking…
+          - generic [ref=e1194]:
+            - generic "12:34:46" [ref=e1195]
+            - button "Copy" [ref=e1196] [cursor=pointer]:
+              - img [ref=e1197]
+        - generic [ref=e1201]:
+          - generic [ref=e1202]:
+            - text: 규모를 파악했습니다(75개 파일, ~7,300줄). 서브시스템별로 5개 병렬 리뷰 에이전트를 띄워 정밀 리뷰하겠습니다. 각 에이전트는 정확성 버그·동시성·생명주기 누수·보안 + CLAUDE.md 정책 위반 + 정리 기회를
+            - code [ref=e1203]: file:line
+            - text: 단위로 보고합니다.
+          - generic [ref=e1204]:
+            - generic "12:34:48" [ref=e1205]
+            - button "Copy" [ref=e1206] [cursor=pointer]:
+              - img [ref=e1207]
+        - generic [ref=e1211]:
+          - generic [ref=e1212]: Review sync and drive layer
+          - generic [ref=e1213]:
+            - generic "12:34:58" [ref=e1214]
+            - button "Copy" [ref=e1215] [cursor=pointer]:
+              - img [ref=e1216]
+        - generic [ref=e1220]:
+          - generic [ref=e1221]: find /workspace/monthly-budget/app/src/main/java/com/siamakerlab/monthlybudget/data/sync /workspace/monthly-budget/app/src/main/java/com/siamakerlab/monthlybudget/data/drive -type f — List sync and drive layer files
+          - generic [ref=e1222]:
+            - generic "12:35:02" [ref=e1223]
+            - button "Copy" [ref=e1224] [cursor=pointer]:
+              - img [ref=e1225]
+        - generic [ref=e1229]:
+          - code [ref=e1232]: /workspace/monthly-budget/app/src/main/java/com/siamakerlab/monthlybudget/data/sync/SyncEventJson.kt /workspace/monthly-budget/app/src/main/java/com/siamakerlab/monthlybudget/data/sync/SyncManager.kt /workspace/monthly-budget/app/src/main/java/com/siamakerlab/monthlybudget/data/sync/SyncRepository.kt /workspace/monthly-budget/app/src/main/java/com/siamakerlab/monthlybudget/data/sync/EventMapper.kt /workspace/monthly-budget/app/src/main/java/com/siamakerlab/monthlybudget/data/drive/DriveFolderService.kt /workspace/monthly-budget/app/src/main/java/com/siamakerlab/monthlybudget/data/drive/DriveModels.kt /workspace/monthly-budget/app/src/main/java/com/siamakerlab/monthlybudget/data/drive/DriveApi.kt
+          - generic [ref=e1233]:
+            - generic "12:35:02" [ref=e1234]
+            - button "Copy" [ref=e1235] [cursor=pointer]:
+              - img [ref=e1236]
+        - generic [ref=e1240]:
+          - generic [ref=e1241]: /workspace/monthly-budget/app/src/main/java/com/siamakerlab/monthlybudget/data/sync/SyncRepository.kt
+          - generic [ref=e1242]:
+            - generic "12:35:05" [ref=e1243]
+            - button "Copy" [ref=e1244] [cursor=pointer]:
+              - img [ref=e1245]
+        - generic [ref=e1249] [cursor=pointer]:
+          - code [ref=e1252]:
+            - text: "1 package com.siamakerlab.monthlybudget.data.sync 2 3 import com.siamakerlab.monthlybudget.core.Logger 4 import com.siamakerlab.monthlybudget.data.drive.DriveApi 5 import com.siamakerlab.monthlybudget.data.drive.MIME_JSON 6 import com.siamakerlab.monthlybudget.data.local.DuoBudgetDatabase 7 import com.siamakerlab.monthlybudget.data.local.dao.EntryDao 8 import com.siamakerlab.monthlybudget.data.local.dao.SyncEventDao 9 import com.siamakerlab.monthlybudget.data.local.entity.EntryEntity 10 import com.siamakerlab.monthlybudget.data.local.entity.SyncEventEntity 11 import kotlinx.serialization.json.Json 12 import javax.inject.Inject 13 import javax.inject.Singleton 14 15 data class SyncCounts(val uploaded: Int = 0, val downloaded: Int = 0, val applied: Int = 0) 16 17 @Singleton 18 class SyncRepository @Inject constructor( 19 private val db: DuoBudgetDatabase, 20 private val syncEventDao: SyncEventDao, 21 private val entryDao: EntryDao, 22 private val driveApi: DriveApi, 23 private val json: Json 24 ) { 25 26 suspend"
+            - generic [ref=e1253]:
+              - text: fun uploadPending
+              - generic [ref=e1254]: "( 27 accessToken: String, 28 eventsFolderId: String, 29 userId: String 30 )"
+            - text: ": Int { 31 val pending = syncEventDao.pendingUpload() 32 var count = 0 33 for (event in pending) { 34 val fileName = EventMapper.fileName(userId, event.eventId, event.createdAt) 35 36 // 중복 파일 방지 (N6): 37 // 이전 sync 에서 uploadJsonFile 응답은 받았으나 markUploaded 직전 크래시 → 38 // 재시도 시 같은 fileName 으로 두 번째 파일이 Drive 에 생성됨 (Drive 는 동일 이름 허용). 39 // 먼저 findByName 으로 검사하고, 이미 있으면 업로드 생략 + markUploaded 만. 40 val alreadyOnDrive = runCatching { 41 driveApi.findByName( 42 accessToken = accessToken, 43 name = fileName, 44 parentId = eventsFolderId, 45 mimeType = MIME_JSON 46 ).isNotEmpty() 47 }.getOrElse { 48 Logger.w(\"Sync\","
+            - generic [ref=e1255]: "\"findByName failed (will upload anyway): ${it.message}\""
+            - text: ") 49 false 50 } 51 52 if (!alreadyOnDrive) { 53 driveApi.uploadJsonFile( 54 accessToken = accessToken, 55 name = fileName, 56 parentId = eventsFolderId, 57 jsonContent = event.payloadJson 58 ) 59 } 60 syncEventDao.markUploaded(event.eventId) 61 count++ 62 } 63 return count 64 } 65 66 suspend"
+            - generic [ref=e1256]:
+              - text: fun downloadAndApply
+              - generic [ref=e1257]: "( 67 accessToken: String, 68 eventsFolderId: String, 69 modifiedAfterRfc3339: String? 70 )"
+            - text: ": Pair<Int, Int> { 71 var pageToken: String? = null 72 var downloaded = 0 73 var applied = 0 74 do { 75 val page = driveApi.listFolderChildren( 76 accessToken = accessToken, 77 folderId = eventsFolderId, 78 modifiedAfter = modifiedAfterRfc3339, 79 pageToken = pageToken 80 ) 81 for (file in page.files) { 82 if (file.mimeType == \"application/vnd.google-apps.folder\") continue 83 if (!file.name.endsWith(\".json\")) continue 84 85 // 외부 IO 와 JSON 파싱은 트랜잭션 밖에서 미리 준비 → 락 시간 최소화. 86 val content = driveApi.downloadFileContent(accessToken, file.id) 87 val event = runCatching { json.decodeFromString<SyncEventJson>(content) } 88 .getOrNull() ?: continue 89 90 // exists 검사 + sync_event insert + entry apply 를 단일 트랜잭션으로: 91 // - 중간 크래시 시 \"insert 됐지만 apply 못 함\" 영구 상태 차단 (재시작 시 exists=true 라 skip) 92 …(+4252)"
+          - generic [ref=e1258]:
+            - generic "12:35:05" [ref=e1259]
+            - button "Copy" [ref=e1260]:
+              - img [ref=e1261]
+          - text: ⌄ 더보기
+        - generic [ref=e1265]:
+          - generic [ref=e1266]: /workspace/monthly-budget/app/src/main/java/com/siamakerlab/monthlybudget/data/sync/SyncManager.kt
+          - generic [ref=e1267]:
+            - generic "12:35:05" [ref=e1268]
+            - button "Copy" [ref=e1269] [cursor=pointer]:
+              - img [ref=e1270]
+        - generic [ref=e1274] [cursor=pointer]:
+          - code [ref=e1277]:
+            - text: "1 package com.siamakerlab.monthlybudget.data.sync 2 3 import com.siamakerlab.monthlybudget.core.Logger 4 import com.siamakerlab.monthlybudget.data.auth.AuthConfig 5 import com.siamakerlab.monthlybudget.data.auth.GoogleAuthManager 6 import com.siamakerlab.monthlybudget.data.drive.DriveException 7 import com.siamakerlab.monthlybudget.data.prefs.AppPreferences 8 import kotlinx.coroutines.flow.MutableStateFlow 9 import kotlinx.coroutines.flow.StateFlow 10 import kotlinx.coroutines.flow.asStateFlow 11 import kotlinx.coroutines.flow.first 12 import java.time.Instant 13 import java.time.format.DateTimeFormatter 14 import javax.inject.Inject 15 import javax.inject.Singleton 16 17 sealed class SyncStatus { 18 data object Idle : SyncStatus() 19 data object Running : SyncStatus() 20 data class Success(val counts: SyncCounts, val finishedAt: Long) : SyncStatus() 21 data class Failed(val reason: String) : SyncStatus() 22 data object NotConfigured : SyncStatus() 23 data object SignedOut : SyncStatus() 24 data object NoFolder : SyncStatus() 25 } 26 27 @Singleton 28 class SyncManager @Inject constructor( 29 private val auth: GoogleAuthManager, 30 private val prefs: AppPreferences, 31 private val syncRepo: SyncRepository 32 ) { 33 private val _status = MutableStateFlow<SyncStatus>(SyncStatus.Idle) 34 val status: StateFlow<SyncStatus> = _status.asStateFlow() 35 36 suspend"
+            - generic [ref=e1278]: fun syncOnce()
+            - text: ": SyncStatus { 37 if (!AuthConfig.isConfigured()) { 38 _status.value = SyncStatus.NotConfigured 39 return SyncStatus.NotConfigured 40 } 41 val email = prefs.accountEmail.first() 42 ?: return SyncStatus.SignedOut.also { _status.value = it } 43 val eventsFolderId = prefs.driveEventsFolderId.first() 44 ?: return SyncStatus.NoFolder.also { _status.value = it } 45 val initialToken = auth.getAccessTokenSilent() 46 ?: return SyncStatus.SignedOut.also { _status.value = it } 47 48 _status.value = SyncStatus.Running 49 val userId = EventMapper.userIdFromEmail(email) 50 val sinceIso = prefs.lastSyncAt.first()?.let { rfc3339(it) } 51 52 return try { 53 val counts = runOnce(initialToken, eventsFolderId, userId, sinceIso) 54 val now = System.currentTimeMillis() 55 prefs.setLastSyncAt(now) 56 SyncStatus.Success(counts, now).also { _status.value = it } 57 } catch (e: DriveException) { 58 // 401 (Unauthorized) — access token 만료. Identity Services AuthorizationClient 가 59 // 다음 호출에서 fresh token 을 발급하므로 1회 재시도. (refresh 후에도 401 이면 sign-out 으로 간주.) 60 if (e.httpCode == 401) { 61 Logger.w(\"Sync\", \"401 — refreshing token and retrying once\") 62 val refreshed = auth.getAccessTokenSilent() 63 ?: return SyncStatus.SignedOut.also { _status.value = it } 64 try { 65 val counts = runOnce(refreshed, eventsFolderId, userId, sinceIso) 66 val now = System.currentTimeMillis() 67 prefs.setLastSyncAt(now) 68 SyncStatus.Success(counts, now).also { _status.value = it } 69 } catch (t: Throwable) { 70 Logger.w(\"Sync\","
+            - generic [ref=e1279]: "\"retry failed: ${t.message}\""
+            - text: ") 71 SyncStatus.Failed(t.message ?: \"Drive sync failed\") 72 .also { _status.value = it } 73 } 74 } else { 75 Logger.w(\"Sync\","
+            - generic [ref=e1280]: "\"Drive error ${e.httpCode}: ${e.message}\""
+            - text: ") 76 SyncStatus.Failed(e.message ?: \"Drive sync failed\") 77 .also { _status.value = it } 78 } 79 } catch (t: Throwable) { 80 …(+1050)"
+          - generic [ref=e1281]:
+            - generic "12:35:05" [ref=e1282]
+            - button "Copy" [ref=e1283]:
+              - img [ref=e1284]
+          - text: ⌄ 더보기
+        - generic [ref=e1288]:
+          - generic [ref=e1289]: Review auth billing ads update
+          - generic [ref=e1290]:
+            - generic "12:35:07" [ref=e1291]
+            - button "Copy" [ref=e1292] [cursor=pointer]:
+              - img [ref=e1293]
+        - generic [ref=e1297]:
+          - generic [ref=e1298]: /workspace/monthly-budget/app/src/main/java/com/siamakerlab/monthlybudget/data/sync/SyncEventJson.kt
+          - generic [ref=e1299]:
+            - generic "12:35:09" [ref=e1300]
+            - button "Copy" [ref=e1301] [cursor=pointer]:
+              - img [ref=e1302]
+        - generic [ref=e1306] [cursor=pointer]:
+          - code [ref=e1309]: "1 package com.siamakerlab.monthlybudget.data.sync 2 3 import kotlinx.serialization.Serializable 4 import kotlinx.serialization.json.JsonElement 5 6 @Serializable 7 data class SyncEventJson( 8 val eventId: String, 9 val eventType: String, 10 val entityId: String, 11 val createdBy: String, 12 val createdAt: String, 13 val deviceId: String, 14 val payload: JsonElement 15 ) 16 17 @Serializable 18 data class EntryPayload( 19 val id: String, 20 val type: String, 21 val amount: Long, 22 val categoryId: String?, 23 val paymentMethodId: String?, 24 val memo: String?, 25 val date: String, 26 val paidBy: String, 27 val sharedType: String, 28 val deleted: Boolean, 29 val createdAt: Long, 30 val updatedAt: Long, 31 /** 32 * v0.2.0 (DB v2) 신설. 구버전(`isFixed` 누락) payload 가 들어와도 33 * `ignoreUnknownKeys = true` + default false 로 backward 호환. 34 */ 35 val isFixed: Boolean = false 36 ) 37 38 object EventTypes { 39 const val ENTRY_CREATED = \"ENTRY_CREATED\" 40 const val ENTRY_UPDATED = \"ENTRY_UPDATED\" 41 const val ENTRY_DELETED = \"ENTRY_DELETED\" 42 } 43"
+          - generic [ref=e1310]:
+            - generic "12:35:09" [ref=e1311]
+            - button "Copy" [ref=e1312]:
+              - img [ref=e1313]
+          - text: ⌄ 더보기
+        - generic [ref=e1317]:
+          - generic [ref=e1318]: /workspace/monthly-budget/app/src/main/java/com/siamakerlab/monthlybudget/data/sync/EventMapper.kt
+          - generic [ref=e1319]:
+            - generic "12:35:09" [ref=e1320]
+            - button "Copy" [ref=e1321] [cursor=pointer]:
+              - img [ref=e1322]
+        - generic [ref=e1326] [cursor=pointer]:
+          - code [ref=e1329]:
+            - text: "1 package com.siamakerlab.monthlybudget.data.sync 2 3 import com.siamakerlab.monthlybudget.data.local.entity.EntryEntity 4 import com.siamakerlab.monthlybudget.domain.model.EntryType 5 import com.siamakerlab.monthlybudget.domain.model.PaidBy 6 import com.siamakerlab.monthlybudget.domain.model.SharedType 7 import java.time.Instant 8 import java.time.LocalDate 9 import java.time.ZoneOffset 10 import java.time.format.DateTimeFormatter 11 12 object EventMapper { 13 14 private val isoFormatter: DateTimeFormatter = DateTimeFormatter.ISO_OFFSET_DATE_TIME 15 16"
+            - generic [ref=e1330]:
+              - text: fun entryToPayload
+              - generic [ref=e1331]: "(entry: EntryEntity)"
+            - text: ": EntryPayload = EntryPayload( 17 id = entry.id, 18 type = entry.type.name, 19 amount = entry.amount, 20 categoryId = entry.categoryId, 21 paymentMethodId = entry.paymentMethodId, 22 memo = entry.memo, 23 date = entry.date.toString(), 24 paidBy = entry.paidBy.name, 25 sharedType = entry.sharedType.name, 26 deleted = entry.deleted, 27 createdAt = entry.createdAt, 28 updatedAt = entry.updatedAt, 29 isFixed = entry.isFixed 30 ) 31 32"
+            - generic [ref=e1332]:
+              - text: fun payloadToEntry
+              - generic [ref=e1333]: "(payload: EntryPayload)"
+            - text: ": EntryEntity = EntryEntity( 33 id = payload.id, 34 type = EntryType.valueOf(payload.type.uppercase()), 35 amount = payload.amount, 36 categoryId = payload.categoryId, 37 paymentMethodId = payload.paymentMethodId, 38 memo = payload.memo, 39 date = LocalDate.parse(payload.date), 40 paidBy = PaidBy.valueOf(payload.paidBy.uppercase()), 41 sharedType = SharedType.valueOf(payload.sharedType.uppercase()), 42 deleted = payload.deleted, 43 isFixed = payload.isFixed, 44 createdAt = payload.createdAt, 45 updatedAt = payload.updatedAt 46 ) 47 48"
+            - generic [ref=e1334]: fun nowIso()
+            - text: ": String = isoFormatter.format(Instant.now().atOffset(ZoneOffset.UTC)) 49 50"
+            - generic [ref=e1335]:
+              - text: fun userIdFromEmail
+              - generic [ref=e1336]: "(email: String)"
+            - text: ": String { 51 val local = email.substringBefore('@') 52 return local.filter { it.isLetterOrDigit() || it == '.' || it == '-' || it == '_' } 53 .take(32) 54 .ifEmpty { \"user\" } 55 } 56 57 /** Spec format: YYYYMMDD_HHmmss_userId_eventId.json (UTC) */ 58"
+            - generic [ref=e1337]:
+              - text: fun fileName
+              - generic [ref=e1338]: "(userId: String, eventId: String, createdAtEpochMs: Long)"
+            - text: ": String { 59 val ts = Instant.ofEpochMilli(createdAtEpochMs).atOffset(ZoneOffset.UTC) 60 val date = \"%04d%02d%02d\".format(ts.year, ts.monthValue, ts.dayOfMonth) 61 val time = \"%02d%02d%02d\".format(ts.hour, ts.minute, ts.second) 62 val shortEvent = eventId.take(8) 63 return"
+            - generic [ref=e1339]: "\"${date}_${time}_${userId}_${shortEvent}.json\""
+            - text: "64 } 65 } 66"
+          - generic [ref=e1340]:
+            - generic "12:35:09" [ref=e1341]
+            - button "Copy" [ref=e1342]:
+              - img [ref=e1343]
+          - text: ⌄ 더보기
+        - generic [ref=e1347]:
+          - generic [ref=e1348]: /workspace/monthly-budget/app/src/main/java/com/siamakerlab/monthlybudget/data/auth/GoogleAuthManager.kt
+          - generic [ref=e1349]:
+            - generic "12:35:11" [ref=e1350]
+            - button "Copy" [ref=e1351] [cursor=pointer]:
+              - img [ref=e1352]
+        - generic [ref=e1356] [cursor=pointer]:
+          - code [ref=e1359]:
+            - text: "1 package com.siamakerlab.monthlybudget.data.auth 2 3 import android.app.Activity 4 import android.app.PendingIntent 5 import android.content.Context 6 import android.content.Intent 7 import androidx.credentials.ClearCredentialStateRequest 8 import androidx.credentials.CredentialManager 9 import androidx.credentials.CustomCredential 10 import androidx.credentials.GetCredentialRequest 11 import androidx.credentials.GetCredentialResponse 12 import androidx.credentials.exceptions.GetCredentialCancellationException 13 import androidx.credentials.exceptions.GetCredentialException 14 import androidx.credentials.exceptions.NoCredentialException 15 import com.google.android.gms.auth.api.identity.AuthorizationRequest 16 import com.google.android.gms.auth.api.identity.AuthorizationResult 17 import com.google.android.gms.auth.api.identity.Identity 18 import com.google.android.gms.common.api.Scope 19 import com.google.android.libraries.identity.googleid.GetGoogleIdOption 20 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential 21 import com.siamakerlab.monthlybudget.core.Logger 22 import com.siamakerlab.monthlybudget.data.prefs.AppPreferences 23 import dagger.hilt.android.qualifiers.ApplicationContext 24 import kotlinx.coroutines.Dispatchers 25 import kotlinx.coroutines.flow.first 26 import kotlinx.coroutines.tasks.await 27 import kotlinx.coroutines.withContext 28 import javax.inject.Inject 29 import javax.inject.Singleton 30 31 sealed class AuthResult { 32 data class Success(val account: AccountInfo, val accessToken: String) : AuthResult() 33 data class NeedsConsent(val pendingIntent: PendingIntent) : AuthResult() 34 data class Failure(val message: String) : AuthResult() 35 data object NotConfigured : AuthResult() 36 /** 사용자가 시트를 닫음 — UI 는 단순히 버튼 유지하고 재시도 대기. */ 37 data object Cancelled : AuthResult() 38 } 39 40 @Singleton 41 class GoogleAuthManager @Inject constructor( 42 @ApplicationContext private val context: Context, 43 private val prefs: AppPreferences 44 ) { 45 46 suspend"
+            - generic [ref=e1360]:
+              - text: fun signInAndAuthorize
+              - generic [ref=e1361]: "(activity: Activity)"
+            - text: ": AuthResult { 47 if (!AuthConfig.isConfigured()) return AuthResult.NotConfigured 48 49 val account = when (val r = signIn(activity)) { 50 is SignInResult.Account -> r.info 51 SignInResult.Cancelled -> return AuthResult.Cancelled 52 is SignInResult.Error -> return AuthResult.Failure(r.message) 53 } 54 prefs.saveAccount(account.email, account.displayName, account.photoUrl) 55 56 return when (val r = requestDriveAuthorization(activity)) { 57 is TokenResult.Token -> AuthResult.Success(account, r.accessToken) 58 is TokenResult.Consent -> AuthResult.NeedsConsent(r.pendingIntent) 59 is TokenResult.Error -> AuthResult.Failure(r.message) 60 } 61 } 62 63 /** Get an access token without UI; returns null if not yet authorized. */ 64 suspend"
+            - generic [ref=e1362]: fun getAccessTokenSilent()
+            - text: ": String? { 65 if (!AuthConfig.isConfigured()) return null 66 return when (val r = requestDriveAuthorization(null)) { 67 is TokenResult.Token -> r.accessToken 68 else -> null 69 } 70 } 71 72 suspend"
+            - generic [ref=e1363]:
+              - text: fun resolveAuthorizationResult
+              - generic [ref=e1364]: "(data: Intent)"
+            - text: ": AuthResult = withContext(Dispatchers.IO) { 73 runCatching { 74 val result = Identity.getAuthorizationClient(context) 75 .getAuthorizationResultFromIntent(data) 76 val token = result.accessToken 77 val email = prefs.accountEmail.first() 78 if (token != null && email != null) { 79 AuthResult.Success( 80 AccountInfo(email = email, displayName = null, photoUrl = null), 81 token 82 …(+7136)"
+          - generic [ref=e1365]:
+            - generic "12:35:11" [ref=e1366]
+            - button "Copy" [ref=e1367]:
+              - img [ref=e1368]
+          - text: ⌄ 더보기
+        - generic [ref=e1372]:
+          - generic [ref=e1373]: /workspace/monthly-budget/app/src/main/java/com/siamakerlab/monthlybudget/data/auth/AuthConfig.kt
+          - generic [ref=e1374]:
+            - generic "12:35:11" [ref=e1375]
+            - button "Copy" [ref=e1376] [cursor=pointer]:
+              - img [ref=e1377]
+        - generic [ref=e1381] [cursor=pointer]:
+          - code [ref=e1384]:
+            - text: "1 package com.siamakerlab.monthlybudget.data.auth 2 3 object AuthConfig { 4 /** 5 * Web Application OAuth 2.0 client ID from Google Cloud Console. 6 * 7 * Setup: 8 * 1. https://console.cloud.google.com → APIs & Services → Credentials 9 * 2. Create OAuth client ID → Application type: Web application 10 * (NOT the Android client; the Android client is registered separately 11 * with the debug/release SHA-1 fingerprint and selected automatically 12 * by Credential Manager at runtime.) 13 * 3. Enable the Google Drive API on the same project. 14 * 4. Paste the Web client ID below, ending with .apps.googleusercontent.com 15 */ 16 const val WEB_CLIENT_ID = \"REPLACE_ME.apps.googleusercontent.com\" 17 18 /** 19 * Full Drive scope. Required because the partner must access a folder they 20 * did not create with this app — `drive.file` would only see files the 21 * app itself opened, which breaks the shared-folder flow. 22 * 23 * Note: full Drive scope is \"restricted\" and requires Google verification 24 * before public release. For personal/internal builds it works without 25 * verification; users will see an \"unverified app\" warning. 26 */ 27 const val DRIVE_SCOPE = \"https://www.googleapis.com/auth/drive\" 28 29"
+            - generic [ref=e1385]: fun isConfigured()
+            - text: ": Boolean = WEB_CLIENT_ID.startsWith(\"REPLACE_ME\").not() 30 } 31"
+          - generic [ref=e1386]:
+            - generic "12:35:12" [ref=e1387]
+            - button "Copy" [ref=e1388]:
+              - img [ref=e1389]
+          - text: ⌄ 더보기
+        - generic [ref=e1393]:
+          - generic [ref=e1394]: /workspace/monthly-budget/app/src/main/java/com/siamakerlab/monthlybudget/data/auth/AccountInfo.kt
+          - generic [ref=e1395]:
+            - generic "12:35:12" [ref=e1396]
+            - button "Copy" [ref=e1397] [cursor=pointer]:
+              - img [ref=e1398]
+        - generic [ref=e1402]:
+          - generic [ref=e1403]: — end of history, live frames follow —
+          - generic [ref=e1404]:
+            - generic "19:05:40" [ref=e1405]
+            - button "Copy" [ref=e1406] [cursor=pointer]:
+              - img [ref=e1407]
+        - generic [ref=e1411]:
+          - generic [ref=e1412]: connected
+          - generic [ref=e1413]:
+            - generic "19:05:40" [ref=e1414]
+            - button "Copy" [ref=e1415] [cursor=pointer]:
+              - img [ref=e1416]
+      - group [ref=e1419]:
+        - generic "📋 할 일" [ref=e1420] [cursor=pointer]: 📋 할 일
+        - generic [ref=e1422]: Claude 가 TaskCreate / TaskUpdate / TodoWrite 를 호출하면 여기에 표시됩니다.
+      - toolbar "빠른 프롬프트 — 클릭하면 바로 전송됩니다" [ref=e1423]:
+        - button "A" [ref=e1424] [cursor=pointer]
+        - button "B" [ref=e1425] [cursor=pointer]
+        - button "C" [ref=e1426] [cursor=pointer]
+        - button "D" [ref=e1427] [cursor=pointer]
+        - button "계속" [ref=e1429] [cursor=pointer]
+        - button "모두 수정" [ref=e1430] [cursor=pointer]
+        - button "정밀 리뷰" [ref=e1431] [cursor=pointer]
+        - button "권장대로 진행" [ref=e1432] [cursor=pointer]
+      - group [ref=e1433]:
+        - generic "🤖 프롬프트 자동화" [ref=e1434] [cursor=pointer]: 🤖 프롬프트 자동화
+      - generic [ref=e1435]:
+        - generic [ref=e1436]:
+          - textbox "Claude 에게 보낼 프롬프트를 입력하세요. Enter 로 전송. 예) Android 빈 프로젝트를 생성하고 Compose 로 'Hello' 화면을 띄워줘." [ref=e1437]:
+            - /placeholder: "Claude 에게 보낼 프롬프트를 입력하세요. Enter 로 전송.\n예) Android 빈 프로젝트를 생성하고 Compose 로 'Hello' 화면을 띄워줘."
+          - generic [ref=e1438]:
+            - button "🎤" [ref=e1439] [cursor=pointer]
+            - button "전송" [ref=e1440] [cursor=pointer]
+        - generic [ref=e1441]:
+          - generic [ref=e1442]:
+            - generic [ref=e1443]: ○ 대기중
+            - generic [ref=e1444]: "전송: Enter · 줄바꿈: Ctrl+Enter"
+          - generic "발화가 끝나면 prompt 를 자동으로 Claude 에 전송합니다. 사용자 선호는 브라우저에 저장됩니다." [ref=e1445] [cursor=pointer]:
+            - checkbox "자동 전송" [ref=e1446]
+            - text: 자동 전송
+      - generic [ref=e1447]:
+        - combobox [ref=e1448] [cursor=pointer]:
+          - option "▼ 프롬프트 템플릿 …" [selected]
+          - option "ADMOB 앱오프닝, 배너광고 추가 및 검토"
+          - option "모든 오픈소스라이브러리 최신화"
+        - link "관리" [ref=e1449] [cursor=pointer]:
+          - /url: /prompts
+      - generic [ref=e1450]:
+        - combobox "Dispatch a registered sub-agent into the prompt" [ref=e1451] [cursor=pointer]:
+          - option "@ Agent dispatch …" [selected]
+          - option "(등록된 agent 없음 — /agents)" [disabled]
+        - link "관리" [ref=e1452] [cursor=pointer]:
+          - /url: /agents

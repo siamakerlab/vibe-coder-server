@@ -1352,7 +1352,7 @@ $errHtml
   /* v1.85.0 — assistant 긴 메시지 접기 */
   /* v1.90.5 — 접기/펼치기를 모든 콘솔 메시지에 적용(이전엔 .assistant 한정). */
   .log-content[data-clampable="1"] { position:relative; cursor:pointer; }
-  .log-content.clamped .log-body { max-height:360px; overflow:hidden; }
+  .log-content.clamped .log-body { max-height:180px; overflow:hidden; }
   .log-content.clamped::after {
     content:'${t("console.message.expand")}'; position:absolute; left:0; right:0; bottom:0;
     text-align:center; font-size:11px; color:#74b9ff; padding:22px 0 4px;
@@ -1702,7 +1702,7 @@ $automationPanelHtml
   // v1.7.7 — Lucide "copy" inline SVG. stroke currentColor → 테마 적응.
   var COPY_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15 H4 a2 2 0 0 1-2-2 V4 a2 2 0 0 1 2-2 h9 a2 2 0 0 1 2 2 v1"/></svg>';
 
-  var MD_CLAMP_PX = 360;  // v1.85.0 — assistant 메시지 접기 임계 높이.
+  var MD_CLAMP_PX = 180;  // v1.85.0 — assistant 메시지 접기 임계 높이.
   function append(cls, label, body, cat, opts) {
     cat = cat || 'ws';
     opts = opts || {};
