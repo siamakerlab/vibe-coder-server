@@ -1336,8 +1336,10 @@ $errHtml
   .log-body.md ul,.log-body.md ol { margin:0.4em 0; padding-left:1.5em; }
   .log-body.md li { margin:0.15em 0; }
   .log-body.md code.md-code { background:rgba(255,255,255,0.08); padding:1px 5px; border-radius:4px; font-size:0.9em; }
-  .log-body.md pre.md-pre { background:#161616; border:1px solid #2a2a2a; border-radius:6px; padding:10px 12px; overflow-x:auto; margin:0.5em 0; }
-  .log-body.md pre.md-pre code { background:none; padding:0; font-size:0.88em; line-height:1.45; }
+  /* v1.90.12 — .md-pre 코드블록 스타일을 assistant(.log-body.md) 뿐 아니라 tool 결과
+     (.log-body, md 아님)에도 적용되게 .log-body 로 확장. */
+  .log-body pre.md-pre { background:#161616; border:1px solid #2a2a2a; border-radius:6px; padding:10px 12px; overflow-x:auto; margin:0.5em 0; }
+  .log-body pre.md-pre code { background:none; padding:0; font-size:0.88em; line-height:1.45; }
   .log-body.md blockquote { border-left:3px solid #444; margin:0.5em 0; padding:2px 0 2px 12px; color:var(--text-dim,#aaa); }
   .log-body.md a { color:#74b9ff; text-decoration:underline; }
   .log-body.md hr { border:none; border-top:1px solid #333; margin:0.8em 0; }
@@ -1709,9 +1711,16 @@ $automationPanelHtml
     // v1.85.0 — assistant 메시지는 마크다운 렌더(escape 우선 → XSS 안전). 그 외(tool/sys/
     // err/user)는 raw escape 유지.
     var isAsst = (cls === 'assistant');
-    var bodyInner = (isAsst && window.VibeConsole && window.VibeConsole.renderMarkdown)
-      ? '<div class="log-body md">' + window.VibeConsole.renderMarkdown(body) + '</div>'
-      : '<div class="log-body">' + escHtml(body) + '</div>';
+    // v1.90.12 — tool 결과(파일 내용/명령 출력)는 코드블록(.md-pre)으로 감싸 monospace 박스
+    //   + 가로스크롤 + syntax highlight(아래 hljs)로 가독성↑. 줄번호(cat -n)도 정렬 유지.
+    var isToolOut = (cls === 'tool-out' || cls === 'tool-err');
+    var bodyInner;
+    if (isAsst && window.VibeConsole && window.VibeConsole.renderMarkdown)
+      bodyInner = '<div class="log-body md">' + window.VibeConsole.renderMarkdown(body) + '</div>';
+    else if (isToolOut)
+      bodyInner = '<div class="log-body"><pre class="md-pre"><code>' + escHtml(body) + '</code></pre></div>';
+    else
+      bodyInner = '<div class="log-body">' + escHtml(body) + '</div>';
     // v1.7.9 — meta (시각 + 복사 버튼) 를 응답 카드 내부 하단으로 이동.
     //          .log-content wrapper 안에 .log-body 위 + .log-meta 아래.
     row.innerHTML =
@@ -1749,8 +1758,9 @@ $automationPanelHtml
       });
     }
     logEl.appendChild(row);
-    if (isAsst && window.hljs) {
-      // v1.85.0 — 코드블록 syntax highlight (assistant 마크다운, highlight.js 로드 시).
+    if ((isAsst || isToolOut) && window.hljs) {
+      // v1.85.0 — assistant 마크다운 코드블록 + v1.90.12 tool 결과 코드블록 syntax highlight.
+      // tool 결과는 언어 class 가 없어 highlightElement 의 auto-detect 에 맡긴다.
       var codeEls = row.querySelectorAll('pre.md-pre > code');
       for (var ci = 0; ci < codeEls.length; ci++) {
         try { window.hljs.highlightElement(codeEls[ci]); } catch (e) {}
