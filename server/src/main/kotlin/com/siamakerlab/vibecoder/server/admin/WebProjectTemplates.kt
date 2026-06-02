@@ -1728,7 +1728,8 @@ $automationPanelHtml
       btn.addEventListener('click', function(e) {
         e.preventDefault();
         e.stopPropagation();
-        var txt = body == null ? '' : String(body);
+        // v1.90.9 — 복사는 항상 원문(clip 되기 전 전체). opts.raw 가 있으면 그것을 우선.
+        var txt = (opts && opts.raw != null) ? String(opts.raw) : (body == null ? '' : String(body));
         var doneOk = function() {
           btn.classList.add('copied');
           setTimeout(function(){ btn.classList.remove('copied'); }, 1200);
@@ -1989,7 +1990,8 @@ $automationPanelHtml
       // v1.70.0 — content 배열([{type:text,text}]) 을 평문으로 추출 (raw JSON 노출 제거).
       var out = window.VibeConsole.extractToolResult(f.output);
       var resultLabel = f.isError ? 'tool-err' : '✓ result';
-      append(f.isError ? 'tool-err' : 'tool-out', resultLabel, clip(out, 4000), 'tool_result');
+      // v1.90.9 — 표시는 clip(8000)이되 복사용 원문(raw)은 전체 보존.
+      append(f.isError ? 'tool-err' : 'tool-out', resultLabel, clip(out, 8000), 'tool_result', { raw: out });
       // v1.90.4 — tool 결과(파일 내용/명령 출력)에도 'unauthorized' 등이 정상 등장하므로 감지 제외.
     } else if (t === 'console_error') {
       append('err', 'error', (f.code || '') + ': ' + (f.message || ''), 'error');
@@ -2062,7 +2064,9 @@ $automationPanelHtml
         var parsed = tryParse(text);
         var out = parsed != null ? window.VibeConsole.extractToolResult(parsed) : text;
         var isErr = (role === 'tool_result_error');
-        append(isErr ? 'tool-err' : 'tool-out', isErr ? 'tool-err' : '✓ result', clip(out, 4000), 'tool_result', opts);
+        // v1.90.9 — 복사용 원문 보존(clip 8000 표시).
+        opts.raw = out;
+        append(isErr ? 'tool-err' : 'tool-out', isErr ? 'tool-err' : '✓ result', clip(out, 8000), 'tool_result', opts);
       } else if (role === 'system') {
         var sys = tryParse(text) || {};
         if (sys.kind === 'session_started') {
