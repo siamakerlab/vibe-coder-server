@@ -368,6 +368,24 @@ class ConversationTurnRepository(private val clock: Clock) {
         } > 0
     }
 
+    /**
+     * v1.91.5 — 새 세션 첫 턴에서 sessionId 미발급(NULL) 상태로 저장된 메인 콘솔 turn 을,
+     * Claude init 이벤트로 확정된 실제 session_id 로 backfill.
+     *
+     * 콘솔 복원(initialHistory)이 현재 session_id 로 필터하므로, NULL 로 남은 user 프롬프트는
+     * 페이지 재방문 시 누락됐다("가끔 직전 프롬프트만 안 보임"). agent_name IS NULL 로
+     * 메인 콘솔 turn 만 대상(sub-agent turn 불간섭). 반환값은 갱신된 row 수.
+     */
+    fun adoptNullSession(projectId: String, sessionId: String): Int = transaction {
+        ConversationTurns.update({
+            (ConversationTurns.projectId eq projectId) and
+                ConversationTurns.sessionId.isNull() and
+                ConversationTurns.agentName.isNull()
+        }) {
+            it[ConversationTurns.sessionId] = sessionId
+        }
+    }
+
     fun findById(turnId: String): ConversationTurnRow? = transaction {
         ConversationTurns.selectAll().where { ConversationTurns.id eq turnId }
             .firstOrNull()?.toRow()

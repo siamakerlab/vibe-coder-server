@@ -462,8 +462,16 @@ class ClaudeSessionManager(
             // capture session-id from the system/init line
             if (event is ClaudeEvent.SessionStarted) {
                 sessions[projectId]?.let {
+                    val prev = it.sessionId
                     it.sessionId = event.sessionId
                     it.sawSessionStarted = true
+                    // v1.91.5 — 새 세션 첫 턴: sendPrompt 가 아직 session_id 미발급(null)
+                    // 상태로 저장한 user 프롬프트를, 방금 확정된 실제 id 로 backfill.
+                    // 콘솔 복원(initialHistory)은 현재 session_id 로 필터하므로, 이 backfill
+                    // 이 없으면 새 세션 첫 프롬프트만 재방문 시 누락된다(assistant 응답은 보임).
+                    if (prev == null && event.sessionId.isNotBlank()) {
+                        history?.adoptNullSession(projectId, event.sessionId)
+                    }
                 }
                 runCatching { writeSessionId(projectId, event.sessionId) }
                     .onFailure { log.warn(it) { "[$projectId] failed to persist session-id" } }
