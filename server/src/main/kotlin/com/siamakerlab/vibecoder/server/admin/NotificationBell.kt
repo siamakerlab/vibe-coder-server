@@ -182,9 +182,15 @@ internal object NotificationBell {
     open = !open; panel.hidden = !open;
     if(open) fetchNotifs();
   });
+  function closePanel(){ if(open){ open = false; panel.hidden = true; } }
   document.addEventListener('click', function(e){
-    if(open && !root.contains(e.target)){ open = false; panel.hidden = true; }
+    if(open && !root.contains(e.target)) closePanel();
   });
+  // v1.90.7 — 통합 탭의 콘솔은 iframe(별도 document)이라 그 영역 클릭은 부모의 document
+  // click 이 발생하지 않아 미니창이 안 닫혔다. 부모 window 가 포커스를 잃으면(=iframe/다른
+  // 영역으로 포커스 이동) 닫는다. Esc 로도 닫는다.
+  window.addEventListener('blur', closePanel);
+  document.addEventListener('keydown', function(e){ if(e.key === 'Escape') closePanel(); });
   list.addEventListener('click', function(e){
     var item = e.target.closest ? e.target.closest('.vibe-notif-item') : null;
     if(!item) return;

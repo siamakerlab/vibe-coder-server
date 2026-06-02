@@ -165,10 +165,19 @@
     // 포커스 해제(팝업 바깥 영역 클릭)되면 콤보박스(pt-switcher)·설정(pt-settings)·
     // 더보기(more-dropdown)를 자동으로 닫는다. <details> 는 기본적으로 바깥 클릭으로
     // 닫히지 않아 직접 처리. switcher 가 없는 페이지에서도 동작하도록 IIFE 밖에 둔다.
+    function closeAllPopups() {
+      root.querySelectorAll('details.pt-switcher[open], details.pt-settings[open], details.more-dropdown[open]')
+        .forEach(function (d) { d.removeAttribute('open'); });
+    }
     document.addEventListener('click', function (e) {
       root.querySelectorAll('details.pt-switcher[open], details.pt-settings[open], details.more-dropdown[open]')
         .forEach(function (d) { if (!d.contains(e.target)) d.removeAttribute('open'); });
     });
+    // v1.90.7 — 콘솔 등 탭 내용은 iframe(별도 document)이라 그 영역 클릭은 부모의 document
+    // click 이 안 울려 콤보박스가 안 닫혔다. 부모 window 포커스 상실(iframe/다른 영역 이동)
+    // 시 모든 팝업을 닫는다. Esc 로도 닫는다.
+    window.addEventListener('blur', closeAllPopups);
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeAllPopups(); });
 
     // v1.72.0 — inner shell 의 nav/탭바 제거는 이제 **서버가 embed 요청에 미렌더**한다
     // (AdminTemplates.shell(embed=true); ?_embed=1 + 표준 Sec-Fetch-Dest:iframe 로 자동 판정).
