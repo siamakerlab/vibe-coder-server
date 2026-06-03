@@ -48,6 +48,10 @@ if [[ -e /dev/kvm ]]; then
             groupadd -o -g "$kvm_gid" kvm 2>/dev/null || true
         fi
         usermod -aG kvm vibe 2>/dev/null || true
+        # v1.96.2 — 중요: 아래 유저 전환은 반드시 `gosu vibe`(그룹 생략)여야 한다.
+        # `gosu vibe:vibe`(그룹 명시)는 supplementary groups 를 버려서(setgroups 1개만)
+        # 여기서 추가한 kvm 그룹이 서버 JVM 프로세스에 적용되지 않는다 → /dev/kvm 접근 불가
+        # → 에뮬레이터 -accel on 실패. `gosu vibe` 는 initgroups 로 kvm 포함 전체 적용.
         log "KVM 가속 사용 가능 (/dev/kvm gid=${kvm_gid})"
     fi
 else
@@ -111,7 +115,7 @@ if [[ ! -f "$SSH_KEY" ]]; then
         chown vibe:vibe "$SSH_DIR"
         chmod 700 "$SSH_DIR"
         log "SSH 키 (ED25519) 자동 생성 — $SSH_KEY"
-        if gosu vibe:vibe ssh-keygen -t ed25519 -f "$SSH_KEY" -N "" \
+        if gosu vibe ssh-keygen -t ed25519 -f "$SSH_KEY" -N "" \
             -C "vibe-coder-server@$(hostname)-$(date +%Y%m%d)" >/dev/null
         then
             chmod 600 "$SSH_KEY"
@@ -163,7 +167,7 @@ fi
 # 건너뛰게 한다. config 가 있을 때만, 변경이 있을 때만 기록 (idempotent).
 CLAUDE_CFG=/home/vibe/.claude/.claude.json
 if [[ -f "$CLAUDE_CFG" ]] && command -v node >/dev/null 2>&1; then
-    gosu vibe:vibe node -e '
+    gosu vibe node -e '
       const fs=require("fs"); const f=process.argv[1];
       try {
         const d=JSON.parse(fs.readFileSync(f,"utf8"));
@@ -210,17 +214,17 @@ case "${1:-server}" in
     server)
         log "vibe-coder 서버 시작..."
         # gosu로 vibe 사용자로 권한 강등 후 서버 실행
-        exec gosu vibe:vibe /opt/vibe-coder/bin/server
+        exec gosu vibe /opt/vibe-coder/bin/server
         ;;
     doctor)
         shift
-        exec gosu vibe:vibe /usr/local/bin/vibe-doctor "$@"
+        exec gosu vibe /usr/local/bin/vibe-doctor "$@"
         ;;
     shell|bash|sh)
-        exec gosu vibe:vibe /bin/bash
+        exec gosu vibe /bin/bash
         ;;
     *)
         # 그 외 명령은 vibe로 그대로 실행 (`docker run ... claude --version` 등)
-        exec gosu vibe:vibe "$@"
+        exec gosu vibe "$@"
         ;;
 esac
