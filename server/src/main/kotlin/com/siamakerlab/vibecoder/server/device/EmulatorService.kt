@@ -110,7 +110,12 @@ class EmulatorService(
     private fun serialPresentCached(): Boolean {
         val now = System.currentTimeMillis()
         if (now - serialPresentCheckedAt < SERIAL_TTL_MS) return serialPresentCache
-        serialPresentCache = runCatching { adb.devices().any { it.serial == serial } }.getOrDefault(false)
+        // v1.98.2 — offline(죽어가는/좀비) 인스턴스는 제외. 포함 시 좀비가 status.external/
+        //  isRunning 을 true 로 묶어 start 를 영구 거부하고 stop(adb emu kill)은 offline 에
+        //  무효라 "종료 신호 보냄" 거짓 성공이 된다. device/booting 등 live 상태만 present.
+        serialPresentCache = runCatching {
+            adb.devices().any { it.serial == serial && it.state != "offline" }
+        }.getOrDefault(false)
         serialPresentCheckedAt = now
         return serialPresentCache
     }

@@ -215,7 +215,9 @@ fun Routing.keystoreRoutes(
  * (같은 name 의 input 여러 개 → form.getAll). App ID·unit 모두 비면 null (파일 미생성).
  */
 private fun admobFromForm(form: io.ktor.http.Parameters): AdmobIds? {
-    fun multi(name: String) = form.getAll(name).orEmpty().map { it.trim() }.filter { it.isNotBlank() }
+    // v1.98.2 — 콤마는 직렬화 구분자 → 입력 내 콤마도 split 흡수 + trim + 빈값/중복 제거.
+    fun multi(name: String) = form.getAll(name).orEmpty()
+        .flatMap { it.split(",") }.map { it.trim() }.filter { it.isNotBlank() }.distinct()
     return AdmobIds(
         appId = form["admobAppId"]?.trim().orEmpty(),
         appOpenUnitIds = multi("admobAppOpenUnitId"),
