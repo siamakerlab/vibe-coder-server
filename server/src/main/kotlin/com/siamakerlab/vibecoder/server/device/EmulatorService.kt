@@ -123,17 +123,22 @@ class EmulatorService(
     }
 
     /**
-     * v1.96.0 — `emulator -accel-check`. KVM 하드웨어 가속 가용 여부. 미가용이면 [start] 가
-     * TCG 소프트 에뮬레이션(부팅 수분 + ANR 폭주)을 막기 위해 시작을 거부한다.
+     * KVM 하드웨어 가속 가용 여부. 미가용이면 [start] 가 TCG 소프트 에뮬레이션(부팅 수분 +
+     * ANR 폭주)을 막기 위해 시작을 거부한다.
+     *
+     * v1.96.1 — 판정 방식 교체. v1.96.0 은 `emulator -accel-check` 바이너리를 ProcessBuilder
+     * 로 호출했는데, **셸에선 어떤 조건(cwd/stdin/비-TTY 포함)에서도 exit 0 + "usable"** 인
+     * 명령이 JVM 자식프로세스 컨텍스트에선 오탐(false)을 내, 정상 KVM 환경에서도 시작을
+     * 막아 버렸다(운영 회귀). emulator 런처가 JVM 하위에서 종료코드를 제대로 전파하지 못한
+     * 것으로 추정. KVM 가속의 실제 전제는 **`/dev/kvm` 을 R/W 로 열 수 있는지**(`-accel on`
+     * 이 여는 것)이므로, fork 없이 파일 접근성으로 직접·견고하게 판정한다.
      */
     fun accelCheckUsable(): Boolean {
-        val emu = emulatorBin() ?: return false
-        return runCatching {
-            val p = ProcessBuilder(emu.toString(), "-accel-check").redirectErrorStream(true).start()
-            val out = p.inputStream.bufferedReader(Charsets.UTF_8).readText()
-            if (!p.waitFor(15, TimeUnit.SECONDS)) { p.destroyForcibly(); return false }
-            p.exitValue() == 0 || out.contains("is installed and usable", ignoreCase = true)
-        }.getOrDefault(false)
+        val kvm = Path.of("/dev/kvm")
+        if (!Files.exists(kvm)) return false
+        if (Files.isReadable(kvm) && Files.isWritable(kvm)) return true
+        // access(2) 가 supplementary group/ACL 을 놓치는 드문 환경 대비 — 실제 R/W open 시도.
+        return runCatching { java.io.RandomAccessFile(kvm.toFile(), "rw").close(); true }.getOrDefault(false)
     }
 
     // v1.73.0 점검 — booted adb 호출 TTL 캐시. 무인증 /api/emulator/status pill 폴링이
