@@ -78,6 +78,18 @@ class KeystoreService(
     /** Host path of `<pkg>-keystore.properties` — Claude prompt 에 절대경로로 노출. */
     fun propertiesPath(packageName: String): Path = keystoreDir.resolve("$packageName-keystore.properties")
 
+    /** v1.98.0 — 아카이브용: 해당 패키지의 **존재하는** 키스토어 파일 경로(최대 4종). */
+    fun keystoreFiles(packageName: String): List<Path> {
+        if (!packageNameRegex.matches(packageName)) return emptyList()
+        return listOf(
+            "$packageName.keystore", "$packageName-debug.keystore",
+            "$packageName-keystore.properties", "$packageName-admob.properties",
+        ).map { keystoreDir.resolve(it) }.filter { Files.exists(it) }
+    }
+
+    /** v1.98.0 — 복원 시 키스토어 파일을 되돌려 놓을 디렉토리(`/home/vibe/keystores`). */
+    fun keystoreDirPath(): Path = keystoreDir
+
     /**
      * v1.8.0 — 빌드 시 Gradle `-Pandroid.injected.signing.*` inject 용 자격증명 로드.
      *

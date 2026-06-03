@@ -604,6 +604,11 @@ internal object ProjectTabsTemplate {
         <a href="/projects/${esc(project.id)}/zip" class="item">${esc(t("projects.detail.zip"))}</a>
         <a href="/projects/${esc(project.id)}/env-files" target="${esc("tab-env-files")}" class="item">${esc(t("projects.detail.envFiles"))}</a>
         <hr>
+        <form method="post" action="/projects/${esc(project.id)}/archive" style="margin:0"
+              onsubmit="return confirm(${jsLit(t("project.action.archiveConfirm"))})">
+          ${CsrfTokens.hiddenInput(csrf)}
+          <button type="submit" class="item">🗄 ${esc(t("project.action.archive"))}</button>
+        </form>
         <form method="post" action="/projects/${esc(project.id)}/delete" style="margin:0"
               onsubmit="return confirm(${jsLit(t("projects.detail.deleteConfirm"))})">
           ${CsrfTokens.hiddenInput(csrf)}

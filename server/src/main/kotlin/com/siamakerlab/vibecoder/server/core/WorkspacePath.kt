@@ -106,6 +106,10 @@ class WorkspacePath(val root: Path) {
         return safe
     }
 
+    /** v1.98.0 — `<root>/.vibecoder/archives` — 아카이브된 프로젝트 tar.gz 보관소(단일 디렉토리). */
+    fun archivesDir(): Path =
+        root.resolve(".vibecoder").resolve("archives").also { it.createDirectories() }
+
     /** Defense-in-depth: reject paths from DB rows / uploads pointing outside the workspace. */
     fun ensureUnderWorkspace(absolute: Path): Path =
         PathSafety.checkAbsoluteIsInsideWorkspace(root, absolute)

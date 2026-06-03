@@ -24,6 +24,7 @@ internal object ToolsTabsTemplate {
         Tab("codeSearch",    "tools.tab.codeSearch", "/code-search",   "ttab-code-search"),
         Tab("logs",          "tools.tab.logs",       "/logs",          "ttab-logs"),
         Tab("history",       "tools.tab.history",    "/history",       "ttab-history"),
+        Tab("archive",       "tools.tab.archive",    "/archive",       "ttab-archive"),
     )
 
     fun page(username: String, csrf: String?, lang: String): String {

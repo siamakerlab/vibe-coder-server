@@ -6,6 +6,7 @@ import com.siamakerlab.vibecoder.server.actions.ServerActionHandler
 import com.siamakerlab.vibecoder.server.actions.projectActionRoutes
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.adminRoutes
+import com.siamakerlab.vibecoder.server.admin.archiveRoutes
 import com.siamakerlab.vibecoder.server.admin.backupRoutes
 import com.siamakerlab.vibecoder.server.admin.memosRoutes
 import com.siamakerlab.vibecoder.server.admin.logSearchRoutes
@@ -419,6 +420,14 @@ fun Application.module(ctx: ServerContext) {
         adbRoutes(adminDeps, ctx.adb, ctx.deviceRepo, ctx.adminUserRepo)
         // v1.73.0 — 안드로이드 에뮬레이터(헤드리스) 상태/제어. lifecycle 은 ServerMain hoist.
         emulatorRoutes(adminDeps, ctx.emulator)
+        // v1.98.0 — 프로젝트 아카이브(압축 보관)/복원. Tools 탭 'Archive' + 프로젝트 목록 버튼.
+        run {
+            val archivedRepo = com.siamakerlab.vibecoder.server.repo.ArchivedProjectRepository()
+            val archiveService = com.siamakerlab.vibecoder.server.projects.ProjectArchiveService(
+                ctx.workspace, ctx.keystoreService, ctx.projectRepo, archivedRepo,
+            ) { ctx.projects.delete(it) }
+            archiveRoutes(adminDeps, archiveService)
+        }
         // v0.10.0 — admin SSR 라우트들의 JSON API 이중 노출 (vibe-coder-android wire)
         envSetupApiRoutes(
             envSetup = ctx.envSetup,
