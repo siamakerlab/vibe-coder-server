@@ -16,6 +16,7 @@ import com.siamakerlab.vibecoder.server.admin.requireWriteAccessOrRedirect
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens.requireCsrf
 import com.siamakerlab.vibecoder.server.claude.ClaudeSessionManager
+import com.siamakerlab.vibecoder.server.i18n.Messages
 import com.siamakerlab.vibecoder.shared.dto.ProjectDto
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentType
@@ -130,7 +131,7 @@ fun Routing.projectKeystoreRoutes(
             city = form["city"]?.trim().orEmpty(),
             password = form["password"]?.trim().orEmpty(),
             validityYears = form["validityYears"]?.trim()?.toIntOrNull(),
-            admob = admobFromForm(form),
+            admob = admobFromForm(form).takeIf { !it.isBlank },
         )
         val result = runCatching { keystore.create(req) }
         if (result.isSuccess) {
@@ -153,17 +154,10 @@ fun Routing.projectKeystoreRoutes(
             return@post
         }
         val form = call.receiveParameters()
-        val ids = AdmobIds(
-            appId = form["admobAppId"]?.trim().orEmpty(),
-            appOpenUnitId = form["admobAppOpenUnitId"]?.trim().orEmpty(),
-            bannerUnitId = form["admobBannerUnitId"]?.trim().orEmpty(),
-            nativeUnitId = form["admobNativeUnitId"]?.trim().orEmpty(),
-        )
+        val ids = admobFromForm(form)
         val result = runCatching { keystore.saveAdmob(p.packageName, ids) }
         if (result.isSuccess) {
-            val allBlank = ids.appId.isBlank() && ids.appOpenUnitId.isBlank() &&
-                ids.bannerUnitId.isBlank() && ids.nativeUnitId.isBlank()
-            val msg = if (allBlank) "AdMob ID 모두 비워 삭제됨" else "AdMob ID 저장됨"
+            val msg = if (ids.isBlank) "AdMob ID 모두 비워 삭제됨" else "AdMob ID 저장됨"
             call.respondRedirect("/projects/$id/keystore?ok=${enc(msg)}")
         } else {
             val reason = result.exceptionOrNull()?.message ?: "save_failed"
@@ -214,16 +208,21 @@ fun Routing.projectKeystoreRoutes(
     }
 }
 
-private fun admobFromForm(form: io.ktor.http.Parameters): AdmobIds? =
+/** v1.94.0 — 같은 name 의 다중 input(getAll)을 trim + 빈값 제거한 리스트로. */
+private fun multi(form: io.ktor.http.Parameters, name: String): List<String> =
+    form.getAll(name).orEmpty().map { it.trim() }.filter { it.isNotBlank() }
+
+/** v1.94.0 — App ID(단일) + 6종 유형별 다중 unit ID 수집. blank 여부는 호출측에서 판단. */
+private fun admobFromForm(form: io.ktor.http.Parameters): AdmobIds =
     AdmobIds(
         appId = form["admobAppId"]?.trim().orEmpty(),
-        appOpenUnitId = form["admobAppOpenUnitId"]?.trim().orEmpty(),
-        bannerUnitId = form["admobBannerUnitId"]?.trim().orEmpty(),
-        nativeUnitId = form["admobNativeUnitId"]?.trim().orEmpty(),
-    ).takeIf {
-        it.appId.isNotBlank() || it.bannerUnitId.isNotBlank() ||
-            it.appOpenUnitId.isNotBlank() || it.nativeUnitId.isNotBlank()
-    }
+        appOpenUnitIds = multi(form, "admobAppOpenUnitId"),
+        bannerUnitIds = multi(form, "admobBannerUnitId"),
+        nativeUnitIds = multi(form, "admobNativeUnitId"),
+        interstitialUnitIds = multi(form, "admobInterstitialUnitId"),
+        rewardedUnitIds = multi(form, "admobRewardedUnitId"),
+        rewardedInterstitialUnitIds = multi(form, "admobRewardedInterstitialUnitId"),
+    )
 
 private fun enc(s: String) = URLEncoder.encode(s, StandardCharsets.UTF_8)
 
@@ -252,8 +251,38 @@ internal object ProjectKeystoreTemplates {
         lang: String,
         embed: Boolean = false,
     ): String {
+        val t = { k: String -> Messages.t(lang, k) }
         val okHtml = ok?.let { """<div class="ok-banner">✓ ${esc(it)}</div>""" } ?: ""
         val errHtml = err?.let { """<div class="error">⚠ ${esc(it)}</div>""" } ?: ""
+
+        // v1.94.0 — 광고 유형 1개 블록 (라벨 + 다중 unit 행 + "단위 추가" 버튼).
+        // 같은 name 의 input 들을 form.getAll(name) 으로 서버에서 수집한다.
+        fun admobRow(name: String, value: String): String = """
+        <div class="admob-row" style="display:flex;gap:6px;margin-bottom:6px">
+          <input name="${esc(name)}" value="${esc(value)}" placeholder="ca-app-pub-XXXX/YYYY"
+                 style="flex:1;min-width:0;padding:8px;font-family:ui-monospace,Menlo,monospace">
+          <button type="button" class="admob-del" title="${esc(t("ks.admob.remove"))}"
+                  style="flex:0 0 auto;padding:0 12px;background:#3a1212;color:#f88;border:0;border-radius:6px;cursor:pointer">✕</button>
+        </div>"""
+        fun admobType(labelKey: String, name: String, values: List<String>): String {
+            val rows = values.ifEmpty { listOf("") }.joinToString("\n") { admobRow(name, it) }
+            return """
+      <div class="admob-type" style="grid-column:1/3">
+        <div style="font-size:12px;color:#aaa;margin-bottom:4px">${esc(t(labelKey))}
+          <span class="dim" style="font-size:11px;font-weight:400">${esc(t("ks.admob.unitsLabel"))}</span></div>
+        <div class="admob-rows">$rows</div>
+        <button type="button" class="admob-add"
+                style="margin-top:2px;padding:4px 10px;font-size:12px;background:#1f2937;color:#cbd5e1;border:0;border-radius:6px;cursor:pointer">${esc(t("ks.admob.add"))}</button>
+      </div>"""
+        }
+        // 6종 유형을 사용자 친숙 순서(배너 → 앱오프닝 → 네이티브 → 전면 → 보상형 → 보상형전면)로.
+        val admobTypesHtml =
+            admobType("ks.admob.banner", "admobBannerUnitId", admob.bannerUnitIds) +
+                admobType("ks.admob.appOpen", "admobAppOpenUnitId", admob.appOpenUnitIds) +
+                admobType("ks.admob.native", "admobNativeUnitId", admob.nativeUnitIds) +
+                admobType("ks.admob.interstitial", "admobInterstitialUnitId", admob.interstitialUnitIds) +
+                admobType("ks.admob.rewarded", "admobRewardedUnitId", admob.rewardedUnitIds) +
+                admobType("ks.admob.rewardedInterstitial", "admobRewardedInterstitialUnitId", admob.rewardedInterstitialUnitIds)
         val csrfHidden = CsrfTokens.hiddenInput(csrf)
         val pkg = p.packageName
         val exists = entry != null
@@ -307,38 +336,52 @@ internal object ProjectKeystoreTemplates {
         val admobOpen = if (hasAdmob(admob)) "open" else ""
         val admobCard = """
 <details class="card" $admobOpen style="margin-bottom:14px">
-  <summary style="cursor:pointer;font-weight:600">📣 AdMob 광고 ID</summary>
+  <summary style="cursor:pointer;font-weight:600">${esc(t("ks.admob.cardTitle"))}</summary>
   <p class="dim" style="font-size:12px;margin:8px 0 10px">
-    릴리스 빌드에 주입할 AdMob ID. 디버그 빌드는 테스트 광고 ID 사용 권장. 모두 비우면 삭제됩니다.
-    저장 위치: <code>${esc(pkg)}-admob.properties</code> (호스트 keystores 볼륨).
+    ${esc(t("ks.admob.cardIntro"))}<br>
+    ${esc(t("ks.admob.savedAt"))}: <code>${esc(pkg)}-admob.properties</code>
   </p>
   <form method="post" action="/projects/${esc(p.id)}/keystore/admob" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
     $csrfHidden
     <label style="grid-column:1/3">
-      <div style="font-size:12px;color:#aaa;margin-bottom:4px">App ID</div>
+      <div style="font-size:12px;color:#aaa;margin-bottom:4px">${esc(t("ks.admob.appId"))}</div>
       <input name="admobAppId" value="${esc(admob.appId)}" placeholder="ca-app-pub-XXXX~YYYY"
              style="width:100%;padding:8px;font-family:ui-monospace,Menlo,monospace">
     </label>
-    <label>
-      <div style="font-size:12px;color:#aaa;margin-bottom:4px">App Open Unit ID</div>
-      <input name="admobAppOpenUnitId" value="${esc(admob.appOpenUnitId)}" placeholder="ca-app-pub-XXXX/YYYY"
-             style="width:100%;padding:8px;font-family:ui-monospace,Menlo,monospace">
-    </label>
-    <label>
-      <div style="font-size:12px;color:#aaa;margin-bottom:4px">Banner Unit ID</div>
-      <input name="admobBannerUnitId" value="${esc(admob.bannerUnitId)}" placeholder="ca-app-pub-XXXX/YYYY"
-             style="width:100%;padding:8px;font-family:ui-monospace,Menlo,monospace">
-    </label>
-    <label>
-      <div style="font-size:12px;color:#aaa;margin-bottom:4px">Native Unit ID</div>
-      <input name="admobNativeUnitId" value="${esc(admob.nativeUnitId)}" placeholder="ca-app-pub-XXXX/YYYY"
-             style="width:100%;padding:8px;font-family:ui-monospace,Menlo,monospace">
-    </label>
+    $admobTypesHtml
+    <p class="dim" style="grid-column:1/3;font-size:11px;margin:2px 0 0">${esc(t("ks.admob.multiHint"))}</p>
     <div style="grid-column:1/3">
-      <button type="submit" class="primary">AdMob 저장</button>
+      <button type="submit" class="primary">${esc(t("ks.admob.save"))}</button>
     </div>
   </form>
-</details>"""
+</details>
+<script>
+(function () {
+  function rowsOf(el) { var t = el.closest('.admob-type'); return t ? t.querySelector('.admob-rows') : null; }
+  document.addEventListener('click', function (e) {
+    var add = e.target.closest('.admob-add');
+    if (add) {
+      e.preventDefault();
+      var wrap = rowsOf(add); if (!wrap) return;
+      var last = wrap.querySelector('.admob-row:last-child'); if (!last) return;
+      var clone = last.cloneNode(true);
+      var inp = clone.querySelector('input'); if (inp) inp.value = '';
+      wrap.appendChild(clone);
+      if (inp) inp.focus();
+      return;
+    }
+    var del = e.target.closest('.admob-del');
+    if (del) {
+      e.preventDefault();
+      var row = del.closest('.admob-row'); if (!row) return;
+      var wrap = row.parentElement;
+      if (wrap.querySelectorAll('.admob-row').length > 1) { row.remove(); }
+      else { var inp = row.querySelector('input'); if (inp) inp.value = ''; }
+      return;
+    }
+  });
+})();
+</script>"""
 
         // 생성 폼 (미존재 시) ------------------------------------------------------
         val passwordPrefilled = if (defaultPassword.isNotBlank()) """value="${esc(defaultPassword)}"""" else ""
@@ -394,28 +437,15 @@ internal object ProjectKeystoreTemplates {
       </label>
     </div>
     <details style="margin-top:12px">
-      <summary style="cursor:pointer;font-size:13px;color:#aaa">AdMob 광고 ID (선택 — 생성 시 함께 저장)</summary>
+      <summary style="cursor:pointer;font-size:13px;color:#aaa">${esc(t("ks.admob.toggle"))}</summary>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
         <label style="grid-column:1/3">
-          <div style="font-size:12px;color:#aaa;margin-bottom:4px">App ID</div>
+          <div style="font-size:12px;color:#aaa;margin-bottom:4px">${esc(t("ks.admob.appId"))}</div>
           <input name="admobAppId" value="${esc(admob.appId)}" placeholder="ca-app-pub-XXXX~YYYY"
                  style="width:100%;padding:8px;font-family:ui-monospace,Menlo,monospace">
         </label>
-        <label>
-          <div style="font-size:12px;color:#aaa;margin-bottom:4px">App Open Unit ID</div>
-          <input name="admobAppOpenUnitId" value="${esc(admob.appOpenUnitId)}" placeholder="ca-app-pub-XXXX/YYYY"
-                 style="width:100%;padding:8px;font-family:ui-monospace,Menlo,monospace">
-        </label>
-        <label>
-          <div style="font-size:12px;color:#aaa;margin-bottom:4px">Banner Unit ID</div>
-          <input name="admobBannerUnitId" value="${esc(admob.bannerUnitId)}" placeholder="ca-app-pub-XXXX/YYYY"
-                 style="width:100%;padding:8px;font-family:ui-monospace,Menlo,monospace">
-        </label>
-        <label>
-          <div style="font-size:12px;color:#aaa;margin-bottom:4px">Native Unit ID</div>
-          <input name="admobNativeUnitId" value="${esc(admob.nativeUnitId)}" placeholder="ca-app-pub-XXXX/YYYY"
-                 style="width:100%;padding:8px;font-family:ui-monospace,Menlo,monospace">
-        </label>
+        $admobTypesHtml
+        <p class="dim" style="grid-column:1/3;font-size:11px;margin:2px 0 0">${esc(t("ks.admob.multiHint"))}</p>
       </div>
     </details>
     <p class="dim" style="font-size:12px;margin:12px 0 8px">⚠ 키스토어는 한 번 잃으면 같은 키로 앱 업데이트가 불가합니다 — 호스트 keystores 볼륨을 백업하세요.</p>
@@ -504,7 +534,5 @@ $actionsCard
 </div>"""
     }
 
-    private fun hasAdmob(a: AdmobIds): Boolean =
-        a.appId.isNotBlank() || a.appOpenUnitId.isNotBlank() ||
-            a.bannerUnitId.isNotBlank() || a.nativeUnitId.isNotBlank()
+    private fun hasAdmob(a: AdmobIds): Boolean = !a.isBlank
 }

@@ -83,15 +83,7 @@ fun Routing.keystoreRoutes(
             city = form["city"]?.trim().orEmpty(),
             password = form["password"]?.trim().orEmpty(),
             validityYears = form["validityYears"]?.trim()?.toIntOrNull(),
-            admob = AdmobIds(
-                appId = form["admobAppId"]?.trim().orEmpty(),
-                appOpenUnitId = form["admobAppOpenUnitId"]?.trim().orEmpty(),
-                bannerUnitId = form["admobBannerUnitId"]?.trim().orEmpty(),
-                nativeUnitId = form["admobNativeUnitId"]?.trim().orEmpty(),
-            ).takeIf {
-                it.appId.isNotBlank() || it.bannerUnitId.isNotBlank() ||
-                    it.appOpenUnitId.isNotBlank() || it.nativeUnitId.isNotBlank()
-            },
+            admob = admobFromForm(form),
         )
         val flash = runCatching { service.create(req) }
             .map { "ok:${it.packageName}" }
@@ -133,15 +125,7 @@ fun Routing.keystoreRoutes(
             city = form["city"]?.trim().orEmpty(),
             password = form["password"]?.trim().orEmpty(),
             validityYears = form["validityYears"]?.trim()?.toIntOrNull(),
-            admob = AdmobIds(
-                appId = form["admobAppId"]?.trim().orEmpty(),
-                appOpenUnitId = form["admobAppOpenUnitId"]?.trim().orEmpty(),
-                bannerUnitId = form["admobBannerUnitId"]?.trim().orEmpty(),
-                nativeUnitId = form["admobNativeUnitId"]?.trim().orEmpty(),
-            ).takeIf {
-                it.appId.isNotBlank() || it.bannerUnitId.isNotBlank() ||
-                    it.appOpenUnitId.isNotBlank() || it.nativeUnitId.isNotBlank()
-            },
+            admob = admobFromForm(form),
         )
         val result = runCatching { service.create(req) }
         if (result.isSuccess) {
@@ -226,6 +210,23 @@ fun Routing.keystoreRoutes(
  * 지시가 전송됨. 비밀번호는 본문에 포함되지 않으며, properties 파일 경로 + 표준
  * Gradle 패턴 (Properties.load + signingConfigs) 만 안내.
  */
+/**
+ * v1.94.0 — 키스토어 생성 폼의 AdMob 입력 수집. App ID(단일) + 6종 유형별 다중 unit ID
+ * (같은 name 의 input 여러 개 → form.getAll). App ID·unit 모두 비면 null (파일 미생성).
+ */
+private fun admobFromForm(form: io.ktor.http.Parameters): AdmobIds? {
+    fun multi(name: String) = form.getAll(name).orEmpty().map { it.trim() }.filter { it.isNotBlank() }
+    return AdmobIds(
+        appId = form["admobAppId"]?.trim().orEmpty(),
+        appOpenUnitIds = multi("admobAppOpenUnitId"),
+        bannerUnitIds = multi("admobBannerUnitId"),
+        nativeUnitIds = multi("admobNativeUnitId"),
+        interstitialUnitIds = multi("admobInterstitialUnitId"),
+        rewardedUnitIds = multi("admobRewardedUnitId"),
+        rewardedInterstitialUnitIds = multi("admobRewardedInterstitialUnitId"),
+    ).takeIf { !it.isBlank }
+}
+
 internal fun buildApplySigningPrompt(
     projectId: String,
     moduleName: String,
@@ -494,18 +495,33 @@ $flashHtml
                  style="width:100%;padding:8px;font-family:ui-monospace,Menlo,monospace">
         </label>
         <label>
-          <div style="font-size:12px;color:#aaa;margin-bottom:4px">${esc(t("ks.admob.appOpen"))}</div>
-          <input name="admobAppOpenUnitId" placeholder="ca-app-pub-XXXX/YYYY"
-                 style="width:100%;padding:8px;font-family:ui-monospace,Menlo,monospace">
-        </label>
-        <label>
           <div style="font-size:12px;color:#aaa;margin-bottom:4px">${esc(t("ks.admob.banner"))}</div>
           <input name="admobBannerUnitId" placeholder="ca-app-pub-XXXX/YYYY"
                  style="width:100%;padding:8px;font-family:ui-monospace,Menlo,monospace">
         </label>
         <label>
+          <div style="font-size:12px;color:#aaa;margin-bottom:4px">${esc(t("ks.admob.appOpen"))}</div>
+          <input name="admobAppOpenUnitId" placeholder="ca-app-pub-XXXX/YYYY"
+                 style="width:100%;padding:8px;font-family:ui-monospace,Menlo,monospace">
+        </label>
+        <label>
           <div style="font-size:12px;color:#aaa;margin-bottom:4px">${esc(t("ks.admob.native"))}</div>
           <input name="admobNativeUnitId" placeholder="ca-app-pub-XXXX/YYYY"
+                 style="width:100%;padding:8px;font-family:ui-monospace,Menlo,monospace">
+        </label>
+        <label>
+          <div style="font-size:12px;color:#aaa;margin-bottom:4px">${esc(t("ks.admob.interstitial"))}</div>
+          <input name="admobInterstitialUnitId" placeholder="ca-app-pub-XXXX/YYYY"
+                 style="width:100%;padding:8px;font-family:ui-monospace,Menlo,monospace">
+        </label>
+        <label>
+          <div style="font-size:12px;color:#aaa;margin-bottom:4px">${esc(t("ks.admob.rewarded"))}</div>
+          <input name="admobRewardedUnitId" placeholder="ca-app-pub-XXXX/YYYY"
+                 style="width:100%;padding:8px;font-family:ui-monospace,Menlo,monospace">
+        </label>
+        <label>
+          <div style="font-size:12px;color:#aaa;margin-bottom:4px">${esc(t("ks.admob.rewardedInterstitial"))}</div>
+          <input name="admobRewardedInterstitialUnitId" placeholder="ca-app-pub-XXXX/YYYY"
                  style="width:100%;padding:8px;font-family:ui-monospace,Menlo,monospace">
         </label>
       </div>

@@ -236,9 +236,11 @@ For per-release history, see [CHANGELOG.md](CHANGELOG.md).
   signing keystore and AdMob unit IDs scoped to its `applicationId`: status,
   collapsible **SHA-1 / SHA-256 / MD5 fingerprints** (lazy `keytool -list`, for
   Firebase / Google Sign-In / Maps registration), AdMob ID editing
-  (independent of the keystore), create / delete, and a one-click "apply signing
-  to build.gradle.kts" Claude prompt. Shares the same `KeystoreService` as the
-  global `/settings/keystores` page.
+  (independent of the keystore — App ID + **6 ad types**: banner / app-open /
+  native advanced / interstitial / rewarded / rewarded-interstitial, each holding
+  **multiple unit IDs** via comma-separated `<pkg>-admob.properties`), create /
+  delete, and a one-click "apply signing to build.gradle.kts" Claude prompt.
+  Shares the same `KeystoreService` as the global `/settings/keystores` page.
 
 ### MCP integration
 
