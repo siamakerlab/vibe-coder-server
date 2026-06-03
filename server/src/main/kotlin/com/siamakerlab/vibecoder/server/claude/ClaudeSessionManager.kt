@@ -499,22 +499,30 @@ class ClaudeSessionManager(
             history?.event(projectId, sidForRow, event)
             // v0.98.0 — Done 이벤트 시 busy=false. ConsoleBusyState 자동 emit.
             if (event is ClaudeEvent.Done) {
+                // v1.99.0 — rate-limit error 직후 같은 turn 이 CLI 자체 복구로 Done 까지 도달한
+                //  경우, 예약돼 살아남은 재개(retryJob)가 백오프 후 또 발사하지 않도록 먼저 취소.
+                //  (정상 turn 에선 retryJob 이 항상 null 이라 무해.) rate-limit 카운터도 리셋.
+                sessions[projectId]?.let { it.retryJob?.cancel(); it.retryJob = null; it.rateLimitRetry = 0 }
                 gate.release(projectId)  // v1.71.0 — turn 정상 완료 → permit 반환(idempotent).
-                sessions[projectId]?.rateLimitRetry = 0  // v1.80.0 — 정상 완료 → rate-limit 카운터 리셋.
                 clearTurnActive(projectId)  // v1.82.0 — 정상 완료 → 미완 마크 OFF.
                 setBusy(projectId, false)
                 // v1.59.0 — 자동화 리스너에 turn 완료 통지 (fire-and-forget, stdout 파싱 비blocking).
                 fireTurnDone(projectId, event.reason)
             } else if (event is ClaudeEvent.ErrorEvent) {
-                // v1.80.0 — result(is_error=true) 도 turn 종료. 이전엔 busy 해제가 누락돼
-                // 에러 turn 후 콘솔이 "응답 중"에 멈춰 있었다. permit 반환 + 자동화 통지.
-                gate.release(projectId)
-                fireTurnDone(projectId, "error:${event.code}")
                 if (isRateLimitError(event)) {
-                    // 서버측 일시 rate limit → 지수 백오프로 "이어서 진행" 자동 재개(busy·마크 내부 관리).
+                    // v1.99.0 — rate-limit 은 turn "종료"가 아니라 "일시중단 → 재개 대기"다.
+                    //  ① gate.release 를 **하지 않는다** — permit 을 유지해 그 슬롯이 rate-limit
+                    //     동안 다른 turn 에 넘어가지 않게 한다(동시 in-flight 가 실제로 줄어 burst 완화).
+                    //  ② fireTurnDone 도 **하지 않는다** — 자동화가 rate-limit 을 완료로 오인해
+                    //     백오프 0 으로 다음 프롬프트를 쏘고(+재개와 이중발사) 폭주하던 문제 차단.
+                    //  재개 turn 이 진짜 Done 될 때 정상 종료 경로(위 Done 분기)에서 release+통지된다.
+                    //  (이전 v1.80.0 은 여기서 release+fireTurnDone 을 호출 → permit 빠른 회전 +
+                    //   자동화 폭주 → "동시 한도 초과 + rate limit 악순환" 의 원인이었다.)
                     scheduleRateLimitRetry(projectId)
                 } else {
-                    // v1.82.0 — 에러로 turn 종료(rate-limit 아님) → 미완 마크 OFF(재개 대상 아님).
+                    // 진짜 에러 turn 종료(rate-limit 아님) — permit 반환 + 자동화 통지 + busy 해제.
+                    gate.release(projectId)
+                    fireTurnDone(projectId, "error:${event.code}")
                     sessions[projectId]?.rateLimitRetry = 0
                     clearTurnActive(projectId)
                     setBusy(projectId, false, "stopped")
@@ -539,13 +547,20 @@ class ClaudeSessionManager(
      * (멈춘 곳부터 재개). 초과 시 자동 재개를 중지하고 상태를 "중지됨" 으로 표시.
      */
     private suspend fun scheduleRateLimitRetry(projectId: String) {
-        val session = sessions[projectId] ?: run { setBusy(projectId, false, "stopped"); return }
+        val session = sessions[projectId] ?: run {
+            // v1.99.0 — permit 반환 + 자동화 중단(다른 종료 경로와 짝 맞춤 — 좀비 방지).
+            gate.release(projectId); fireInterrupt(projectId, "rate_limit_session_gone")
+            setBusy(projectId, false, "stopped"); return
+        }
         val attempt = session.rateLimitRetry + 1
         if (attempt > MAX_RATE_LIMIT_RETRIES) {
             session.rateLimitRetry = 0
             session.retryJob?.cancel(); session.retryJob = null
+            // v1.99.0 — rate-limit error 에서 유지하던 permit 을 이제 반환 + 자동화 중단(좀비 방지).
+            gate.release(projectId)
             clearTurnActive(projectId)  // v1.82.0 — rate-limit 자동 재개 포기 → 미완 마크 OFF.
             setBusy(projectId, false, "stopped")
+            fireInterrupt(projectId, "rate_limit_giveup")
             emitSystem(projectId, "rate_limit_giveup",
                 "서버측 rate limit 이 ${MAX_RATE_LIMIT_RETRIES}회 자동 재개 후에도 지속됩니다. " +
                 "자동 재개를 중지합니다 — 잠시 후 직접 이어서 진행해 주세요.")
@@ -563,11 +578,17 @@ class ClaudeSessionManager(
             delay(delayMs)  // 취소(사용자 prompt / cancel / 종료) 시 CancellationException 으로 정상 종료
             val cur = sessions[projectId]
             if (cur !== session || cur.process.isAlive != true) {
+                // v1.99.0 — 재개 전 세션 교체/종료 → 유지하던 permit 반환 + 자동화 중단.
+                gate.release(projectId)
+                fireInterrupt(projectId, "rate_limit_session_gone")
                 setBusy(projectId, false, "stopped"); return@launch
             }
             runCatching { sendPrompt(projectId, RATE_LIMIT_RESUME_PROMPT, isAutoResume = true) }
                 .onFailure {
+                    // v1.99.0 — 재개 프롬프트 전송 실패 → permit 반환 + 자동화 중단.
                     log.warn(it) { "[$projectId] rate-limit 자동 재개 실패" }
+                    gate.release(projectId)
+                    fireInterrupt(projectId, "rate_limit_resume_failed")
                     setBusy(projectId, false, "stopped")
                 }
         }
