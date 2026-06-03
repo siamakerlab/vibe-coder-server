@@ -1693,6 +1693,44 @@ $automationPanelHtml
     setJumpVisible(false);
   }
   if (jumpBtn) jumpBtn.addEventListener('click', scrollToBottom);
+
+  // v1.93.1 — 콘솔 초기 진입 시 스크롤 위치 결정 + 마지막 위치 영속.
+  //  문제: 기존엔 초기 히스토리 렌더 끝에서 scrollTop=scrollHeight 를 "한 번"만 호출 →
+  //   부모 ProjectTabs 의 rail padding 주입 / hljs / iframe 레이아웃 등 비동기 reflow 가
+  //   그 뒤에 일어나면 최하단이 어긋나고, 이후 append/reflow 로 화면이 위에서 아래로
+  //   "주르륵" 내려가 보였다.
+  //  해결:
+  //   - 자동스크롤 ON: 즉시 최하단으로 고정하되, 비동기 reflow 구간(rAF + 짧은 timeout
+  //     몇 회) 동안 instant(애니메이션 없음)로 재고정 → 첫 페인트부터 최하단, 시각적
+  //     이동 없음. 사용자가 그 사이 직접 스크롤(wheel/touch)하면 즉시 중단.
+  //   - 자동스크롤 OFF: 직전에 보던 위치(localStorage, 프로젝트별)를 그대로 복원. 없으면 최하단.
+  var SCROLL_KEY = 'vibe.console.scroll.' + projectId;
+  function pinBottomNow() { logEl.scrollTop = logEl.scrollHeight; }
+  function applyInitialView() {
+    if (autoScrollOn) {
+      pinBottomNow();
+      var cancelled = false;
+      function stop() { cancelled = true; }
+      logEl.addEventListener('wheel', stop, { passive: true, once: true });
+      logEl.addEventListener('touchstart', stop, { passive: true, once: true });
+      requestAnimationFrame(function () { if (!cancelled) pinBottomNow(); });
+      [0, 50, 150, 350].forEach(function (d) {
+        setTimeout(function () { if (!cancelled) pinBottomNow(); }, d);
+      });
+    } else {
+      var saved = null;
+      try { saved = localStorage.getItem(SCROLL_KEY); } catch (e) {}
+      var v = (saved === null || saved === '') ? NaN : parseInt(saved, 10);
+      if (!isNaN(v)) {
+        var max = logEl.scrollHeight - logEl.clientHeight;
+        logEl.scrollTop = Math.max(0, Math.min(v, max));
+      } else {
+        pinBottomNow();
+      }
+    }
+  }
+
+  var scrollSaveTimer = null;
   logEl.addEventListener('scroll', function(){
     if (isAtBottom()) {
       setUnread(0);
@@ -1700,6 +1738,11 @@ $automationPanelHtml
     } else if (!jumpBtn || !jumpBtn.classList.contains('visible')) {
       setJumpVisible(true);
     }
+    // v1.93.1 — 마지막으로 보던 위치 저장(자동스크롤 OFF 복원용). 디바운스 250ms.
+    if (scrollSaveTimer) clearTimeout(scrollSaveTimer);
+    scrollSaveTimer = setTimeout(function () {
+      try { localStorage.setItem(SCROLL_KEY, String(Math.round(logEl.scrollTop))); } catch (e) {}
+    }, 250);
   });
 
   // v1.7.7 — 시각 포맷 HH:mm:ss. ISO string 받으면 parse, 없으면 now.
@@ -2130,8 +2173,10 @@ $automationPanelHtml
       }
     }
     append('sys', 'history', '— end of history, live frames follow —', 'replay');
-    // 자동으로 최하단 정렬.
-    logEl.scrollTop = logEl.scrollHeight;
+    // v1.93.1 — 초기 진입 뷰 결정: ON=최하단(비동기 reflow 구간까지 instant 재고정),
+    // OFF=직전에 보던 위치 복원. (이전엔 여기서 scrollTop=scrollHeight 1회만 호출해
+    // 비동기 reflow 후 위치가 어긋나 "주르륵" 내려가 보였다.)
+    applyInitialView();
   })();
 
   var ws = null;
