@@ -208,9 +208,16 @@ fun Routing.projectKeystoreRoutes(
     }
 }
 
-/** v1.94.0 — 같은 name 의 다중 input(getAll)을 trim + 빈값 제거한 리스트로. */
+/**
+ * v1.94.0 / v1.98.2 — 같은 name 의 다중 input(getAll)을 리스트로. 콤마는 직렬화 구분자이므로
+ * 입력 안에 콤마가 섞여도 split 으로 흡수(라운드트립 손상 방지) + trim + 빈값 제거 + 중복 제거.
+ */
 private fun multi(form: io.ktor.http.Parameters, name: String): List<String> =
-    form.getAll(name).orEmpty().map { it.trim() }.filter { it.isNotBlank() }
+    form.getAll(name).orEmpty()
+        .flatMap { it.split(",") }
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .distinct()
 
 /** v1.94.0 — App ID(단일) + 6종 유형별 다중 unit ID 수집. blank 여부는 호출측에서 판단. */
 private fun admobFromForm(form: io.ktor.http.Parameters): AdmobIds =
