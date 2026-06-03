@@ -306,6 +306,14 @@
 
     activate(resolveInitialTab());
 
+    // v1.93.3 — reveal gate 해제. CSS 가 #project-tabs-root 를 opacity:0 으로 숨겨둔 채
+    // 시작하므로, 올바른 탭이 활성화되고 헤더/탭바/rail 레이아웃이 한 프레임 정리된 뒤
+    // 한 번에 보여준다(요소가 따로 그려졌다 재조합되는 모습 제거). JS 가 실패해도
+    // CSS 애니메이션 폴백(약 2.5s)이 결국 표시하므로 영구 숨김 위험 없음.
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () { root.classList.add('pt-ready'); });
+    });
+
     // Kick off preloading once the console frame is loaded (so it never
     // competes). Fallbacks guarantee preload still runs if load already fired
     // or the console frame is missing.

@@ -96,6 +96,23 @@ object AdminTemplates {
         val notifStyle = if (showChrome) NotificationBell.headStyle() else ""
         val notifBell = if (showChrome) NotificationBell.bodyHtml(lang) else ""
         val notifScript = if (showChrome) NotificationBell.bodyScript(lang) else ""
+        // v1.93.3 — embed iframe 이 프로젝트 탭(우측 rail 컨텍스트)일 때, inner .content 가
+        // 첫 페인트부터 rail 폭만큼 우측 여백을 확보하도록 CSS 로 선반영한다. 이전엔
+        // project-tabs.js 가 iframe load 후 paddingRight 를 주입해 콘텐츠가 가운데→왼쪽 +
+        // 여백 추가로 재배치(reflow)되는 모습이 보였다. rail 폭(clamp)은 .pt-rail width 와
+        // 동일 값이라 JS 가 같은 값을 재적용해도 변동 없음. chat 콘솔(/chat)·settings/tools
+        // embed(/settings·/tools)는 rail 이 없어 제외(startsWith("/projects") 로 한정).
+        val railContext = embed && currentPath.startsWith("/projects")
+        val railCss = if (railContext)
+            """<style>
+  body.pt-embed .content:not(.fullbleed) {
+    justify-self: start; max-width: none;
+    padding-right: calc(clamp(248px, 22vw, 360px) + 24px);
+  }
+  @media (max-width: 760px) { body.pt-embed .content:not(.fullbleed) { padding-right: 32px; } }
+  </style>"""
+        else ""
+        val bodyCls = if (railContext) "pt-embed" else ""
         return """<!doctype html>
 <html lang="${esc(lang)}">
 <head>
@@ -127,6 +144,7 @@ object AdminTemplates {
     })();
   </script>
   $notifStyle
+  $railCss
   <script src="/static/keyboard.js" defer></script>
   <script>
     // v0.39.0 — PWA service worker. Same-origin install only.
@@ -148,7 +166,7 @@ object AdminTemplates {
     }
   </script>
 </head>
-<body>
+<body class="$bodyCls">
   $notifBell
   <div class="$layoutCls">
     $nav
