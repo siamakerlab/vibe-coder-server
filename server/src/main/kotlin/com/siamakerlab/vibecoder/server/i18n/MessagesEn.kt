@@ -840,6 +840,7 @@ internal object MessagesEn {
         "emulator.usage.title" to "Use from Claude Code (console)",
         "emulator.usage.body" to "Once booted, the emulator is reachable via adb as emulator-5554. Claude Code can install your build and read logs directly:",
         "emulator.usage.kvm" to "Requires KVM acceleration: the container must expose /dev/kvm (compose: devices + group_add: kvm).",
+        "emulator.external.warn" to "This emulator was started outside the server (manually/console). KVM acceleration is not guaranteed — if it was started with -accel off it will be very slow and ANR-prone. Click Stop to reclaim it, then Start here so the server launches it with KVM (-accel on).",
         "env.action.mcpLink" to "Open the MCP catalog (50+) →",
         "env.action.mcpNote" to "Multi-select checkboxes + token input + recommended stars. Even MCPs not in the catalog persist once installed directly in the container.",
         "env.action.gradleLabel.installed" to "Reinstall",

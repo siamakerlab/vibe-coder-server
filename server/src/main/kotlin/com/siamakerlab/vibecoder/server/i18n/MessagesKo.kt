@@ -818,6 +818,7 @@ internal object MessagesKo {
         "emulator.usage.title" to "Claude Code(콘솔)에서 사용",
         "emulator.usage.body" to "부팅되면 에뮬레이터는 adb 로 emulator-5554 로 잡힙니다. Claude Code 가 빌드를 직접 설치하고 로그를 읽을 수 있습니다:",
         "emulator.usage.kvm" to "KVM 가속 필요: 컨테이너에 /dev/kvm 노출(compose devices + group_add: kvm).",
+        "emulator.external.warn" to "서버 밖(콘솔/수동)에서 시작된 에뮬레이터입니다. KVM 가속이 보장되지 않습니다 — -accel off 로 띄웠다면 매우 느리고 ANR 이 폭주합니다. [중지]로 회수한 뒤 이 페이지의 [시작]으로 다시 띄우면 서버가 KVM 가속(-accel on)으로 실행합니다.",
         "env.action.mcpLink" to "MCP 카탈로그 열기 (50+) →",
         "env.action.mcpNote" to "체크박스 다중 선택 + 토큰 입력 + 추천 별표. 카탈로그에 없는 MCP 도 컨테이너 직접 설치 시 영구 보존.",
         "env.action.gradleLabel.installed" to "재설치",

@@ -28,6 +28,8 @@ internal object EmulatorTemplates {
         val flash = buildString {
             if (!ok.isNullOrBlank()) append("""<div class="flash ok">${esc(ok)}</div>""")
             if (!err.isNullOrBlank()) append("""<div class="flash err">${esc(err)}</div>""")
+            // v1.96.0 — 외부/콘솔에서 띄운(특히 -accel off) 에뮬레이터 경고 + 회수 안내.
+            if (status.external) append("""<div class="flash warn">⚠ ${esc(t("emulator.external.warn"))}</div>""")
         }
 
         // 상태 배지.
