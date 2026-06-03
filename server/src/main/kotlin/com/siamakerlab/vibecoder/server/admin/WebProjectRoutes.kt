@@ -48,8 +48,11 @@ import java.nio.file.Path
 
 private val log = KotlinLogging.logger {}
 
-/** v1.71.0 — 프로젝트에 진행 중(RUNNING/PENDING) 빌드가 있는지. 폴더/패키지 변경 idle 가드용. */
-private fun isBuildRunning(buildRepo: BuildRepository, id: String): Boolean =
+/**
+ * v1.71.0 — 프로젝트에 진행 중(RUNNING/PENDING) 빌드가 있는지. 폴더/패키지 변경 idle 가드용.
+ * v1.98.1 — `internal` 승격: ArchiveRoutes 의 아카이브 idle 가드도 같은 판정을 공유한다.
+ */
+internal fun isBuildRunning(buildRepo: BuildRepository, id: String): Boolean =
     buildRepo.listForProject(id, limit = 5).any {
         it.status == com.siamakerlab.vibecoder.shared.dto.TaskStatus.RUNNING ||
             it.status == com.siamakerlab.vibecoder.shared.dto.TaskStatus.PENDING
