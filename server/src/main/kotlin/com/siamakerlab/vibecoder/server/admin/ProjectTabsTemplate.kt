@@ -208,8 +208,13 @@ internal object ProjectTabsTemplate {
     </details>"""
 
         // primary 탭만 상단 탭바에. overflow 는 더보기 드롭다운에 (아래 moreLinks).
+        // v1.93.3 — 기본 활성 탭(console)을 서버에서 미리 active 로 마킹 → 첫 페인트부터
+        // 올바른 탭이 보인다(이전엔 모든 pane 이 display:none 으로 시작해 JS activate 전까지
+        // 빈 화면 → 콘솔이 늦게 튀어나오는 flash). resolveInitialTab 이 localStorage 로 다른
+        // 탭을 고르면 reveal gate 뒤에서 전환되므로 사용자에겐 안 보인다.
         val tabBtns = PRIMARY_TABS.joinToString("") { tab ->
-            """<button type="button" class="tab-btn" data-tab-btn="${esc(tab.id)}"
+            val act = if (tab.id == "console") " active" else ""
+            """<button type="button" class="tab-btn$act" data-tab-btn="${esc(tab.id)}"
                        title="${esc(t(tab.labelKey))}">${esc(t(tab.labelKey))}</button>"""
         }
         // v1.47.0 — 콘솔 우선 로딩 + 나머지 백그라운드 프리로딩.
@@ -225,7 +230,8 @@ internal object ProjectTabsTemplate {
                 """src="${esc(src)}" loading="eager" fetchpriority="high""""
             else
                 """data-src="${esc(src)}" loading="lazy""""
-            """<div class="tab-pane" data-tab="${esc(tab.id)}">
+            val paneAct = if (tab.id == "console") " active" else ""
+            """<div class="tab-pane$paneAct" data-tab="${esc(tab.id)}">
                 <iframe class="tab-frame" $srcAttr name="${esc(tab.frameName)}"
                         title="${esc(t(tab.labelKey))}"
                         referrerpolicy="same-origin"></iframe>
@@ -267,6 +273,17 @@ internal object ProjectTabsTemplate {
     display: flex; flex-direction: column;
     height: 100%;
     background: var(--bg, #0b0d12);
+    /* v1.93.3 — reveal gate: 셸이 올바른 탭/레이아웃으로 한 번에 나타나도록 처음엔 숨김.
+       project-tabs.js 가 활성 탭 확정 후 .pt-ready 추가 → 페이드인. JS 실패 시에도
+       애니메이션 폴백(2.5s)이 결국 표시하므로 영구 숨김 위험 없음. */
+    opacity: 0;
+    transition: opacity 0.14s ease;
+    animation: ptRevealFallback 0.01s linear 2.5s forwards;
+  }
+  #project-tabs-root.pt-ready { opacity: 1; animation: none; }
+  @keyframes ptRevealFallback { to { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) {
+    #project-tabs-root { transition: none; }
   }
   #project-tabs-root .pt-header {
     display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
@@ -611,7 +628,7 @@ $railHtml
   </div>
 </div>
 
-<script src="/static/project-tabs.js?v=1.90.7" defer></script>
+<script src="/static/project-tabs.js?v=1.93.3" defer></script>
 <!-- v1.56.0 — 콤보박스 상태칩 실시간 동기. 목록 페이지와 동일하게 `/ws/projects`
      (단방향) 의 ProjectBusyChanged 로 responding↔ready patch. -->
 <script>
