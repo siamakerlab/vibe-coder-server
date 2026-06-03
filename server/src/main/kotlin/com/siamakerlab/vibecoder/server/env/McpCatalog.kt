@@ -25,7 +25,7 @@ object McpCatalog {
         GIT_HOSTING("Git 호스팅 (GitHub / GitLab / Gitea / Bitbucket)"),
         DATABASE("데이터베이스 (Postgres / SQLite / MongoDB / Redis)"),
         SEARCH("검색 / 웹 (Brave / Tavily / Perplexity / Firecrawl)"),
-        BROWSER("브라우저 자동화 (Puppeteer / Playwright)"),
+        BROWSER("브라우저 / 모바일 자동화 (Playwright / Puppeteer / Mobile)"),
         PRODUCTIVITY("생산성 (Notion / Linear / Jira / Slack / Discord)"),
         CLOUD("클라우드 (AWS / Cloudflare / Vercel / Supabase / Firebase)"),
         COMMS("커뮤니케이션 / 알림 (Sendgrid / Twilio / Telegram)"),
@@ -407,6 +407,17 @@ object McpCatalog {
             pkg = "@modelcontextprotocol/server-puppeteer",
             description = "Anthropic 공식 Puppeteer wrapper. console / network / screenshot.",
             category = Category.BROWSER, trust = Trust.VERIFIED,
+        ))
+        add(McpEntry(
+            // v1.95.0 — mobile-next/mobile-mcp. adb(Android) / xcrun(iOS) 위에서 동작하는
+            //  zero-config 모바일 UI 자동화. vibe-coder 의 헤드리스 에뮬레이터(빌드환경 >
+            //  Emulator, v1.73.0)와 연계해 Claude 가 빌드한 앱을 직접 조작/검증 가능.
+            id = "mobile-mcp",
+            displayName = "Mobile (Mobile-Next)",
+            pkg = "@mobilenext/mobile-mcp",
+            description = "iOS/Android 모바일 UI 자동화 — accessibility tree 기반 탭/스와이프/타이핑/스크린샷. adb(Android)·xcrun(iOS) 위에서 동작하므로 빌드환경 > Emulator 의 헤드리스 에뮬레이터와 연계해 Claude 가 빌드한 앱을 직접 조작·검증할 수 있다. zero-config (연결된 디바이스/에뮬레이터 자동 감지).",
+            category = Category.BROWSER, trust = Trust.COMMUNITY, recommended = true,
+            homepage = "https://github.com/mobile-next/mobile-mcp",
         ))
 
         // ─── PRODUCTIVITY ─────────────────────────────────────────
