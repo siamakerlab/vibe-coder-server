@@ -88,7 +88,7 @@ fun Routing.emulatorRoutes(
                 EmulatorService.Status(false, false, false, emulator.serial, null)
             }
             call.respondText(
-                """{"available":${s.available},"running":${s.running},"booted":${s.booted},"serial":"${s.serial}"}""",
+                """{"available":${s.available},"running":${s.running},"booted":${s.booted},"serial":"${s.serial}","external":${s.external}}""",
                 ContentType.Application.Json,
             )
         }

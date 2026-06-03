@@ -53,6 +53,12 @@ class EmulatorService(
         val booted: Boolean,
         val serial: String,
         val startedAtIso: String?,
+        /**
+         * v1.96.0 — adb 에 [serial] 이 잡혀 있으나 **서버가 spawn한 프로세스가 아님**.
+         * 콘솔/수동으로(특히 `-accel off`) 띄운 인스턴스 → 서버가 KVM 가속을 보장 못 함.
+         * UI 가 경고 + [중지] 회수를 노출하는 근거.
+         */
+        val external: Boolean = false,
     )
 
     // ── SDK 경로 ────────────────────────────────────────────────────────────
@@ -85,13 +91,49 @@ class EmulatorService(
         return Files.isExecutable(emu) && Files.isDirectory(img)
     }
 
-    fun isRunning(): Boolean = process?.isAlive == true
+    /** 서버가 직접 spawn 해 추적 중인 프로세스가 살아있는가. */
+    fun isManaged(): Boolean = process?.isAlive == true
+
+    /**
+     * v1.96.0 — 서버 프로세스 **또는** 외부/콘솔에서 띄운 같은 [serial] 에뮬레이터가 살아있는가.
+     * 외부 인식은 [serialPresentCached] (adb devices, TTL 캐시) 로 — 콘솔에서 수동 실행한
+     * 인스턴스도 status/stop 대상이 되도록.
+     */
+    fun isRunning(): Boolean = isManaged() || serialPresentCached()
+
+    // v1.96.0 — adb devices 에 우리 serial 존재 여부. pill 30s 폴링이 매번 adb 를 fork 하지
+    // 않도록 짧은 TTL 캐시(booted 캐시와 동일 전략). devices 는 로컬 데몬 즉답이라 booted 보다
+    // 가볍지만, 무인증 status 폴링×탭수 fork 누적을 흡수.
+    @Volatile private var serialPresentCache: Boolean = false
+    @Volatile private var serialPresentCheckedAt: Long = 0L
+
+    private fun serialPresentCached(): Boolean {
+        val now = System.currentTimeMillis()
+        if (now - serialPresentCheckedAt < SERIAL_TTL_MS) return serialPresentCache
+        serialPresentCache = runCatching { adb.devices().any { it.serial == serial } }.getOrDefault(false)
+        serialPresentCheckedAt = now
+        return serialPresentCache
+    }
 
     /** 부팅 완료: `getprop sys.boot_completed == 1`. 미부팅/오프라인이면 false. (직접 adb — 캐시 X) */
     fun booted(): Boolean {
         if (!isRunning()) return false
         val out = adbCmd(listOf("-s", serial, "shell", "getprop", "sys.boot_completed"), 6) ?: return false
         return out.trim() == "1"
+    }
+
+    /**
+     * v1.96.0 — `emulator -accel-check`. KVM 하드웨어 가속 가용 여부. 미가용이면 [start] 가
+     * TCG 소프트 에뮬레이션(부팅 수분 + ANR 폭주)을 막기 위해 시작을 거부한다.
+     */
+    fun accelCheckUsable(): Boolean {
+        val emu = emulatorBin() ?: return false
+        return runCatching {
+            val p = ProcessBuilder(emu.toString(), "-accel-check").redirectErrorStream(true).start()
+            val out = p.inputStream.bufferedReader(Charsets.UTF_8).readText()
+            if (!p.waitFor(15, TimeUnit.SECONDS)) { p.destroyForcibly(); return false }
+            p.exitValue() == 0 || out.contains("is installed and usable", ignoreCase = true)
+        }.getOrDefault(false)
     }
 
     // v1.73.0 점검 — booted adb 호출 TTL 캐시. 무인증 /api/emulator/status pill 폴링이
@@ -114,13 +156,16 @@ class EmulatorService(
      * 라우트(코루틴) 워커를 블로킹하지 않고, pill 폴링이 매번 adb 를 fork 하지 않는다.
      */
     suspend fun status(): Status = withContext(Dispatchers.IO) {
-        val running = isRunning()
+        val managed = isManaged()
+        val present = runCatching { serialPresentCached() }.getOrDefault(false)
+        val running = managed || present
         Status(
             available = available(),
             running = running,
             booted = if (running) runCatching { bootedCached() }.getOrDefault(false) else false,
             serial = serial,
             startedAtIso = startedAt?.toString(),
+            external = present && !managed,
         )
     }
 
@@ -167,7 +212,19 @@ class EmulatorService(
      */
     suspend fun start(): StartResult = startMutex.withLock {
         if (!available()) return StartResult(false, "emulator/system-image 미설치 — 빌드환경에서 먼저 설치하세요")
-        if (isRunning()) return StartResult(true, "이미 실행 중")
+        if (isManaged()) return StartResult(true, "이미 실행 중")
+        // v1.96.0 — 콘솔/외부에서 같은 serial 을 점유 중이면 중복 spawn 금지(포트 충돌·좀비 방지).
+        //  특히 `-accel off` 로 수동 실행해 방치된 인스턴스를 서버가 위에 또 띄우지 않도록.
+        if (serialPresentCached()) {
+            return StartResult(false,
+                "이미 $serial 에뮬레이터가 외부(콘솔/수동)에서 실행 중입니다. 서버가 KVM 가속을 보장하지 못하므로, [중지]로 회수한 뒤 다시 시작하세요.")
+        }
+        // v1.96.0 — KVM 가드. 가속 불가 상태로 시작하면 TCG 소프트 에뮬레이션이 되어 부팅 수분 +
+        //  ANR 폭주(불안정)로 이어진다 → 차라리 시작을 막고 원인(/dev/kvm)을 안내.
+        if (!accelCheckUsable()) {
+            return StartResult(false,
+                "KVM 하드웨어 가속을 쓸 수 없어 시작을 막았습니다 — 가속 없이는 매우 느리고 불안정합니다. compose 에 `/dev/kvm` 디바이스 매핑 + vibe 의 kvm 그룹 권한을 확인하세요.")
+        }
         if (!ensureAvd()) return StartResult(false, "AVD 생성 실패 (avdmanager/system-image 확인)")
         val emu = emulatorBin() ?: return StartResult(false, "emulator 바이너리 없음")
         val args = listOf(
@@ -181,6 +238,7 @@ class EmulatorService(
             val p = pb.start()
             process = p
             startedAt = Instant.now()
+            serialPresentCheckedAt = 0L
             synchronized(logTail) { logTail.clear() }
             // stdout drain(진단 tail) — 안 읽으면 파이프 버퍼가 차서 멈출 수 있음.
             scope.launch {
@@ -205,9 +263,19 @@ class EmulatorService(
         }
     }
 
-    /** graceful(adb emu kill) → SIGTERM → 5s → SIGKILL. */
+    /** graceful(adb emu kill) → SIGTERM → 5s → SIGKILL. 외부/콘솔 에뮬레이터는 adb 로만 회수. */
     suspend fun stop(): StartResult = startMutex.withLock {
-        val p = process ?: return StartResult(true, "이미 중지됨")
+        val p = process
+        if (p == null) {
+            // v1.96.0 — 서버가 띄운 프로세스는 없지만 외부(콘솔/수동, 예: -accel off 좀비)가
+            //  같은 serial 로 살아있으면 adb 로 종료 신호를 보내 회수한다.
+            if (serialPresentCached()) {
+                runCatching { adbCmd(listOf("-s", serial, "emu", "kill"), 8) }
+                serialPresentCheckedAt = 0L
+                return StartResult(true, "외부에서 실행된 에뮬레이터에 종료 신호를 보냈습니다 ($serial)")
+            }
+            return StartResult(true, "이미 중지됨")
+        }
         runCatching { adbCmd(listOf("-s", serial, "emu", "kill"), 8) }
         withContext(Dispatchers.IO) {
             if (!p.waitFor(5, TimeUnit.SECONDS)) {
@@ -220,6 +288,7 @@ class EmulatorService(
         }
         process = null
         startedAt = null
+        serialPresentCheckedAt = 0L
         StartResult(true, "중지됨")
     }
 
@@ -250,5 +319,8 @@ class EmulatorService(
     private companion object {
         /** booted(adb getprop) 결과 캐시 TTL. pill 폴링(30s)·동시 호출의 adb fork 억제. */
         const val BOOTED_TTL_MS = 4000L
+
+        /** v1.96.0 — serial 존재(adb devices) 캐시 TTL. 외부 인식 폴링의 fork 억제. */
+        const val SERIAL_TTL_MS = 4000L
     }
 }
