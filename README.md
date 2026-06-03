@@ -548,6 +548,7 @@ required except `/setup`, `/login`, `/health`. Every SSR POST carries a CSRF
 | `/usage` | Claude `/status` + prompt-cache stats card (admin) |
 | `/metrics` | Prometheus exposition (admin) |
 | `/backup`, `/backup/auto/{name}` | Workspace tar.gz backup + scheduled-file download/delete (admin) |
+| `/archive` | Archived projects (Tools tab) — compress a project (source + keystore) to tar.gz, remove from the list, restore/download/delete (admin) |
 | `/audit` | Operational audit log (filter / paginate) |
 | `/2fa`, `/webauthn` | Two-factor TOTP / passkey enrollment |
 | `/settings`, `/settings/email`, `/settings/webhook`, `/settings/cache`, `/settings/cors`, `/settings/push`, `/settings/git-integrations` | Configuration (admin) |

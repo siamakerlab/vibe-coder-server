@@ -247,6 +247,20 @@ internal object MessagesEn {
         "tools.tab.codeSearch" to "Code search",
         "tools.tab.logs" to "Build logs",
         "tools.tab.history" to "Conversation search",
+        "tools.tab.archive" to "Archive",
+        // v1.98.0 — project archive (compress & store) / restore.
+        "archive.title" to "Archived projects",
+        "archive.subtitle" to "Projects compressed (source + keystore) and removed from the list. Restore to bring one back.",
+        "archive.empty" to "No archived projects yet. Use the Archive button on a project to compress and store it here.",
+        "archive.restore" to "Restore",
+        "archive.download" to "Download .tar.gz",
+        "archive.delete" to "Delete",
+        "archive.restoreConfirm" to "Restore this project — recreate its folder, keystore, and registration. Continue?",
+        "archive.deleteConfirm" to "Permanently delete this archive (the .tar.gz too). This cannot be undone. Continue?",
+        "archive.col.id" to "Archive ID",
+        "archive.col.size" to "Size",
+        "project.action.archive" to "Archive",
+        "project.action.archiveConfirm" to "Archive this project? It will be compressed (source + keystore), removed from the list, and restorable from Tools > Archive.",
 
         // ─────────────────────────────────────────────── settings page
         "settings.title" to "Settings",

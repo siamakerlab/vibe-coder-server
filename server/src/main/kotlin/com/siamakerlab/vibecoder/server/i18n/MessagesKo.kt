@@ -224,6 +224,20 @@ internal object MessagesKo {
         "tools.tab.codeSearch" to "코드 검색",
         "tools.tab.logs" to "빌드 로그",
         "tools.tab.history" to "대화 검색",
+        "tools.tab.archive" to "아카이브",
+        // v1.98.0 — 프로젝트 아카이브(압축 보관)/복원.
+        "archive.title" to "아카이브된 프로젝트",
+        "archive.subtitle" to "소스+키스토어를 압축해 보관하고 목록에서 제거된 프로젝트. 복원하면 되살아납니다.",
+        "archive.empty" to "아직 아카이브된 프로젝트가 없습니다. 프로젝트의 [아카이브] 버튼으로 압축해 여기 보관하세요.",
+        "archive.restore" to "복원",
+        "archive.download" to ".tar.gz 다운로드",
+        "archive.delete" to "삭제",
+        "archive.restoreConfirm" to "이 프로젝트를 복원합니다 — 폴더·키스토어·등록을 되살립니다. 진행할까요?",
+        "archive.deleteConfirm" to "이 아카이브를 영구 삭제합니다(.tar.gz 포함). 되돌릴 수 없습니다. 진행할까요?",
+        "archive.col.id" to "아카이브 ID",
+        "archive.col.size" to "크기",
+        "project.action.archive" to "아카이브",
+        "project.action.archiveConfirm" to "이 프로젝트를 아카이브할까요? 소스+키스토어를 압축해 목록에서 제거하고, Tools > 아카이브에서 복원할 수 있습니다.",
 
         // ─────────────────────────────────────────────── settings page
         "settings.title" to "설정",

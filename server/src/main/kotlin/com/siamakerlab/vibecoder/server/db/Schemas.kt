@@ -435,8 +435,24 @@ object Memos : Table("memos") {
     }
 }
 
+/**
+ * v1.98.0 — 아카이브된 프로젝트 레지스트리. Projects FK 가 **아님**(프로젝트 row 가
+ * 아카이브 시 제거되므로 독립 테이블). tar.gz 보관 경로 + 복원용 메타(manifestJson)만 유지.
+ */
+object ArchivedProjects : Table("archived_projects") {
+    val id = varchar("id", 96)                  // "<originalId>-<yyyyMMddHHmmss>"
+    val originalId = varchar("original_id", 64)
+    val name = varchar("name", 256)
+    val packageName = varchar("package_name", 256)
+    val archivedAt = varchar("archived_at", 64)
+    val archivePath = text("archive_path")      // <root>/.vibecoder/archives/<id>.tar.gz
+    val sizeBytes = long("size_bytes")
+    val manifestJson = text("manifest_json")    // 복원 키: Projects row 필드 등
+    override val primaryKey = PrimaryKey(id)
+}
+
 val AllTables = arrayOf(
     AdminUsers, Devices, Projects, Builds, Artifacts, UploadedFiles, AuditLog, ConversationTurns,
     BuildSchedules, BuildWebhookSecrets, PushSubscriptions, WebauthnCredentials, ProjectAcls,
-    NotificationEvents, PromptAutomationRuns, Memos,
+    NotificationEvents, PromptAutomationRuns, Memos, ArchivedProjects,
 )
