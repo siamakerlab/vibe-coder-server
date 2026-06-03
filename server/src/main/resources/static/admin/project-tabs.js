@@ -94,6 +94,14 @@
       // v1.47.0 — on-demand load: a tab clicked before the background preload
       // reaches it loads right away (no wait beyond this single frame).
       loadFrame(frameOf(tab));
+      // v1.99.1 — 다시 보이게 된 frame(특히 콘솔)에 visible 신호 → 내부가 최하단 재고정.
+      //  탭 전환으로 display:none→block 된 콘솔이 어긋난 스크롤로 보이던 문제 회수.
+      try {
+        var vf = frameOf(tab);
+        if (vf && vf.contentWindow) {
+          vf.contentWindow.postMessage({ type: 'pt:tab-visible', tab: tab }, location.origin);
+        }
+      } catch (e) {}
       try { localStorage.setItem(storageKey, tab); } catch (e) {}
       if (window.location.hash !== '#' + tab) {
         history.replaceState(null, '', '#' + tab);

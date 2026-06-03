@@ -1745,6 +1745,20 @@ $automationPanelHtml
     }, 250);
   });
 
+  // v1.99.1 — 탭 전환으로 이 콘솔이 다시 보일 때(display:none→block) 최하단 재고정.
+  //  applyInitialView 는 최초 1회뿐이라, 다른 탭(빌드/파일 등) 갔다 돌아오면 숨겨진 동안
+  //  append 된 메시지로(display:none 이라 scrollHeight 기반 stick 무효) 스크롤이 어긋난 채
+  //  보였다. 부모 ProjectTabs 가 activate 시 보내는 postMessage 를 받아, 자동스크롤 ON 이면
+  //  reflow 구간 instant 재고정(애니메이션 없음). OFF 면 사용자가 보던 위치 그대로 둔다.
+  window.addEventListener('message', function (ev) {
+    if (ev.origin !== location.origin) return;
+    var d = ev.data;
+    if (!d || d.type !== 'pt:tab-visible' || !autoScrollOn) return;
+    pinBottomNow();
+    requestAnimationFrame(pinBottomNow);
+    [0, 50, 150].forEach(function (dl) { setTimeout(pinBottomNow, dl); });
+  });
+
   // v1.7.7 — 시각 포맷 HH:mm:ss. ISO string 받으면 parse, 없으면 now.
   function fmtTime(input) {
     var d;
