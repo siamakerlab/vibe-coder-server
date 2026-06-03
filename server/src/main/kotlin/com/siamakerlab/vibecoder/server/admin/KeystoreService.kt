@@ -187,48 +187,65 @@ class KeystoreService(
         )
     }
 
-    /** v1.93.0 — `<pkg>-admob.properties` 읽기. 없으면 빈 [AdmobIds]. 키스토어 존재와 독립. */
+    /**
+     * v1.93.0 / v1.94.0 — `<pkg>-admob.properties` 읽기. 없으면 빈 [AdmobIds].
+     * 키스토어 존재와 독립. 각 unit 키는 콤마 구분 다중값 (v1.93.0 단일값과 호환).
+     */
     fun readAdmob(packageName: String): AdmobIds {
         val admob = keystoreDir.resolve("$packageName-admob.properties")
         if (!Files.exists(admob)) return AdmobIds()
         val p = Properties()
         runCatching { Files.newBufferedReader(admob).use { p.load(it) } }
             .onFailure { log.warn(it) { "admob read failed for $packageName" } }
+        fun list(key: String): List<String> =
+            p.getProperty(key).orEmpty().split(",").map { it.trim() }.filter { it.isNotBlank() }
         return AdmobIds(
-            appId = p.getProperty("admobAppId").orEmpty(),
-            appOpenUnitId = p.getProperty("appOpenAdUnitId").orEmpty(),
-            bannerUnitId = p.getProperty("bannerAdUnitId").orEmpty(),
-            nativeUnitId = p.getProperty("nativeAdUnitId").orEmpty(),
+            appId = p.getProperty("admobAppId").orEmpty().trim(),
+            appOpenUnitIds = list("appOpenAdUnitId"),
+            bannerUnitIds = list("bannerAdUnitId"),
+            nativeUnitIds = list("nativeAdUnitId"),
+            interstitialUnitIds = list("interstitialAdUnitId"),
+            rewardedUnitIds = list("rewardedAdUnitId"),
+            rewardedInterstitialUnitIds = list("rewardedInterstitialAdUnitId"),
         )
     }
 
     /**
-     * v1.93.0 — `<pkg>-admob.properties` 갱신 (키스토어 재생성 없이 광고 ID 만 단독 저장).
-     * 4개 ID 가 모두 비면 파일 삭제 (admobExists=false 로). create() 와 같은 key 이름 사용.
+     * v1.94.0 — `<pkg>-admob.properties` 본문 직렬화. 다중 unit ID 는 콤마 구분.
+     * [saveAdmob] 와 [create] 가 공유 (key 이름 일치 보장).
+     */
+    private fun admobFileBody(ids: AdmobIds): String = buildString {
+        appendLine("# v1.94.0 — AdMob IDs (vibe-coder-server 키스토어 관리)")
+        appendLine("# 다중 unit ID 는 콤마(,) 구분. 빌드 스크립트에서 split(\",\") 로 읽으세요.")
+        if (ids.appId.isNotBlank()) appendLine("admobAppId=${ids.appId}")
+        fun line(key: String, v: List<String>) {
+            val clean = v.map { it.trim() }.filter { it.isNotBlank() }
+            if (clean.isNotEmpty()) appendLine("$key=${clean.joinToString(",")}")
+        }
+        line("appOpenAdUnitId", ids.appOpenUnitIds)
+        line("bannerAdUnitId", ids.bannerUnitIds)
+        line("nativeAdUnitId", ids.nativeUnitIds)
+        line("interstitialAdUnitId", ids.interstitialUnitIds)
+        line("rewardedAdUnitId", ids.rewardedUnitIds)
+        line("rewardedInterstitialAdUnitId", ids.rewardedInterstitialUnitIds)
+    }
+
+    /**
+     * v1.93.0 / v1.94.0 — `<pkg>-admob.properties` 갱신 (키스토어 재생성 없이 광고 ID 만 단독 저장).
+     * App ID 도 unit 도 모두 비면 파일 삭제 (admobExists=false 로). create() 와 같은 key 이름 사용.
      */
     fun saveAdmob(packageName: String, ids: AdmobIds) {
         if (!packageNameRegex.matches(packageName)) {
             throw IllegalArgumentException("invalid_package_name: $packageName")
         }
         val admob = keystoreDir.resolve("$packageName-admob.properties")
-        val allBlank = ids.appId.isBlank() && ids.appOpenUnitId.isBlank() &&
-            ids.bannerUnitId.isBlank() && ids.nativeUnitId.isBlank()
-        if (allBlank) {
+        if (ids.isBlank) {
             runCatching { Files.deleteIfExists(admob) }
             return
         }
         Files.createDirectories(keystoreDir)
         runCatching { setPerm(keystoreDir, "rwx------") }
-        Files.writeString(
-            admob,
-            buildString {
-                appendLine("# v1.93.0 — AdMob IDs (프로젝트 키스토어 탭에서 관리)")
-                if (ids.appId.isNotBlank()) appendLine("admobAppId=${ids.appId}")
-                if (ids.appOpenUnitId.isNotBlank()) appendLine("appOpenAdUnitId=${ids.appOpenUnitId}")
-                if (ids.bannerUnitId.isNotBlank()) appendLine("bannerAdUnitId=${ids.bannerUnitId}")
-                if (ids.nativeUnitId.isNotBlank()) appendLine("nativeAdUnitId=${ids.nativeUnitId}")
-            },
-        )
+        Files.writeString(admob, admobFileBody(ids))
         runCatching { setPerm(admob, "rw-------") }
         log.info { "AdMob IDs saved: $packageName" }
     }
@@ -332,17 +349,8 @@ class KeystoreService(
         )
         runCatching { setPerm(props, "rw-------") }
 
-        if (req.admob != null && (req.admob.appId.isNotBlank() || req.admob.bannerUnitId.isNotBlank())) {
-            Files.writeString(
-                admob,
-                buildString {
-                    appendLine("# v1.5.0 — auto-generated AdMob IDs")
-                    if (req.admob.appId.isNotBlank()) appendLine("admobAppId=${req.admob.appId}")
-                    if (req.admob.appOpenUnitId.isNotBlank()) appendLine("appOpenAdUnitId=${req.admob.appOpenUnitId}")
-                    if (req.admob.bannerUnitId.isNotBlank()) appendLine("bannerAdUnitId=${req.admob.bannerUnitId}")
-                    if (req.admob.nativeUnitId.isNotBlank()) appendLine("nativeAdUnitId=${req.admob.nativeUnitId}")
-                },
-            )
+        if (req.admob != null && !req.admob.isBlank) {
+            Files.writeString(admob, admobFileBody(req.admob))
             runCatching { setPerm(admob, "rw-------") }
         }
         // v1.57.0 — DN 메타 + validityYears 캐시 (비밀번호 제외). 다음 생성 폼 prefill 용.
@@ -481,12 +489,32 @@ data class CreateKeystoreRequest(
     val admob: AdmobIds? = null,
 )
 
+/**
+ * v1.94.0 — AdMob 광고 ID. App ID 1개 + 6개 광고 유형별 **다중** unit ID.
+ *
+ * 6 유형: 배너 / 앱 오프닝 / 네이티브 고급형 / 전면 / 보상형 / 보상형 전면.
+ * 각 유형 리스트는 `<pkg>-admob.properties` 에 콤마 구분으로 직렬화한다 — AdMob unit ID
+ * (`ca-app-pub-…/…`) 에는 콤마가 없으므로 안전하고, v1.93.0 까지의 단일값 파일
+ * (`bannerAdUnitId=ca-…`) 도 split 시 1개짜리 리스트로 그대로 호환된다.
+ */
 data class AdmobIds(
     val appId: String = "",
-    val appOpenUnitId: String = "",
-    val bannerUnitId: String = "",
-    val nativeUnitId: String = "",
-)
+    val appOpenUnitIds: List<String> = emptyList(),
+    val bannerUnitIds: List<String> = emptyList(),
+    val nativeUnitIds: List<String> = emptyList(),
+    val interstitialUnitIds: List<String> = emptyList(),
+    val rewardedUnitIds: List<String> = emptyList(),
+    val rewardedInterstitialUnitIds: List<String> = emptyList(),
+) {
+    /** unit ID 가 한 유형이라도 1개 이상 있는가. */
+    val hasAnyUnit: Boolean
+        get() = appOpenUnitIds.isNotEmpty() || bannerUnitIds.isNotEmpty() ||
+            nativeUnitIds.isNotEmpty() || interstitialUnitIds.isNotEmpty() ||
+            rewardedUnitIds.isNotEmpty() || rewardedInterstitialUnitIds.isNotEmpty()
+
+    /** App ID 도 unit 도 전혀 없는 상태 (= 파일 삭제 대상). */
+    val isBlank: Boolean get() = appId.isBlank() && !hasAnyUnit
+}
 
 /** v1.93.0 — 단일 인증서의 지문 + 만료일 (keytool -list -v 파싱 결과). */
 data class CertInfo(

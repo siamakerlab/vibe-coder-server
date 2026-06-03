@@ -2881,18 +2881,33 @@ ${renderBuildHistoryChart(builds, artifactsByBuild, lang)}
                      style="width:100%;padding:8px;font-family:ui-monospace,Menlo,monospace">
             </label>
             <label>
-              <div style="font-size:12px;color:#aaa;margin-bottom:4px">${esc(t("ks.admob.appOpen"))}</div>
-              <input name="admobAppOpenUnitId" placeholder="ca-app-pub-XXXX/YYYY"
-                     style="width:100%;padding:8px;font-family:ui-monospace,Menlo,monospace">
-            </label>
-            <label>
               <div style="font-size:12px;color:#aaa;margin-bottom:4px">${esc(t("ks.admob.banner"))}</div>
               <input name="admobBannerUnitId" placeholder="ca-app-pub-XXXX/YYYY"
                      style="width:100%;padding:8px;font-family:ui-monospace,Menlo,monospace">
             </label>
             <label>
+              <div style="font-size:12px;color:#aaa;margin-bottom:4px">${esc(t("ks.admob.appOpen"))}</div>
+              <input name="admobAppOpenUnitId" placeholder="ca-app-pub-XXXX/YYYY"
+                     style="width:100%;padding:8px;font-family:ui-monospace,Menlo,monospace">
+            </label>
+            <label>
               <div style="font-size:12px;color:#aaa;margin-bottom:4px">${esc(t("ks.admob.native"))}</div>
               <input name="admobNativeUnitId" placeholder="ca-app-pub-XXXX/YYYY"
+                     style="width:100%;padding:8px;font-family:ui-monospace,Menlo,monospace">
+            </label>
+            <label>
+              <div style="font-size:12px;color:#aaa;margin-bottom:4px">${esc(t("ks.admob.interstitial"))}</div>
+              <input name="admobInterstitialUnitId" placeholder="ca-app-pub-XXXX/YYYY"
+                     style="width:100%;padding:8px;font-family:ui-monospace,Menlo,monospace">
+            </label>
+            <label>
+              <div style="font-size:12px;color:#aaa;margin-bottom:4px">${esc(t("ks.admob.rewarded"))}</div>
+              <input name="admobRewardedUnitId" placeholder="ca-app-pub-XXXX/YYYY"
+                     style="width:100%;padding:8px;font-family:ui-monospace,Menlo,monospace">
+            </label>
+            <label>
+              <div style="font-size:12px;color:#aaa;margin-bottom:4px">${esc(t("ks.admob.rewardedInterstitial"))}</div>
+              <input name="admobRewardedInterstitialUnitId" placeholder="ca-app-pub-XXXX/YYYY"
                      style="width:100%;padding:8px;font-family:ui-monospace,Menlo,monospace">
             </label>
           </div>

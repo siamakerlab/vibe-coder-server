@@ -61,16 +61,24 @@
       input.dispatchEvent(new Event('input', { bubbles: true }));
     }
 
+    // v1.94.0 — 매 onresult 마다 e.results 전체를 처음부터 재구성(idempotent).
+    // 이전 구현은 e.resultIndex 부터 finalText 에 누적(+=)했는데, 일부 엔진
+    // (특히 ko-KR / 모바일 Chrome)이 이미 final 처리된 result 를 resultIndex=0 으로
+    // 재전송하면 같은 조각이 계속 덧붙어("뭔가뭔가뭔가 하다가뭔가…") 보였다.
+    // e.results 는 세션 시작부터의 전체 결과 배열이므로 매번 전부 다시 읽으면
+    // 재전송·인덱스 리셋에도 중복이 생기지 않는다.
     rec.onresult = function (e) {
+      var finals = '';
       var interim = '';
-      for (var i = e.resultIndex; i < e.results.length; i++) {
+      for (var i = 0; i < e.results.length; i++) {
         var r = e.results[i];
         if (r.isFinal) {
-          finalText += r[0].transcript;
+          finals += r[0].transcript;
         } else {
           interim += r[0].transcript;
         }
       }
+      finalText = finals;
       input.value = basePrefix + finalText + interim;
       input.dispatchEvent(new Event('input', { bubbles: true }));
     };
