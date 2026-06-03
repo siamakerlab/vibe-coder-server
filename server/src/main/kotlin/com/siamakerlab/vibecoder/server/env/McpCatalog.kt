@@ -745,6 +745,27 @@ object McpCatalog {
                     help = "App Store Connect > Integrations > API Keys > Generate API Key > Download (.p8). (App Store 안 쓰면 비워둠)"),
             ),
         ))
+        add(McpEntry(
+            // v1.97.0 — AdMob 조회/리포팅 MCP(kunny/admob-mcp-server). 광고 단위/앱 목록 +
+            //  network/mediation 수익 리포트(읽기 전용 — 광고 단위 "생성"은 AdMob API 미지원,
+            //  콘솔에서만). npm 미배포(git clone + npm build) + OAuth Desktop 브라우저 인증
+            //  (token.json)이라 헤드리스 자동설치 불가 → comingSoon(수동 설치 안내).
+            id = "admob",
+            displayName = "AdMob (조회/리포팅)",
+            pkg = "admob-mcp-server",
+            description = "Google AdMob API 조회/리포팅 — 내 앱·광고 단위 목록(ID/유형) + network/mediation 수익 리포트, 상위 수익 앱·광고 단위. 읽기 전용(광고 단위 생성은 AdMob API 미지원 — 콘솔에서만). npm 미배포라 git clone + npm build 수동 설치 + OAuth Desktop 브라우저 인증(npm run auth → token.json) 필요.",
+            category = Category.APP_PUBLISH, trust = Trust.EXPERIMENTAL,
+            comingSoon = true,
+            homepage = "https://github.com/kunny/admob-mcp-server",
+            configFields = listOf(
+                ConfigField("GOOGLE_OAUTH_CLIENT_SECRET", "OAuth client_secret.json (Desktop app)",
+                    isFile = true, acceptMime = ".json,application/json",
+                    help = "Google API Console > 사용자 인증 정보 > OAuth 2.0 Client (Desktop app) > JSON 다운로드. 첫 인증은 브라우저 필요(npm run auth → token.json)."),
+                ConfigField("PUBLISHER_CODE", "AdMob Publisher ID", "pub-xxxxxxxxxxxxxxxx",
+                    required = false,
+                    help = "AdMob 콘솔 > 설정 > 게시자 ID."),
+            ),
+        ))
 
         // ─── AI_ASSIST 추가 ──────────────────────────────────────
         add(McpEntry(
