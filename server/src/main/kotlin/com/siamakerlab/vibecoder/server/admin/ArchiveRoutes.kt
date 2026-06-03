@@ -1,7 +1,11 @@
 package com.siamakerlab.vibecoder.server.admin
 
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens.requireCsrf
+import com.siamakerlab.vibecoder.server.automation.PromptAutomationManager
+import com.siamakerlab.vibecoder.server.claude.ClaudeSessionManager
+import com.siamakerlab.vibecoder.server.i18n.Messages
 import com.siamakerlab.vibecoder.server.projects.ProjectArchiveService
+import com.siamakerlab.vibecoder.server.repo.BuildRepository
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentType
 import io.ktor.server.application.call
@@ -28,6 +32,9 @@ private val log = KotlinLogging.logger {}
 fun Routing.archiveRoutes(
     authDeps: AdminRoutesDeps,
     archive: ProjectArchiveService,
+    sessionManager: ClaudeSessionManager,
+    buildRepo: BuildRepository,
+    promptAutomationManager: PromptAutomationManager,
 ) {
     get("/archive") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
@@ -52,6 +59,11 @@ fun Routing.archiveRoutes(
         if (!requireAdminOrRedirect(sess)) return@post
         requireCsrf()
         val id = call.parameters["id"]!!
+        // H1 — 동작 중(응답/빌드/자동화) 프로젝트는 아카이브 거부. 폴더 rename 과 동일 가드.
+        if (sessionManager.isBusy(id) || isBuildRunning(buildRepo, id) || promptAutomationManager.isActive(id)) {
+            call.respondRedirect("/projects?err=${enc(Messages.t(sess.language, "flash.project.rename.notIdle"))}")
+            return@post
+        }
         val r = runCatching { archive.archive(id) }
         if (r.isSuccess) {
             call.respondRedirect("/projects?ok=${enc("아카이브됨: $id")}")

@@ -426,7 +426,7 @@ fun Application.module(ctx: ServerContext) {
             val archiveService = com.siamakerlab.vibecoder.server.projects.ProjectArchiveService(
                 ctx.workspace, ctx.keystoreService, ctx.projectRepo, archivedRepo,
             ) { ctx.projects.delete(it) }
-            archiveRoutes(adminDeps, archiveService)
+            archiveRoutes(adminDeps, archiveService, ctx.sessionManager, ctx.buildRepo, ctx.promptAutomationManager)
         }
         // v0.10.0 — admin SSR 라우트들의 JSON API 이중 노출 (vibe-coder-android wire)
         envSetupApiRoutes(
