@@ -1468,10 +1468,10 @@ internal object MessagesKo {
         "console.bgtasks.title" to "백그라운드 작업",
         "console.message.expand" to "⌄ 더보기",
         "console.message.collapse" to "⌃ 접기",
-        "console.busy.responding.queued" to "● 응답중 (대기 %d)",
-        "console.queue.added" to "대기열 추가 (#%d): %s",
+        "console.busy.responding.queued" to "● 응답중 (대기 %s)",
+        "console.queue.added" to "대기열 추가 (#%s): %s",
         "console.queue.draining" to "다음 prompt 자동 발사",
-        "console.queue.cleared" to "대기열 초기화 (%d개 제거)",
+        "console.queue.cleared" to "대기열 초기화 (%s개 제거)",
         "console.queue.clear" to "대기열 비우기",
 
         // ─────────────────────────────────────────────── claude
