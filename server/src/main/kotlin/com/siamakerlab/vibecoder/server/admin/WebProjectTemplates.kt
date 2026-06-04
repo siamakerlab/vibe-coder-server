@@ -1529,7 +1529,7 @@ $automationPanelHtml
     <!-- v1.7.4 — busy 뱃지 + hint 라벨 한 줄. busy 뱃지가 좌측 끝, 그 다음 hint. -->
     <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1">
       <span id="busy-badge" data-state="idle"
-            style="font-size:12px;padding:3px 10px;border-radius:12px;font-weight:500;white-space:nowrap;flex-shrink:0">${esc(t("console.busy.idle"))}</span>
+            style="${if (embed) "display:none;" else ""}font-size:12px;padding:3px 10px;border-radius:12px;font-weight:500;white-space:nowrap;flex-shrink:0">${esc(t("console.busy.idle"))}</span>
       <small class="dim" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(if (blocking) t("console.input.blockedHint") else t("console.input.hint"))}</small>
     </div>
     <!-- v1.15.1 — "자동 전송" 옵션 (voice input). checked 시 발화 종료 시 자동 submit. -->
@@ -2287,6 +2287,18 @@ $automationPanelHtml
   var QUEUE_CLEARED_TPL = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.queue.cleared", "___N___"))};
   var inFlight = false;
   var pendingPrompts = [];  // 큐: busy 중 submit 된 prompt 들.
+  // v1.103.0 — 통합 탭 헤더의 #console-busy-badge 로 turn 상태 미러링(iframe → 부모 shell).
+  // 콘솔 하단 busy-badge 를 헤더 콤보박스 좌측으로 "이동" 한 효과. 단독 콘솔 페이지
+  // (부모=자기자신, project-tabs 없음)면 수신자가 없어 무해.
+  function notifyParentBusy() {
+    if (!busyBadge) return;
+    try {
+      window.parent.postMessage(
+        { type: 'console:busy', state: busyBadge.dataset.state, text: busyBadge.textContent },
+        location.origin,
+      );
+    } catch (e) {}
+  }
   function updateBusyBadge() {
     if (!busyBadge) return;
     if (inFlight) {
@@ -2298,6 +2310,7 @@ $automationPanelHtml
       busyBadge.dataset.state = 'idle';
       busyBadge.textContent = BUSY_IDLE;
     }
+    notifyParentBusy();
   }
   // v1.83.0 — rate-limit 재시도 소진/취소/크래시로 turn 이 비정상 종료된 상태.
   // setInFlight(false) 직후 호출돼 idle 뱃지를 "중단됨"(빨강) 으로 덮어쓴다.
@@ -2306,6 +2319,7 @@ $automationPanelHtml
     if (!busyBadge) return;
     busyBadge.dataset.state = 'stopped';
     busyBadge.textContent = BUSY_STOPPED;
+    notifyParentBusy();
   }
   // v1.100.0 — 백그라운드 작업 진행 중 turn 재개 대기(노랑). busy 는 true 유지 →
   // setInFlight(true) 가 'responding' 으로 세팅한 직후 호출돼 'waiting' 으로 덮어쓴다.
@@ -2313,12 +2327,14 @@ $automationPanelHtml
     if (!busyBadge) return;
     busyBadge.dataset.state = 'waiting';
     busyBadge.textContent = BUSY_WAITING;
+    notifyParentBusy();
   }
   // v1.100.0 — API/turn 에러 종료(빨강). cancel/crash 의 '중단됨'(보라) 과 색 구분.
   function showError() {
     if (!busyBadge) return;
     busyBadge.dataset.state = 'error';
     busyBadge.textContent = BUSY_ERROR;
+    notifyParentBusy();
   }
   // v1.84.0 — 백그라운드 작업 카드 패널. task_started → 카드 추가(실행 중 spinner),
   // task_updated/notification 의 status 가 종료(completed/failed)면 ✓/✗ 후 6초 뒤 제거.
