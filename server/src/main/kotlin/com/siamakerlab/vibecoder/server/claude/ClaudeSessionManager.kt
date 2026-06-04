@@ -168,6 +168,11 @@ class ClaudeSessionManager(
                     session.stdin.flush()
                 }
                 session.lastActivity = Instant.now()
+                // v1.99.2 — 새 사용자 prompt 는 새 turn 시작 → 이전 turn 의 백그라운드 작업
+                // 잔재(완료 통지 누락 등)를 무효화한다. 안 그러면 stale 한 outstanding 때문에
+                // 이번 turn 의 Done 이 영구 suspended 로 묶일 수 있다. 자동 재개(isAutoResume)는
+                // 같은 turn 의 연속이라 건드리지 않는다.
+                if (!isAutoResume) session.outstandingBgTasks.clear()
                 // v1.82.0 — 사용자 prompt → 영속 "미완 turn" 마크 ON(재개 횟수 리셋). 정상 완료 /
                 // 취소 / 새 세션 시 OFF. 서버가 비정상 종료(재시작)되면 마크가 남아 부팅 reconcile
                 // 이 자동 재개. 자동 재개(isAutoResume) 자체는 마크를 건드리지 않는다.
@@ -476,6 +481,19 @@ class ClaudeSessionManager(
                 runCatching { writeSessionId(projectId, event.sessionId) }
                     .onFailure { log.warn(it) { "[$projectId] failed to persist session-id" } }
             }
+            // v1.99.2 — 백그라운드 작업 lifecycle 추적. task_started → 집합 추가,
+            // 완료/실패 통지 → 제거. 진행 중 프레임이 올 때 lastActivity 도 갱신해 idle reap
+            // (기본 30분) 이 백그라운드 대기 turn 을 죽이지 않게 한다. 이 집합이 비어있지
+            // 않은 동안 들어온 Done 은 아래에서 "재개 대기" 로 처리된다.
+            if (event is ClaudeEvent.BackgroundTask) {
+                sessions[projectId]?.let { s ->
+                    when {
+                        event.kind == "started" -> s.outstandingBgTasks.add(event.taskId)
+                        isBackgroundTaskTerminal(event) -> s.outstandingBgTasks.remove(event.taskId)
+                    }
+                    s.lastActivity = Instant.now()
+                }
+            }
             // v1.83.0 — claude 가 host stdin 없이 자발적으로 turn 을 재개(background task
             // 완료 후 자동 속행 등)하면 sendPrompt 를 안 거쳐 busy 가 false 인 채로 프레임만
             // 흐른다 → 뱃지가 "대기중" 인데 실제론 작업이 진행되는 고착 상태. 활동 프레임
@@ -503,11 +521,30 @@ class ClaudeSessionManager(
                 //  경우, 예약돼 살아남은 재개(retryJob)가 백오프 후 또 발사하지 않도록 먼저 취소.
                 //  (정상 turn 에선 retryJob 이 항상 null 이라 무해.) rate-limit 카운터도 리셋.
                 sessions[projectId]?.let { it.retryJob?.cancel(); it.retryJob = null; it.rateLimitRetry = 0 }
-                gate.release(projectId)  // v1.71.0 — turn 정상 완료 → permit 반환(idempotent).
-                clearTurnActive(projectId)  // v1.82.0 — 정상 완료 → 미완 마크 OFF.
-                setBusy(projectId, false)
-                // v1.59.0 — 자동화 리스너에 turn 완료 통지 (fire-and-forget, stdout 파싱 비blocking).
-                fireTurnDone(projectId, event.reason)
+                // v1.99.2 — 백그라운드 작업(Bash run_in_background / Task)이 아직 진행 중인데
+                //  claude 가 turn 을 끝낸(= 완료를 기다리려 turn 종료) 경우. 이건 "종료"가 아니라
+                //  "재개 대기"다 — 백그라운드 작업이 끝나면 claude 가 같은 turn 을 자동 재개
+                //  (across turns)한다. rate-limit(v1.99.0)과 동형으로 처리:
+                //   ① gate.release 안 함 → permit 유지. 안 그러면 재개 turn 이 sendPrompt 를
+                //      안 거쳐 permit 없이 진행돼 동시 한도가 무력화됐다(사용자 보고: 실행중 4개).
+                //   ② setBusy(false)/clearTurnActive 안 함 → "대기중" 으로 안 떨어지고 미완 마크
+                //      유지(busy 는 이미 true 라 그대로). 뱃지가 응답중을 유지.
+                //   ③ fireTurnDone 안 함 → 자동화가 미완 turn 을 완료로 오인해 다음 프롬프트를
+                //      쏴 turn 이 중첩되던 근본 원인 차단.
+                //  재개 turn 이 진짜 Done(outstandingBgTasks 비어있음) 될 때 아래 else 로 정상 종료.
+                val bgOutstanding = sessions[projectId]?.outstandingBgTasks?.isNotEmpty() == true
+                if (bgOutstanding) {
+                    emitSystem(
+                        projectId, "bg_task_suspended",
+                        "백그라운드 작업이 진행 중이라 turn 을 유지합니다 — 완료되면 자동으로 이어집니다.",
+                    )
+                } else {
+                    gate.release(projectId)  // v1.71.0 — turn 정상 완료 → permit 반환(idempotent).
+                    clearTurnActive(projectId)  // v1.82.0 — 정상 완료 → 미완 마크 OFF.
+                    setBusy(projectId, false)
+                    // v1.59.0 — 자동화 리스너에 turn 완료 통지 (fire-and-forget, stdout 파싱 비blocking).
+                    fireTurnDone(projectId, event.reason)
+                }
             } else if (event is ClaudeEvent.ErrorEvent) {
                 if (isRateLimitError(event)) {
                     // v1.99.0 — rate-limit 은 turn "종료"가 아니라 "일시중단 → 재개 대기"다.
@@ -795,11 +832,45 @@ class ClaudeSessionManager(
         @Volatile var rateLimitRetry: Int = 0,
         /** v1.80.0 — 예약된 자동 재개 Job (사용자 개입 / cancel / 종료 시 취소). */
         @Volatile var retryJob: Job? = null,
+        /**
+         * v1.99.2 — 진행 중인 백그라운드 작업(Bash run_in_background / Task) 의 taskId 집합.
+         * `task_started` 시 추가, 완료/실패 통지(terminal status / notification) 시 제거.
+         * 비어있지 않은 동안 들어온 `result`(Done)은 "turn 종료"가 아니라 "재개 대기"로
+         * 처리한다 — 백그라운드 작업 완료 시 claude 가 같은 turn 을 재개(across turns)하므로
+         * permit/자동화/busy 를 보류해야 동시 한도 무력화 + 자동화 프롬프트 중첩을 막는다.
+         * 단일 reader 코루틴이 갱신하지만 sendPrompt clear 와 교차하므로 thread-safe set.
+         */
+        val outstandingBgTasks: MutableSet<String> =
+            java.util.concurrent.ConcurrentHashMap.newKeySet(),
     )
+
+    /**
+     * v1.99.2 — 백그라운드 작업 lifecycle 이벤트가 "종료(완료/실패)" 를 뜻하는지 판정.
+     * - 명시적 status 가 있으면 terminal 화이트리스트로 판정(running/in_progress 등 진행형은 false).
+     * - status 가 없는 `notification` (kind="notification") 은 운영 데이터상 항상 완료 통지
+     *   ({"subtype":"task_notification",...,"status":"completed"} 또는 status 생략) 이므로 terminal.
+     * - started / progress (진행형) 은 false → 집합에 유지.
+     */
+    private fun isBackgroundTaskTerminal(event: ClaudeEvent.BackgroundTask): Boolean {
+        val s = event.status?.lowercase()
+        if (s != null) return s in BG_TERMINAL_STATUSES
+        return event.kind == "notification"
+    }
 
     companion object {
         const val MAX_PROMPT_BYTES = 32 * 1024
         const val IDLE_CHECK_INTERVAL_MS = 60_000L
+
+        /**
+         * v1.99.2 — 백그라운드 작업이 끝났음을 뜻하는 status 값(소문자). 진행형
+         * (running/in_progress/started/pending/queued) 은 의도적으로 제외 — 그 동안엔
+         * 집합에 유지돼 turn 이 suspended 로 묶인다.
+         */
+        val BG_TERMINAL_STATUSES = setOf(
+            "completed", "complete", "done", "success", "succeeded",
+            "failed", "fail", "error", "errored",
+            "cancelled", "canceled", "killed", "timeout", "timed_out", "aborted",
+        )
         /**
          * v1.80.0 — `--append-system-prompt` 로 주입. stream-json input 모드에선 백그라운드
          * 작업 완료 시 CLI 가 자동 재개되지 않으므로(호스트가 입력 제어), turn 을 끝내지 말고
