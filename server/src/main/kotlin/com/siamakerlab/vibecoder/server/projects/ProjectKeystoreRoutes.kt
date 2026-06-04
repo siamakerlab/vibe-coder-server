@@ -9,24 +9,30 @@ import com.siamakerlab.vibecoder.server.admin.KeystoreEntry
 import com.siamakerlab.vibecoder.server.admin.KeystoreFingerprints
 import com.siamakerlab.vibecoder.server.admin.KeystoreService
 import com.siamakerlab.vibecoder.server.admin.buildApplySigningPrompt
+import com.siamakerlab.vibecoder.server.admin.isBuildRunning
 import com.siamakerlab.vibecoder.server.admin.isEmbeddedRequest
 import com.siamakerlab.vibecoder.server.admin.requireProjectAccessOrThrow
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireWriteAccessOrRedirect
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens.requireCsrf
+import com.siamakerlab.vibecoder.server.automation.PromptAutomationManager
 import com.siamakerlab.vibecoder.server.claude.ClaudeSessionManager
 import com.siamakerlab.vibecoder.server.i18n.Messages
+import com.siamakerlab.vibecoder.server.repo.BuildRepository
 import com.siamakerlab.vibecoder.shared.dto.ProjectDto
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentType
+import io.ktor.http.content.PartData
 import io.ktor.server.application.call
+import io.ktor.server.request.receiveMultipart
 import io.ktor.server.request.receiveParameters
 import io.ktor.server.response.respondRedirect
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Routing
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
+import io.ktor.utils.io.jvm.javaio.toInputStream
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
@@ -59,7 +65,14 @@ fun Routing.projectKeystoreRoutes(
     projects: ProjectService,
     keystore: KeystoreService,
     sessionManager: ClaudeSessionManager,
+    buildRepo: BuildRepository,
+    promptAutomationManager: PromptAutomationManager,
 ) {
+    // v1.101.0 — 콘솔이 유휴(응답중/빌드중/자동화중 모두 아님)인지. 업로드는 직후 콘솔
+    // 프롬프트를 쏘므로 유휴일 때만 허용한다(파괴적/이동 라우트 idle 가드와 동일 체계).
+    fun consoleIdle(id: String): Boolean =
+        !(sessionManager.isBusy(id) || isBuildRunning(buildRepo, id) || promptAutomationManager.isActive(id))
+
     get("/projects/{id}/keystore") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
         val id = call.parameters["id"]!!
@@ -86,6 +99,7 @@ fun Routing.projectKeystoreRoutes(
                 defaultCity = defaults?.city.orEmpty(),
                 defaultValidityYears = defaults?.validityYears ?: 100,
                 defaultPassword = defaults?.defaultPassword.orEmpty(),
+                consoleIdle = consoleIdle(id),
                 ok = call.request.queryParameters["ok"],
                 err = call.request.queryParameters["err"],
                 csrf = sess.csrf,
@@ -192,6 +206,83 @@ fun Routing.projectKeystoreRoutes(
         }
     }
 
+    // v1.101.0 — 외부에서 만든 키스토어 set 업로드. multipart 라 CSRF 는 query(?_csrf=).
+    // 콘솔 유휴일 때만(업로드 직후 build.gradle.kts 서명 갱신 프롬프트 발사).
+    post("/projects/{id}/keystore/upload") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireWriteAccessOrRedirect(sess)) return@post
+        val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
+        // multipart → receiveParameters 불가. query/header 의 _csrf 검증(실패 시 SSR redirect).
+        if (!runCatching { CsrfTokens.verifyCsrfFromQueryOrHeader(call) }.isSuccess) {
+            call.respondRedirect("/projects/$id/keystore?err=${enc("보안 토큰(CSRF) 불일치 — 페이지를 새로고침 후 다시 시도하세요.")}")
+            return@post
+        }
+        val p = runCatching { projects.get(id) }.getOrElse {
+            call.respondRedirect("/projects?err=${enc("프로젝트 '$id' 를 찾을 수 없습니다.")}")
+            return@post
+        }
+        // idle 가드 — 업로드 직후 콘솔 프롬프트를 쏘므로 유휴 필수.
+        if (!consoleIdle(id)) {
+            call.respondRedirect(
+                "/projects/$id/keystore?err=${enc("콘솔이 작업 중입니다 — 유휴 상태에서만 업로드할 수 있습니다 (업로드 직후 정보 갱신 프롬프트를 전송하기 때문).")}",
+            )
+            return@post
+        }
+        // multipart 파트 수집 (release / debug / properties).
+        var releaseBytes: ByteArray? = null
+        var debugBytes: ByteArray? = null
+        var propsText: String? = null
+        val multipart = call.receiveMultipart()
+        while (true) {
+            val part = multipart.readPart() ?: break
+            try {
+                if (part is PartData.FileItem) {
+                    val bytes = part.provider().toInputStream().use { it.readBytes() }
+                    if (bytes.isNotEmpty()) when (part.name) {
+                        "release" -> releaseBytes = bytes
+                        "debug" -> debugBytes = bytes
+                        "properties" -> propsText = bytes.toString(Charsets.UTF_8)
+                    }
+                }
+            } finally {
+                part.dispose()
+            }
+        }
+        val result = runCatching { keystore.saveUploaded(p.packageName, releaseBytes, debugBytes, propsText) }
+            .getOrElse { e ->
+                log.warn(e) { "keystore upload failed: $id / ${p.packageName}" }
+                call.respondRedirect("/projects/$id/keystore?err=${enc("업로드 실패: ${mapUploadError(e.message)}")}")
+                return@post
+            }
+        if (!result.savedAny) {
+            call.respondRedirect(
+                "/projects/$id/keystore?err=${enc("업로드된 파일이 없습니다 — release/debug/properties 중 최소 하나를 선택하세요.")}",
+            )
+            return@post
+        }
+        // 콘솔에 키스토어 정보 갱신(build.gradle.kts 서명) 프롬프트 발사 — release 가 있어야 의미.
+        val entry = runCatching { keystore.get(p.packageName) }.getOrNull()
+        val promptSent = if (entry != null) {
+            val prompt = buildApplySigningPrompt(p.id, p.moduleName, keystore, entry)
+            runCatching { sessionManager.sendPrompt(id, prompt) }
+                .onFailure { log.warn(it) { "post-upload apply prompt failed: $id" } }
+                .isSuccess
+        } else false
+        val saved = buildList {
+            if (result.savedRelease) add("release")
+            if (result.savedDebug) add("debug")
+            if (result.savedProperties) add(".properties")
+        }.joinToString(", ")
+        val bak = if (result.backedUp.isNotEmpty()) " (기존 ${result.backedUp.size}개 백업됨)" else ""
+        val tail = when {
+            promptSent -> " — build.gradle.kts 서명 갱신 프롬프트를 콘솔로 보냈습니다. 콘솔 탭에서 확인하세요."
+            entry == null -> " — release 키스토어가 없어 콘솔 프롬프트는 생략했습니다(release 포함 재업로드 시 자동 전송)."
+            else -> " — 콘솔 프롬프트 전송 실패. 콘솔 탭에서 '서명 적용' 으로 직접 갱신하세요."
+        }
+        call.respondRedirect("/projects/$id/keystore?ok=${enc("업로드 완료: $saved$bak$tail")}")
+    }
+
     post("/projects/{id}/keystore/delete") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireWriteAccessOrRedirect(sess)) return@post
@@ -231,6 +322,18 @@ private fun admobFromForm(form: io.ktor.http.Parameters): AdmobIds =
         rewardedInterstitialUnitIds = multi(form, "admobRewardedInterstitialUnitId"),
     )
 
+/** v1.101.0 — saveUploaded 가 던지는 IllegalArgumentException 메시지를 사용자 안내로. */
+private fun mapUploadError(msg: String?): String = when {
+    msg == null -> "알 수 없는 오류"
+    msg.startsWith("no_files") -> "선택된 파일이 없습니다"
+    msg.startsWith("invalid_package_name") -> "패키지명이 올바르지 않습니다"
+    msg.startsWith("not_a_keystore") -> "키스토어 형식이 아닙니다 (PKCS12/JKS 필요): ${msg.substringAfter(": ", "")}"
+    msg.startsWith("empty_keystore") -> "빈 키스토어 파일입니다"
+    msg.startsWith("keystore_too_large") -> "키스토어 파일이 너무 큽니다 (256KB 초과)"
+    msg.startsWith("invalid_properties") -> "properties 에 storePassword / keyAlias 가 없습니다"
+    else -> msg
+}
+
 private fun enc(s: String) = URLEncoder.encode(s, StandardCharsets.UTF_8)
 
 internal object ProjectKeystoreTemplates {
@@ -252,6 +355,7 @@ internal object ProjectKeystoreTemplates {
         defaultCity: String,
         defaultValidityYears: Int,
         defaultPassword: String,
+        consoleIdle: Boolean = true,
         ok: String?,
         err: String?,
         csrf: String?,
@@ -478,6 +582,39 @@ internal object ProjectKeystoreTemplates {
   </div>
 </div>"""
 
+        // 업로드 (외부 키스토어 가져오기) — 항상 표시, 콘솔 유휴일 때만 활성 ----------
+        val uploadDisabled = if (consoleIdle) "" else "disabled"
+        val uploadBusyNote = if (consoleIdle) "" else
+            """<div class="error">⚠ 콘솔이 작업 중입니다 — 유휴 상태가 되면 업로드할 수 있습니다.</div>"""
+        val uploadCard = """
+<details class="card" style="margin-bottom:14px">
+  <summary style="cursor:pointer;font-weight:600">⬆ 키스토어 업로드
+    <span class="dim" style="font-weight:400;font-size:12px">(외부에서 만든 키 가져오기 — 콘솔 유휴 시)</span></summary>
+  <p class="dim" style="font-size:12px;margin:8px 0 10px">
+    이미 가지고 있는 release / debug 키스토어와 signing properties 파일을 업로드합니다. 각 파일은
+    호스트 영속 볼륨(<code>/home/vibe/keystores/</code>)에
+    <code>${esc(pkg)}.keystore</code> / <code>${esc(pkg)}-debug.keystore</code> /
+    <code>${esc(pkg)}-keystore.properties</code> 이름으로 저장되고, properties 의 storeFile 은
+    서버 경로로 자동 보정됩니다. 기존 파일이 있으면 덮어쓰기 전에 <code>.bak.&lt;시각&gt;</code> 으로
+    백업합니다(키 분실 방지). 업로드 직후 build.gradle.kts 서명 정보를 갱신하는 프롬프트가 콘솔로
+    전송되므로 <b>콘솔이 유휴 상태일 때만</b> 가능합니다.
+  </p>
+  $uploadBusyNote
+  <form method="post" action="/projects/${esc(p.id)}/keystore/upload?_csrf=${enc(csrf ?: "")}" enctype="multipart/form-data">
+    <div style="display:grid;grid-template-columns:auto 1fr;gap:10px 12px;align-items:center;font-size:13px;max-width:520px">
+      <label for="ks-up-release">release 키스토어</label>
+      <input id="ks-up-release" type="file" name="release" accept=".keystore,.jks,.p12,.pkcs12" $uploadDisabled>
+      <label for="ks-up-debug">debug 키스토어</label>
+      <input id="ks-up-debug" type="file" name="debug" accept=".keystore,.jks,.p12,.pkcs12" $uploadDisabled>
+      <label for="ks-up-props">properties</label>
+      <input id="ks-up-props" type="file" name="properties" accept=".properties,.txt" $uploadDisabled>
+    </div>
+    <p class="dim" style="font-size:11px;margin:8px 0">최소 1개 파일을 선택하세요. PKCS12/JKS 키스토어만 허용(256KB 이하).</p>
+    <button type="submit" class="primary" $uploadDisabled
+            onclick="return confirm('업로드한 파일로 기존 키스토어를 교체(백업 후)하고, build.gradle.kts 서명 갱신 프롬프트를 콘솔로 보냅니다. 진행할까요?')">업로드 + 콘솔 갱신</button>
+  </form>
+</details>"""
+
         return AdminTemplates.shell(
             title = "${esc(p.name)} · 키스토어",
             username = username,
@@ -494,6 +631,7 @@ $okHtml
 $errHtml
 
 $statusCard
+$uploadCard
 $shaCard
 $admobCard
 $createCard

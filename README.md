@@ -240,6 +240,11 @@ For per-release history, see [CHANGELOG.md](CHANGELOG.md).
   native advanced / interstitial / rewarded / rewarded-interstitial, each holding
   **multiple unit IDs** via comma-separated `<pkg>-admob.properties`), create /
   delete, and a one-click "apply signing to build.gradle.kts" Claude prompt.
+  You can also **upload an existing keystore set** (release / debug / properties)
+  — files are stored under the canonical `<pkg>.*` names, the properties `storeFile`
+  is normalized to the host path, any existing file is backed up as `.bak.<ts>`
+  before overwrite, and a signing-refresh prompt is sent to the console right after.
+  Upload is allowed **only when the console is idle** (it fires a prompt).
   Shares the same `KeystoreService` as the global `/settings/keystores` page.
 
 ### MCP integration

@@ -491,7 +491,10 @@ fun Application.module(ctx: ServerContext) {
         projectClaudeMdRoutes(adminDeps, ctx.projects, ctx.workspace)
         // v1.93.0 — 프로젝트 키스토어 탭 (키스토어/AdMob/ SHA 지문). 전역 페이지와 같은
         // KeystoreService 인스턴스 공유 — 빌드 서명 inject 와 SSOT.
-        projectKeystoreRoutes(adminDeps, ctx.projects, ctx.keystoreService, ctx.sessionManager)
+        projectKeystoreRoutes(
+            adminDeps, ctx.projects, ctx.keystoreService, ctx.sessionManager,
+            ctx.buildRepo, ctx.promptAutomationManager,
+        )
         // v1.65.0 — 스토어 자산(앱 아이콘/그래픽/스크린샷) 탭.
         projectAssetsRoutes(adminDeps, ctx.projects, ctx.workspace, ctx.sessionManager, ctx.playPublishService)
         projectAgentRoutes(adminDeps, ctx.projects, ctx.workspace, ctx.agentRegistry)
