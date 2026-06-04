@@ -15,16 +15,19 @@ private val log = KotlinLogging.logger {}
 private const val MAX_KEYSTORE_BYTES = 256 * 1024
 
 /**
- * v1.101.0 — [KeystoreService.saveUploaded] 결과. 어떤 파일이 저장됐는지 + 덮어쓰기
- * 전에 백업된 기존 파일명 목록(키 분실 방지 안전망).
+ * v1.102.0 — [KeystoreService.stageUploaded] 결과. 서버는 최종 배치를 직접 하지 않고
+ * staging 디렉토리에 규약 파일명으로만 저장한 뒤, Claude 콘솔 프롬프트가 이동배치한다.
+ * [stagingDir] = staging 절대경로, [releaseFile]/[debugFile]/[propertiesFile] = 저장된
+ * 규약 파일명(없으면 null).
  */
-data class KeystoreUploadResult(
-    val savedRelease: Boolean,
-    val savedDebug: Boolean,
-    val savedProperties: Boolean,
-    val backedUp: List<String>,
+data class KeystoreStageResult(
+    val stagingDir: Path,
+    val releaseFile: String?,
+    val debugFile: String?,
+    val propertiesFile: String?,
 ) {
-    val savedAny: Boolean get() = savedRelease || savedDebug || savedProperties
+    val stagedAny: Boolean get() = releaseFile != null || debugFile != null || propertiesFile != null
+    val stagedNames: List<String> get() = listOfNotNull(releaseFile, debugFile, propertiesFile)
 }
 
 /**
@@ -389,68 +392,64 @@ class KeystoreService(
         return entryFor(req.packageName)
     }
 
+    /** v1.102.0 — 업로드 staging 디렉토리 `<keystoreDir>/_staging/<pkg>/`. 워크스페이스 밖이라 git 무관. */
+    fun stagingDir(packageName: String): Path = keystoreDir.resolve("_staging").resolve(packageName)
+
     /**
-     * v1.101.0 — 사용자가 업로드한 키스토어 파일을 표준 위치([keystoreDir])/파일명으로 저장.
+     * v1.102.0 — 사용자가 업로드한 키스토어 파일을 **staging 디렉토리에 규약 파일명으로** 저장.
      *
-     * release/debug/properties 각각 선택적이되 최소 1개. 기존 파일은 덮어쓰기 전에
-     * `<name>.bak.<ts>` 로 백업한다 — 키스토어 분실 = 같은 키로 앱 업데이트 영구 불가
-     * 이므로, 실수로 다른 키를 덮어써도 복구할 수 있게 하는 안전망([backedUp]).
+     * 서버는 최종 위치([keystoreDir])로 직접 배치하지 않는다 — 대신 Claude 콘솔 프롬프트
+     * ([buildKeystorePlacementPrompt])가 mv(기존 파일 백업 포함) + build.gradle.kts 서명
+     * 적용 + staging 정리를 한 turn 에 수행한다(사용자 요청 — 이동배치를 Claude 에 위임).
      *
-     * keystore 바이트는 PKCS12/JKS 매직으로 1차 검증(엄밀 무결성은 빌드 시 keytool 이
-     * 판정). properties 는 storePassword/keyAlias/keyPassword 를 추출하고 `storeFile` 을
-     * **서버 표준 경로로 강제 정규화**한다 — 업로드된 값이 사용자 로컬 경로
-     * (`D:/dev/keystores/...`)일 수 있어 서버에선 무효이기 때문.
+     * release/debug/properties 각각 선택적이되 최소 1개. keystore 바이트는 PKCS12/JKS
+     * 매직 + 256KB 1차 검증. properties 는 storePassword/keyAlias/keyPassword 추출 +
+     * `storeFile` 을 서버 표준 경로로 강제 정규화(업로드된 로컬 경로 무효화). 같은 패키지의
+     * 이전 staging 잔재는 비우고 새로 만든다.
      */
-    fun saveUploaded(
+    fun stageUploaded(
         packageName: String,
         releaseBytes: ByteArray?,
         debugBytes: ByteArray?,
         propertiesText: String?,
-    ): KeystoreUploadResult {
+    ): KeystoreStageResult {
         if (!packageNameRegex.matches(packageName)) {
             throw IllegalArgumentException("invalid_package_name: $packageName")
         }
         if (releaseBytes == null && debugBytes == null && propertiesText.isNullOrBlank()) {
             throw IllegalArgumentException("no_files")
         }
-        Files.createDirectories(keystoreDir)
+        val staging = stagingDir(packageName)
+        runCatching { if (Files.exists(staging)) staging.toFile().deleteRecursively() }
+        Files.createDirectories(staging)
         runCatching { setPerm(keystoreDir, "rwx------") }
+        runCatching { setPerm(staging.parent, "rwx------") }
+        runCatching { setPerm(staging, "rwx------") }
 
-        // 같은 업로드의 백업은 동일 ts 를 공유(파일명 prefix 가 달라 충돌 없음).
-        val ts = java.time.LocalDateTime.now()
-            .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))
-        val backedUp = mutableListOf<String>()
-        fun backupIfExists(path: Path) {
-            if (Files.exists(path)) {
-                val bak = path.resolveSibling("${path.fileName}.bak.$ts")
-                runCatching { Files.move(path, bak); backedUp.add(bak.fileName.toString()) }
-                    .onFailure { log.warn(it) { "keystore backup failed: $path" } }
-            }
-        }
-        fun writeKeystore(bytes: ByteArray, fileName: String) {
+        fun stageKeystore(bytes: ByteArray, fileName: String): String {
             validateKeystoreMagic(bytes, fileName)
-            val f = keystoreDir.resolve(fileName)
-            backupIfExists(f)
+            val f = staging.resolve(fileName)
             Files.write(f, bytes)
             runCatching { setPerm(f, "rw-------") }
+            return fileName
         }
 
-        val savedRelease = releaseBytes?.also { writeKeystore(it, "$packageName.keystore") } != null
-        val savedDebug = debugBytes?.also { writeKeystore(it, "$packageName-debug.keystore") } != null
-        var savedProps = false
+        val releaseFile = releaseBytes?.let { stageKeystore(it, "$packageName.keystore") }
+        val debugFile = debugBytes?.let { stageKeystore(it, "$packageName-debug.keystore") }
+        var propertiesFile: String? = null
         if (!propertiesText.isNullOrBlank()) {
             val normalized = normalizeUploadedProperties(packageName, propertiesText)
-            val f = keystoreDir.resolve("$packageName-keystore.properties")
-            backupIfExists(f)
+            val name = "$packageName-keystore.properties"
+            val f = staging.resolve(name)
             Files.writeString(f, normalized)
             runCatching { setPerm(f, "rw-------") }
-            savedProps = true
+            propertiesFile = name
         }
         log.info {
-            "Keystore uploaded: $packageName " +
-                "(release=$savedRelease debug=$savedDebug props=$savedProps, backups=${backedUp.size})"
+            "Keystore staged: $packageName at $staging " +
+                "(release=${releaseFile != null} debug=${debugFile != null} props=${propertiesFile != null})"
         }
-        return KeystoreUploadResult(savedRelease, savedDebug, savedProps, backedUp)
+        return KeystoreStageResult(staging, releaseFile, debugFile, propertiesFile)
     }
 
     /** PKCS12(DER SEQUENCE 0x30) 또는 JKS(magic 0xFEEDFEED) 매직 + 크기 1차 검증. */
