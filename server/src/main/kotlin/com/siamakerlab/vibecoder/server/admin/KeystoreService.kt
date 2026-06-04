@@ -11,6 +11,22 @@ import java.util.concurrent.TimeUnit
 
 private val log = KotlinLogging.logger {}
 
+/** v1.101.0 — 업로드 키스토어 파일의 안전 상한(키스토어는 보통 수 KB — 256KB 면 충분). */
+private const val MAX_KEYSTORE_BYTES = 256 * 1024
+
+/**
+ * v1.101.0 — [KeystoreService.saveUploaded] 결과. 어떤 파일이 저장됐는지 + 덮어쓰기
+ * 전에 백업된 기존 파일명 목록(키 분실 방지 안전망).
+ */
+data class KeystoreUploadResult(
+    val savedRelease: Boolean,
+    val savedDebug: Boolean,
+    val savedProperties: Boolean,
+    val backedUp: List<String>,
+) {
+    val savedAny: Boolean get() = savedRelease || savedDebug || savedProperties
+}
+
 /**
  * v1.5.0 — Android 앱 키스토어 관리.
  *
@@ -371,6 +387,108 @@ class KeystoreService(
 
         log.info { "Keystore created: ${req.packageName}" }
         return entryFor(req.packageName)
+    }
+
+    /**
+     * v1.101.0 — 사용자가 업로드한 키스토어 파일을 표준 위치([keystoreDir])/파일명으로 저장.
+     *
+     * release/debug/properties 각각 선택적이되 최소 1개. 기존 파일은 덮어쓰기 전에
+     * `<name>.bak.<ts>` 로 백업한다 — 키스토어 분실 = 같은 키로 앱 업데이트 영구 불가
+     * 이므로, 실수로 다른 키를 덮어써도 복구할 수 있게 하는 안전망([backedUp]).
+     *
+     * keystore 바이트는 PKCS12/JKS 매직으로 1차 검증(엄밀 무결성은 빌드 시 keytool 이
+     * 판정). properties 는 storePassword/keyAlias/keyPassword 를 추출하고 `storeFile` 을
+     * **서버 표준 경로로 강제 정규화**한다 — 업로드된 값이 사용자 로컬 경로
+     * (`D:/dev/keystores/...`)일 수 있어 서버에선 무효이기 때문.
+     */
+    fun saveUploaded(
+        packageName: String,
+        releaseBytes: ByteArray?,
+        debugBytes: ByteArray?,
+        propertiesText: String?,
+    ): KeystoreUploadResult {
+        if (!packageNameRegex.matches(packageName)) {
+            throw IllegalArgumentException("invalid_package_name: $packageName")
+        }
+        if (releaseBytes == null && debugBytes == null && propertiesText.isNullOrBlank()) {
+            throw IllegalArgumentException("no_files")
+        }
+        Files.createDirectories(keystoreDir)
+        runCatching { setPerm(keystoreDir, "rwx------") }
+
+        // 같은 업로드의 백업은 동일 ts 를 공유(파일명 prefix 가 달라 충돌 없음).
+        val ts = java.time.LocalDateTime.now()
+            .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))
+        val backedUp = mutableListOf<String>()
+        fun backupIfExists(path: Path) {
+            if (Files.exists(path)) {
+                val bak = path.resolveSibling("${path.fileName}.bak.$ts")
+                runCatching { Files.move(path, bak); backedUp.add(bak.fileName.toString()) }
+                    .onFailure { log.warn(it) { "keystore backup failed: $path" } }
+            }
+        }
+        fun writeKeystore(bytes: ByteArray, fileName: String) {
+            validateKeystoreMagic(bytes, fileName)
+            val f = keystoreDir.resolve(fileName)
+            backupIfExists(f)
+            Files.write(f, bytes)
+            runCatching { setPerm(f, "rw-------") }
+        }
+
+        val savedRelease = releaseBytes?.also { writeKeystore(it, "$packageName.keystore") } != null
+        val savedDebug = debugBytes?.also { writeKeystore(it, "$packageName-debug.keystore") } != null
+        var savedProps = false
+        if (!propertiesText.isNullOrBlank()) {
+            val normalized = normalizeUploadedProperties(packageName, propertiesText)
+            val f = keystoreDir.resolve("$packageName-keystore.properties")
+            backupIfExists(f)
+            Files.writeString(f, normalized)
+            runCatching { setPerm(f, "rw-------") }
+            savedProps = true
+        }
+        log.info {
+            "Keystore uploaded: $packageName " +
+                "(release=$savedRelease debug=$savedDebug props=$savedProps, backups=${backedUp.size})"
+        }
+        return KeystoreUploadResult(savedRelease, savedDebug, savedProps, backedUp)
+    }
+
+    /** PKCS12(DER SEQUENCE 0x30) 또는 JKS(magic 0xFEEDFEED) 매직 + 크기 1차 검증. */
+    private fun validateKeystoreMagic(bytes: ByteArray, fileName: String) {
+        if (bytes.isEmpty()) throw IllegalArgumentException("empty_keystore: $fileName")
+        if (bytes.size > MAX_KEYSTORE_BYTES) throw IllegalArgumentException("keystore_too_large: $fileName")
+        val isPkcs12 = (bytes[0].toInt() and 0xFF) == 0x30
+        val isJks = bytes.size >= 4 &&
+            (bytes[0].toInt() and 0xFF) == 0xFE && (bytes[1].toInt() and 0xFF) == 0xED &&
+            (bytes[2].toInt() and 0xFF) == 0xFE && (bytes[3].toInt() and 0xFF) == 0xED
+        if (!isPkcs12 && !isJks) throw IllegalArgumentException("not_a_keystore: $fileName")
+    }
+
+    /**
+     * 업로드된 properties 에서 storePassword/keyAlias/keyPassword 를 추출하고 storeFile 을
+     * 서버 표준 경로로 강제 재작성. create() 와 동일한 raw `key=value` 라인 형식(escape 안 함).
+     */
+    private fun normalizeUploadedProperties(packageName: String, text: String): String {
+        val map = text.lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && !it.startsWith("#") && it.contains('=') }
+            .associate { line ->
+                val i = line.indexOf('=')
+                line.substring(0, i).trim() to line.substring(i + 1).trim()
+            }
+        val storePassword = map["storePassword"]?.ifBlank { null }
+        val keyAlias = map["keyAlias"]?.ifBlank { null }
+        val keyPassword = map["keyPassword"]?.ifBlank { null } ?: storePassword
+        if (storePassword == null || keyAlias == null) {
+            throw IllegalArgumentException("invalid_properties")
+        }
+        return buildString {
+            appendLine("# v1.101.0 — uploaded via vibe-coder-server (storeFile normalized to host path)")
+            appendLine("storeFile=/home/vibe/keystores/$packageName.keystore")
+            appendLine("storePassword=$storePassword")
+            appendLine("keyAlias=$keyAlias")
+            appendLine("keyPassword=$keyPassword")
+        }
     }
 
     /**
