@@ -13,6 +13,9 @@
     --danger: #ff6b6b;
     --warn: #ffa94d;
     --ok: #69db7c;
+    /* v1.100.0 — 상태칩 5-state 일관 팔레트: 대기중(노랑) / 중단됨(보라). */
+    --wait: #fab005;
+    --halt: #b197fc;
     --radius: 6px;
     --shadow: 0 2px 8px rgba(0,0,0,0.3);
 }
@@ -1054,23 +1057,40 @@ table.devices small.dim { font-size: 11px; }
     background: currentColor;
     flex: none;
 }
+/* v1.100.0 — 5-state 일관: 응답중=초록(콘솔 뱃지와 동일). 이전엔 주황이었다. */
 .pstat-responding {
-    color: var(--warn);
-    border-color: rgba(255, 169, 77, 0.4);
-    background: rgba(255, 169, 77, 0.08);
-}
-.pstat-responding::before { animation: pstat-pulse 1.2s ease-in-out infinite; }
-.pstat-ready {
     color: var(--ok);
     border-color: rgba(105, 219, 124, 0.4);
     background: rgba(105, 219, 124, 0.08);
 }
-.pstat-idle { color: var(--text-dim); }
-/* v1.60.0 — 중지됨(응답 도중 cancel/crash/서버중단). */
+.pstat-responding::before { animation: pstat-pulse 1.2s ease-in-out infinite; }
+/* v1.100.0 — 유휴(진행 중 아님)=그레이. ready 는 idle 의 별칭. */
+.pstat-ready, .pstat-idle { color: var(--text-dim); }
+/* v1.100.0 — 대기중(백그라운드 작업 진행 → turn 재개 대기)=노랑. */
+.pstat-waiting {
+    color: var(--wait, #fab005);
+    border-color: rgba(250, 176, 5, 0.4);
+    background: rgba(250, 176, 5, 0.08);
+}
+/* v1.60.0 → v1.100.0 — 중단됨(cancel/crash/idle/rate-limit 소진)=보라. 이전엔 빨강. */
 .pstat-stopped {
+    color: var(--halt, #b197fc);
+    border-color: rgba(151, 117, 250, 0.4);
+    background: rgba(151, 117, 250, 0.08);
+}
+/* v1.100.0 — 에러(API/turn 에러 종료)=빨강. */
+.pstat-error {
     color: var(--danger, #ff6b6b);
     border-color: rgba(255, 107, 107, 0.4);
     background: rgba(255, 107, 107, 0.08);
+}
+/* v1.100.0 — MCP 카드 pill 은 pstat 색 팔레트를 빌려쓰되 의미가 다르다(설치 상태,
+   turn 상태 아님). ready=설치됨 은 긍정이므로 초록을 유지 — 일반 ready(유휴, 그레이)
+   로 바뀐 영향에서 분리. notInstalled=idle 은 그레이 그대로 적절. */
+.mcp-pill.pstat-ready {
+    color: var(--ok);
+    border-color: rgba(105, 219, 124, 0.4);
+    background: rgba(105, 219, 124, 0.08);
 }
 @keyframes pstat-pulse {
     0%, 100% { opacity: 1; }

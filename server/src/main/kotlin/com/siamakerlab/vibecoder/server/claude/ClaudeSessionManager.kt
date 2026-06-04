@@ -78,6 +78,14 @@ class ClaudeSessionManager(
     private val busy = ConcurrentHashMap<String, Boolean>()
 
     /**
+     * v1.100.0 — projectId → 마지막 상태칩 문자열(responding/ready/waiting/stopped/error).
+     * busy(boolean) 만으로는 백그라운드 대기(waiting, busy=true 유지)·에러(error) 같은
+     * 같은-boolean 다른-state 전이를 구분 못 해 뱃지가 안 바뀌었다. setBusy 가 value+state
+     * 중 하나라도 바뀌면 emit 하도록 함께 추적한다.
+     */
+    private val busyState = ConcurrentHashMap<String, String>()
+
+    /**
      * v1.59.0 — turn 완료(정상 Done) 리스너. 프롬프트 자동화
      * ([com.siamakerlab.vibecoder.server.automation.PromptAutomationManager])가 등록해
      * "작업 완료마다 다음 프롬프트"를 구현. 순환의존 방지를 위해 setter 주입.
@@ -291,18 +299,21 @@ class ClaudeSessionManager(
      * 시 각 프로젝트 콘솔이 자기 상태만 받음 (hub.topic 이 프로젝트별 분리).
      */
     private suspend fun setBusy(projectId: String, value: Boolean, state: String? = null) {
+        // v1.60.0 — 상태칩 명시 상태. 미지정 시 busy → responding / ready.
+        //   ready(유휴)=그레이 / responding(응답중)=초록 / waiting(대기중,백그라운드)=노랑 /
+        //   stopped(중단됨, cancel·crash·idle·rate-limit 소진)=보라 / error(API 에러)=빨강.
+        val st = state ?: if (value) "responding" else "ready"
+        // v1.99.2 → v1.100.0 — busy(boolean) 뿐 아니라 state 문자열 변화도 감지해 emit.
+        // 백그라운드 대기(waiting)는 busy=true 를 유지한 채 responding→waiting 으로만 바뀌므로,
+        // 예전처럼 busy 값만 비교하면(prev==value) 전이가 묻혀 뱃지가 갱신되지 않았다.
         val prev = busy.put(projectId, value)
-        if (prev == value) return
+        val prevState = busyState.put(projectId, st)
+        if (prev == value && prevState == st) return
         // v1.71.0 (정밀점검) — permit release 를 busy 전이에 묶지 않는다. busy=true 는
         // sendPrompt 의 stdin write 직후에야 set 되는데, 그 전에 Done/exit 이 먼저
         // 도달하면 false-전이가 안 일어나 permit 이 영구 leak (풀 wedge) 됐다. release 는
         // 종료 sink(Done / onProcessExit / terminateSession / write 실패)에서 직접 호출
         // (gate.release 는 heldKeys 기반 idempotent — SubAgentSessionManager 와 동일 방식).
-        // v1.60.0 — 상태칩 명시 상태. 미지정 시 busy → responding / ready.
-        // value 가 실제로 바뀐 경우(prev != value)만 도달하므로, false 전이는
-        // "직전까지 응답중이었다" 를 뜻함 → Done 은 "ready", 프로세스 종료(cancel/
-        // crash/idle-during-busy)는 호출부가 "stopped" 전달.
-        val st = state ?: if (value) "responding" else "ready"
         // v1.83.0 — 콘솔 페이지도 state 전달(이전엔 busy boolean 만 → "stopped/중단됨"
         // 구분 불가). rate-limit 재시도 소진 등 비정상 종료를 콘솔 뱃지에 정확 반영.
         hub.emitConsole(topic(projectId)) { seq -> WsFrame.ConsoleBusyState(busy = value, seq = seq, state = st) }
@@ -497,15 +508,18 @@ class ClaudeSessionManager(
             // v1.83.0 — claude 가 host stdin 없이 자발적으로 turn 을 재개(background task
             // 완료 후 자동 속행 등)하면 sendPrompt 를 안 거쳐 busy 가 false 인 채로 프레임만
             // 흐른다 → 뱃지가 "대기중" 인데 실제론 작업이 진행되는 고착 상태. 활동 프레임
-            // (assistant/tool)이 오는데 busy 가 아니면 busy=true + 미완 마크로 동기화한다.
+            // (assistant/tool)이 오면 busy=true(responding) + 미완 마크로 동기화한다.
             // (Done/ErrorEvent 는 아래에서 종료 처리하므로 제외.)
-            if (busy[projectId] != true &&
-                (event is ClaudeEvent.AssistantMessage ||
-                    event is ClaudeEvent.ToolUse ||
-                    event is ClaudeEvent.ToolResult)
+            // v1.100.0 — waiting(백그라운드 대기, busy=true 유지) 중 재개 활동이 오면
+            //  responding(초록) 으로 복귀시켜야 한다. 예전 조건(busy != true)만으론 busy 가
+            //  이미 true 라 노랑(waiting)에 고착됐다. setBusy 는 idempotent(이미
+            //  busy=true·responding 이면 no-op)이므로 매 활동 프레임 호출해도 안전.
+            if (event is ClaudeEvent.AssistantMessage ||
+                event is ClaudeEvent.ToolUse ||
+                event is ClaudeEvent.ToolResult
             ) {
-                markTurnActive(projectId)
-                setBusy(projectId, true)
+                if (busy[projectId] != true) markTurnActive(projectId)
+                setBusy(projectId, true, "responding")
             }
             hub.emitConsole(topic(projectId)) { seq -> toWsFrame(event, seq) }
             // v0.16.0 — turn 영구 적재. SessionStarted 는 자체 sessionId 사용 (위에서
@@ -534,6 +548,9 @@ class ClaudeSessionManager(
                 //  재개 turn 이 진짜 Done(outstandingBgTasks 비어있음) 될 때 아래 else 로 정상 종료.
                 val bgOutstanding = sessions[projectId]?.outstandingBgTasks?.isNotEmpty() == true
                 if (bgOutstanding) {
+                    // v1.100.0 — busy 는 true 로 유지하되 상태칩을 "대기중"(waiting, 노랑) 으로
+                    // 전이. 재개 turn 의 활동 프레임이 오면 위(L484)에서 responding 으로 자연 복귀.
+                    setBusy(projectId, true, "waiting")
                     emitSystem(
                         projectId, "bg_task_suspended",
                         "백그라운드 작업이 진행 중이라 turn 을 유지합니다 — 완료되면 자동으로 이어집니다.",
@@ -558,11 +575,13 @@ class ClaudeSessionManager(
                     scheduleRateLimitRetry(projectId)
                 } else {
                     // 진짜 에러 turn 종료(rate-limit 아님) — permit 반환 + 자동화 통지 + busy 해제.
+                    // v1.100.0 — 상태칩을 "에러"(error, 빨강) 로. cancel/crash/idle 의 "중단됨"
+                    // (stopped, 보라) 과 구분 — API/turn 에러임을 색으로 즉시 식별.
                     gate.release(projectId)
                     fireTurnDone(projectId, "error:${event.code}")
                     sessions[projectId]?.rateLimitRetry = 0
                     clearTurnActive(projectId)
-                    setBusy(projectId, false, "stopped")
+                    setBusy(projectId, false, "error")
                 }
             }
         }

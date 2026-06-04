@@ -442,11 +442,16 @@ internal object MessagesEn {
         "projects.list.col.package" to "Package",
         "projects.list.col.lastBuild" to "Last build",
         // v1.53.0 — project list status chip (leftmost column). Live-updated via `/ws/projects`.
+        // v1.100.0 — consistent 5-state: idle(grey)/responding(green)/waiting(yellow)/stopped(purple)/error(red).
         "projects.status.responding" to "Responding",
-        "projects.status.ready" to "Ready",
+        "projects.status.ready" to "Idle",
         "projects.status.idle" to "Idle",
-        // v1.60.0 — interrupted mid-response (cancel/crash/server stop).
+        // v1.100.0 — background task in progress, turn awaiting resume (yellow).
+        "projects.status.waiting" to "Waiting",
+        // v1.60.0 — interrupted mid-response (cancel/crash/server stop) (purple).
         "projects.status.stopped" to "Stopped",
+        // v1.100.0 — terminated by API/turn error (red).
+        "projects.status.error" to "Error",
         // v1.60.0 — reorder / pagination.
         "projects.reorder.handle" to "Drag to reorder",
         "projects.pageSize" to "Per page",
@@ -1499,9 +1504,12 @@ internal object MessagesEn {
         "console.todo.toggle.hide" to "Hide todo panel",
 
         // ─────────────────────────────────────────────── console busy badge (v0.98.0)
+        // v1.100.0 — consistent 5-state: idle/responding/waiting(background)/stopped/error.
         "console.busy.responding" to "● Responding",
         "console.busy.idle" to "○ Idle",
+        "console.busy.waiting" to "◐ Waiting",
         "console.busy.stopped" to "■ Stopped",
+        "console.busy.error" to "✕ Error",
         "console.bgtasks.title" to "Background tasks",
         "console.message.expand" to "⌄ Show more",
         "console.message.collapse" to "⌃ Show less",
