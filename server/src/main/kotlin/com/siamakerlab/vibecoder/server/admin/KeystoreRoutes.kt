@@ -308,6 +308,100 @@ $debugVariantLine
 """.trim()
 }
 
+/**
+ * v1.102.0 — 업로드된 키스토어 staging 배치 + 서명 적용 프롬프트(한 turn 일괄).
+ *
+ * 서버는 파일을 [KeystoreStageResult.stagingDir] 에 규약 파일명으로만 저장했고, 이 프롬프트가
+ * Claude 콘솔에게 (1) staging → 최종 키스토어 디렉토리로 이동(기존 파일 백업 포함),
+ * (2) staging 정리, (3) build.gradle.kts 서명 적용 을 한 번에 시킨다.
+ */
+internal fun buildKeystorePlacementPrompt(
+    projectId: String,
+    moduleName: String,
+    packageName: String,
+    service: KeystoreService,
+    stage: KeystoreStageResult,
+): String {
+    val ksDir = service.keystoreDirPath()
+    val staging = stage.stagingDir
+    val finalProps = ksDir.resolve("$packageName-keystore.properties")
+    val moves = stage.stagedNames.joinToString("\n") { name ->
+        "   - \"$staging/$name\"  →  \"$ksDir/$name\""
+    }
+    val signingStep = if (stage.propertiesFile != null || service.propertiesPath(packageName).let { java.nio.file.Files.exists(it) }) {
+        """
+3) 서명 적용: `$moduleName/build.gradle.kts` 의 signingConfigs 를 properties 파일
+   `$finalProps` 로 적용 (storeFile / storePassword / keyAlias / keyPassword 4종 평문 포함).
+
+   - `android { ... }` 블록 위에 properties 로더 추가(이미 있으면 중복 방지):
+
+     ```kotlin
+     import java.util.Properties
+     import java.io.FileInputStream
+
+     val signingPropsFile = file("$finalProps")
+     val signingProps = Properties().apply {
+         if (signingPropsFile.exists()) { FileInputStream(signingPropsFile).use { load(it) } }
+     }
+     ```
+
+   - `android { ... }` 안에 `signingConfigs { ... }` 작성/갱신:
+
+     ```kotlin
+     signingConfigs {
+         create("release") {
+             if (signingPropsFile.exists()) {
+                 storeFile = file(signingProps.getProperty("storeFile"))
+                 storePassword = signingProps.getProperty("storePassword")
+                 keyAlias = signingProps.getProperty("keyAlias")
+                 keyPassword = signingProps.getProperty("keyPassword")
+             }
+         }
+         getByName("debug") {
+             if (signingPropsFile.exists()) {
+                 storeFile = file(signingProps.getProperty("storeFile"))
+                 storePassword = signingProps.getProperty("storePassword")
+                 keyAlias = signingProps.getProperty("keyAlias")
+                 keyPassword = signingProps.getProperty("keyPassword")
+             }
+         }
+     }
+     ```
+
+   - `buildTypes { release { ... } }` 안에 `signingConfig = signingConfigs.getByName("release")` 포함.
+   - 비밀번호/alias 평문을 build.gradle.kts 에 하드코딩 금지 — properties 경로만 사용.
+   - 변경은 `$moduleName/build.gradle.kts` 한 파일에만(키스토어 이동 제외). groovy DSL 이면 동일 의미로.
+""".trimEnd()
+    } else {
+        """
+3) 서명 적용: 이번 업로드에는 properties 파일이 없으므로 build.gradle.kts 서명 수정은 생략하세요
+   (필요 시 사용자가 properties 를 포함해 재업로드하거나 키스토어 탭의 '서명 적용' 을 사용).
+""".trimEnd()
+    }
+    return """
+[vibe-coder-server / 키스토어 업로드 배치 + 서명 적용]
+
+프로젝트 `$projectId` (모듈 `$moduleName`, 패키지 `$packageName`) 의 키스토어 파일이 업로드되어
+staging 디렉토리에 규약 파일명으로 준비되었습니다:
+  staging: $staging
+
+아래를 **순서대로** 정확히 한 turn 에 수행하세요 (셸 명령 + build.gradle.kts 수정).
+
+1) 배치(이동): staging 의 각 파일을 최종 키스토어 디렉토리 `$ksDir/` 로 이동(mv)하세요.
+   - 같은 이름의 기존 파일이 있으면 **덮어쓰기 전에** 타임스탬프 백업
+     (`<파일명>.bak.<YYYYMMDD-HHMMSS>`) 을 먼저 만드세요.
+     (키스토어 분실 = 같은 키로 앱 업데이트 영구 불가 — 반드시 백업 먼저.)
+   이동 매핑:
+$moves
+
+2) 정리: 비워진 staging 디렉토리(`$staging`)를 삭제하세요.
+$signingStep
+
+4) 결과 요약: 이동/백업한 파일 목록과 build.gradle.kts 변경 diff 를 보고하세요.
+   빌드(assembleDebug/Release)는 자동 실행하지 말고 사용자에게 맡기세요.
+""".trim()
+}
+
 internal object KeystoreTemplates {
 
     private fun esc(s: String?): String =

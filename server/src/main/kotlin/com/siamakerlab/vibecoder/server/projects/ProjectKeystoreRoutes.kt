@@ -9,6 +9,7 @@ import com.siamakerlab.vibecoder.server.admin.KeystoreEntry
 import com.siamakerlab.vibecoder.server.admin.KeystoreFingerprints
 import com.siamakerlab.vibecoder.server.admin.KeystoreService
 import com.siamakerlab.vibecoder.server.admin.buildApplySigningPrompt
+import com.siamakerlab.vibecoder.server.admin.buildKeystorePlacementPrompt
 import com.siamakerlab.vibecoder.server.admin.isBuildRunning
 import com.siamakerlab.vibecoder.server.admin.isEmbeddedRequest
 import com.siamakerlab.vibecoder.server.admin.requireProjectAccessOrThrow
@@ -249,38 +250,38 @@ fun Routing.projectKeystoreRoutes(
                 part.dispose()
             }
         }
-        val result = runCatching { keystore.saveUploaded(p.packageName, releaseBytes, debugBytes, propsText) }
+        // v1.102.0 — 서버는 staging 에만 규약 파일명으로 저장. 최종 이동배치는 콘솔 프롬프트가 수행.
+        val stage = runCatching { keystore.stageUploaded(p.packageName, releaseBytes, debugBytes, propsText) }
             .getOrElse { e ->
-                log.warn(e) { "keystore upload failed: $id / ${p.packageName}" }
+                log.warn(e) { "keystore staging failed: $id / ${p.packageName}" }
                 call.respondRedirect("/projects/$id/keystore?err=${enc("업로드 실패: ${mapUploadError(e.message)}")}")
                 return@post
             }
-        if (!result.savedAny) {
+        if (!stage.stagedAny) {
             call.respondRedirect(
                 "/projects/$id/keystore?err=${enc("업로드된 파일이 없습니다 — release/debug/properties 중 최소 하나를 선택하세요.")}",
             )
             return@post
         }
-        // 콘솔에 키스토어 정보 갱신(build.gradle.kts 서명) 프롬프트 발사 — release 가 있어야 의미.
-        val entry = runCatching { keystore.get(p.packageName) }.getOrNull()
-        val promptSent = if (entry != null) {
-            val prompt = buildApplySigningPrompt(p.id, p.moduleName, keystore, entry)
-            runCatching { sessionManager.sendPrompt(id, prompt) }
-                .onFailure { log.warn(it) { "post-upload apply prompt failed: $id" } }
-                .isSuccess
-        } else false
-        val saved = buildList {
-            if (result.savedRelease) add("release")
-            if (result.savedDebug) add("debug")
-            if (result.savedProperties) add(".properties")
+        // 콘솔에 이동배치(staging → keystores, 기존 백업) + build.gradle.kts 서명 적용 프롬프트 발사(한 turn).
+        val prompt = buildKeystorePlacementPrompt(p.id, p.moduleName, p.packageName, keystore, stage)
+        val promptSent = runCatching { sessionManager.sendPrompt(id, prompt) }
+            .onFailure { log.warn(it) { "post-upload placement prompt failed: $id" } }
+            .isSuccess
+        val staged = buildList {
+            if (stage.releaseFile != null) add("release")
+            if (stage.debugFile != null) add("debug")
+            if (stage.propertiesFile != null) add(".properties")
         }.joinToString(", ")
-        val bak = if (result.backedUp.isNotEmpty()) " (기존 ${result.backedUp.size}개 백업됨)" else ""
-        val tail = when {
-            promptSent -> " — build.gradle.kts 서명 갱신 프롬프트를 콘솔로 보냈습니다. 콘솔 탭에서 확인하세요."
-            entry == null -> " — release 키스토어가 없어 콘솔 프롬프트는 생략했습니다(release 포함 재업로드 시 자동 전송)."
-            else -> " — 콘솔 프롬프트 전송 실패. 콘솔 탭에서 '서명 적용' 으로 직접 갱신하세요."
+        if (promptSent) {
+            call.respondRedirect(
+                "/projects/$id/keystore?ok=${enc("업로드 완료($staged) — Claude 콘솔이 키스토어를 최종 위치로 이동배치하고 build.gradle.kts 서명을 적용합니다. 콘솔 탭에서 진행 상황을 확인하세요.")}",
+            )
+        } else {
+            call.respondRedirect(
+                "/projects/$id/keystore?err=${enc("파일은 staging 에 저장됐으나 콘솔 프롬프트 전송에 실패했습니다 — 콘솔이 유휴 상태인지 확인 후 다시 시도하세요.")}",
+            )
         }
-        call.respondRedirect("/projects/$id/keystore?ok=${enc("업로드 완료: $saved$bak$tail")}")
     }
 
     post("/projects/{id}/keystore/delete") {
@@ -591,13 +592,13 @@ internal object ProjectKeystoreTemplates {
   <summary style="cursor:pointer;font-weight:600">⬆ 키스토어 업로드
     <span class="dim" style="font-weight:400;font-size:12px">(외부에서 만든 키 가져오기 — 콘솔 유휴 시)</span></summary>
   <p class="dim" style="font-size:12px;margin:8px 0 10px">
-    이미 가지고 있는 release / debug 키스토어와 signing properties 파일을 업로드합니다. 각 파일은
-    호스트 영속 볼륨(<code>/home/vibe/keystores/</code>)에
-    <code>${esc(pkg)}.keystore</code> / <code>${esc(pkg)}-debug.keystore</code> /
-    <code>${esc(pkg)}-keystore.properties</code> 이름으로 저장되고, properties 의 storeFile 은
-    서버 경로로 자동 보정됩니다. 기존 파일이 있으면 덮어쓰기 전에 <code>.bak.&lt;시각&gt;</code> 으로
-    백업합니다(키 분실 방지). 업로드 직후 build.gradle.kts 서명 정보를 갱신하는 프롬프트가 콘솔로
-    전송되므로 <b>콘솔이 유휴 상태일 때만</b> 가능합니다.
+    이미 가지고 있는 release / debug 키스토어와 signing properties 파일을 각 칸에 올립니다. 서버는
+    파일을 임시(staging) 공간에 규약 파일명(<code>${esc(pkg)}.keystore</code> /
+    <code>${esc(pkg)}-debug.keystore</code> / <code>${esc(pkg)}-keystore.properties</code>)으로 저장한 뒤,
+    <b>한 번의 콘솔 프롬프트</b>로 Claude 가 최종 위치(<code>/home/vibe/keystores/</code>)로 이동배치
+    (기존 파일은 <code>.bak.&lt;시각&gt;</code> 백업)하고 build.gradle.kts 서명까지 적용합니다.
+    properties 의 storeFile 은 서버 경로로 자동 보정됩니다. 콘솔 프롬프트를 전송하므로
+    <b>콘솔이 유휴 상태일 때만</b> 가능합니다.
   </p>
   $uploadBusyNote
   <form method="post" action="/projects/${esc(p.id)}/keystore/upload?_csrf=${enc(csrf ?: "")}" enctype="multipart/form-data">
@@ -611,7 +612,7 @@ internal object ProjectKeystoreTemplates {
     </div>
     <p class="dim" style="font-size:11px;margin:8px 0">최소 1개 파일을 선택하세요. PKCS12/JKS 키스토어만 허용(256KB 이하).</p>
     <button type="submit" class="primary" $uploadDisabled
-            onclick="return confirm('업로드한 파일로 기존 키스토어를 교체(백업 후)하고, build.gradle.kts 서명 갱신 프롬프트를 콘솔로 보냅니다. 진행할까요?')">업로드 + 콘솔 갱신</button>
+            onclick="return confirm('업로드 파일을 staging 에 저장하고, Claude 콘솔이 최종 위치로 이동배치(기존 백업) + build.gradle.kts 서명 적용하도록 프롬프트를 보냅니다. 진행할까요?')">업로드 → 콘솔 이동배치</button>
   </form>
 </details>"""
 
