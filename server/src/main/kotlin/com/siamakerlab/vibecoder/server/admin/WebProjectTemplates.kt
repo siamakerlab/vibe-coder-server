@@ -658,6 +658,7 @@ object WebProjectTemplates {
             currentPath = "/projects",
             csrf = csrf,
             lang = lang,
+            wide = true,  // v1.104.0 — 넓은 폭 활용(중앙정렬 1200px 해제)
             body = """
 <header><h1>${esc(t("projects.heading"))}</h1></header>
 $okHtml
@@ -1287,6 +1288,7 @@ $errHtml
             currentPath = navPath,
             csrf = csrf,
             lang = lang,
+            wide = isChat,  // v1.104.0 — 채팅(/chat)만 넓은 폭. 콘솔은 통합 탭 inner 라 무관.
             body = """$chatShellOpen
 <!-- v1.48.0 — 세션 카드 제거. 세션 상태 + 남은 액션(중지/새 세션)을 헤더 우측(탭 바로 밑)으로
      이동. 나머지 버블 버튼(빌드/파일/Git/에이전트/히스토리/심볼)은 상단 프로젝트 탭으로

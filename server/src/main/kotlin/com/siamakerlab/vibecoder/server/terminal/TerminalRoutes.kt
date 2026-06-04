@@ -378,6 +378,7 @@ internal object TerminalTemplates {
             currentPath = "/terminal",
             csrf = csrf,
             lang = lang,
+            wide = true,  // v1.104.0 — 넓은 폭 활용(터미널 출력 가로 공간 확보)
             body = """
 <header>
   <h1 style="margin:0">${esc(t("term.title"))}</h1>
@@ -400,6 +401,7 @@ internal object TerminalTemplates {
             currentPath = "/terminal",
             csrf = csrf,
             lang = lang,
+            wide = true,  // v1.104.0 — 넓은 폭 활용(터미널 출력 가로 공간 확보)
             body = """
 <header>
   <h1 style="margin:0">${esc(t("term.title"))}</h1>

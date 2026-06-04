@@ -61,6 +61,13 @@ object AdminTemplates {
          */
         fullbleed: Boolean = false,
         /**
+         * v1.104.0 — `.content.wide` 변형. 1200px 중앙정렬 대신 브라우저 폭을 효율적으로
+         * 쓰되 padding(여백)은 유지(fullbleed 와 달리 일반 콘텐츠 페이지용). 홈/프로젝트/
+         * 채팅/메모/터미널처럼 넓은 모니터에서 양옆 여백이 과하던 페이지가 true 로 호출.
+         * fullbleed=true 면 그쪽이 우선.
+         */
+        wide: Boolean = false,
+        /**
          * v1.72.0 — iframe 임베드(설정/프로젝트 탭 iframe 의 inner page) 렌더링.
          * true 면 사이드바 nav + 설정 탭바를 **처음부터 HTML 에 넣지 않는다** (미렌더).
          * 이전엔 전체 shell(nav 포함)을 그대로 iframe 에 로드한 뒤 project-tabs.js 가
@@ -75,7 +82,11 @@ object AdminTemplates {
         val showChrome = showNav && !embed
         val nav = if (showChrome) navHtml(currentPath, username, csrf, lang) else ""
         val layoutCls = if (showChrome) "layout" else "layout no-nav"
-        val contentCls = if (fullbleed) "content fullbleed" else "content"
+        val contentCls = when {
+            fullbleed -> "content fullbleed"
+            wide -> "content wide"
+            else -> "content"
+        }
         // v1.27.3 Q1 회수: fullbleed 페이지 (예: /settings/tabs, /tools/tabs) 는 자체
         // iframe 탭 UI 를 갖는다. 여기에 settings tabBar 까지 주입하면 탭바가 2줄로
         // 중복 노출 (SettingsTabsTemplate 가 currentPath="/settings" 라 topLevelOf=="settings"
@@ -123,7 +134,7 @@ object AdminTemplates {
   <link rel="icon" type="image/png" href="/static/icon.png">
   <link rel="manifest" href="/static/manifest.json">
   <meta name="theme-color" content="#0b0d12">
-  <link rel="stylesheet" href="/static/admin.css?v=1.100.0">
+  <link rel="stylesheet" href="/static/admin.css?v=1.104.0">
   <script>
     // v1.6.2 — 사이드바 접힘 상태를 first paint 전에 :root data-attribute 로 적용 (FOUC 회피).
     // CSS 의 :root[data-sidebar-collapsed="1"] .layout 가 grid-template-columns 축소.
@@ -623,6 +634,7 @@ object AdminTemplates {
             currentPath = "/",
             csrf = csrf,
             lang = lang,
+            wide = true,  // v1.104.0 — 넓은 폭 활용(1200px 중앙정렬 해제, padding 유지)
             body = """
 <header><h1>${esc(t("dashboard.heading"))}</h1></header>
 $gitIdentityBanner

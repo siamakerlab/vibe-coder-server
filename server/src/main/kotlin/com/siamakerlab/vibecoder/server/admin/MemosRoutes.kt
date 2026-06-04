@@ -277,6 +277,7 @@ fun Routing.memosRoutes(authDeps: AdminRoutesDeps, projects: ProjectService) {
                 currentPath = "/memos",
                 csrf = sess.csrf,
                 lang = sess.language,
+                wide = true,  // v1.104.0 — 넓은 폭 활용(중앙정렬 1200px 해제)
                 body = body,
                 embed = call.isEmbeddedRequest(),
             ),

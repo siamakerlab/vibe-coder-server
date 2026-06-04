@@ -275,6 +275,12 @@ a:hover { color: var(--primary-hover); text-decoration: underline; }
     max-width: none;
     overflow: hidden;
 }
+/* v1.104.0 — 넓은 모니터에서 1200px 중앙정렬 대신 브라우저 폭을 효율적으로 쓰는 변형.
+   fullbleed 와 달리 padding(여백)은 유지 — 일반 콘텐츠 페이지(홈/프로젝트/채팅/메모/
+   터미널)가 가장자리에 붙지 않으면서 전체 폭을 활용. */
+.content.wide {
+    max-width: none;
+}
 
 /* v1.33.1 — 모바일(≤768px) 레이아웃은 아래 "작은 태블릿 / 큰 폰" 블록(가로 헤더
    nav)으로 단일화. 이전엔 여기에 또 다른 768px 블록(사이드바 56px 세로 collapsed)이
