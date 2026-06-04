@@ -346,6 +346,17 @@ internal object ProjectTabsTemplate {
   #project-tabs-root .pt-switch-item.active .pstat-waiting { color: var(--wait, #fab005); }
   #project-tabs-root .pt-switch-item.active .pstat-stopped { color: var(--halt, #b197fc); }
   #project-tabs-root .pt-switch-item.active .pstat-error { color: var(--danger, #ff6b6b); }
+  /* v1.103.0 — 헤더 콘솔 상태칩(콘솔 busy-badge 미러). 콤보박스 좌측. 5-state 동일 팔레트. */
+  #project-tabs-root #console-busy-badge {
+    flex: none; font-size: 12px; padding: 3px 10px; border-radius: 12px;
+    font-weight: 500; white-space: nowrap; transition: background .2s, color .2s;
+  }
+  #console-busy-badge[data-state="responding"] { background: rgba(105,219,124,.18); color: #69db7c; }
+  #console-busy-badge[data-state="idle"],
+  #console-busy-badge[data-state="ready"] { background: rgba(255,255,255,.06); color: var(--text-dim,#888); }
+  #console-busy-badge[data-state="waiting"] { background: rgba(250,176,5,.18); color: #fab005; }
+  #console-busy-badge[data-state="stopped"] { background: rgba(151,117,250,.18); color: #b197fc; }
+  #console-busy-badge[data-state="error"] { background: rgba(255,107,107,.18); color: #ff8787; }
   #project-tabs-root .pt-switcher-menu hr {
     border: 0; border-top: 1px solid #1f2330; margin: 6px 0;
   }
@@ -585,6 +596,9 @@ internal object ProjectTabsTemplate {
 <div id="project-tabs-root" data-project-id="${esc(project.id)}" data-rail="shown">
   <div class="pt-header">
     ${AdminTemplates.backButton("/projects", t("tabs.backToList"))}
+    <!-- v1.103.0 — 콘솔 turn 상태칩(콤보박스 좌측). 콘솔 iframe 의 busy-badge 가
+         postMessage(console:busy)로 미러링한다. 어느 탭에 있어도 콘솔 진행 상태 확인. -->
+    <span id="console-busy-badge" data-state="idle" title="${esc(t("console.busy.idle"))}">${esc(t("console.busy.idle"))}</span>
     $projectSwitcher
     <span class="spacer"></span>
     <details class="pt-settings">
@@ -635,7 +649,7 @@ $railHtml
   </div>
 </div>
 
-<script src="/static/project-tabs.js?v=1.99.1" defer></script>
+<script src="/static/project-tabs.js?v=1.103.0" defer></script>
 <!-- v1.56.0 — 콤보박스 상태칩 실시간 동기. 목록 페이지와 동일하게 `/ws/projects`
      (단방향) 의 ProjectBusyChanged 로 responding↔ready patch. -->
 <script>

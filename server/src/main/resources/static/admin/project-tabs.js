@@ -307,8 +307,17 @@
       window.addEventListener('message', function (ev) {
         if (ev.origin !== location.origin) return;
         var d = ev.data;
-        if (!d || d.type !== 'vibe:prompt-sent') return;
-        prependHistory(d.text);
+        if (!d) return;
+        if (d.type === 'vibe:prompt-sent') { prependHistory(d.text); return; }
+        // v1.103.0 — 콘솔 iframe 의 busy-badge 가 turn 상태를 헤더 칩으로 미러링.
+        if (d.type === 'console:busy') {
+          var badge = document.getElementById('console-busy-badge');
+          if (badge) {
+            badge.dataset.state = d.state || 'idle';
+            if (typeof d.text === 'string') { badge.textContent = d.text; badge.title = d.text; }
+          }
+          return;
+        }
       });
     })();
 
