@@ -1847,6 +1847,13 @@ $automationPanelHtml
         }
       });
     }
+    // v1.104.1 — user 프롬프트 상단고정은 "가장 최신" 1개만(.cur). 새 user 가 오면 이전
+    //  .cur 를 해제하고 이 row 에 부여. append 는 항상 맨 끝(appendChild)이라 row 가 최신.
+    if (cls === 'user') {
+      var prevCur = logEl.querySelector('.log-line.user.cur');
+      if (prevCur) prevCur.classList.remove('cur');
+      row.classList.add('cur');
+    }
     logEl.appendChild(row);
     if ((isAsst || isToolOut) && window.hljs) {
       // v1.85.0 — assistant 마크다운 코드블록 + v1.90.12 tool 결과 코드블록 syntax highlight.
