@@ -693,9 +693,19 @@ class ClaudeSessionManager(
         gate.release(projectId)
         // v0.98.0 — process exit 시 항상 busy 해제. setBusy 가 suspend 라
         // launch 안에서 호출 (onProcessExit 자체는 비-suspend).
-        // v1.60.0 — busy 중 프로세스 종료 = 미완 turn 중단 → "stopped". busy 아니었으면
-        // setBusy 가 idempotent 로 무시(=정상 완료 후 종료엔 영향 없음).
-        scope.launch { setBusy(projectId, false, "stopped") }
+        // v1.60.0 — busy 중 프로세스 종료 = 미완 turn 중단 → "stopped". 정상 완료 후 종료는 유휴.
+        // v1.102.1 — 두 가지 가드로 복원:
+        //  ① intentionalKill(cancel/idle/shutdown)은 terminateSession 이 busy 전이를 전담하므로
+        //     여기선 skip — 둘이 race 하며 stopped↔ready 로 서로 덮어쓰던 문제 차단.
+        //  ② 자발적 종료(claude clean exit / crash)는 종료 직전 busy 여부로 분기 — busy 였으면
+        //     "stopped"(미완 중단), 아니면 "ready"(정상 완료 후 clean exit). 이전엔 setBusy 의
+        //     boolean idempotency 에 기대 무조건 "stopped" 를 넘겨도 무시됐지만, v1.100.0
+        //     state-aware 전환 후엔 ready→stopped 가 emit 돼 *정상 완료 세션에 '중단됨'* 이
+        //     뜨던 회귀(특히 clean exit code 0)를 명시 가드로 해소.
+        if (!session.intentionalKill) {
+            val wasBusy = busy[projectId] == true
+            scope.launch { setBusy(projectId, false, if (wasBusy) "stopped" else "ready") }
+        }
         if (session.intentionalKill) {
             // B1 (21차 점검) — 의도된 종료(cancel/startNew/idle reap/shutdown). SIGTERM 의
             // 비정상 종료코드를 crash 로 보지 않음 → session-id 보존, 오메시지 미emit.
@@ -749,9 +759,13 @@ class ClaudeSessionManager(
         }
         session.readerJob?.cancel()
         session.stderrJob?.cancel()
-        // v0.98.0 — process 종료 (cancel / startNew / idle reap / crash) 시 busy 항상 false.
-        // v1.60.0 — busy 중 종료면 "stopped"(중지됨), 아니면 idempotent 무시.
-        setBusy(projectId, false, "stopped")
+        // v0.98.0 — process 종료 (cancel / startNew / idle reap / shutdown) 시 busy 항상 false.
+        // v1.60.0 / v1.102.1 — busy 중 종료(사용자 cancel 등)면 "stopped"(중단됨), 정상 완료
+        // 후 종료(idle reap 등)면 "ready"(유휴) 유지. 이전엔 무조건 "stopped" 를 넘기고 setBusy
+        // boolean idempotency 에 기댔지만, v1.100.0 state-aware 전환 후 정상 완료(ready) 세션이
+        // idle reap 될 때 ready→stopped 가 emit 되던 회귀를 명시 분기로 해소.
+        val wasBusy = busy[projectId] == true
+        setBusy(projectId, false, if (wasBusy) "stopped" else "ready")
     }
 
     private suspend fun reapIdleSessions() {
