@@ -443,12 +443,14 @@ fun Routing.webProjectRoutes(
         val env = authDeps.envDiagnostics.run(sess.language)
         // v1.7.3 — DB conversation history (last 200 turn, ASC). sessionId 가 있을 때만
         // 해당 세션 turn 만 조회. 없으면 — 새 프로젝트 또는 last id 없는 케이스 — 빈 list.
+        // v1.104.2 — 진짜 "마지막 200개" 로 회수. 이전엔 offset=0 ASC 라 turn 많은 세션
+        // (tally-counter 1000+) 에서 *가장 오래된* 200개만 와, 최근 대화(방금 보낸 프롬프트
+        // 포함)가 콘솔 재진입 시 통째로 누락됐다(상단 고정도 당연히 안 됨). offset=total-200.
         val history = if (sid != null) {
             runCatching {
-                conversationRepo.list(
-                    ConversationTurnRepository.Filter(projectId = id, sessionId = sid),
-                    limit = 200,
-                )
+                val f = ConversationTurnRepository.Filter(projectId = id, sessionId = sid)
+                val off = (conversationRepo.count(f) - 200).coerceAtLeast(0)
+                conversationRepo.list(f, limit = 200, offset = off)
             }.getOrDefault(emptyList())
         } else emptyList()
         call.respondText(
@@ -1276,12 +1278,12 @@ fun Routing.webProjectRoutes(
         val sid = sessionManager.currentSessionId(p.id)
         val env = authDeps.envDiagnostics.run(sess.language)
         // v1.7.3 — Chat 도 동일하게 history 영속 복원.
+        // v1.104.2 — console 과 동일: 최근 200 turn(offset=total-200). 이전엔 oldest 200.
         val history = if (sid != null) {
             runCatching {
-                conversationRepo.list(
-                    ConversationTurnRepository.Filter(projectId = p.id, sessionId = sid),
-                    limit = 200,
-                )
+                val f = ConversationTurnRepository.Filter(projectId = p.id, sessionId = sid)
+                val off = (conversationRepo.count(f) - 200).coerceAtLeast(0)
+                conversationRepo.list(f, limit = 200, offset = off)
             }.getOrDefault(emptyList())
         } else emptyList()
         val activeTitle = chats.firstOrNull { it.id == activeId }?.title
