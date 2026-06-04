@@ -918,9 +918,6 @@ table.devices small.dim { font-size: 11px; }
    - 긴 프롬프트는 앞 2줄만 표시(line-clamp) — 콘솔 전체를 덮지 않음. 카드 클릭으로
      펼침/접힘(.expanded). */
 .console-log .log-line.user {
-    position: sticky;
-    top: 0;
-    z-index: 3;
     background: #121a28;
     box-shadow: inset 3px 0 0 var(--primary, #6aa9ff),
                 0 8px 12px -10px rgba(0,0,0,0.75);
@@ -930,6 +927,15 @@ table.devices small.dim { font-size: 11px; }
     padding-left: calc(1.6em + 14px);
     padding-right: 14px;
     cursor: pointer;
+}
+/* v1.104.1 — 상단 고정은 "가장 최신" 프롬프트(.cur)만. 이전엔 모든 .user 가 sticky 라,
+   마지막 프롬프트의 응답이 짧아 아직 top:0 까지 안 밀려 올라가면 그 위의 이전 프롬프트가
+   top:0 에 stacking 고정돼 "최신이 아닌 이전 프롬프트가 상단에 붙는" 문제가 있었다.
+   JS(append)가 새 user 메시지마다 .cur 를 최신 1개에만 부여한다. */
+.console-log .log-line.user.cur {
+    position: sticky;
+    top: 0;
+    z-index: 3;
 }
 .console-log .log-line.user::before { left: 14px; top: 3px; }  /* margin/padding 보정 */
 /* 기본: 앞 2줄만. 클릭 시 .expanded 로 전체(최대 40vh, 자체 스크롤). */
