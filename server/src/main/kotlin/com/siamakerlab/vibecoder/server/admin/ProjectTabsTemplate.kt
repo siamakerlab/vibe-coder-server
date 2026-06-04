@@ -339,11 +339,13 @@ internal object ProjectTabsTemplate {
   #project-tabs-root .pt-switch-item .pstat {
     flex: none; font-size: 11px; padding: 2px 8px; gap: 5px;
   }
-  /* active 항목이라도 칩 색(warn/ok/dim)은 유지 — accent 색 상속 차단. */
-  #project-tabs-root .pt-switch-item.active .pstat-responding { color: var(--warn, #ffa94d); }
-  #project-tabs-root .pt-switch-item.active .pstat-ready { color: var(--ok, #69db7c); }
-  #project-tabs-root .pt-switch-item.active .pstat-stopped { color: var(--danger, #ff6b6b); }
+  /* active 항목이라도 칩 색은 유지 — accent 색 상속 차단. v1.100.0 5-state 일관 팔레트. */
+  #project-tabs-root .pt-switch-item.active .pstat-responding { color: var(--ok, #69db7c); }
+  #project-tabs-root .pt-switch-item.active .pstat-ready,
   #project-tabs-root .pt-switch-item.active .pstat-idle { color: var(--text-dim, #888); }
+  #project-tabs-root .pt-switch-item.active .pstat-waiting { color: var(--wait, #fab005); }
+  #project-tabs-root .pt-switch-item.active .pstat-stopped { color: var(--halt, #b197fc); }
+  #project-tabs-root .pt-switch-item.active .pstat-error { color: var(--danger, #ff6b6b); }
   #project-tabs-root .pt-switcher-menu hr {
     border: 0; border-top: 1px solid #1f2330; margin: 6px 0;
   }
@@ -638,11 +640,14 @@ $railHtml
      (단방향) 의 ProjectBusyChanged 로 responding↔ready patch. -->
 <script>
 (function() {
-  // v1.60.0 — 3-state. ProjectBusyChanged.state 우선, 없으면 busy 폴백.
+  // v1.100.0 — 5-state. ProjectBusyChanged.state 우선, 없으면 busy 폴백.
   var LABELS = {
     responding: ${jsLit(t("projects.status.responding"))},
     ready: ${jsLit(t("projects.status.ready"))},
-    stopped: ${jsLit(t("projects.status.stopped"))}
+    idle: ${jsLit(t("projects.status.idle"))},
+    waiting: ${jsLit(t("projects.status.waiting"))},
+    stopped: ${jsLit(t("projects.status.stopped"))},
+    error: ${jsLit(t("projects.status.error"))}
   };
   function patch(pid, state) {
     if (!state) return;

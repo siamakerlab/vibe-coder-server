@@ -419,11 +419,16 @@ internal object MessagesKo {
         "projects.list.col.package" to "패키지",
         "projects.list.col.lastBuild" to "최근 빌드",
         // v1.53.0 — 프로젝트 목록 상태칩 (제일 왼쪽 컬럼). `/ws/projects` 로 실시간 갱신.
+        // v1.100.0 — 5-state 일관화: 유휴(그레이)/응답중(초록)/대기중(노랑)/중단됨(보라)/에러(빨강).
         "projects.status.responding" to "응답중",
-        "projects.status.ready" to "대기중",
+        "projects.status.ready" to "유휴",
         "projects.status.idle" to "유휴",
-        // v1.60.0 — 응답 도중 cancel/crash/서버중단으로 끊김.
-        "projects.status.stopped" to "중지됨",
+        // v1.100.0 — 백그라운드 작업 진행 중이라 turn 이 재개 대기(노랑).
+        "projects.status.waiting" to "대기중",
+        // v1.60.0 — 응답 도중 cancel/crash/서버중단으로 끊김(보라).
+        "projects.status.stopped" to "중단됨",
+        // v1.100.0 — API/turn 에러로 종료(빨강).
+        "projects.status.error" to "에러",
         // v1.60.0 — 순서변경 / 페이지네이션.
         "projects.reorder.handle" to "드래그하여 순서 변경",
         "projects.pageSize" to "페이지당",
@@ -1477,9 +1482,12 @@ internal object MessagesKo {
         "console.todo.toggle.hide" to "할 일 패널 접기",
 
         // ─────────────────────────────────────────────── console busy badge (v0.98.0)
+        // v1.100.0 — 5-state 일관화: 유휴/응답중/대기중(백그라운드)/중단됨/에러.
         "console.busy.responding" to "● 응답중",
-        "console.busy.idle" to "○ 대기중",
+        "console.busy.idle" to "○ 유휴",
+        "console.busy.waiting" to "◐ 대기중",
         "console.busy.stopped" to "■ 중단됨",
+        "console.busy.error" to "✕ 에러",
         "console.bgtasks.title" to "백그라운드 작업",
         "console.message.expand" to "⌄ 더보기",
         "console.message.collapse" to "⌃ 접기",

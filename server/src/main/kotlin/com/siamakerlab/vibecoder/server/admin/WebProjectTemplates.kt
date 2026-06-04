@@ -798,11 +798,14 @@ $errHtml
      인증은 handshake 의 vibe_session 쿠키로 자동 처리 (콘솔 WS 와 동일 패턴). -->
 <script>
 (function() {
-  // v1.60.0 — 3-state(응답중/대기중/중지됨). ProjectBusyChanged.state 우선, 없으면 busy 폴백.
+  // v1.100.0 — 5-state(유휴/응답중/대기중/중단됨/에러). ProjectBusyChanged.state 우선, 없으면 busy 폴백.
   var LABELS = {
     responding: ${jsLit(t("projects.status.responding"))},
     ready: ${jsLit(t("projects.status.ready"))},
-    stopped: ${jsLit(t("projects.status.stopped"))}
+    idle: ${jsLit(t("projects.status.idle"))},
+    waiting: ${jsLit(t("projects.status.waiting"))},
+    stopped: ${jsLit(t("projects.status.stopped"))},
+    error: ${jsLit(t("projects.status.error"))}
   };
   function patch(pid, state) {
     if (!state) return;
@@ -1298,11 +1301,19 @@ $errHtml
     background: rgba(105,219,124,0.18); color: #69db7c;
     animation: vibe-busy-pulse 1.4s ease-in-out infinite;
   }
-  #busy-badge[data-state="idle"] {
+  #busy-badge[data-state="idle"], #busy-badge[data-state="ready"] {
     background: rgba(255,255,255,0.06); color: var(--text-dim, #888);
   }
-  /* v1.83.0 — rate-limit 재시도 소진/취소/크래시로 중단된 turn. 빨강 강조. */
+  /* v1.100.0 — 백그라운드 작업 진행 중이라 turn 이 재개 대기. 노랑(pulse 없이 정적). */
+  #busy-badge[data-state="waiting"] {
+    background: rgba(250,176,5,0.18); color: #fab005;
+  }
+  /* v1.100.0 — cancel/crash/idle/rate-limit 소진으로 중단된 turn. 보라. */
   #busy-badge[data-state="stopped"] {
+    background: rgba(151,117,250,0.18); color: #b197fc;
+  }
+  /* v1.100.0 — API/turn 에러로 종료. 빨강. */
+  #busy-badge[data-state="error"] {
     background: rgba(255,107,107,0.18); color: #ff8787;
   }
   /* v1.84.0 — 백그라운드 작업 진행 카드 패널. */
@@ -2110,8 +2121,11 @@ $automationPanelHtml
       // v0.98.0 — 서버 측 busy 전이 알림. 다중 탭/디바이스 + 다른 클라이언트의 prompt
       // 발송 시점 sync. 로컬 inFlight 와 항상 같은 값으로 수렴.
       // v1.83.0 — state="stopped"(rate-limit 재시도 소진/취소/크래시) 면 "중단됨" 뱃지.
+      // v1.100.0 — waiting(백그라운드 대기, 노랑) / error(API·turn 에러, 빨강) 도 분기.
       setInFlight(!!f.busy);
       if (f.state === 'stopped') showStopped();
+      else if (f.state === 'waiting') showWaiting();
+      else if (f.state === 'error') showError();
     } else if (t === 'console_background_task') {
       // v1.84.0 — 백그라운드 작업(Bash run_in_background) 진행 카드.
       handleBgTask(f);
@@ -2264,7 +2278,9 @@ $automationPanelHtml
   var busyBadge = document.getElementById('busy-badge');
   var BUSY_RESPONDING = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.busy.responding"))};
   var BUSY_IDLE = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.busy.idle"))};
+  var BUSY_WAITING = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.busy.waiting"))};
   var BUSY_STOPPED = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.busy.stopped"))};
+  var BUSY_ERROR = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.busy.error"))};
   var BUSY_QUEUED_TPL = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.busy.responding.queued", "___N___"))};
   var QUEUE_ADDED_TPL = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.queue.added", "___N___", "___PREVIEW___"))};
   var QUEUE_DRAINING = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.queue.draining"))};
@@ -2290,6 +2306,19 @@ $automationPanelHtml
     if (!busyBadge) return;
     busyBadge.dataset.state = 'stopped';
     busyBadge.textContent = BUSY_STOPPED;
+  }
+  // v1.100.0 — 백그라운드 작업 진행 중 turn 재개 대기(노랑). busy 는 true 유지 →
+  // setInFlight(true) 가 'responding' 으로 세팅한 직후 호출돼 'waiting' 으로 덮어쓴다.
+  function showWaiting() {
+    if (!busyBadge) return;
+    busyBadge.dataset.state = 'waiting';
+    busyBadge.textContent = BUSY_WAITING;
+  }
+  // v1.100.0 — API/turn 에러 종료(빨강). cancel/crash 의 '중단됨'(보라) 과 색 구분.
+  function showError() {
+    if (!busyBadge) return;
+    busyBadge.dataset.state = 'error';
+    busyBadge.textContent = BUSY_ERROR;
   }
   // v1.84.0 — 백그라운드 작업 카드 패널. task_started → 카드 추가(실행 중 spinner),
   // task_updated/notification 의 status 가 종료(completed/failed)면 ✓/✗ 후 6초 뒤 제거.
