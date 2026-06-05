@@ -1489,6 +1489,8 @@ internal object MessagesKo {
         "console.busy.stopped" to "■ 중단됨",
         "console.busy.error" to "✕ 에러",
         "console.bgtasks.title" to "백그라운드 작업",
+        "console.bgtasks.collapsedCount" to "진행 중 {n}개",
+        "console.bgtasks.toggleHint" to "접기 / 펼치기",
         "console.message.expand" to "⌄ 더보기",
         "console.message.collapse" to "⌃ 접기",
         "console.busy.responding.queued" to "● 응답중 (대기 %s)",

@@ -1511,6 +1511,8 @@ internal object MessagesEn {
         "console.busy.stopped" to "■ Stopped",
         "console.busy.error" to "✕ Error",
         "console.bgtasks.title" to "Background tasks",
+        "console.bgtasks.collapsedCount" to "{n} running",
+        "console.bgtasks.toggleHint" to "Collapse / expand",
         "console.message.expand" to "⌄ Show more",
         "console.message.collapse" to "⌃ Show less",
         "console.busy.responding.queued" to "● Responding (%s queued)",

@@ -1323,7 +1323,19 @@ $errHtml
     margin-bottom:8px; border:1px solid #2a3a2a; border-radius:8px;
     background:rgba(105,219,124,0.05); padding:8px 10px;
   }
-  .bg-tasks-head { font-size:11px; color:var(--text-dim,#888); margin-bottom:6px; font-weight:600; }
+  /* v1.105.1 — 헤더 클릭으로 접기/펼치기. 접으면 진행 중 개수만 표시. */
+  .bg-tasks-head {
+    font-size:11px; color:var(--text-dim,#888); margin-bottom:6px; font-weight:600;
+    display:flex; align-items:center; gap:6px; cursor:pointer; user-select:none;
+  }
+  .bg-tasks-caret { display:inline-block; transition:transform 0.15s; font-size:10px; }
+  .bg-tasks-count {
+    margin-left:auto; font-weight:600; color:#69db7c; font-family:monospace;
+    background:rgba(105,219,124,0.12); border-radius:10px; padding:1px 8px;
+  }
+  .bg-tasks.collapsed { margin-bottom:8px; }
+  .bg-tasks.collapsed .bg-tasks-head { margin-bottom:0; }
+  .bg-tasks.collapsed #bg-tasks-list { display:none; }
   .bg-task-card {
     display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:6px;
     background:rgba(255,255,255,0.03); margin-top:4px; font-size:12px;
@@ -1488,7 +1500,12 @@ $authBannerHtml
 <!-- v1.84.0 — 백그라운드 작업(Bash run_in_background 등) 진행 카드. 실행 중인 task 가
      있을 때만 표시. claude 가 작업을 띄우고 turn 을 끝내도 진행 상황을 알 수 있게 한다. -->
 <div id="bg-tasks" class="bg-tasks" hidden>
-  <div class="bg-tasks-head">⚙ <span id="bg-tasks-title">${esc(t("console.bgtasks.title"))}</span></div>
+  <div class="bg-tasks-head" id="bg-tasks-head" role="button" tabindex="0"
+       title="${esc(t("console.bgtasks.toggleHint"))}" aria-expanded="true">
+    <span class="bg-tasks-caret" id="bg-tasks-caret">▾</span>
+    <span>⚙ <span id="bg-tasks-title">${esc(t("console.bgtasks.title"))}</span></span>
+    <span class="bg-tasks-count" id="bg-tasks-count" hidden></span>
+  </div>
   <div id="bg-tasks-list"></div>
 </div>
 
@@ -2349,10 +2366,49 @@ $automationPanelHtml
   // task_updated/notification 의 status 가 종료(completed/failed)면 ✓/✗ 후 6초 뒤 제거.
   var bgTasks = {};  // taskId -> { el, status }
   var BG_TYPE_LABELS = { local_bash: 'shell' };
+  // v1.105.1 — 백그라운드 작업 패널 접기/펼치기. 접으면 진행 중 개수만 표시(localStorage 영속).
+  var BG_COUNT_TMPL = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.bgtasks.collapsedCount"))};
+  var bgCollapsed = false;
+  try { bgCollapsed = localStorage.getItem('vibeBgTasksCollapsed') === '1'; } catch (e) {}
+  function bgRunningCount() {
+    var n = 0;
+    for (var k in bgTasks) { if (bgTasks[k] && bgTasks[k].status === 'running') n++; }
+    return n;
+  }
+  function applyBgCollapsed() {
+    var p = document.getElementById('bg-tasks');
+    if (!p) return;
+    p.classList.toggle('collapsed', bgCollapsed);
+    var head = document.getElementById('bg-tasks-head');
+    if (head) head.setAttribute('aria-expanded', bgCollapsed ? 'false' : 'true');
+    var caret = document.getElementById('bg-tasks-caret');
+    if (caret) caret.textContent = bgCollapsed ? '▸' : '▾';
+    var cnt = document.getElementById('bg-tasks-count');
+    if (cnt) {
+      if (bgCollapsed) { cnt.textContent = BG_COUNT_TMPL.replace('{n}', String(bgRunningCount())); cnt.hidden = false; }
+      else { cnt.hidden = true; }
+    }
+  }
+  function toggleBgCollapsed() {
+    bgCollapsed = !bgCollapsed;
+    try { localStorage.setItem('vibeBgTasksCollapsed', bgCollapsed ? '1' : '0'); } catch (e) {}
+    applyBgCollapsed();
+  }
+  (function initBgCollapse() {
+    var head = document.getElementById('bg-tasks-head');
+    if (head) {
+      head.addEventListener('click', toggleBgCollapsed);
+      head.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleBgCollapsed(); }
+      });
+    }
+    applyBgCollapsed();
+  })();
   function bgIcon(status) { return status === 'completed' ? '✓' : (status === 'failed' ? '✗' : '●'); }
   function refreshBgPanel() {
     var p = document.getElementById('bg-tasks');
     if (p) p.hidden = Object.keys(bgTasks).length === 0;
+    applyBgCollapsed();
   }
   function bgMeta(f) {
     var parts = [BG_TYPE_LABELS[f.taskType] || f.taskType || 'task', String(f.taskId).slice(0, 8)];
@@ -2394,6 +2450,7 @@ $automationPanelHtml
         : ((st === 'failed' || st === 'error' || st === 'killed') ? 'failed' : 'completed');
       rec2.el.dataset.status = rec2.status;
       rec2.el.querySelector('.bg-task-icon').textContent = bgIcon(rec2.status);
+      applyBgCollapsed();  // 진행 중 개수 즉시 갱신(접힌 상태에서 표시).
       if (!active) {
         var tid = f.taskId;
         setTimeout(function() {
