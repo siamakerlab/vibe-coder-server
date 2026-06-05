@@ -461,6 +461,10 @@ fun Routing.webProjectRoutes(
                 csrf = sess.csrf,
                 starterPrompt = starterPrompt,
                 initialHistory = history,
+                model = sessionManager.effectiveModel(id),
+                contextTokens = sessionManager.lastContextTokens(id),
+                contextWarnTokens = sessionManager.contextWarnTokens(),
+                mcpStrict = sessionManager.isMcpStrict(id),
                 lang = sess.language,
                 embed = call.isEmbeddedRequest(),
             ),
@@ -479,6 +483,47 @@ fun Routing.webProjectRoutes(
         log.info { "console reset: $id by ${sess.username}" }
         authDeps.audit.consoleNew(sess.userId, id, call.request.origin.remoteHost)
         // v0.13.0 — scratch 는 /chat. v1.54.0 — chat 세션은 /chat?c=<id> (사이드바 유지).
+        val target = when {
+            id == ProjectService.SCRATCH_ID -> "/chat"
+            ProjectService.isChatGhost(id) -> "/chat?c=${id.encodeUrl()}"
+            else -> "/projects/$id/console"
+        }
+        call.respondRedirect(target)
+    }
+
+    // v1.106.0 — 프로젝트별 Claude 모델 설정(토큰 사용량 레버). 유휴면 즉시 재시작(세션 유지),
+    // busy 면 다음 turn 부터 적용. 값: sonnet / opus / haiku / default / 전체 모델 ID.
+    post("/projects/{id}/console/model") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireWriteAccessOrRedirect(sess)) return@post
+        val form = requireCsrf()
+        val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
+        val model = form["model"]?.trim().orEmpty()
+        runCatching { sessionManager.setProjectModelAndRestart(id, model) }
+            .onFailure { log.warn(it) { "set model failed for $id" } }
+        log.info { "console model set: $id -> '${model.ifBlank { "default" }}' by ${sess.username}" }
+        val target = when {
+            id == ProjectService.SCRATCH_ID -> "/chat"
+            ProjectService.isChatGhost(id) -> "/chat?c=${id.encodeUrl()}"
+            else -> "/projects/$id/console"
+        }
+        call.respondRedirect(target)
+    }
+
+    // v1.106.0 (P1-a) — 프로젝트 MCP 최소화 토글. on = 전역 MCP 무시(프로젝트 .mcp.json 만/없으면 0개)
+    // → 매 세션 캐시 프리픽스 축소. 유휴면 즉시 재시작(세션 유지), busy 면 다음 turn 부터.
+    post("/projects/{id}/console/mcp-strict") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireWriteAccessOrRedirect(sess)) return@post
+        val form = requireCsrf()
+        val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
+        val enabled = form["enabled"]?.equals("true", ignoreCase = true) == true ||
+            form["enabled"]?.equals("on", ignoreCase = true) == true
+        runCatching { sessionManager.setMcpStrictAndRestart(id, enabled) }
+            .onFailure { log.warn(it) { "set mcp-strict failed for $id" } }
+        log.info { "console mcp-strict set: $id -> $enabled by ${sess.username}" }
         val target = when {
             id == ProjectService.SCRATCH_ID -> "/chat"
             ProjectService.isChatGhost(id) -> "/chat?c=${id.encodeUrl()}"
@@ -1300,6 +1345,10 @@ fun Routing.webProjectRoutes(
                 initialHistory = history,
                 chatSidebar = sidebar,
                 chatTitle = activeTitle,
+                model = sessionManager.effectiveModel(p.id),
+                contextTokens = sessionManager.lastContextTokens(p.id),
+                contextWarnTokens = sessionManager.contextWarnTokens(),
+                mcpStrict = sessionManager.isMcpStrict(p.id),
                 lang = sess.language,
             ),
             ContentType.Text.Html,

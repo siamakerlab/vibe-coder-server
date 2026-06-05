@@ -96,6 +96,16 @@ object ConfigLoader {
                 current = current.copy(security = current.security.copy(sessionIdleTimeoutMinutes = it.coerceAtLeast(0)))
             }
 
+        // v1.106.0 — Claude 기본 모델 env override. 토큰 사용량 최대 레버(Opus→Sonnet).
+        // server.yml 수정 없이 compose env 로 조정. "sonnet"/"opus"/"haiku"/모델ID/"default".
+        System.getenv("VIBECODER_CLAUDE_MODEL")?.trim()?.takeIf { it.isNotBlank() }?.let {
+            current = current.copy(claude = current.claude.copy(model = it))
+        }
+        System.getenv("VIBECODER_CLAUDE_CONTEXT_WARN_TOKENS")?.takeIf { it.isNotBlank() }
+            ?.toIntOrNull()?.let {
+                current = current.copy(claude = current.claude.copy(contextWarnTokens = it.coerceAtLeast(0)))
+            }
+
         return current
     }
 

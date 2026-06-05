@@ -204,6 +204,9 @@ class ClaudeSessionManager(
         terminateSession(projectId)
         clearTurnActive(projectId)  // v1.82.0 — 새 세션 시작 → 이전 미완 turn 마크 버림.
         runCatching { sessionIdFile(projectId).deleteIfExists() }
+        // v1.106.0 — 컨텍스트 리셋 → 누적 토큰/경고 플래그도 초기화.
+        runCatching { contextTokensFile(projectId).deleteIfExists() }
+        sessions[projectId]?.let { it.lastContextTokens = 0; it.contextWarned = false }
         hub.resetConsole(topic(projectId))
         emitSystem(projectId, "new_session_requested", "Session reset. The next prompt starts a fresh conversation.")
         fireInterrupt(projectId, "new_session")
@@ -227,6 +230,16 @@ class ClaudeSessionManager(
                     runCatching {
                         emitSystem(pid, "turn_resume_giveup",
                             "서버 재시작 후 자동 재개가 ${MAX_BOOT_RESUME_RETRIES}회를 초과했습니다. 직접 이어서 진행해 주세요.")
+                    }
+                    continue
+                }
+                // v1.106.0 (P1-b) — 컨텍스트가 임계 초과면 자동 재개 보류(매 turn 거대한 맥락을
+                // 사용자 부재중 자동 과금하는 것을 방지). 사용자가 직접 이어가거나 리셋하도록 안내.
+                if (autoResumeBlockedByContext(pid)) {
+                    clearTurnActive(pid)
+                    runCatching {
+                        emitSystem(pid, "turn_resume_skipped_large_context",
+                            "컨텍스트가 커서(약 ${lastContextTokens(pid) / 1000}K) 자동 재개를 보류했습니다 — 직접 이어가거나 '새 세션(컨텍스트 리셋)' 하세요.")
                     }
                     continue
                 }
@@ -360,6 +373,18 @@ class ClaudeSessionManager(
             add("--output-format"); add("stream-json")
             add("--input-format"); add("stream-json")
             add("--verbose")
+            // v1.106.0 — 모델 명시(토큰 사용량 최대 레버). 프로젝트 override → 전역 config.
+            // 빈 문자열/"default" 면 --model 미전달(CLI 기본값). 운영 기본은 Sonnet.
+            val model = effectiveModel(projectId)
+            if (model.isNotBlank()) { add("--model"); add(model) }
+            // v1.106.0 (P1-a) — MCP 최소화. strict 면 전역 ~/.claude/.mcp.json 무시하고
+            // 프로젝트 .mcp.json(있으면)만, 없으면 빈 설정 → MCP 툴 스키마 프리픽스 축소.
+            if (isMcpStrict(projectId)) {
+                val projMcp = projectRoot.resolve(".mcp.json")
+                val cfg = if (projMcp.exists()) projMcp else emptyMcpConfigFile(projectId)
+                add("--strict-mcp-config")
+                add("--mcp-config"); add(cfg.toString())
+            }
             // v0.12.2 — vibe-coder 의 비인터랙티브 환경은 권한 prompt 응답 불가.
             // bypassPermissions 를 spawn 인자로 강제 (.claude/settings.json 누락
             // 케이스에서도 안전). CLAUDE.md §3 의 sandbox 정책과 일관.
@@ -505,6 +530,24 @@ class ClaudeSessionManager(
                     s.lastActivity = Instant.now()
                 }
             }
+            // v1.106.0 — usage 의 cache_read = 현재 컨텍스트 크기. 세션/파일에 저장해
+            // 콘솔 표시(P0-b)·자동재개 가드(P1-b)에 사용. 임계 초과 시 1회 경고.
+            if (event is ClaudeEvent.UsageReport) {
+                event.cacheReadInputTokens?.let { ctx ->
+                    sessions[projectId]?.lastContextTokens = ctx
+                    runCatching { writeContextTokens(projectId, ctx) }
+                    val warn = config.claude.contextWarnTokens
+                    val s = sessions[projectId]
+                    if (warn > 0 && ctx >= warn && s != null && !s.contextWarned) {
+                        s.contextWarned = true
+                        emitSystem(
+                            projectId, "context_large",
+                            "⚠ 컨텍스트가 약 ${ctx / 1000}K 토큰입니다 — 이어가는 동안 매 turn 전체 맥락이 과금됩니다. " +
+                                "비용을 크게 줄이려면 '새 세션(컨텍스트 리셋)' 을 권장합니다.",
+                        )
+                    }
+                }
+            }
             // v1.83.0 — claude 가 host stdin 없이 자발적으로 turn 을 재개(background task
             // 완료 후 자동 속행 등)하면 sendPrompt 를 안 거쳐 busy 가 false 인 채로 프레임만
             // 흐른다 → 뱃지가 "대기중" 인데 실제론 작업이 진행되는 고착 상태. 활동 프레임
@@ -607,6 +650,20 @@ class ClaudeSessionManager(
             // v1.99.0 — permit 반환 + 자동화 중단(다른 종료 경로와 짝 맞춤 — 좀비 방지).
             gate.release(projectId); fireInterrupt(projectId, "rate_limit_session_gone")
             setBusy(projectId, false, "stopped"); return
+        }
+        // v1.106.0 (P1-b) — 컨텍스트가 임계 초과면 rate-limit 자동 재개도 보류.
+        // 거대한 맥락을 백오프 후 반복 자동 과금하는 것을 막는다(사용자가 직접 재개/리셋).
+        if (autoResumeBlockedByContext(projectId)) {
+            session.rateLimitRetry = 0
+            session.retryJob?.cancel(); session.retryJob = null
+            gate.release(projectId)
+            clearTurnActive(projectId)
+            setBusy(projectId, false, "stopped")
+            fireInterrupt(projectId, "rate_limit_skipped_large_context")
+            emitSystem(projectId, "rate_limit_skipped_large_context",
+                "rate limit 발생 — 컨텍스트가 커서(약 ${lastContextTokens(projectId) / 1000}K) 자동 재개를 보류했습니다. " +
+                "직접 이어가거나 '새 세션(컨텍스트 리셋)' 하세요.")
+            return
         }
         val attempt = session.rateLimitRetry + 1
         if (attempt > MAX_RATE_LIMIT_RETRIES) {
@@ -804,6 +861,115 @@ class ClaudeSessionManager(
         f.writeText(id)
     }
 
+    // ── v1.106.0 — 프로젝트별 모델 override (.vibecoder/claude-model) ──
+    private fun modelFile(projectId: String): Path =
+        workspace.vibecoderDir(projectId).resolve("claude-model")
+
+    /** 프로젝트별 override 모델(없으면 null = 전역 기본 사용). */
+    fun readProjectModel(projectId: String): String? {
+        val f = modelFile(projectId)
+        return if (f.exists()) f.readText().trim().ifBlank { null } else null
+    }
+
+    /**
+     * 프로젝트별 모델 설정. 공백/"default" = override 해제(전역 기본 사용).
+     * 살아있는 프로세스는 건드리지 않으므로 **다음 세션 spawn(유휴 재개·새 세션)부터 적용**.
+     */
+    fun setProjectModel(projectId: String, model: String?) {
+        val f = modelFile(projectId)
+        val v = model?.trim().orEmpty()
+        runCatching {
+            if (v.isBlank() || v.equals("default", ignoreCase = true)) {
+                f.deleteIfExists()
+            } else {
+                Files.createDirectories(f.parent)
+                f.writeText(v)
+            }
+        }.onFailure { log.warn(it) { "[$projectId] claude-model 저장 실패" } }
+    }
+
+    /**
+     * v1.106.0 — 모델 설정 후, 유휴(살아있지만 비-busy)면 프로세스를 종료(session-id 보존)해
+     * 다음 prompt 가 같은 대화를 **새 모델로** resume 하게 한다. busy 면 파일만 기록(현재 turn
+     * 종료 후 다음 spawn 부터 적용).
+     */
+    suspend fun setProjectModelAndRestart(projectId: String, model: String?) {
+        setProjectModel(projectId, model)
+        if (isAlive(projectId) && !isBusy(projectId)) {
+            runCatching { terminateSession(projectId) }
+                .onFailure { log.warn(it) { "[$projectId] 모델 변경 후 재시작 실패" } }
+        }
+    }
+
+    /**
+     * 실제 적용될 모델: 프로젝트 override → 전역 [ServerConfig.claude].model.
+     * 공백/"default" 면 빈 문자열 반환(= --model 미전달, CLI 기본값).
+     */
+    fun effectiveModel(projectId: String): String {
+        val raw = readProjectModel(projectId) ?: config.claude.model
+        return if (raw.isBlank() || raw.equals("default", ignoreCase = true)) "" else raw.trim()
+    }
+
+    // ── v1.106.0 — 컨텍스트 크기(직전 turn cache_read) 영속 ──
+    private fun contextTokensFile(projectId: String): Path =
+        workspace.vibecoderDir(projectId).resolve("claude-context-tokens")
+
+    private fun writeContextTokens(projectId: String, tokens: Long) {
+        val f = contextTokensFile(projectId)
+        Files.createDirectories(f.parent)
+        f.writeText(tokens.toString())
+    }
+
+    /** 메모리 세션값 → 없으면 파일(서버 재시작 후) → 둘 다 없으면 0. */
+    fun lastContextTokens(projectId: String): Long {
+        sessions[projectId]?.lastContextTokens?.takeIf { it > 0 }?.let { return it }
+        val f = contextTokensFile(projectId)
+        return if (f.exists()) f.readText().trim().toLongOrNull() ?: 0 else 0
+    }
+
+    /** v1.106.0 (P1-b) — 컨텍스트가 경고 임계 이상이면 자동 재개 보류 대상. */
+    private fun autoResumeBlockedByContext(projectId: String): Boolean {
+        val warn = config.claude.contextWarnTokens
+        return warn > 0 && lastContextTokens(projectId) >= warn
+    }
+
+    /** v1.106.0 — 콘솔 표시용 컨텍스트 경고 임계(토큰). 0=비활성. */
+    fun contextWarnTokens(): Int = config.claude.contextWarnTokens
+
+    // ── v1.106.0 (P1-a) — MCP 최소화(strict). 전역 ~/.claude/.mcp.json 의 5개 서버
+    //    툴 스키마가 매 세션 캐시 프리픽스에 포함되어 토큰을 늘린다. strict 면 전역을
+    //    무시하고 프로젝트 .mcp.json(있으면)만, 없으면 빈 설정 → MCP 0개로 프리픽스 축소.
+    private fun mcpStrictFile(projectId: String): Path =
+        workspace.vibecoderDir(projectId).resolve("mcp-strict")
+
+    fun isMcpStrict(projectId: String): Boolean = mcpStrictFile(projectId).exists()
+
+    fun setMcpStrict(projectId: String, enabled: Boolean) {
+        val f = mcpStrictFile(projectId)
+        runCatching {
+            if (enabled) { Files.createDirectories(f.parent); f.writeText("1") }
+            else f.deleteIfExists()
+        }.onFailure { log.warn(it) { "[$projectId] mcp-strict 저장 실패" } }
+    }
+
+    /** 설정 후 유휴면 재시작(세션 유지) → 다음 prompt 부터 적용. */
+    suspend fun setMcpStrictAndRestart(projectId: String, enabled: Boolean) {
+        setMcpStrict(projectId, enabled)
+        if (isAlive(projectId) && !isBusy(projectId)) {
+            runCatching { terminateSession(projectId) }
+                .onFailure { log.warn(it) { "[$projectId] MCP 설정 후 재시작 실패" } }
+        }
+    }
+
+    private fun emptyMcpConfigFile(projectId: String): Path {
+        val f = workspace.vibecoderDir(projectId).resolve("mcp-empty.json")
+        runCatching {
+            Files.createDirectories(f.parent)
+            if (!f.exists()) f.writeText("{\"mcpServers\":{}}")
+        }
+        return f
+    }
+
     // ── v1.82.0 — turn-active 영속 마크 (서버 재시작으로 끊긴 미완 turn 자동 재개용) ──
     // 존재 = "이 프로젝트에 정상 완료되지 않은 turn 이 있음". 파일 내용 = 부팅 자동 재개 횟수.
     // busy 는 메모리라 재시작 시 사라지므로, 영속 파일로 미완 여부를 남긴다.
@@ -875,6 +1041,10 @@ class ClaudeSessionManager(
          */
         val outstandingBgTasks: MutableSet<String> =
             java.util.concurrent.ConcurrentHashMap.newKeySet(),
+        /** v1.106.0 — 직전 turn 의 cache_read 토큰(≈현재 컨텍스트 크기). 0=미측정. */
+        @Volatile var lastContextTokens: Long = 0,
+        /** v1.106.0 — 컨텍스트 임계 경고를 이 세션에서 이미 1회 emit 했는지(노이즈 방지). */
+        @Volatile var contextWarned: Boolean = false,
     )
 
     /**
