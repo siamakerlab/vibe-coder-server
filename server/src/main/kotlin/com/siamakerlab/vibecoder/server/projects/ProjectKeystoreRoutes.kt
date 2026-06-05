@@ -170,15 +170,79 @@ fun Routing.projectKeystoreRoutes(
             call.respondRedirect("/projects?err=${enc("프로젝트 '$id' 를 찾을 수 없습니다.")}")
             return@post
         }
+        // v1.105.0 — 저장 직후 "앱 적용" 프롬프트를 콘솔에 전송하므로, 업로드와 동일하게
+        // 콘솔이 유휴일 때만 허용한다(저장 버튼도 busy 시 비활성). 렌더~제출 사이 race 방어.
+        if (!consoleIdle(id)) {
+            call.respondRedirect(
+                "/projects/$id/keystore?err=${enc("콘솔이 작업 중입니다 — 유휴 상태에서 다시 시도하세요 (저장 직후 앱 적용 프롬프트를 전송하기 때문).")}",
+            )
+            return@post
+        }
         val ids = admobFromForm(form)
         val result = runCatching { keystore.saveAdmob(p.packageName, ids) }
-        if (result.isSuccess) {
-            val msg = if (ids.isBlank) "AdMob ID 모두 비워 삭제됨" else "AdMob ID 저장됨"
-            call.respondRedirect("/projects/$id/keystore?ok=${enc(msg)}")
-        } else {
+        if (!result.isSuccess) {
             val reason = result.exceptionOrNull()?.message ?: "save_failed"
             log.warn(result.exceptionOrNull()) { "admob save failed: $id / ${p.packageName}" }
             call.respondRedirect("/projects/$id/keystore?err=${enc("AdMob 저장 실패: $reason")}")
+            return@post
+        }
+        // 모두 비웠으면 삭제만 (적용할 광고 ID 가 없으므로 콘솔 프롬프트 미발사).
+        if (ids.isBlank) {
+            call.respondRedirect("/projects/$id/keystore?ok=${enc("AdMob ID 모두 비워 삭제됨")}")
+            return@post
+        }
+        // 저장된 광고 ID 를 앱(build.gradle.kts + AndroidManifest + 광고제거 구매)에 적용하도록
+        // 콘솔 프롬프트 발사. 광고 ID 원본은 <pkg>-admob.properties 가 단일 진실.
+        val admobPropsPath = keystore.keystoreDirPath().resolve("${p.packageName}-admob.properties")
+        val prompt = buildApplyAdmobPrompt(p.id, p.moduleName, p.packageName, admobPropsPath, ids)
+        val sent = runCatching { sessionManager.sendPrompt(id, prompt) }
+            .onFailure { log.warn(it) { "apply-admob prompt failed for $id / ${p.packageName}" } }
+            .isSuccess
+        if (sent) {
+            call.respondRedirect(
+                "/projects/$id/keystore?ok=${enc("AdMob ID 저장됨 — 앱 적용(광고 + 광고제거 구매) 요청을 Claude 콘솔로 보냈습니다. 콘솔 탭에서 진행 상황을 확인하세요.")}",
+            )
+        } else {
+            call.respondRedirect(
+                "/projects/$id/keystore?err=${enc("AdMob ID 는 저장됐으나 콘솔 프롬프트 전송에 실패했습니다 — 콘솔이 유휴 상태인지 확인 후 다시 시도하세요.")}",
+            )
+        }
+    }
+
+    // v1.105.0 — 저장 없이, 이미 저장된 AdMob 광고 ID 로 "앱 적용" 프롬프트만 콘솔에 보낸다.
+    // (저장 버튼이 콘솔 busy 였거나, 코드 변경 후 재적용하고 싶을 때 사용.) 콘솔 유휴 + 저장된 ID 필수.
+    post("/projects/{id}/keystore/admob/apply") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireWriteAccessOrRedirect(sess)) return@post
+        requireCsrf()
+        val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
+        val p = runCatching { projects.get(id) }.getOrElse {
+            call.respondRedirect("/projects?err=${enc("프로젝트 '$id' 를 찾을 수 없습니다.")}")
+            return@post
+        }
+        if (!consoleIdle(id)) {
+            call.respondRedirect("/projects/$id/keystore?err=${enc("콘솔이 작업 중입니다 — 유휴 상태에서 다시 시도하세요.")}")
+            return@post
+        }
+        val ids = runCatching { keystore.readAdmob(p.packageName) }.getOrDefault(AdmobIds())
+        if (ids.isBlank) {
+            call.respondRedirect("/projects/$id/keystore?err=${enc("저장된 AdMob 광고 ID 가 없습니다 — 먼저 광고 ID 를 저장하세요.")}")
+            return@post
+        }
+        val admobPropsPath = keystore.keystoreDirPath().resolve("${p.packageName}-admob.properties")
+        val prompt = buildApplyAdmobPrompt(p.id, p.moduleName, p.packageName, admobPropsPath, ids)
+        val sent = runCatching { sessionManager.sendPrompt(id, prompt) }
+            .onFailure { log.warn(it) { "apply-admob (manual) prompt failed for $id / ${p.packageName}" } }
+            .isSuccess
+        if (sent) {
+            call.respondRedirect(
+                "/projects/$id/keystore?ok=${enc("앱 적용(광고 + 광고제거 구매) 요청을 Claude 콘솔로 보냈습니다. 콘솔 탭에서 진행 상황을 확인하세요.")}",
+            )
+        } else {
+            call.respondRedirect(
+                "/projects/$id/keystore?err=${enc("콘솔 프롬프트 전송에 실패했습니다 — 콘솔이 유휴 상태인지 확인 후 다시 시도하세요.")}",
+            )
         }
     }
 
@@ -311,6 +375,108 @@ private fun multi(form: io.ktor.http.Parameters, name: String): List<String> =
         .map { it.trim() }
         .filter { it.isNotBlank() }
         .distinct()
+
+/**
+ * v1.105.0 — 저장된 AdMob 광고 ID 를 앱에 "공식문서 최신 권장 방식"으로 적용하고, 광고가
+ * 하나라도 있으면 광고 제거 인앱결제(설정 화면)까지 함께 추가하도록 Claude 콘솔에 보내는 프롬프트.
+ *
+ * 광고 ID 원본은 `<pkg>-admob.properties` (단일 진실). 빌드 스크립트가 그 파일을 로드해 주입한다.
+ * 버전/코드는 의도적으로 고정하지 않고 "공식문서 확인 후 최신 적용"을 지시한다(시간이 지나도 최신 유지).
+ */
+private fun buildApplyAdmobPrompt(
+    projectId: String,
+    moduleName: String,
+    packageName: String,
+    admobPropsPath: java.nio.file.Path,
+    ids: AdmobIds,
+): String {
+    val appIdLine = if (ids.appId.isNotBlank()) ids.appId
+        else "(없음 — 미설정/디버그 시 Google 공식 테스트 App ID 사용)"
+    return """
+[vibe-coder-server / AdMob 광고 + 광고제거 인앱결제 자동 적용]
+
+프로젝트 `$projectId` 의 안드로이드 모듈 `$moduleName` 에 아래 AdMob 광고를 **공식문서 최신 권장
+방식**으로 적용하고, 광고가 하나라도 적용되면 **광고 제거 인앱결제 기능도 함께** 추가해 주세요.
+
+대상 패키지: $packageName
+광고 ID 원본(단일 진실): `$admobPropsPath`
+  (key=value 형식, 다중 unit ID 는 콤마(,) 구분 — 빌드 스크립트에서 split(",") 로 분리)
+
+저장된 값 요약:
+- App ID            : $appIdLine
+- 배너               : ${ids.bannerUnitIds.size}개
+- 앱 오프닝          : ${ids.appOpenUnitIds.size}개
+- 네이티브           : ${ids.nativeUnitIds.size}개
+- 전면(Interstitial) : ${ids.interstitialUnitIds.size}개
+- 보상형             : ${ids.rewardedUnitIds.size}개
+- 보상형 전면        : ${ids.rewardedInterstitialUnitIds.size}개
+
+────────────────────────────────────────
+■ 공통 원칙 (반드시 준수)
+1. 최신화: 작업 전 **공식 문서를 직접 확인**해 라이브러리 최신 stable 버전 + 최신 권장 API/초기화로
+   적용. 아래에 적는 코드/버전은 참고용이며, 공식문서가 더 최신이면 공식문서를 따르세요.
+   Deprecated/구버전 API 사용 금지.
+   - AdMob   : https://developers.google.com/admob/android/quick-start
+   - 적응형 배너: https://developers.google.com/admob/android/banner/anchored-adaptive
+   - Play Billing: https://developer.android.com/google/play/billing/integrate
+2. 광고 ID 하드코딩 금지 — 반드시 위 properties 파일을 build.gradle.kts 에서 로드해 주입:
+   ```kotlin
+   import java.util.Properties
+   import java.io.FileInputStream
+   val admobPropsFile = file("$admobPropsPath")
+   val admobProps = Properties().apply {
+       if (admobPropsFile.exists()) FileInputStream(admobPropsFile).use { load(it) }
+   }
+   ```
+   (groovy DSL 이면 동일 의미의 groovy 문법으로)
+3. 디버그 빌드는 **Google 공식 테스트 광고 ID** 사용(실광고 정책 위반 방지). 릴리즈만 실제 ID.
+4. GDPR/UMP 동의: 공식 User Messaging Platform(UMP) 최신 방식으로 동의 수집 후 광고 초기화.
+5. 광고/결제 로직은 레이어 분리 — Activity/Composable 에 비즈니스 로직 직접 작성 지양(전역 관리).
+
+────────────────────────────────────────
+■ App ID
+- defaultConfig.manifestPlaceholders 로 properties 의 admobAppId 를 주입(미설정 시 테스트 App ID),
+  `AndroidManifest.xml` <application> 안 meta-data 에 연결:
+  value 는 placeholder `${'$'}{admobAppId}` 사용, name 은 `com.google.android.gms.ads.APPLICATION_ID`.
+
+────────────────────────────────────────
+■ 하단 배너 — 적용 (적응형, 최하단 고정)
+- 공식 권장 **적응형 배너(anchored adaptive banner)** 로 적용 — 사이즈는 공식문서의 현재 권장 API 로
+  현재 창 너비 기준 계산(고정 320x50 금지).
+- **디바이스 최하단에 고정** 배치. 화면 이동 시 재생성하지 말고 전역 1개 인스턴스로 관리.
+
+────────────────────────────────────────
+■ 전면(Interstitial) — 적용 (폴더블 주의)
+- 최신 InterstitialAd API 로 미리 로드 후 적절한 시점에 표시(과도한 노출 금지).
+- **폴더블/멀티윈도우에서 광고 사이즈 오류가 나지 않도록, 광고를 띄우기 직전에 현재 디바이스/창
+  사이즈(접힘↔펼침/분할화면)를 확인**하고, 전환 직후 등 부적절하면 표시를 보류/재계산한 뒤 현재
+  Activity/Window 컨텍스트로 show.
+
+────────────────────────────────────────
+■ 그 외 광고 (앱 오프닝 / 네이티브 / 보상형 / 보상형 전면)
+- 배치 위치가 **애매하면 광고 ID 만 기록**(properties 로더 + BuildConfig 필드 주입까지만)하고,
+  실제 앱 내 노출 코드는 작성하지 마세요 — 사용자가 직접 배치합니다.
+- 배치가 명확한 경우에 한해 공식 권장 방식으로 적용해도 됩니다.
+
+────────────────────────────────────────
+■ 광고 제거 인앱결제 (필수 — 설정 화면)
+- 광고를 하나라도 적용하면 반드시 함께 추가.
+- Google Play Billing 라이브러리를 **공식문서 확인 후 최신 stable 버전**으로 추가하고, 최신 권장
+  결제 흐름(BillingClient)으로 구현.
+- 상품: **비소모성(one-time) "광고 제거"**. **상품 ID(productId/SKU)는 반드시 `remove_ads` 로 통일**
+  (Play Console 인앱 상품 등록 및 코드 조회 모두 동일 문자열 사용). 구매 완료 시 모든 광고(배너/전면/기타) 즉시 제거.
+- 앱 시작 시 구매 상태 자동 복원(queryPurchasesAsync). 신뢰 기준은 Play 결제 상태(로컬은 캐시).
+- 진입점: **앱 설정(Settings) 화면**에 "광고 제거" 항목 추가. 설정 화면이 이미 있으면 거기에 추가하고,
+  없으면 임의로 만들지 말고 가장 적합한 위치를 사용자에게 확인하세요.
+
+────────────────────────────────────────
+■ 규칙/제약
+- 변경은 안드로이드 모듈 `$moduleName` 범위로 한정. 어떤 파일에 무엇을 추가/변경했는지 diff 로 요약.
+- 이미 동일하게 적용돼 있으면 해당 항목은 "변경 없음" 으로 회신.
+- 빌드는 자동 실행하지 마세요 — 적용 후 사용자가 직접 assembleDebug/assembleRelease 실행 예정.
+- 먼저 변경 계획을 짧게 제시한 뒤 진행하세요.
+""".trim()
+}
 
 /** v1.94.0 — App ID(단일) + 6종 유형별 다중 unit ID 수집. blank 여부는 호출측에서 판단. */
 private fun admobFromForm(form: io.ktor.http.Parameters): AdmobIds =
@@ -446,14 +612,30 @@ internal object ProjectKeystoreTemplates {
 </script>"""
 
         // AdMob 관리 (접어두기 — 키스토어 유무와 독립) ------------------------------
+        // v1.105.0 — 저장 시 콘솔에 "앱 적용(광고+광고제거 구매)" 프롬프트를 발사하므로
+        // 콘솔이 유휴일 때만 저장 가능. busy 면 저장 버튼 비활성 + 안내.
         val admobOpen = if (hasAdmob(admob)) "open" else ""
+        val admobDisabled = if (consoleIdle) "" else "disabled"
+        // "적용 프롬프트만 보내기" 버튼: 콘솔 유휴 + 이미 저장된 광고 ID 가 있을 때만 활성.
+        val admobApplyDisabled = if (consoleIdle && hasAdmob(admob)) "" else "disabled"
+        val admobApplyTitle = when {
+            !consoleIdle -> "콘솔이 작업 중입니다"
+            !hasAdmob(admob) -> "저장된 광고 ID 가 없습니다 — 먼저 저장하세요"
+            else -> "저장된 광고 ID 로 앱 적용 프롬프트를 콘솔에 보냅니다"
+        }
+        val admobBusyNote = if (consoleIdle) "" else
+            """<div class="error" style="margin:0 0 10px">⚠ 콘솔이 작업 중입니다 — 유휴 상태가 되면 저장(앱 적용)할 수 있습니다.</div>"""
         val admobCard = """
 <details class="card" $admobOpen style="margin-bottom:14px">
   <summary style="cursor:pointer;font-weight:600">${esc(t("ks.admob.cardTitle"))}</summary>
   <p class="dim" style="font-size:12px;margin:8px 0 10px">
     ${esc(t("ks.admob.cardIntro"))}<br>
-    ${esc(t("ks.admob.savedAt"))}: <code>${esc(pkg)}-admob.properties</code>
+    ${esc(t("ks.admob.savedAt"))}: <code>${esc(pkg)}-admob.properties</code><br>
+    💡 저장하면 광고 ID 기록과 함께, 앱에 광고(적응형 하단 배너·전면)와 <b>광고 제거 인앱결제</b>까지
+    공식문서 최신 방식으로 적용하도록 Claude 콘솔에 요청합니다 (콘솔 유휴 시).
   </p>
+  $admobBusyNote
+  <form id="admob-apply-form" method="post" action="/projects/${esc(p.id)}/keystore/admob/apply" style="display:none">$csrfHidden</form>
   <form method="post" action="/projects/${esc(p.id)}/keystore/admob" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
     $csrfHidden
     <label style="grid-column:1/3">
@@ -463,8 +645,13 @@ internal object ProjectKeystoreTemplates {
     </label>
     $admobTypesHtml
     <p class="dim" style="grid-column:1/3;font-size:11px;margin:2px 0 0">${esc(t("ks.admob.multiHint"))}</p>
-    <div style="grid-column:1/3">
-      <button type="submit" class="primary">${esc(t("ks.admob.save"))}</button>
+    <div style="grid-column:1/3;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <button type="submit" form="admob-apply-form" $admobApplyDisabled
+              title="${esc(admobApplyTitle)}"
+              style="background:#1f2937;color:#cbd5e1;border:0;padding:8px 14px;border-radius:6px;cursor:pointer"
+              onclick="return confirm('저장된 AdMob 광고 ID 로 앱 적용(광고 + 광고제거 구매) 프롬프트를 Claude 콘솔에 보냅니다. 진행할까요?')">↗ 광고 적용 프롬프트 보내기</button>
+      <button type="submit" class="primary" $admobDisabled>${esc(t("ks.admob.save"))}</button>
+      <span class="dim" style="font-size:11px">저장 시에도 적용 프롬프트가 전송됩니다.</span>
     </div>
   </form>
 </details>
