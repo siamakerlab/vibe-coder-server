@@ -56,10 +56,9 @@ fun Routing.envFilesRoutes(authDeps: AdminRoutesDeps, projects: ProjectService, 
     post("/projects/{id}/env-files/save") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireWriteAccessOrRedirect(sess)) return@post
-        requireCsrf()
+        val params = requireCsrf()
         val id = call.parameters["id"]!!
         requireProjectAccessOrThrow(sess, projects, id)
-        val params = call.receiveParameters()
         val rel = params["rel"]?.trim().orEmpty()
         val body = params["body"].orEmpty()
         if (rel !in ENV_FILES_WHITELIST) {

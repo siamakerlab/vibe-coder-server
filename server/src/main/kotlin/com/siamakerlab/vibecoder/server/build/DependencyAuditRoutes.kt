@@ -52,10 +52,9 @@ fun Routing.dependencyAuditRoutes(authDeps: AdminRoutesDeps, projects: ProjectSe
     post("/projects/{id}/deps") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireWriteAccessOrRedirect(sess)) return@post
-        requireCsrf()
+        val form = requireCsrf()
         val id = call.parameters["id"]!!
         requireProjectAccessOrThrow(sess, projects, id)
-        val form = call.receiveParameters()
         val moduleName = form["module"]?.trim()?.ifBlank { null } ?: "app"
         val configuration = form["config"]?.trim()?.ifBlank { null } ?: "releaseRuntimeClasspath"
         call.respondRedirect("/projects/$id/deps?module=$moduleName&config=$configuration&run=1")

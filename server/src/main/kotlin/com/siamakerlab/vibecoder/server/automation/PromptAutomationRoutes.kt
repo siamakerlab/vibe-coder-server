@@ -138,10 +138,9 @@ fun Routing.promptAutomationRoutes(
     post("/projects/{id}/automation/prompts/start") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireWriteAccessOrRedirect(sess)) return@post
-        requireCsrf()
+        val form = requireCsrf()
         val id = call.parameters["id"]!!
         requireProjectAccessOrThrow(sess, projects, id)
-        val form = call.receiveParameters()
         val spec = runCatching {
             val presetId = form["presetId"]?.trim()?.ifBlank { null }
             if (presetId != null) {
@@ -186,10 +185,9 @@ fun Routing.promptAutomationRoutes(
     post("/projects/{id}/automation/prompts/presets") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireWriteAccessOrRedirect(sess)) return@post
-        requireCsrf()
+        val form = requireCsrf()
         val id = call.parameters["id"]!!
         requireProjectAccessOrThrow(sess, projects, id)
-        val form = call.receiveParameters()
         val req = PromptAutomationPresetUpsertDto(
             name = form["name"].orEmpty(),
             mode = form["mode"]?.trim().orEmpty().ifBlank { PromptAutomationMode.REPEAT },

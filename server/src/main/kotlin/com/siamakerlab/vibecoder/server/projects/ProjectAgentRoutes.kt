@@ -98,10 +98,9 @@ fun Routing.projectAgentRoutes(
     post("/projects/{id}/agent-defs/save") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireWriteAccessOrRedirect(sess)) return@post
-        requireCsrf()
+        val params = requireCsrf()
         val id = call.parameters["id"]!!
         requireProjectAccessOrThrow(sess, projects, id)
-        val params = call.receiveParameters()
         val name = params["name"]?.trim().orEmpty()
         val body = params["body"].orEmpty()
         runCatching { projectRegistry(id).write(name, body) }
