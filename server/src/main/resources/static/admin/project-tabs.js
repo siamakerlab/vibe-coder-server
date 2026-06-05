@@ -313,11 +313,12 @@
       }
       function updateRailContextMeter(d) {
         var el = document.getElementById('pt-ctx-meter'); if (!el) return;
+        var empty = document.getElementById('pt-ctx-empty');
         var input = Number(d.input) || 0, cacheRead = Number(d.cacheRead) || 0,
             cacheCreation = Number(d.cacheCreation) || 0, limit = Number(d.limit) || 0;
         var used = input + cacheRead + cacheCreation;
-        if (limit <= 0 || used <= 0) { el.hidden = true; return; }
-        el.hidden = false;
+        if (limit <= 0 || used <= 0) { el.hidden = true; if (empty) empty.hidden = false; return; }
+        el.hidden = false; if (empty) empty.hidden = true;
         var pct = Math.min(100, used / limit * 100);
         function w(x) { return (Math.max(0, x) / limit * 100) + '%'; }
         var r = el.querySelector('.ctx-seg-read'); if (r) r.style.width = w(cacheRead);
@@ -332,6 +333,19 @@
         el.title = '대화 컨텍스트 ' + ptCtxFmt(used) + ' / ' + ptCtxFmt(limit) + ' (' + Math.round(pct) +
           '%). 재사용 ' + ptCtxFmt(cacheRead) + ' · 신규캐시 ' + ptCtxFmt(cacheCreation) +
           ' · 입력 ' + ptCtxFmt(input) + '. 클수록 매 turn 비용↑ — 새 세션으로 리셋 가능.';
+      }
+      // v1.106.3 — /compact 버튼: 콘솔 iframe 에 vibe:send-prompt 로 '/compact' 전달
+      // (콘솔의 정상 전송 경로 사용 → busy 면 큐, 에코/미터 갱신 일관). 우측 rail 에 위치.
+      var compactBtn = document.getElementById('pt-compact-btn');
+      if (compactBtn) {
+        compactBtn.addEventListener('click', function () {
+          var cf = frameOf('console');
+          if (!cf || !cf.contentWindow) return;
+          if (!window.confirm('/compact 를 콘솔에 보냅니다 — 대화를 요약해 컨텍스트를 줄입니다(맥락 유지). 진행할까요?')) return;
+          cf.contentWindow.postMessage({ type: 'vibe:send-prompt', text: '/compact' }, location.origin);
+          compactBtn.classList.add('busy');
+          setTimeout(function () { compactBtn.classList.remove('busy'); }, 4000);
+        });
       }
       window.addEventListener('message', function (ev) {
         if (ev.origin !== location.origin) return;

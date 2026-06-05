@@ -1881,7 +1881,18 @@ $automationPanelHtml
   window.addEventListener('message', function (ev) {
     if (ev.origin !== location.origin) return;
     var d = ev.data;
-    if (!d || d.type !== 'pt:tab-visible' || !autoScrollOn) return;
+    if (!d) return;
+    // v1.106.3 — 부모 rail 의 /compact 버튼 등에서 프롬프트 전송 요청. 정상 제출 경로
+    // (form submit → busy 면 큐, 아니면 sendPrompt)로 보내 에코/미터 갱신을 일관 처리.
+    if (d.type === 'vibe:send-prompt' && typeof d.text === 'string' && d.text) {
+      if (input) {
+        input.value = d.text;
+        if (form && form.requestSubmit) form.requestSubmit();
+        else if (typeof sendPrompt === 'function') sendPrompt(d.text);
+      }
+      return;
+    }
+    if (d.type !== 'pt:tab-visible' || !autoScrollOn) return;
     pinBottomNow();
     requestAnimationFrame(pinBottomNow);
     [0, 50, 150].forEach(function (dl) { setTimeout(pinBottomNow, dl); });

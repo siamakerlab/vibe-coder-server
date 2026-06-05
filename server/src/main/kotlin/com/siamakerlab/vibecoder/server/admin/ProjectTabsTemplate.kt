@@ -131,14 +131,18 @@ internal object ProjectTabsTemplate {
         <div class="pt-ov-row"><span class="k">${esc(t("tabs.rail.prompts"))}</span><span class="v">${promptCount}</span></div>
       </div>
     </div>
-    <div class="pt-rail-card pt-hist-card">
-      <div class="pt-rail-h">${esc(t("tabs.rail.history"))}</div>
-      <!-- v1.106.2 — 컨텍스트 점유율 미터(프롬프트 히스토리 상단). 콘솔 iframe 이
-           vibe:context-usage postMessage 로 매 turn 갱신(project-tabs.js). -->
+    <!-- v1.106.3 — 컨텍스트 점유율 카드(독립, 프롬프트 히스토리 카드 위). 우상단 /compact 버튼.
+         콘솔 iframe 이 vibe:context-usage postMessage 로 매 turn 미터 갱신(project-tabs.js). -->
+    <div class="pt-rail-card pt-ctx-card">
+      <div class="pt-rail-h pt-ctx-head">
+        <span>${esc(t("tabs.rail.context"))}</span>
+        <button type="button" class="pt-compact-btn" id="pt-compact-btn"
+                title="${esc(t("tabs.rail.compact.hint"))}">/compact</button>
+      </div>
+      <div id="pt-ctx-empty" class="pt-ctx-empty">${esc(t("tabs.rail.context.empty"))}</div>
       <div id="pt-ctx-meter" class="pt-ctx-meter" hidden
            title="대화 컨텍스트 점유율 — 윈도우 한도 대비 사용/남음. 클수록 매 turn 비용↑.">
         <div class="pt-ctx-top">
-          <span class="pt-ctx-cap">컨텍스트</span>
           <span class="pt-ctx-text"><b id="pt-ctx-used">–</b> / <span id="pt-ctx-limit">–</span> · <span id="pt-ctx-pct">0%</span></span>
         </div>
         <div class="pt-ctx-bar">
@@ -148,6 +152,9 @@ internal object ProjectTabsTemplate {
         </div>
         <div class="pt-ctx-sub">남음 <span id="pt-ctx-free">–</span> <span class="pt-ctx-legend"><i class="ctx-seg-read"></i>재사용 <i class="ctx-seg-create"></i>신규 <i class="ctx-seg-input"></i>입력</span></div>
       </div>
+    </div>
+    <div class="pt-rail-card pt-hist-card">
+      <div class="pt-rail-h">${esc(t("tabs.rail.history"))}</div>
       <div class="pt-hist-list" data-hist-hint="${esc(t("tabs.rail.history.hint"))}">$historyHtml</div>
     </div>
     <!-- v1.91.0 — 메모 위젯 (전역 + 이 프로젝트). 프롬프트 히스토리 하단. -->
@@ -520,8 +527,18 @@ internal object ProjectTabsTemplate {
      rail 하단 빈 공간은 카드가 아닌 배경. 항목이 많아도 list 자체 max-height 로만 스크롤. */
   #project-tabs-root .pt-rail { justify-content: flex-start; }
   #project-tabs-root .pt-hist-card { display: flex; flex-direction: column; flex: 0 0 auto; }
-  /* v1.106.2 — 우측 rail 컨텍스트 점유율 미터 */
-  #project-tabs-root .pt-ctx-meter { margin: 0 0 10px; }
+  /* v1.106.2/.3 — 우측 rail 컨텍스트 점유율 카드 */
+  #project-tabs-root .pt-ctx-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  #project-tabs-root .pt-compact-btn {
+    font: inherit; font-size: 11px; line-height: 1; padding: 4px 9px; cursor: pointer;
+    background: #1f2937; color: #cbd5e1; border: 1px solid #2b3648; border-radius: 6px;
+    font-family: ui-monospace, Menlo, monospace;
+  }
+  #project-tabs-root .pt-compact-btn:hover:not(:disabled) { background: #253247; border-color: #3a82f6; color: #e6edf5; }
+  #project-tabs-root .pt-compact-btn:disabled { opacity: .5; cursor: default; }
+  #project-tabs-root .pt-compact-btn.busy { opacity: .6; cursor: progress; }
+  #project-tabs-root .pt-ctx-empty { font-size: 11px; color: var(--text-dim,#888); margin-top: 8px; }
+  #project-tabs-root .pt-ctx-meter { margin: 8px 0 0; }
   #project-tabs-root .pt-ctx-meter[hidden] { display: none; }
   #project-tabs-root .pt-ctx-top { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; font-size: 10px; color: var(--text-dim,#888); margin-bottom: 4px; }
   #project-tabs-root .pt-ctx-cap { font-weight: 600; }
