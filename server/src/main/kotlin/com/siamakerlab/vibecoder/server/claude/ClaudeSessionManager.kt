@@ -536,7 +536,9 @@ class ClaudeSessionManager(
             }
             // v1.106.0/.1 — usage 토큰 분해로 컨텍스트 점유율 미터 갱신(상시 표시) +
             // 자동재개 가드(P1-b) + 임계 경고. used = input + cache_read + cache_creation.
-            if (event is ClaudeEvent.UsageReport) {
+            // v1.107.1 — result 프레임의 누적치(cumulative)는 제외. assistant 메시지의 이번
+            // turn 단일 값만 현재 컨텍스트 크기로 사용(누적치는 윈도우 초과해 1.7M 등 오표시).
+            if (event is ClaudeEvent.UsageReport && !event.cumulative) {
                 val cacheRead = event.cacheReadInputTokens ?: 0L
                 val input = event.inputTokens ?: 0L
                 val cacheCreate = event.cacheCreationInputTokens ?: 0L
@@ -947,25 +949,33 @@ class ClaudeSessionManager(
         sessions[projectId]?.let { s ->
             if (s.lastContextTokens > 0 || s.lastInputTokens > 0 || s.lastCacheCreationTokens > 0) {
                 val used = s.lastInputTokens + s.lastContextTokens + s.lastCacheCreationTokens
-                return ContextSnapshot(s.lastInputTokens, s.lastContextTokens, s.lastCacheCreationTokens, contextLimitFor(s.model, used))
+                return sanitizeContext(ContextSnapshot(s.lastInputTokens, s.lastContextTokens, s.lastCacheCreationTokens, contextLimitFor(s.model, used)))
             }
         }
         val f = contextTokensFile(projectId)
         if (f.exists()) {
             val parts = f.readText().trim().split(",")
             when {
-                parts.size >= 4 -> return ContextSnapshot(
+                parts.size >= 4 -> return sanitizeContext(ContextSnapshot(
                     parts[0].toLongOrNull() ?: 0, parts[1].toLongOrNull() ?: 0,
                     parts[2].toLongOrNull() ?: 0, parts[3].toLongOrNull() ?: 0,
-                )
+                ))
                 parts.size == 1 -> {  // 구버전: cacheRead 단일 숫자
                     val cr = parts[0].toLongOrNull() ?: 0
-                    return ContextSnapshot(0, cr, 0, contextLimitFor(null, cr))
+                    return sanitizeContext(ContextSnapshot(0, cr, 0, contextLimitFor(null, cr)))
                 }
             }
         }
         return ContextSnapshot(0, 0, 0, 0)
     }
+
+    /**
+     * v1.107.1 — 누적치 오염 방어. cacheRead 가 윈도우 한도를 초과하면(과거 버그로 저장된
+     * result 누적치) 단일 turn 값일 수 없으므로 빈 스냅샷 반환 → 미터 숨김(다음 turn 의
+     * 정상 per-turn 값이 올 때까지). limit=0(미측정)이면 그대로.
+     */
+    private fun sanitizeContext(s: ContextSnapshot): ContextSnapshot =
+        if (s.limit > 0 && s.cacheRead > s.limit) ContextSnapshot(0, 0, 0, 0) else s
 
     /** 메모리 세션값 → 없으면 파일(서버 재시작 후) → 둘 다 없으면 0. (P0-b/P1-b 호환용) */
     fun lastContextTokens(projectId: String): Long {

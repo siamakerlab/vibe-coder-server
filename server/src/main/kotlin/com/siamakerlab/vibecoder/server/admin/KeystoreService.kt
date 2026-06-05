@@ -228,16 +228,27 @@ class KeystoreService(
         val p = Properties()
         runCatching { Files.newBufferedReader(admob).use { p.load(it) } }
             .onFailure { log.warn(it) { "admob read failed for $packageName" } }
-        fun list(key: String): List<String> =
-            p.getProperty(key).orEmpty().split(",").map { it.trim() }.filter { it.isNotBlank() }
+        // v1.107.1 — 외부(임포트 레포 relocate 등) 형식 호환. 저장폼/벌드프롬프트의 정규 키
+        // (admobAppId / <type>AdUnitId) 외에, Claude 가 임포트 레포에서 흔히 쓰는
+        // debug/release 분리 + snake_case (예: release.admob_banner_id, debug.admob_app_id)
+        // 도 인식한다. 실 운영 값인 release.* 를 우선, 없으면 정규/bare, 최후로 debug.*(테스트 ID).
+        fun firstNonBlank(vararg keys: String): String =
+            keys.firstNotNullOfOrNull { k -> p.getProperty(k)?.trim()?.ifBlank { null } } ?: ""
+        fun units(canonical: String, snake: String): List<String> =
+            firstNonBlank(
+                canonical,
+                "release.admob_$snake", "admob_$snake", "release.$snake", "debug.admob_$snake",
+            ).split(",").map { it.trim() }.filter { it.isNotBlank() }
         return AdmobIds(
-            appId = p.getProperty("admobAppId").orEmpty().trim(),
-            appOpenUnitIds = list("appOpenAdUnitId"),
-            bannerUnitIds = list("bannerAdUnitId"),
-            nativeUnitIds = list("nativeAdUnitId"),
-            interstitialUnitIds = list("interstitialAdUnitId"),
-            rewardedUnitIds = list("rewardedAdUnitId"),
-            rewardedInterstitialUnitIds = list("rewardedInterstitialAdUnitId"),
+            appId = firstNonBlank(
+                "admobAppId", "release.admob_app_id", "admob_app_id", "release.app_id", "debug.admob_app_id",
+            ),
+            appOpenUnitIds = units("appOpenAdUnitId", "app_open_id"),
+            bannerUnitIds = units("bannerAdUnitId", "banner_id"),
+            nativeUnitIds = units("nativeAdUnitId", "native_id"),
+            interstitialUnitIds = units("interstitialAdUnitId", "interstitial_id"),
+            rewardedUnitIds = units("rewardedAdUnitId", "rewarded_id"),
+            rewardedInterstitialUnitIds = units("rewardedInterstitialAdUnitId", "rewarded_interstitial_id"),
         )
     }
 

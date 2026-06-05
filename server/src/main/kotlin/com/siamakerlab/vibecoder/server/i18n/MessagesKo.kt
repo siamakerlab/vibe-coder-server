@@ -595,6 +595,7 @@ internal object MessagesKo {
         "builds.col.status" to "상태",
         "builds.col.started" to "시작",
         "builds.col.finished" to "종료",
+        "builds.col.duration" to "빌드 시간",
         "builds.col.apk" to "APK",
         "builds.stats.summary" to "✓ %d · ✗ %d · cancel %d",
         "builds.stats.running" to " · 진행 %d",

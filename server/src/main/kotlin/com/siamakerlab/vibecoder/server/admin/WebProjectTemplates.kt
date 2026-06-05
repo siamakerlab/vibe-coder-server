@@ -929,7 +929,7 @@ $errHtml
                 """<tr>
                     <td><a href="/projects/${esc(p.id)}/builds/${esc(b.id)}"><code>${esc(b.id.take(12))}</code></a></td>
                     <td>${esc(b.status.name)}</td>
-                    <td>${esc(b.startedAt)}</td>
+                    <td>${esc(fmtInstant(b.startedAt))}</td>
                   </tr>"""
             }
         }
@@ -3013,8 +3013,8 @@ $automationPanelHtml
                 """<tr>
                     <td><a href="/projects/${esc(p.id)}/builds/${esc(b.id)}"><code>${esc(b.id.take(12))}</code></a></td>
                     <td><span class="$statusCls">${esc(b.status.name)}</span></td>
-                    <td>${esc(b.startedAt)}</td>
-                    <td>${esc(b.finishedAt ?: "-")}</td>
+                    <td>${esc(fmtInstant(b.startedAt))}</td>
+                    <td>${esc(fmtBuildDuration(b.startedAt, b.finishedAt))}</td>
                     <td>$downloadCell</td>
                   </tr>"""
             }
@@ -3080,7 +3080,7 @@ ${renderBuildHistoryChart(builds, artifactsByBuild, lang)}
 
 <table class="devices">
   <thead>
-    <tr><th>${esc(t("builds.col.id"))}</th><th>${esc(t("builds.col.status"))}</th><th>${esc(t("builds.col.started"))}</th><th>${esc(t("builds.col.finished"))}</th><th>${esc(t("builds.col.apk"))}</th></tr>
+    <tr><th>${esc(t("builds.col.id"))}</th><th>${esc(t("builds.col.status"))}</th><th>${esc(t("builds.col.started"))}</th><th>${esc(t("builds.col.duration"))}</th><th>${esc(t("builds.col.apk"))}</th></tr>
   </thead>
   <tbody>$rowsHtml</tbody>
 </table>
@@ -3304,6 +3304,27 @@ ${renderBuildHistoryChart(builds, artifactsByBuild, lang)}
             val e = java.time.Instant.parse(finishedAt)
             java.time.Duration.between(s, e).toMillis() / 1000.0
         }.getOrNull()
+    }
+
+    /**
+     * v1.107.1 — 빌드 히스토리 시작 시간을 `yyyy-MM-dd HH:mm:ss`(24시간, 컨테이너 TZ=Asia/Seoul)
+     * 로 단순화. 파싱 실패 시 원문 그대로.
+     */
+    private val buildTsFormatter: java.time.format.DateTimeFormatter =
+        java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+            .withZone(java.time.ZoneId.systemDefault())
+
+    private fun fmtInstant(iso: String?): String {
+        if (iso.isNullOrBlank()) return "-"
+        return runCatching { buildTsFormatter.format(java.time.Instant.parse(iso)) }.getOrDefault(iso)
+    }
+
+    /**
+     * v1.107.1 — 빌드 소요 시간을 초 단위로 표시(예: 5분 → "300s"). 미완료/파싱 실패 시 "-".
+     */
+    private fun fmtBuildDuration(startedAt: String?, finishedAt: String?): String {
+        val secs = durationSeconds(startedAt, finishedAt) ?: return "-"
+        return "${Math.round(secs)}s"
     }
 
     // ────────────────────────────────────────────────────────────────────

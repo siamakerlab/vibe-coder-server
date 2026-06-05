@@ -59,6 +59,13 @@ sealed class ClaudeEvent {
         val outputTokens: Long?,
         val cacheReadInputTokens: Long?,
         val cacheCreationInputTokens: Long?,
+        /**
+         * v1.107.1 — true 면 `result` 프레임의 **세션 누적치**(turn 종료 시 합계),
+         * false 면 `assistant` 메시지의 **이번 turn 단일 값**(현재 컨텍스트 크기).
+         * 컨텍스트 점유율 미터는 cumulative=false 만 사용해야 한다(누적치는 윈도우를
+         * 초과해 1.7M 같은 잘못된 값으로 표시됨).
+         */
+        val cumulative: Boolean = false,
     ) : ClaudeEvent() {
         /** Sum of all input categories the server saw. */
         val totalInputTokens: Long?
