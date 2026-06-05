@@ -1063,6 +1063,12 @@ $errHtml
         model: String = "",
         /** v1.106.0 — 직전 turn 컨텍스트(cache_read) 토큰. 0=미측정. */
         contextTokens: Long = 0,
+        /** v1.106.1 — 직전 turn input(비캐시) 토큰(미터 세그먼트). */
+        contextInputTokens: Long = 0,
+        /** v1.106.1 — 직전 turn cache_creation 토큰(미터 세그먼트). */
+        contextCacheCreationTokens: Long = 0,
+        /** v1.106.1 — 컨텍스트 윈도우 한도(미터 분모). 0=미측정(미터 숨김). */
+        contextLimit: Long = 0,
         /** v1.106.0 — 컨텍스트 경고 임계(토큰). 0=비활성. */
         contextWarnTokens: Int = 0,
         /** v1.106.0 (P1-a) — MCP 최소화(strict) 활성 여부. */
@@ -1098,17 +1104,33 @@ $errHtml
         $modelOptions
       </select>
     </form>"""
-        // v1.106.0 — 컨텍스트 크기 배지(직전 turn cache_read). 임계 초과면 주황 + 경고 title.
-        val ctxK = (contextTokens / 1000)
-        val ctxWarn = contextWarnTokens > 0 && contextTokens >= contextWarnTokens
-        val contextBadgeHtml = if (contextTokens <= 0) "" else {
-            val color = if (ctxWarn) "#ffb86b" else "var(--text-dim,#888)"
-            val warnMark = if (ctxWarn) " ⚠" else ""
-            val titleTxt = if (ctxWarn)
-                "컨텍스트 ${ctxK}K 토큰 — 매 turn 전체 맥락이 과금됩니다. '새 세션' 으로 리셋 권장."
-            else "현재 대화 컨텍스트(직전 turn). 클수록 매 turn 비용이 늘어납니다."
-            """<span class="dim" title="${esc(titleTxt)}" style="font-size:12px;color:$color">ctx ~${ctxK}K$warnMark</span>"""
-        }
+        // v1.106.1 — 컨텍스트 점유율 그래픽 미터(프롬프트 히스토리 상단 상시). 직전 turn
+        // usage 분해(cache_read=재사용 / cache_creation=신규캐시 / input=비캐시)를 윈도우
+        // 한도 대비 스택 바로 표시. console_context_usage 프레임으로 live 갱신. Claude CLI
+        // /context 와 유사한 점유/사용/남음 시각화(카테고리 분해는 stream-json 미노출).
+        val ctxInitiallyHidden = if (contextTokens <= 0 && contextInputTokens <= 0 && contextCacheCreationTokens <= 0) "hidden" else ""
+        val contextMeterHtml = """
+<div id="ctx-meter" class="ctx-meter" $ctxInitiallyHidden
+     title="대화 컨텍스트 점유율 — 윈도우 한도 대비 사용/남음. 클수록 매 turn 비용↑. '새 세션' 으로 리셋.">
+  <div class="ctx-meter-row">
+    <span class="ctx-meter-label">컨텍스트</span>
+    <div class="ctx-meter-bar">
+      <div class="ctx-seg ctx-seg-read"></div>
+      <div class="ctx-seg ctx-seg-create"></div>
+      <div class="ctx-seg ctx-seg-input"></div>
+    </div>
+    <span class="ctx-meter-text">
+      <b id="ctx-used">–</b> / <span id="ctx-limit">–</span>
+      (<span id="ctx-pct">0%</span>) · 남음 <span id="ctx-free">–</span>
+    </span>
+  </div>
+  <div class="ctx-legend">
+    <span><i class="ctx-dot ctx-seg-read"></i>재사용</span>
+    <span><i class="ctx-dot ctx-seg-create"></i>신규캐시</span>
+    <span><i class="ctx-dot ctx-seg-input"></i>입력</span>
+    <span><i class="ctx-dot ctx-dot-free"></i>남음</span>
+  </div>
+</div>"""
         // v1.106.0 (P1-a) — MCP 최소화 토글(전역 5개 MCP 툴 스키마를 빼 캐시 프리픽스 축소).
         val mcpStrictChecked = if (mcpStrict) "checked" else ""
         val mcpStrictHtml = """
@@ -1389,6 +1411,23 @@ $errHtml
   .bg-tasks.collapsed { margin-bottom:8px; }
   .bg-tasks.collapsed .bg-tasks-head { margin-bottom:0; }
   .bg-tasks.collapsed #bg-tasks-list { display:none; }
+  /* v1.106.1 — 컨텍스트 점유율 미터(상시) */
+  .ctx-meter { margin:0 0 8px; padding:6px 10px; border:1px solid #1f2330; border-radius:8px; background:#0d1018; }
+  .ctx-meter[hidden] { display:none; }
+  .ctx-meter-row { display:flex; align-items:center; gap:8px; }
+  .ctx-meter-label { font-size:11px; color:var(--text-dim,#888); font-weight:600; flex:0 0 auto; }
+  .ctx-meter-bar { flex:1 1 auto; height:8px; border-radius:5px; background:#1f2330; overflow:hidden; display:flex; }
+  .ctx-seg { height:100%; width:0; transition:width 0.3s ease; }
+  .ctx-seg-read { background:#3a82f6; }
+  .ctx-seg-create { background:#2dd4bf; }
+  .ctx-seg-input { background:#ffb86b; }
+  .ctx-meter-text { font-size:11px; color:var(--text-dim,#888); flex:0 0 auto; font-family:ui-monospace,Menlo,monospace; white-space:nowrap; }
+  .ctx-meter.warn .ctx-meter-text { color:#ffb86b; }
+  .ctx-meter.warn .ctx-meter-bar { box-shadow:0 0 0 1px rgba(255,184,107,0.45) inset; }
+  .ctx-legend { display:flex; gap:12px; margin-top:5px; font-size:10px; color:var(--text-dim,#888); flex-wrap:wrap; }
+  .ctx-legend span { display:inline-flex; align-items:center; gap:4px; }
+  .ctx-dot { width:8px; height:8px; border-radius:2px; display:inline-block; }
+  .ctx-dot-free { background:#1f2330; border:1px solid #333; }
   .bg-task-card {
     display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:6px;
     background:rgba(255,255,255,0.03); margin-top:4px; font-size:12px;
@@ -1448,7 +1487,6 @@ $errHtml
   </h1>
   <div class="console-actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
     <span class="dim" style="font-size:12px">${esc(t("console.session"))} $statusBadge${if (sessionId != null) """ <span class="dim">${esc(sessionId.take(12))}…</span>""" else ""}</span>
-    $contextBadgeHtml
     $modelSelectorHtml
     $mcpStrictHtml
     $sideLinks
@@ -1521,6 +1559,9 @@ $authBannerHtml
     </div>
   </div>
 </div>
+
+<!-- v1.106.1 — 컨텍스트 점유율 미터(프롬프트 히스토리 상단 상시). -->
+$contextMeterHtml
 
 <!-- v1.6.4 — 스크롤 + 우하단 jump-to-bottom 버튼 wrapper. -->
 <div class="console-log-wrap">
@@ -2211,6 +2252,9 @@ $automationPanelHtml
     } else if (t === 'console_background_task') {
       // v1.84.0 — 백그라운드 작업(Bash run_in_background) 진행 카드.
       handleBgTask(f);
+    } else if (t === 'console_context_usage') {
+      // v1.106.1 — 컨텍스트 점유율 미터 live 갱신.
+      updateContextMeter(f.inputTokens, f.cacheReadTokens, f.cacheCreationTokens, f.contextLimit);
     } else if (t === 'console_replay_end') {
       append('sys', 'replay', 'history end — live frames follow', 'replay');
     } else if (t === 'automation_progress') {
@@ -2460,6 +2504,37 @@ $automationPanelHtml
     }
     applyBgCollapsed();
   })();
+  // v1.106.1 — 컨텍스트 점유율 미터 갱신(상시 표시). used = input + cacheRead + cacheCreation.
+  function ctxFmt(n) {
+    n = Number(n) || 0;
+    if (n >= 1000000) return (n / 1000000).toFixed(n >= 10000000 ? 0 : 1) + 'M';
+    if (n >= 1000) return Math.round(n / 1000) + 'K';
+    return String(n);
+  }
+  function updateContextMeter(input, cacheRead, cacheCreation, limit) {
+    var el = document.getElementById('ctx-meter'); if (!el) return;
+    input = Number(input) || 0; cacheRead = Number(cacheRead) || 0;
+    cacheCreation = Number(cacheCreation) || 0; limit = Number(limit) || 0;
+    var used = input + cacheRead + cacheCreation;
+    if (limit <= 0 || used <= 0) { el.hidden = true; return; }
+    el.hidden = false;
+    var pct = Math.min(100, used / limit * 100);
+    function w(x) { return (Math.max(0, x) / limit * 100) + '%'; }
+    var r = el.querySelector('.ctx-seg-read'); if (r) r.style.width = w(cacheRead);
+    var c = el.querySelector('.ctx-seg-create'); if (c) c.style.width = w(cacheCreation);
+    var i = el.querySelector('.ctx-seg-input'); if (i) i.style.width = w(input);
+    var setT = function(id, v) { var n = document.getElementById(id); if (n) n.textContent = v; };
+    setT('ctx-used', ctxFmt(used));
+    setT('ctx-limit', ctxFmt(limit));
+    setT('ctx-pct', Math.round(pct) + '%');
+    setT('ctx-free', ctxFmt(Math.max(0, limit - used)));
+    el.classList.toggle('warn', pct >= 70);
+    el.title = '대화 컨텍스트 ' + ctxFmt(used) + ' / ' + ctxFmt(limit) + ' (' + Math.round(pct) +
+      '%). 재사용 ' + ctxFmt(cacheRead) + ' · 신규캐시 ' + ctxFmt(cacheCreation) + ' · 입력 ' + ctxFmt(input) +
+      '. 클수록 매 turn 비용↑ — 새 세션으로 리셋 가능.';
+  }
+  // 초기값(서버 직전 turn 스냅샷) 렌더.
+  updateContextMeter($contextInputTokens, $contextTokens, $contextCacheCreationTokens, $contextLimit);
   function bgIcon(status) { return status === 'completed' ? '✓' : (status === 'failed' ? '✗' : '●'); }
   function refreshBgPanel() {
     var p = document.getElementById('bg-tasks');

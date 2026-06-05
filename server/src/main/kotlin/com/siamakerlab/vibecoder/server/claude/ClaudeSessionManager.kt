@@ -204,9 +204,12 @@ class ClaudeSessionManager(
         terminateSession(projectId)
         clearTurnActive(projectId)  // v1.82.0 — 새 세션 시작 → 이전 미완 turn 마크 버림.
         runCatching { sessionIdFile(projectId).deleteIfExists() }
-        // v1.106.0 — 컨텍스트 리셋 → 누적 토큰/경고 플래그도 초기화.
+        // v1.106.0/.1 — 컨텍스트 리셋 → 누적 토큰/경고 플래그도 초기화.
         runCatching { contextTokensFile(projectId).deleteIfExists() }
-        sessions[projectId]?.let { it.lastContextTokens = 0; it.contextWarned = false }
+        sessions[projectId]?.let {
+            it.lastContextTokens = 0; it.lastInputTokens = 0; it.lastCacheCreationTokens = 0
+            it.contextWarned = false
+        }
         hub.resetConsole(topic(projectId))
         emitSystem(projectId, "new_session_requested", "Session reset. The next prompt starts a fresh conversation.")
         fireInterrupt(projectId, "new_session")
@@ -506,6 +509,7 @@ class ClaudeSessionManager(
                     val prev = it.sessionId
                     it.sessionId = event.sessionId
                     it.sawSessionStarted = true
+                    it.model = event.model  // v1.106.1 — 윈도우 한도 추정용 실제 모델 id
                     // v1.91.5 — 새 세션 첫 턴: sendPrompt 가 아직 session_id 미발급(null)
                     // 상태로 저장한 user 프롬프트를, 방금 확정된 실제 id 로 backfill.
                     // 콘솔 복원(initialHistory)은 현재 session_id 로 필터하므로, 이 backfill
@@ -530,19 +534,32 @@ class ClaudeSessionManager(
                     s.lastActivity = Instant.now()
                 }
             }
-            // v1.106.0 — usage 의 cache_read = 현재 컨텍스트 크기. 세션/파일에 저장해
-            // 콘솔 표시(P0-b)·자동재개 가드(P1-b)에 사용. 임계 초과 시 1회 경고.
+            // v1.106.0/.1 — usage 토큰 분해로 컨텍스트 점유율 미터 갱신(상시 표시) +
+            // 자동재개 가드(P1-b) + 임계 경고. used = input + cache_read + cache_creation.
             if (event is ClaudeEvent.UsageReport) {
-                event.cacheReadInputTokens?.let { ctx ->
-                    sessions[projectId]?.lastContextTokens = ctx
-                    runCatching { writeContextTokens(projectId, ctx) }
-                    val warn = config.claude.contextWarnTokens
+                val cacheRead = event.cacheReadInputTokens ?: 0L
+                val input = event.inputTokens ?: 0L
+                val cacheCreate = event.cacheCreationInputTokens ?: 0L
+                if (cacheRead > 0 || input > 0 || cacheCreate > 0) {
                     val s = sessions[projectId]
-                    if (warn > 0 && ctx >= warn && s != null && !s.contextWarned) {
+                    s?.let {
+                        it.lastContextTokens = cacheRead
+                        it.lastInputTokens = input
+                        it.lastCacheCreationTokens = cacheCreate
+                    }
+                    val used = input + cacheRead + cacheCreate
+                    val limit = contextLimitFor(s?.model, used)
+                    runCatching { writeContext(projectId, input, cacheRead, cacheCreate, limit) }
+                    // 컨텍스트 미터 프레임(상시 표시 바 live 갱신).
+                    hub.emitConsole(topic(projectId)) { seq ->
+                        WsFrame.ConsoleContextUsage(input, cacheRead, cacheCreate, limit, seq)
+                    }
+                    val warn = config.claude.contextWarnTokens
+                    if (warn > 0 && cacheRead >= warn && s != null && !s.contextWarned) {
                         s.contextWarned = true
                         emitSystem(
                             projectId, "context_large",
-                            "⚠ 컨텍스트가 약 ${ctx / 1000}K 토큰입니다 — 이어가는 동안 매 turn 전체 맥락이 과금됩니다. " +
+                            "⚠ 컨텍스트가 약 ${cacheRead / 1000}K 토큰입니다 — 이어가는 동안 매 turn 전체 맥락이 과금됩니다. " +
                                 "비용을 크게 줄이려면 '새 세션(컨텍스트 리셋)' 을 권장합니다.",
                         )
                     }
@@ -910,21 +927,60 @@ class ClaudeSessionManager(
         return if (raw.isBlank() || raw.equals("default", ignoreCase = true)) "" else raw.trim()
     }
 
-    // ── v1.106.0 — 컨텍스트 크기(직전 turn cache_read) 영속 ──
+    // ── v1.106.0/.1 — 컨텍스트 점유(직전 turn 토큰 분해) 영속 ──
+    // 파일 포맷(CSV): input,cacheRead,cacheCreation,limit  (구버전 단일 숫자도 호환)
     private fun contextTokensFile(projectId: String): Path =
         workspace.vibecoderDir(projectId).resolve("claude-context-tokens")
 
-    private fun writeContextTokens(projectId: String, tokens: Long) {
+    private fun writeContext(projectId: String, input: Long, cacheRead: Long, cacheCreation: Long, limit: Long) {
         val f = contextTokensFile(projectId)
         Files.createDirectories(f.parent)
-        f.writeText(tokens.toString())
+        f.writeText("$input,$cacheRead,$cacheCreation,$limit")
     }
 
-    /** 메모리 세션값 → 없으면 파일(서버 재시작 후) → 둘 다 없으면 0. */
+    /** v1.106.1 — 컨텍스트 점유 스냅샷. used = input+cacheRead+cacheCreation. */
+    data class ContextSnapshot(
+        val input: Long, val cacheRead: Long, val cacheCreation: Long, val limit: Long,
+    ) { val used: Long get() = input + cacheRead + cacheCreation }
+
+    fun contextSnapshot(projectId: String): ContextSnapshot {
+        sessions[projectId]?.let { s ->
+            if (s.lastContextTokens > 0 || s.lastInputTokens > 0 || s.lastCacheCreationTokens > 0) {
+                val used = s.lastInputTokens + s.lastContextTokens + s.lastCacheCreationTokens
+                return ContextSnapshot(s.lastInputTokens, s.lastContextTokens, s.lastCacheCreationTokens, contextLimitFor(s.model, used))
+            }
+        }
+        val f = contextTokensFile(projectId)
+        if (f.exists()) {
+            val parts = f.readText().trim().split(",")
+            when {
+                parts.size >= 4 -> return ContextSnapshot(
+                    parts[0].toLongOrNull() ?: 0, parts[1].toLongOrNull() ?: 0,
+                    parts[2].toLongOrNull() ?: 0, parts[3].toLongOrNull() ?: 0,
+                )
+                parts.size == 1 -> {  // 구버전: cacheRead 단일 숫자
+                    val cr = parts[0].toLongOrNull() ?: 0
+                    return ContextSnapshot(0, cr, 0, contextLimitFor(null, cr))
+                }
+            }
+        }
+        return ContextSnapshot(0, 0, 0, 0)
+    }
+
+    /** 메모리 세션값 → 없으면 파일(서버 재시작 후) → 둘 다 없으면 0. (P0-b/P1-b 호환용) */
     fun lastContextTokens(projectId: String): Long {
         sessions[projectId]?.lastContextTokens?.takeIf { it > 0 }?.let { return it }
-        val f = contextTokensFile(projectId)
-        return if (f.exists()) f.readText().trim().toLongOrNull() ?: 0 else 0
+        return contextSnapshot(projectId).cacheRead
+    }
+
+    /**
+     * v1.106.1 — 모델별 컨텍스트 윈도우 한도(토큰) 추정. 이 계정은 opus/sonnet 1M 활성(관측치).
+     * haiku 만 200K. used 가 base 를 넘으면 1M(상위 윈도우)로 보정. 미터 분모로 사용.
+     */
+    private fun contextLimitFor(model: String?, used: Long): Long {
+        val m = model?.lowercase().orEmpty()
+        val base = if (m.contains("haiku")) 200_000L else 1_000_000L
+        return if (used > base) 1_000_000L else base
     }
 
     /** v1.106.0 (P1-b) — 컨텍스트가 경고 임계 이상이면 자동 재개 보류 대상. */
@@ -1045,6 +1101,11 @@ class ClaudeSessionManager(
         @Volatile var lastContextTokens: Long = 0,
         /** v1.106.0 — 컨텍스트 임계 경고를 이 세션에서 이미 1회 emit 했는지(노이즈 방지). */
         @Volatile var contextWarned: Boolean = false,
+        /** v1.106.1 — 컨텍스트 미터용 토큰 분해(직전 turn). */
+        @Volatile var lastInputTokens: Long = 0,
+        @Volatile var lastCacheCreationTokens: Long = 0,
+        /** v1.106.1 — init frame 의 실제 모델 id(윈도우 한도 추정용, 예: claude-opus-4-8[1m]). */
+        @Volatile var model: String? = null,
     )
 
     /**
