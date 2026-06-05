@@ -1560,8 +1560,9 @@ $authBannerHtml
   </div>
 </div>
 
-<!-- v1.106.1 — 컨텍스트 점유율 미터(프롬프트 히스토리 상단 상시). -->
-$contextMeterHtml
+<!-- v1.106.1/.2 — 컨텍스트 점유율 미터. 임베드(ProjectTabs)에선 부모 우측 오버뷰 rail 에
+     표시(postMessage)하므로 인라인은 비임베드(standalone/chat)에서만 렌더. -->
+${if (embed) "" else contextMeterHtml}
 
 <!-- v1.6.4 — 스크롤 + 우하단 jump-to-bottom 버튼 wrapper. -->
 <div class="console-log-wrap">
@@ -2512,6 +2513,13 @@ $automationPanelHtml
     return String(n);
   }
   function updateContextMeter(input, cacheRead, cacheCreation, limit) {
+    // v1.106.2 — 부모 ProjectTabs 우측 오버뷰 rail 미터로 전달(임베드 시). standalone/chat
+    // 은 부모가 자기 자신이라 무해. 그 후 인라인 미터(비임베드)도 갱신.
+    try {
+      window.parent.postMessage({ type: 'vibe:context-usage',
+        input: Number(input) || 0, cacheRead: Number(cacheRead) || 0,
+        cacheCreation: Number(cacheCreation) || 0, limit: Number(limit) || 0 }, location.origin);
+    } catch (e) {}
     var el = document.getElementById('ctx-meter'); if (!el) return;
     input = Number(input) || 0; cacheRead = Number(cacheRead) || 0;
     cacheCreation = Number(cacheCreation) || 0; limit = Number(limit) || 0;
