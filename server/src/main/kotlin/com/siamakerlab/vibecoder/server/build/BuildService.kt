@@ -62,11 +62,58 @@ class BuildService(
     fun enqueueDebug(projectId: String, hub: LogHub): BuildRow {
         val row = projects.rowOrThrow(projectId)
         requireKeystoreOrThrow(row)   // v1.26.1 — SSOT 가드
+        return enqueueBuild(row, hub, variant = "debug", gradleTask = row.debugTask,
+            findOutput = ApkFinder::findLatestDebug, ext = "apk", artifactType = "debug-apk")
+    }
+
+    /**
+     * v1.107.0 — release APK 빌드(assembleRelease). 키스토어 서명 주입 적용
+     * (`-Pandroid.injected.signing.*`). debug 와 동일 SSOT 가드.
+     */
+    fun enqueueRelease(projectId: String, hub: LogHub): BuildRow {
+        val row = projects.rowOrThrow(projectId)
+        requireKeystoreOrThrow(row)
+        return enqueueBuild(row, hub, variant = "release", gradleTask = releaseTaskFor(row.debugTask),
+            findOutput = ApkFinder::findLatestReleaseApk, ext = "apk", artifactType = "release-apk")
+    }
+
+    /**
+     * v1.107.0 — release AAB 번들 빌드(bundleRelease). Play Console 업로드용(.aab).
+     * 키스토어 서명 주입 적용. debug 와 동일 SSOT 가드.
+     */
+    fun enqueueBundle(projectId: String, hub: LogHub): BuildRow {
+        val row = projects.rowOrThrow(projectId)
+        requireKeystoreOrThrow(row)
+        return enqueueBuild(row, hub, variant = "release-bundle", gradleTask = "bundleRelease",
+            findOutput = ApkFinder::findLatestReleaseBundle, ext = "aab", artifactType = "release-aab")
+    }
+
+    /** debugTask 로부터 release assemble task 추정 (assembleDebug → assembleRelease). */
+    private fun releaseTaskFor(debugTask: String): String = when {
+        debugTask.equals("assembleDebug", ignoreCase = true) -> "assembleRelease"
+        debugTask.contains("Debug") -> debugTask.replace("Debug", "Release")
+        else -> "assembleRelease"
+    }
+
+    /**
+     * v1.107.0 — debug/release/bundle 공통 enqueue. variant·gradleTask·산출물 finder·
+     * 확장자·artifact type 만 다르고 큐/로그/서명/알림 흐름은 동일.
+     */
+    private fun enqueueBuild(
+        row: com.siamakerlab.vibecoder.server.repo.ProjectRow,
+        hub: LogHub,
+        variant: String,
+        gradleTask: String,
+        findOutput: (java.nio.file.Path, String) -> java.nio.file.Path?,
+        ext: String,
+        artifactType: String,
+    ): BuildRow {
+        val projectId = row.id
         val buildId = Ids.buildId()
         val logFile = workspace.buildLogFile(projectId, buildId)
         // v0.71.0 — Phase 51 #9: git 메타데이터 수집 (실패 시 graceful — null).
         val (branch, sha) = collectGitMetadata(java.nio.file.Path.of(row.sourcePath))
-        val build = buildRepo.create(buildId, projectId, "debug", logFile.toString(),
+        val build = buildRepo.create(buildId, projectId, variant, logFile.toString(),
             gitBranch = branch, gitSha = sha)
 
         val signing = resolveSigning(row, hub, buildId)
@@ -79,17 +126,19 @@ class BuildService(
                     val exit = builder.runAssembleDebug(
                         source = java.nio.file.Path.of(row.sourcePath),
                         moduleName = row.moduleName,
-                        debugTask = row.debugTask,
+                        debugTask = gradleTask,
                         logger = logger,
                         cancellation = cancel,
                         signing = signing,
                     )
                     if (exit != 0) throw ApiException.localized(500, "build_failed",
                         messageKey = "api.build.gradleExit", args = listOf(exit))
-                    val apk = ApkFinder.findLatestDebug(java.nio.file.Path.of(row.sourcePath), row.moduleName)
-                        ?: throw ApiException.localized(500, "apk_not_found", messageKey = "api.build.apkNotFound")
-                    logger.info("Found APK: $apk")
-                    val artifact = artifactService.storeDebugApk(projectId, buildId, apk, row.packageName, variant = "debug")
+                    val out = findOutput(java.nio.file.Path.of(row.sourcePath), row.moduleName)
+                        ?: throw ApiException.localized(500, "artifact_not_found", messageKey = "api.build.apkNotFound")
+                    logger.info("Found output ($variant): $out")
+                    val artifact = artifactService.storeBuildArtifact(
+                        projectId, buildId, out, row.packageName, variant, ext, artifactType,
+                    )
                     buildRepo.attachArtifact(buildId, artifact.id)
                     logger.info("Stored artifact ${artifact.id} (sha256=${artifact.sha256.take(12)}..., size=${artifact.sizeBytes} bytes)")
                 } finally {

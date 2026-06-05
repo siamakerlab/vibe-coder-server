@@ -616,6 +616,38 @@ fun Routing.webProjectRoutes(
         call.respondRedirect("/projects/$id/builds/${row.id}")
     }
 
+    // v1.107.0 — Release APK / AAB 번들 빌드 큐 등록. /builds(debug) 와 동일 가드.
+    // variant: "release" → assembleRelease, "bundle" → bundleRelease. 둘 다 키스토어 서명 주입.
+    for (variant in listOf("release", "bundle")) {
+        post("/projects/{id}/builds/$variant") {
+            val sess = requireSessionOrRedirect(authDeps) ?: return@post
+            if (!requireWriteAccessOrRedirect(sess)) return@post
+            requireCsrf()
+            val id = call.parameters["id"]!!
+            requireProjectAccessOrThrow(sess, projects, id)
+            val pkgOk = runCatching {
+                keystoreService.get(projects.get(id).packageName) != null
+            }.onFailure { log.warn(it) { "keystore probe failed (POST /builds/$variant): project=$id" } }
+                .getOrDefault(false)
+            if (!pkgOk) {
+                val msg = Messages.t(sess.language, "flash.build.keystoreRequired")
+                call.respondRedirect("/projects/$id/builds?err=${msg.encodeUrl()}")
+                return@post
+            }
+            val row = runCatching {
+                if (variant == "bundle") builds.enqueueBundle(id, hub) else builds.enqueueRelease(id, hub)
+            }.getOrElse { e ->
+                val msg = (e as? ApiException)?.message ?: e.message ?: Messages.t(sess.language, "flash.build.queueFailed")
+                log.warn(e) { "$variant build enqueue failed: $id" }
+                call.respondRedirect("/projects/$id/builds?err=${msg.encodeUrl()}")
+                return@post
+            }
+            log.info { "$variant build enqueued: ${row.id} project=$id by ${sess.username}" }
+            authDeps.audit.buildEnqueue(sess.userId, id, row.id, call.request.origin.remoteHost)
+            call.respondRedirect("/projects/$id/builds/${row.id}")
+        }
+    }
+
     get("/projects/{id}/builds/{buildId}") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
         val id = call.parameters["id"]!!
