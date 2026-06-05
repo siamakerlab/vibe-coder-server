@@ -1059,6 +1059,14 @@ $errHtml
         chatSidebar: String? = null,
         /** v1.54.0 — 활성 채팅 표시 제목 (헤더). null 이면 "General Chat". */
         chatTitle: String? = null,
+        /** v1.106.0 — 현재 적용 모델(빈 문자열=CLI 기본). 헤더 셀렉터 초기값. */
+        model: String = "",
+        /** v1.106.0 — 직전 turn 컨텍스트(cache_read) 토큰. 0=미측정. */
+        contextTokens: Long = 0,
+        /** v1.106.0 — 컨텍스트 경고 임계(토큰). 0=비활성. */
+        contextWarnTokens: Int = 0,
+        /** v1.106.0 (P1-a) — MCP 최소화(strict) 활성 여부. */
+        mcpStrict: Boolean = false,
         lang: String,
         embed: Boolean = false,
     ): String {
@@ -1068,6 +1076,51 @@ $errHtml
             sessionId != null -> """<span class="dim">idle (will resume)</span>"""
             else -> """<span class="dim">no session</span>"""
         }
+        // v1.106.0 — 모델 셀렉터(토큰 사용량 레버). 변경 시 즉시 submit → 유휴면 다음 prompt 부터
+        // 같은 대화를 새 모델로 resume. 표준 3종 + CLI 기본. 커스텀 ID 면 별도 옵션으로 표시.
+        val knownModels = listOf("sonnet" to "Sonnet (권장·저비용)", "opus" to "Opus (고성능·고비용)", "haiku" to "Haiku (초저비용)")
+        val isCustomModel = model.isNotBlank() && knownModels.none { it.first.equals(model, ignoreCase = true) }
+        val modelOptions = buildString {
+            for ((v, label) in knownModels) {
+                val selAttr = if (model.equals(v, ignoreCase = true)) " selected" else ""
+                append("""<option value="$v"$selAttr>${esc(label)}</option>""")
+            }
+            val defSel = if (model.isBlank()) " selected" else ""
+            append("""<option value="default"$defSel>CLI 기본</option>""")
+            if (isCustomModel) append("""<option value="${esc(model)}" selected>${esc(model)}</option>""")
+        }
+        val modelSelectorHtml = """
+    <form method="post" action="/projects/${esc(p.id)}/console/model" style="display:inline" id="model-form">
+      ${CsrfTokens.hiddenInput(csrf)}
+      <select name="model" title="Claude 모델 — Sonnet 가 Opus 대비 토큰 사용량 약 1/5. 변경은 다음 prompt 부터 같은 대화에 적용."
+              onchange="document.getElementById('model-form').submit()"
+              style="font-size:12px;padding:3px 6px;background:#1a1a1a;color:var(--text);border:1px solid #333;border-radius:5px">
+        $modelOptions
+      </select>
+    </form>"""
+        // v1.106.0 — 컨텍스트 크기 배지(직전 turn cache_read). 임계 초과면 주황 + 경고 title.
+        val ctxK = (contextTokens / 1000)
+        val ctxWarn = contextWarnTokens > 0 && contextTokens >= contextWarnTokens
+        val contextBadgeHtml = if (contextTokens <= 0) "" else {
+            val color = if (ctxWarn) "#ffb86b" else "var(--text-dim,#888)"
+            val warnMark = if (ctxWarn) " ⚠" else ""
+            val titleTxt = if (ctxWarn)
+                "컨텍스트 ${ctxK}K 토큰 — 매 turn 전체 맥락이 과금됩니다. '새 세션' 으로 리셋 권장."
+            else "현재 대화 컨텍스트(직전 turn). 클수록 매 turn 비용이 늘어납니다."
+            """<span class="dim" title="${esc(titleTxt)}" style="font-size:12px;color:$color">ctx ~${ctxK}K$warnMark</span>"""
+        }
+        // v1.106.0 (P1-a) — MCP 최소화 토글(전역 5개 MCP 툴 스키마를 빼 캐시 프리픽스 축소).
+        val mcpStrictChecked = if (mcpStrict) "checked" else ""
+        val mcpStrictHtml = """
+    <form method="post" action="/projects/${esc(p.id)}/console/mcp-strict" style="display:inline" id="mcp-strict-form">
+      ${CsrfTokens.hiddenInput(csrf)}
+      <input type="hidden" name="enabled" value="${if (mcpStrict) "false" else "true"}">
+      <label title="전역 MCP(playwright 등 5종) 툴 스키마를 빼 매 turn 토큰을 줄입니다. 프로젝트 .mcp.json 의 서버만 사용."
+             style="font-size:12px;color:var(--text-dim,#888);cursor:pointer;display:inline-flex;align-items:center;gap:4px">
+        <input type="checkbox" $mcpStrictChecked onchange="document.getElementById('mcp-strict-form').submit()"
+               style="cursor:pointer">MCP 최소화
+      </label>
+    </form>"""
         // Claude CLI 미설치 또는 인증 누락 시 큰 안내 카드 + 프롬프트 폼 비활성화.
         val cliMissing = claudeCli != null && claudeCli.status != CheckStatus.OK
         val authMissing = claudeAuth != null && claudeAuth.status == CheckStatus.ERROR
@@ -1395,6 +1448,9 @@ $errHtml
   </h1>
   <div class="console-actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
     <span class="dim" style="font-size:12px">${esc(t("console.session"))} $statusBadge${if (sessionId != null) """ <span class="dim">${esc(sessionId.take(12))}…</span>""" else ""}</span>
+    $contextBadgeHtml
+    $modelSelectorHtml
+    $mcpStrictHtml
     $sideLinks
     <button type="button" id="stop-btn" class="chip chip-danger" style="display:none"
             title="${esc(t("console.stop.title"))}">${esc(t("console.stop"))}</button>

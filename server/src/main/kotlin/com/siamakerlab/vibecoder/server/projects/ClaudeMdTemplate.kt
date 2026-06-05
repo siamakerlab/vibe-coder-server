@@ -56,121 +56,52 @@ $cloneLine
         return infoBlock + body
     }
 
+    // v1.106.0 — 토큰 절감(P2): 매 turn 캐시 프리픽스에 들어가는 프로젝트 CLAUDE.md 를
+    // 슬림화. 모든 실질 규칙(비인터랙티브·gradle 재사용·캐시 보존·응답 규칙)은 보존하되
+    // 장황한 산문/중복(영문+국문 중복 블록)을 bullet 로 압축. (신규 프로젝트에 적용)
     const val CONTENT = """# CLAUDE.md — Vibe Coder Android Project Rules
 
 ## Project Rules
-
-- This is an Android project managed through Vibe Coder.
-- Use Kotlin Android SDK.
-- Prefer Jetpack Compose and Material 3 when UI changes are required.
-- Keep architecture clean and maintainable.
-- Use MVVM + Repository pattern when adding new features.
-- Do not place business logic directly in Activity or Composable.
-- Avoid unnecessary dependencies.
-- Preserve existing package structure unless explicitly requested.
-- Before finishing coding tasks, check for obvious build errors.
+- Android project managed through Vibe Coder. Kotlin Android SDK.
+- Prefer Jetpack Compose + Material 3 for UI. Clean, maintainable architecture.
+- MVVM + Repository for new features; no business logic in Activity/Composable.
+- Avoid unnecessary dependencies. Preserve existing package structure unless asked.
+- Check for obvious build errors before finishing a coding task.
 
 ## Build Rules
+- Gradle Wrapper only: `./gradlew` (Linux/macOS), `gradlew.bat` (Windows).
+- Debug build task = `assembleDebug` unless the project config says otherwise.
 
-- Use Gradle Wrapper only.
-- On Windows, use gradlew.bat.
-- On Linux/macOS, use ./gradlew.
-- Debug build task is assembleDebug unless the project config says otherwise.
+## Installed Build Tools — USE THESE, DO NOT RE-DOWNLOAD
+Host already provisioned these into bind-mounted volumes (via `/env-setup`).
+Use these exact paths/versions; do NOT fetch a different toolchain.
+- Gradle (host): `/home/vibe/.local/gradle/` (on PATH as `gradle`, latest stable).
+- Android SDK: `${'$'}ANDROID_HOME` (≈`/opt/android-sdk`; cmdline-tools, platform-tools/adb, platforms;android-35, build-tools).
+- JDK 17 (`java`) + Node 20 + Claude CLI (`claude`): bundled in image.
+- MCP packages: `/home/vibe/.local/` (npm global prefix).
 
-## Installed Build Tools (USE THESE — DO NOT RE-DOWNLOAD)
-
-The vibe-coder host has already downloaded the following tools into bind-mounted
-volumes via the **Build Environment** page (`/env-setup`) or `vibe-doctor`.
-**Use these versions/paths. Do NOT trigger a fresh download of a different
-toolchain version.**
-
-| Tool | Container path | Notes |
-|---|---|---|
-| Gradle (host install) | `/home/vibe/.local/gradle/` (binary on PATH as `gradle`) | Latest stable. Use this for wrapper bootstrap. |
-| Android SDK | `${'$'}ANDROID_HOME` (typically `/opt/android-sdk`) | Includes cmdline-tools, platform-tools (adb), platforms;android-35, build-tools. |
-| JDK | bundled in the server image | OpenJDK 17, on PATH as `java`. |
-| Node.js + Claude CLI | bundled in the server image | Node 20 LTS, `claude` on PATH. |
-| MCP packages | `/home/vibe/.local/` (npm global prefix) | Whatever the user installed via `/env-setup/mcp`. |
-
-### Gradle wrapper alignment policy
-
-When a project's `gradle/wrapper/gradle-wrapper.properties` references a
-**Gradle version different from the one already installed at
-`/home/vibe/.local/gradle/`**, prefer to align the wrapper to the installed
-version rather than letting Gradle download a second copy. Procedure:
-
-1. Check installed version: `gradle --version | grep '^Gradle '`.
-2. Either:
-   - Update `distributionUrl` in `gradle-wrapper.properties` to that version, or
-   - Re-generate the wrapper with the installed gradle:
-     `gradle wrapper --gradle-version <installed-version> --distribution-type bin`.
-
-Reasoning: downloading a second Gradle distribution wastes disk + minutes per
-project + Claude API tokens spent waiting on the download log. The host
-already has the right binary. Stick to it unless the project genuinely
-requires a specific older Gradle for API reasons — in that case state the
-reason in the response.
-
-### When a wrapper is missing
-
-If `gradlew` is absent (e.g., a freshly scaffolded project), use the host
-gradle to generate one with the installed version:
-
-```bash
-gradle wrapper --gradle-version "${'$'}(gradle --version | awk '/^Gradle /{print ${'$'}2; exit}')" --distribution-type bin
-```
-
-`BuildService` also runs this automatically on the first build attempt, but
-generating up front is faster.
-
-### Cache reuse
-
-Don't remove `~/.gradle/caches/` or `${'$'}ANDROID_HOME/build-tools/*` to "clean
-up" — those caches are bind-mounted volumes shared across projects and
-re-downloading them is expensive. If `gradle --refresh-dependencies` is
-truly needed, mention it in the response.
+### Gradle policy (saves disk + minutes + tokens)
+- If `gradle-wrapper.properties` pins a Gradle version ≠ installed one, align the
+  wrapper to the installed version (edit `distributionUrl`, or
+  `gradle wrapper --gradle-version <installed> --distribution-type bin`) instead
+  of letting Gradle download a 2nd copy. Deviate only if the project truly needs a
+  specific older Gradle — state why.
+- Missing `gradlew`? Generate with host gradle:
+  `gradle wrapper --gradle-version "${'$'}(gradle --version | awk '/^Gradle /{print ${'$'}2; exit}')" --distribution-type bin`
+  (BuildService also does this on first build).
+- Do NOT delete `~/.gradle/caches/` or `${'$'}ANDROID_HOME/build-tools/*` — shared
+  bind-mounted caches; re-downloading is expensive. Mention if `--refresh-dependencies` is truly needed.
 
 ## Response Rules
-
-- Summarize modified files.
-- Summarize important implementation decisions.
-- Mention whether build was executed.
-- If build failed, explain the likely cause and next step.
+- Summarize modified files + key decisions; state whether build ran; if it failed, give likely cause + next step.
 
 ## Non-Interactive Environment (CRITICAL)
-
-Vibe Coder runs Claude as a **non-interactive child process** behind a web/mobile
-UI. The user CANNOT respond to TUI prompts, arrow-key menus, stdin reads, or any
-in-stream interactive widget. Treat every turn as one-shot.
-
-- DO NOT use AskUserQuestion, interactive selection menus, or any tool/affordance
-  that requires the user to press a key inside an active session.
-- DO NOT call CLI commands that wait on stdin (e.g. `npm init` without `-y`,
-  `gh auth login` interactive flow, `claude login`).
-- DO NOT enter watch / REPL / TUI modes (`gradle --console=plain` is fine,
-  `./gradlew --watch-fs` interactive is not).
-- DO NOT pause and ask "should I continue?". Either proceed with a sensible
-  default, or list the question(s) at the end of your response so the user
-  answers in the **next prompt**.
-- Long-running commands must complete and return (no `tail -f`, no `adb logcat`
-  without a clear stop condition).
-
-When you need user input or a decision:
-
-1. State the question(s) inline at the end of the response.
-2. Show 2~3 concrete options labeled (A), (B), (C) with one-line trade-offs.
-3. Suggest a default (marked "권장 / Recommended").
-4. Stop. The user replies in the next prompt with their choice.
-
-### 한국어 요약
-
-vibe-coder 환경은 인터랙티브 입력이 불가능합니다. 화살표 키 선택, stdin
-응답, TUI/REPL 진입은 모두 작동하지 않습니다.
-
-- 사용자 확인이 필요하면 응답 마지막에 (A)(B)(C) 옵션과 권장안을 적어
-  두세요. 사용자는 **다음 프롬프트**에서 선택해 보냅니다.
-- 대기하는 명령(`adb logcat`, `gradle --watch-fs`, 인터랙티브 `claude login`
-  등)은 절대 호출하지 마세요.
-- 한 턴은 항상 자기완결적이어야 합니다.
+Claude runs as a non-interactive child process behind a web/mobile UI. The user
+CANNOT answer TUI prompts, menus, or stdin. Every turn is one-shot.
+- No AskUserQuestion / interactive menus / key-press affordances.
+- No stdin-waiting commands (`npm init` without `-y`, interactive `gh auth login`, `claude login`).
+- No watch/REPL/TUI or unbounded commands (`tail -f`, `adb logcat` without a stop condition). `gradle --console=plain` is fine.
+- Never pause to ask "should I continue?". Proceed with a sensible default, OR list questions at the END as (A)(B)(C) with a "권장/Recommended" default — the user replies in the NEXT prompt.
+- 한국어: 인터랙티브 입력 불가. 확인이 필요하면 응답 끝에 (A)(B)(C) + 권장안을 적고 멈추세요(다음 프롬프트에서 선택). 대기성 명령 금지, 한 턴은 자기완결.
 """
 }

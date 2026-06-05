@@ -189,6 +189,20 @@ data class ClaudeSection(
      * 컨텍스트 + throttle 회피를 위한 보수적 기본값). 변경은 서버 재시작 후 적용.
      */
     val maxConcurrentTurns: Int = 3,
+    /**
+     * v1.106.0 — Claude CLI 기본 모델. `claude --model <model>` 로 전달.
+     * "sonnet"(기본·권장: 토큰 사용량 약 1/5) / "opus" / "haiku" / 전체 모델 ID 가능.
+     * "default" 또는 공백이면 --model 미전달(CLI 기본값 사용 = 보통 Opus).
+     * 프로젝트별로 콘솔에서 개별 override 가능(.vibecoder/claude-model 파일).
+     * 토큰 급소모의 가장 큰 레버 — 운영 기본값을 Opus → Sonnet 로 전환.
+     */
+    val model: String = "sonnet",
+    /**
+     * v1.106.0 — 컨텍스트(직전 turn 의 cache_read 토큰) 가 이 값을 넘으면 콘솔에 경고 +
+     * 자동 재개 보류. 1M 상한 누적으로 매 turn 전체 맥락을 과금하는 것을 사용자가
+     * 인지하고 "새 세션(컨텍스트 리셋)" 하도록 유도. 0 이하면 비활성.
+     */
+    val contextWarnTokens: Int = 350_000,
     /** v0.21.0 — usage 모니터링 정책. */
     val usage: ClaudeUsageSection = ClaudeUsageSection(),
 )
