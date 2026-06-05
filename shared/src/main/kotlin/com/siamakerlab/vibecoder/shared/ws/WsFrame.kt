@@ -177,6 +177,23 @@ sealed class WsFrame {
     ) : WsFrame()
 
     /**
+     * v1.106.1 — 컨텍스트 윈도우 점유율 미터(상시 표시)용. turn 종료 usage 에서 추출한
+     * 토큰 분해(input/cache_read/cache_creation)와 모델별 윈도우 한도. 클라이언트는
+     * used = input+cacheRead+cacheCreation, free = limit-used 로 그래픽 바를 그린다.
+     * Claude CLI 의 `/context` 와 유사한 점유/사용/남음 시각화(카테고리 분해는 stream-json
+     * 미노출이라 input/cached 세그먼트로 표현).
+     */
+    @Serializable
+    @SerialName("console_context_usage")
+    data class ConsoleContextUsage(
+        val inputTokens: Long,
+        val cacheReadTokens: Long,
+        val cacheCreationTokens: Long,
+        val contextLimit: Long,
+        val seq: Long,
+    ) : WsFrame()
+
+    /**
      * v1.3.0 — 프로젝트별 busy 상태 변화를 cross-project 토픽 (`/ws/projects`)
      * 으로 broadcast. workspaces 목록 / 대시보드 등이 실시간 busy 뱃지 동기.
      *

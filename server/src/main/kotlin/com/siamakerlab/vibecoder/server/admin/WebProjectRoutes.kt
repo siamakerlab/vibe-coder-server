@@ -437,6 +437,7 @@ fun Routing.webProjectRoutes(
         }
         val alive = sessionManager.isAlive(id)
         val sid = sessionManager.currentSessionId(id)
+        val ctxSnap = sessionManager.contextSnapshot(id)  // v1.106.1 — 컨텍스트 미터 초기값
         // v0.18.0 — 등록 직후 첫 console 진입이면 starter prompt 를 자동 입력 (소비).
         val starterPrompt = projects.consumeStarterPrompt(id)
         // Claude CLI 인증 상태 진단. CLI 자체와 자격증명 파일 둘 다 검사.
@@ -462,7 +463,10 @@ fun Routing.webProjectRoutes(
                 starterPrompt = starterPrompt,
                 initialHistory = history,
                 model = sessionManager.effectiveModel(id),
-                contextTokens = sessionManager.lastContextTokens(id),
+                contextTokens = ctxSnap.cacheRead,
+                contextInputTokens = ctxSnap.input,
+                contextCacheCreationTokens = ctxSnap.cacheCreation,
+                contextLimit = ctxSnap.limit,
                 contextWarnTokens = sessionManager.contextWarnTokens(),
                 mcpStrict = sessionManager.isMcpStrict(id),
                 lang = sess.language,
@@ -1323,6 +1327,7 @@ fun Routing.webProjectRoutes(
         val p = projects.ensureChat(activeId)
         val alive = sessionManager.isAlive(p.id)
         val sid = sessionManager.currentSessionId(p.id)
+        val ctxSnap = sessionManager.contextSnapshot(p.id)  // v1.106.1 — 컨텍스트 미터 초기값
         val env = authDeps.envDiagnostics.run(sess.language)
         // v1.7.3 — Chat 도 동일하게 history 영속 복원.
         // v1.104.2 — console 과 동일: 최근 200 turn(offset=total-200). 이전엔 oldest 200.
@@ -1346,7 +1351,10 @@ fun Routing.webProjectRoutes(
                 chatSidebar = sidebar,
                 chatTitle = activeTitle,
                 model = sessionManager.effectiveModel(p.id),
-                contextTokens = sessionManager.lastContextTokens(p.id),
+                contextTokens = ctxSnap.cacheRead,
+                contextInputTokens = ctxSnap.input,
+                contextCacheCreationTokens = ctxSnap.cacheCreation,
+                contextLimit = ctxSnap.limit,
                 contextWarnTokens = sessionManager.contextWarnTokens(),
                 mcpStrict = sessionManager.isMcpStrict(p.id),
                 lang = sess.language,
