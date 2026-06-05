@@ -136,7 +136,7 @@ class ClaudeStreamParser(
         // v0.63.0 — Phase 42 prompt cache usage 추적. assistant message 의 usage 객체에서
         // input/output/cache_read/cache_creation 토큰 추출. 누락된 model 버전도 있어
         // nullable. 비어 있으면 emit skip.
-        message["usage"]?.let { parseUsage(it) }?.let { out += it }
+        message["usage"]?.let { parseUsage(it, cumulative = false) }?.let { out += it }
         for (block in blocks) {
             val b = runCatching { block.jsonObject }.getOrNull() ?: continue
             when (b["type"]?.jsonPrimitive?.contentOrNull) {
@@ -183,7 +183,8 @@ class ClaudeStreamParser(
     private fun parseResult(obj: JsonObject): List<ClaudeEvent> {
         val out = mutableListOf<ClaudeEvent>()
         // v0.63.0 — result frame 에도 usage 가 종종 포함됨 (turn 종료 시 누적치).
-        obj["usage"]?.let { parseUsage(it) }?.let { out += it }
+        // v1.107.1 — cumulative=true 로 표시 → 컨텍스트 미터는 무시(누적치라 윈도우 초과).
+        obj["usage"]?.let { parseUsage(it, cumulative = true) }?.let { out += it }
         val subtype = obj["subtype"]?.jsonPrimitive?.contentOrNull ?: "unknown"
         val isError = obj["is_error"]?.jsonPrimitive?.booleanOrNull ?: false
         out += if (isError) {
@@ -205,7 +206,7 @@ class ClaudeStreamParser(
      * ```
      * 4 필드 모두 nullable. 모두 null 이면 emit skip (return null).
      */
-    private fun parseUsage(el: JsonElement): ClaudeEvent.UsageReport? {
+    private fun parseUsage(el: JsonElement, cumulative: Boolean): ClaudeEvent.UsageReport? {
         val obj = runCatching { el.jsonObject }.getOrNull() ?: return null
         fun long(key: String): Long? =
             obj[key]?.let { runCatching { it.jsonPrimitive.longOrNull }.getOrNull() }
@@ -219,6 +220,7 @@ class ClaudeStreamParser(
             outputTokens = output,
             cacheReadInputTokens = cacheRead,
             cacheCreationInputTokens = cacheCreate,
+            cumulative = cumulative,
         )
     }
 

@@ -618,6 +618,7 @@ internal object MessagesEn {
         "builds.col.status" to "Status",
         "builds.col.started" to "Started",
         "builds.col.finished" to "Finished",
+        "builds.col.duration" to "Build time",
         "builds.col.apk" to "APK",
         "builds.stats.summary" to "✓ %d · ✗ %d · cancel %d",
         "builds.stats.running" to " · running %d",
