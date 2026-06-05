@@ -60,8 +60,7 @@ fun Routing.agentRoutes(authDeps: AdminRoutesDeps, registry: AgentRegistry) {
     post("/agents/save") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireWriteAccessOrRedirect(sess)) return@post
-        requireCsrf()
-        val params = call.receiveParameters()
+        val params = requireCsrf()
         val name = params["name"]?.trim().orEmpty()
         val body = params["body"].orEmpty()
         runCatching { registry.write(name, body) }

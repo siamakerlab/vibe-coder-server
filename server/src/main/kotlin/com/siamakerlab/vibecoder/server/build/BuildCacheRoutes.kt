@@ -43,8 +43,7 @@ fun Routing.buildCacheRoutes(authDeps: AdminRoutesDeps, svc: BuildCacheService) 
     post("/settings/cache/cleanup") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireAdminOrRedirect(sess)) return@post
-        requireCsrf()
-        val params = call.receiveParameters()
+        val params = requireCsrf()
         val raw = params["target"]?.uppercase()?.replace("-", "_") ?: ""
         val target = runCatching { BuildCacheService.Target.valueOf(raw) }.getOrNull()
             ?: run {

@@ -146,10 +146,10 @@ ${if (!err.isNullOrBlank()) """<div class="error">${esc(err)}</div>""" else ""}
     post("/projects/{id}/mcp/save") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireWriteAccessOrRedirect(sess)) return@post
-        requireCsrf()
+        val form = requireCsrf()
         val id = call.parameters["id"]!!
         requireProjectAccessOrThrow(sess, projects, id)
-        val content = call.receiveParameters()["content"].orEmpty()
+        val content = form["content"].orEmpty()
         if (content.toByteArray(StandardCharsets.UTF_8).size > McpJsonStore.MAX_BYTES) {
             call.respondRedirect("/projects/$id/mcp?err=${enc("file too large (max 128KB)")}")
             return@post

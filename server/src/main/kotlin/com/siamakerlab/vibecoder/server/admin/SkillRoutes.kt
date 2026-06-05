@@ -73,8 +73,7 @@ fun Routing.skillRoutes(authDeps: AdminRoutesDeps, registry: SkillRegistry) {
     post("/settings/skills/save") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireAdminOrRedirect(sess)) return@post
-        requireCsrf()
-        val params = call.receiveParameters()
+        val params = requireCsrf()
         val name = params["name"]?.trim().orEmpty()
         val body = params["body"].orEmpty()
         runCatching { registry.write(name, body) }

@@ -78,10 +78,9 @@ fun Routing.buildAutomationRoutes(
     post("/projects/{id}/automation/schedules") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireWriteAccessOrRedirect(sess)) return@post
-        requireCsrf()
+        val form = requireCsrf()
         val id = call.parameters["id"]!!
         requireProjectAccessOrThrow(sess, projects, id)
-        val form = call.receiveParameters()
         val cronExpr = form["cronExpr"]?.trim().orEmpty()
         val description = form["description"]?.trim()?.ifBlank { null }
         val err = BuildScheduler.validate(cronExpr)
@@ -98,7 +97,7 @@ fun Routing.buildAutomationRoutes(
     post("/projects/{id}/automation/schedules/{scheduleId}/toggle") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireWriteAccessOrRedirect(sess)) return@post
-        requireCsrf()
+        val form = requireCsrf()
         val id = call.parameters["id"]!!
         requireProjectAccessOrThrow(sess, projects, id)
         val scheduleId = call.parameters["scheduleId"]!!
@@ -109,7 +108,6 @@ fun Routing.buildAutomationRoutes(
             call.respondRedirect("/projects/$id/automation?err=${enc("schedule not found")}")
             return@post
         }
-        val form = call.receiveParameters()
         val enabled = form["enabled"]?.equals("true", ignoreCase = true) ?: false
         scheduleRepo.toggleEnabled(scheduleId, enabled)
         call.respondRedirect("/projects/$id/automation?ok=${enc("schedule ${if (enabled) "활성" else "비활성"}")}")
@@ -134,10 +132,9 @@ fun Routing.buildAutomationRoutes(
     post("/projects/{id}/automation/secrets") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireWriteAccessOrRedirect(sess)) return@post
-        requireCsrf()
+        val form = requireCsrf()
         val id = call.parameters["id"]!!
         requireProjectAccessOrThrow(sess, projects, id)
-        val form = call.receiveParameters()
         val name = form["name"]?.trim().orEmpty().ifBlank { "external" }
         // 32-byte URL-safe random secret. 1회만 사용자에게 노출.
         // v1.27.4 (Q3) — 평문 저장 (대칭 HMAC 키). sender 는 secret 을 전송하지 않고

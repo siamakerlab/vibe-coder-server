@@ -67,8 +67,7 @@ fun Routing.twoFactorRoutes(deps: AdminRoutesDeps, users: AdminUserRepository) {
 
     post("/2fa/enable") {
         val sess = requireSessionOrRedirect(deps) ?: return@post
-        requireCsrf()
-        val params = call.receiveParameters()
+        val params = requireCsrf()
         val code = params["code"]?.trim().orEmpty()
         val secret = pendingSecrets[sess.userId]
         if (secret.isNullOrBlank()) {
@@ -88,13 +87,12 @@ fun Routing.twoFactorRoutes(deps: AdminRoutesDeps, users: AdminUserRepository) {
 
     post("/2fa/disable") {
         val sess = requireSessionOrRedirect(deps) ?: return@post
-        requireCsrf()
+        val params = requireCsrf()
         val u = users.findById(sess.userId) ?: run { call.respondRedirect("/login"); return@post }
         if (!u.totpEnabled) {
             call.respondRedirect("/2fa")
             return@post
         }
-        val params = call.receiveParameters()
         val code = params["code"]?.trim().orEmpty()
         if (!Totp.verify(u.totpSecret!!, code)) {
             call.respondRedirect("/2fa?err=${enc(Messages.t(sess.language, "twofa.flash.currentCodeMismatch"))}")

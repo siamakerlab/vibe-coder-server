@@ -127,14 +127,15 @@ fun Routing.projectKeystoreRoutes(
     post("/projects/{id}/keystore/create") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireWriteAccessOrRedirect(sess)) return@post
-        requireCsrf()
+        // requireCsrf() 가 receiveParameters() 로 본문을 1회 읽고 검증 후 반환한다.
+        // Ktor 3.x 는 본문 채널을 1회만 읽을 수 있어 별도 receiveParameters() 재호출 금지.
+        val form = requireCsrf()
         val id = call.parameters["id"]!!
         requireProjectAccessOrThrow(sess, projects, id)
         val p = runCatching { projects.get(id) }.getOrElse {
             call.respondRedirect("/projects?err=${enc("프로젝트 '$id' 를 찾을 수 없습니다.")}")
             return@post
         }
-        val form = call.receiveParameters()
         // packageName 은 프로젝트 메타에서 강제 — 폼 입력 무시(자동 연결 보장).
         val req = CreateKeystoreRequest(
             packageName = p.packageName,
@@ -161,14 +162,14 @@ fun Routing.projectKeystoreRoutes(
     post("/projects/{id}/keystore/admob") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireWriteAccessOrRedirect(sess)) return@post
-        requireCsrf()
+        // requireCsrf() 반환값(검증된 폼)을 그대로 사용 — 본문 재수신 금지(Ktor 1회 제한).
+        val form = requireCsrf()
         val id = call.parameters["id"]!!
         requireProjectAccessOrThrow(sess, projects, id)
         val p = runCatching { projects.get(id) }.getOrElse {
             call.respondRedirect("/projects?err=${enc("프로젝트 '$id' 를 찾을 수 없습니다.")}")
             return@post
         }
-        val form = call.receiveParameters()
         val ids = admobFromForm(form)
         val result = runCatching { keystore.saveAdmob(p.packageName, ids) }
         if (result.isSuccess) {

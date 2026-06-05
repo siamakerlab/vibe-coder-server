@@ -642,15 +642,17 @@ fun Routing.webProjectRoutes(
     post("/projects/{id}/builds/{buildId}/play-upload") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireWriteAccessOrRedirect(sess)) return@post
-        requireCsrf()
+        // requireCsrf() 가 receiveParameters() 로 본문을 1회 읽고 검증 후 반환한다.
+        // Ktor 3.x 는 본문 채널을 1회만 읽을 수 있어 별도 receiveParameters() 재호출 금지.
+        val form = requireCsrf()
         val id = call.parameters["id"]!!
         requireProjectAccessOrThrow(sess, projects, id)
         val buildId = call.parameters["buildId"]!!
-        val p = runCatching { projects.get(id) }.getOrElse {
+        // 프로젝트 존재 검증만 필요 — 반환값은 사용하지 않음(testflight-upload 와 동일 패턴).
+        runCatching { projects.get(id) }.getOrElse {
             call.respondRedirect("/projects?err=${Messages.t(sess.language, "flash.project.notFound", id).encodeUrl()}")
             return@post
         }
-        val form = call.receiveParameters()
         val aabPath = form["aabPath"]?.trim().orEmpty()
         val track = form["track"]?.trim().orEmpty().ifBlank { "internal" }
         val notes = form["releaseNotes"]?.trim()
@@ -683,7 +685,8 @@ fun Routing.webProjectRoutes(
     post("/projects/{id}/builds/{buildId}/testflight-upload") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireWriteAccessOrRedirect(sess)) return@post
-        requireCsrf()
+        // requireCsrf() 가 본문을 1회 읽고 검증 후 반환 — receiveParameters() 재호출 금지(Ktor 1회 제한).
+        val form = requireCsrf()
         val id = call.parameters["id"]!!
         requireProjectAccessOrThrow(sess, projects, id)
         val buildId = call.parameters["buildId"]!!
@@ -691,7 +694,6 @@ fun Routing.webProjectRoutes(
             call.respondRedirect("/projects?err=${Messages.t(sess.language, "flash.project.notFound", id).encodeUrl()}")
             return@post
         }
-        val form = call.receiveParameters()
         val ipaPath = form["ipaPath"]?.trim().orEmpty()
         val groups = form["distributionGroups"]?.trim()?.takeIf { it.isNotBlank() }
         val notes = form["releaseNotes"]?.trim()

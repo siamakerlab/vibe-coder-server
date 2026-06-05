@@ -56,10 +56,9 @@ fun Routing.codeAnalysisRoutes(
     post("/projects/{id}/wrapper") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireWriteAccessOrRedirect(sess)) return@post
-        requireCsrf()
+        val form = requireCsrf()
         val id = call.parameters["id"]!!
         requireProjectAccessOrThrow(sess, projects, id)
-        val form = call.receiveParameters()
         val version = form["version"]?.trim().orEmpty()
         val type = form["distributionType"]?.trim()?.ifBlank { "bin" } ?: "bin"
         runCatching { wrapperService.setVersion(id, version, type) }

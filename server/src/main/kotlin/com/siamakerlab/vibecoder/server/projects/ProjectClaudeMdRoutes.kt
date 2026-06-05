@@ -73,10 +73,10 @@ fun Routing.projectClaudeMdRoutes(authDeps: AdminRoutesDeps, projects: ProjectSe
     post("/projects/{id}/claude-md/save") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireWriteAccessOrRedirect(sess)) return@post
-        requireCsrf()
+        val form = requireCsrf()
         val id = call.parameters["id"]!!
         requireProjectAccessOrThrow(sess, projects, id)
-        val content = call.receiveParameters()["content"].orEmpty()
+        val content = form["content"].orEmpty()
         val t = { key: String -> Messages.t(sess.language, key) }
         if (content.toByteArray(StandardCharsets.UTF_8).size > MAX_BYTES) {
             call.respondRedirect("/projects/$id/claude-md?err=${enc(t("claudeMd.tooLarge"))}")
