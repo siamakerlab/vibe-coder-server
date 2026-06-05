@@ -37,21 +37,34 @@ class ArtifactService(
         /** v1.87.0 — 산출물 파일명 `<packageName>-<variant>-v<versionName>.apk` 용. */
         packageName: String,
         variant: String = "debug",
+    ): ArtifactRow = storeBuildArtifact(projectId, buildId, sourceApk, packageName, variant, ext = "apk", type = "debug-apk")
+
+    /**
+     * v1.107.0 — debug/release APK + release AAB 공통 산출물 저장. [ext] 로 확장자(apk/aab),
+     * [type] 로 artifact 종류(debug-apk/release-apk/release-aab) 구분. APK 만 versionName 을
+     * aapt best-effort 로 파일명에 포함(AAB 는 badging 불가 → 버전 생략).
+     */
+    fun storeBuildArtifact(
+        projectId: String,
+        buildId: String,
+        sourceFile: Path,
+        packageName: String,
+        variant: String,
+        ext: String,
+        type: String,
     ): ArtifactRow {
         val targetDir = workspace.debugArtifactDir(projectId, buildId)
-        // v1.87.0 — Gradle 기본 이름(app-debug.apk) 대신 의미있는 파일명으로 저장.
-        // versionName 은 aapt best-effort (미상 시 버전 생략).
-        val versionName = ApkBadgingReader.versionName(sourceApk)
-        val fileName = apkFileName(packageName, variant, versionName)
+        val versionName = if (ext.equals("apk", ignoreCase = true)) ApkBadgingReader.versionName(sourceFile) else null
+        val fileName = artifactFileName(packageName, variant, versionName, ext)
         val targetApk = targetDir.resolve(fileName)
-        Files.copy(sourceApk, targetApk, StandardCopyOption.REPLACE_EXISTING)
+        Files.copy(sourceFile, targetApk, StandardCopyOption.REPLACE_EXISTING)
         val sha = Sha256.hashFile(targetApk)
         val size = targetApk.fileSize()
         val artifact = repo.create(
             id = Ids.artifactId(),
             projectId = projectId,
             buildId = buildId,
-            type = "debug-apk",
+            type = type,
             fileName = targetApk.fileName.toString(),
             filePath = targetApk.toString(),
             sizeBytes = size,
@@ -136,14 +149,18 @@ class ArtifactService(
      *
      * 예: `com.example.app-debug-v1.2.3.apk`, 버전 미상 시 `com.example.app-debug.apk`.
      */
-    internal fun apkFileName(packageName: String, variant: String, versionName: String?): String {
+    internal fun apkFileName(packageName: String, variant: String, versionName: String?): String =
+        artifactFileName(packageName, variant, versionName, "apk")
+
+    /** v1.107.0 — 산출물 파일명 일반화: `<packageName>-<variant>-v<versionName>.<ext>`. */
+    internal fun artifactFileName(packageName: String, variant: String, versionName: String?, ext: String): String {
         val base = buildString {
             append(packageName.ifBlank { "app" })
             append('-').append(variant.ifBlank { "debug" })
             if (!versionName.isNullOrBlank()) append("-v").append(versionName)
         }
         val safe = base.replace(Regex("[^A-Za-z0-9._-]"), "_")
-        return "$safe.apk"
+        return "$safe.${ext.ifBlank { "apk" }}"
     }
 
     fun toDto(row: ArtifactRow): ArtifactDto = ArtifactDto(

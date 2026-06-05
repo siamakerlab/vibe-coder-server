@@ -16,13 +16,24 @@ object ApkFinder {
      * `source.resolve("android-app:app")` 가 잘못된 path 를 만들어 APK 미발견
      * → BUILD SUCCESSFUL 인데 "apk not found" FAILED 처리되던 회귀 fix.
      */
-    fun findLatestDebug(source: Path, moduleName: String): Path? {
+    fun findLatestDebug(source: Path, moduleName: String): Path? =
+        findLatest(source, moduleName, "build/outputs/apk/debug", ".apk")
+
+    // v1.107.0 — release APK: build/outputs/apk/release 아래 최신 .apk
+    fun findLatestReleaseApk(source: Path, moduleName: String): Path? =
+        findLatest(source, moduleName, "build/outputs/apk/release", ".apk")
+
+    // v1.107.0 — release AAB 번들: build/outputs/bundle/release 아래 최신 .aab
+    fun findLatestReleaseBundle(source: Path, moduleName: String): Path? =
+        findLatest(source, moduleName, "build/outputs/bundle/release", ".aab")
+
+    private fun findLatest(source: Path, moduleName: String, subDir: String, ext: String): Path? {
         val modulePath = moduleName.replace(':', '/')
-        val dir = source.resolve(modulePath).resolve("build/outputs/apk/debug")
+        val dir = source.resolve(modulePath).resolve(subDir)
         if (!dir.exists()) return null
         return Files.list(dir).use { stream ->
             stream
-                .filter { it.isRegularFile() && it.fileName.toString().endsWith(".apk", ignoreCase = true) }
+                .filter { it.isRegularFile() && it.fileName.toString().endsWith(ext, ignoreCase = true) }
                 .toList()
                 .maxByOrNull { Files.getLastModifiedTime(it).toMillis() }
         }

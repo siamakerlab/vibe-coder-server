@@ -582,6 +582,10 @@ internal object MessagesEn {
         "builds.summary.note" to "Last %d · green=SUCCESS line, red=failed, yellow square=APK size",
         "builds.summary.hint" to "Hover a dot to see id + status + duration. The line connects SUCCESS only (so failures don't skew the trend). Yellow squares are APK size (auto-scaled right axis).",
         "builds.queue" to "Enqueue debug build",
+        "builds.queue.release" to "Release build (APK)",
+        "builds.queue.release.hint" to "assembleRelease — builds a signed release APK (keystore signing auto-injected).",
+        "builds.queue.bundle" to "AAB bundle build",
+        "builds.queue.bundle.hint" to "bundleRelease — builds a signed .aab bundle for Play Console upload.",
         "builds.queueHint" to "After enqueue you can see live logs in the console; once finished the APK download link appears in this table.",
         // v1.26.0 — Build blocked because keystore is not prepared (policy: no auto-generate).
         "builds.disabled.title" to "Keystore is not prepared",

@@ -559,6 +559,10 @@ internal object MessagesKo {
         "builds.summary.note" to "최근 %d개 · 초록=SUCCESS line, 빨강=실패, 노랑 사각=APK 크기",
         "builds.summary.hint" to "점에 마우스 오버하면 빌드 id + 상태 + duration. 라인은 SUCCESS 만 연결 (실패가 평균을 왜곡하지 않도록). 노란 점은 APK 크기 추세 (오른쪽 축, 자동 스케일).",
         "builds.queue" to "Debug 빌드 큐 등록",
+        "builds.queue.release" to "Release 빌드 (APK)",
+        "builds.queue.release.hint" to "assembleRelease — 서명된 release APK 를 빌드합니다(키스토어 서명 자동 주입).",
+        "builds.queue.bundle" to "AAB 번들 빌드",
+        "builds.queue.bundle.hint" to "bundleRelease — Play Console 업로드용 서명된 .aab 번들을 빌드합니다.",
         "builds.queueHint" to "큐 등록 후엔 콘솔에서 실시간 로그를 볼 수 있으며, 완료되면 APK 다운로드 링크가 이 표에 나타납니다.",
         // v1.26.0 — 키스토어 미준비 시 빌드 차단 안내 (운영 정책: 키스토어 임의 생성 금지).
         "builds.disabled.title" to "키스토어가 준비되지 않았습니다",

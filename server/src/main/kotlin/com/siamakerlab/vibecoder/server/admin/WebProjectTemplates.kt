@@ -3046,6 +3046,15 @@ $errHtml
         ${CsrfTokens.hiddenInput(csrf)}
         <button type="submit" class="primary" style="width:auto;padding:8px 16px"${if (!keystoreReady) " disabled title=\"${esc(t("builds.disabled.noKeystore"))}\"" else ""}>${esc(t("builds.queue"))}</button>
       </form>
+      <!-- v1.107.0 — Release APK / AAB 번들 빌드(서명 주입). 키스토어 필요 → 미준비 시 비활성. -->
+      <form method="post" action="/projects/${esc(p.id)}/builds/release" style="display:inline">
+        ${CsrfTokens.hiddenInput(csrf)}
+        <button type="submit" style="width:auto;padding:8px 16px;background:#1f2937;color:#cbd5e1;border:1px solid #2b3648;border-radius:6px;cursor:pointer"${if (!keystoreReady) " disabled title=\"${esc(t("builds.disabled.noKeystore"))}\"" else " title=\"${esc(t("builds.queue.release.hint"))}\""}>${esc(t("builds.queue.release"))}</button>
+      </form>
+      <form method="post" action="/projects/${esc(p.id)}/builds/bundle" style="display:inline">
+        ${CsrfTokens.hiddenInput(csrf)}
+        <button type="submit" style="width:auto;padding:8px 16px;background:#1f2937;color:#cbd5e1;border:1px solid #2b3648;border-radius:6px;cursor:pointer"${if (!keystoreReady) " disabled title=\"${esc(t("builds.disabled.noKeystore"))}\"" else " title=\"${esc(t("builds.queue.bundle.hint"))}\""}>${esc(t("builds.queue.bundle"))}</button>
+      </form>
     </div>
   </div>
   <p class="hint">${esc(t("builds.queueHint"))}</p>
