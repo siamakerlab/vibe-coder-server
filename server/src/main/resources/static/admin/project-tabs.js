@@ -304,11 +304,41 @@
           items[j].style.opacity = j <= 4 ? '1' : (j === 5 ? '0.55' : '0.32');
         }
       }
+      // v1.106.2 — 우측 rail 컨텍스트 점유율 미터(콘솔 iframe 이 매 turn postMessage).
+      function ptCtxFmt(n) {
+        n = Number(n) || 0;
+        if (n >= 1000000) return (n / 1000000).toFixed(n >= 10000000 ? 0 : 1) + 'M';
+        if (n >= 1000) return Math.round(n / 1000) + 'K';
+        return String(n);
+      }
+      function updateRailContextMeter(d) {
+        var el = document.getElementById('pt-ctx-meter'); if (!el) return;
+        var input = Number(d.input) || 0, cacheRead = Number(d.cacheRead) || 0,
+            cacheCreation = Number(d.cacheCreation) || 0, limit = Number(d.limit) || 0;
+        var used = input + cacheRead + cacheCreation;
+        if (limit <= 0 || used <= 0) { el.hidden = true; return; }
+        el.hidden = false;
+        var pct = Math.min(100, used / limit * 100);
+        function w(x) { return (Math.max(0, x) / limit * 100) + '%'; }
+        var r = el.querySelector('.ctx-seg-read'); if (r) r.style.width = w(cacheRead);
+        var c = el.querySelector('.ctx-seg-create'); if (c) c.style.width = w(cacheCreation);
+        var i = el.querySelector('.ctx-seg-input'); if (i) i.style.width = w(input);
+        function setT(id, v) { var n = document.getElementById(id); if (n) n.textContent = v; }
+        setT('pt-ctx-used', ptCtxFmt(used));
+        setT('pt-ctx-limit', ptCtxFmt(limit));
+        setT('pt-ctx-pct', Math.round(pct) + '%');
+        setT('pt-ctx-free', ptCtxFmt(Math.max(0, limit - used)));
+        el.classList.toggle('warn', pct >= 70);
+        el.title = '대화 컨텍스트 ' + ptCtxFmt(used) + ' / ' + ptCtxFmt(limit) + ' (' + Math.round(pct) +
+          '%). 재사용 ' + ptCtxFmt(cacheRead) + ' · 신규캐시 ' + ptCtxFmt(cacheCreation) +
+          ' · 입력 ' + ptCtxFmt(input) + '. 클수록 매 turn 비용↑ — 새 세션으로 리셋 가능.';
+      }
       window.addEventListener('message', function (ev) {
         if (ev.origin !== location.origin) return;
         var d = ev.data;
         if (!d) return;
         if (d.type === 'vibe:prompt-sent') { prependHistory(d.text); return; }
+        if (d.type === 'vibe:context-usage') { updateRailContextMeter(d); return; }
         // v1.103.0 — 콘솔 iframe 의 busy-badge 가 turn 상태를 헤더 칩으로 미러링.
         if (d.type === 'console:busy') {
           var badge = document.getElementById('console-busy-badge');

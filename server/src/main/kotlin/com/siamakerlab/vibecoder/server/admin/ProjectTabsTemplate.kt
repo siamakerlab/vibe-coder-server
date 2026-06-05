@@ -133,6 +133,21 @@ internal object ProjectTabsTemplate {
     </div>
     <div class="pt-rail-card pt-hist-card">
       <div class="pt-rail-h">${esc(t("tabs.rail.history"))}</div>
+      <!-- v1.106.2 — 컨텍스트 점유율 미터(프롬프트 히스토리 상단). 콘솔 iframe 이
+           vibe:context-usage postMessage 로 매 turn 갱신(project-tabs.js). -->
+      <div id="pt-ctx-meter" class="pt-ctx-meter" hidden
+           title="대화 컨텍스트 점유율 — 윈도우 한도 대비 사용/남음. 클수록 매 turn 비용↑.">
+        <div class="pt-ctx-top">
+          <span class="pt-ctx-cap">컨텍스트</span>
+          <span class="pt-ctx-text"><b id="pt-ctx-used">–</b> / <span id="pt-ctx-limit">–</span> · <span id="pt-ctx-pct">0%</span></span>
+        </div>
+        <div class="pt-ctx-bar">
+          <div class="ctx-seg ctx-seg-read"></div>
+          <div class="ctx-seg ctx-seg-create"></div>
+          <div class="ctx-seg ctx-seg-input"></div>
+        </div>
+        <div class="pt-ctx-sub">남음 <span id="pt-ctx-free">–</span> <span class="pt-ctx-legend"><i class="ctx-seg-read"></i>재사용 <i class="ctx-seg-create"></i>신규 <i class="ctx-seg-input"></i>입력</span></div>
+      </div>
       <div class="pt-hist-list" data-hist-hint="${esc(t("tabs.rail.history.hint"))}">$historyHtml</div>
     </div>
     <!-- v1.91.0 — 메모 위젯 (전역 + 이 프로젝트). 프롬프트 히스토리 하단. -->
@@ -505,6 +520,23 @@ internal object ProjectTabsTemplate {
      rail 하단 빈 공간은 카드가 아닌 배경. 항목이 많아도 list 자체 max-height 로만 스크롤. */
   #project-tabs-root .pt-rail { justify-content: flex-start; }
   #project-tabs-root .pt-hist-card { display: flex; flex-direction: column; flex: 0 0 auto; }
+  /* v1.106.2 — 우측 rail 컨텍스트 점유율 미터 */
+  #project-tabs-root .pt-ctx-meter { margin: 0 0 10px; }
+  #project-tabs-root .pt-ctx-meter[hidden] { display: none; }
+  #project-tabs-root .pt-ctx-top { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; font-size: 10px; color: var(--text-dim,#888); margin-bottom: 4px; }
+  #project-tabs-root .pt-ctx-cap { font-weight: 600; }
+  #project-tabs-root .pt-ctx-text { font-family: ui-monospace, Menlo, monospace; white-space: nowrap; }
+  #project-tabs-root .pt-ctx-bar { height: 7px; border-radius: 5px; background: #1f2330; overflow: hidden; display: flex; }
+  #project-tabs-root .pt-ctx-meter .ctx-seg { height: 100%; width: 0; transition: width .3s ease; }
+  #project-tabs-root .pt-ctx-meter .ctx-seg-read { background: #3a82f6; }
+  #project-tabs-root .pt-ctx-meter .ctx-seg-create { background: #2dd4bf; }
+  #project-tabs-root .pt-ctx-meter .ctx-seg-input { background: #ffb86b; }
+  #project-tabs-root .pt-ctx-sub { font-size: 10px; color: var(--text-dim,#888); margin-top: 4px; display: flex; justify-content: space-between; gap: 6px; flex-wrap: wrap; }
+  #project-tabs-root .pt-ctx-legend { display: inline-flex; gap: 7px; align-items: center; }
+  #project-tabs-root .pt-ctx-legend i { display: inline-block; width: 7px; height: 7px; border-radius: 2px; margin-right: 2px; vertical-align: middle; }
+  #project-tabs-root .pt-ctx-meter.warn .pt-ctx-text,
+  #project-tabs-root .pt-ctx-meter.warn .pt-ctx-sub { color: #ffb86b; }
+  #project-tabs-root .pt-ctx-meter.warn .pt-ctx-bar { box-shadow: 0 0 0 1px rgba(255,184,107,.45) inset; }
   #project-tabs-root .pt-hist-list {
     max-height: 50vh; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;
   }
