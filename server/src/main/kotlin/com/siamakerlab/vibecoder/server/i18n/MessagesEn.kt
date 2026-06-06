@@ -1523,10 +1523,6 @@ internal object MessagesEn {
         "console.bgtasks.toggleHint" to "Collapse / expand",
         "console.message.expand" to "⌄ Show more",
         "console.message.collapse" to "⌃ Show less",
-        "console.busy.responding.queued" to "● Responding (%s queued)",
-        "console.queue.added" to "Queued (#%s): %s",
-        "console.queue.draining" to "Sending next queued prompt",
-        "console.queue.cleared" to "Queue cleared (%s removed)",
         "console.queue.clear" to "Clear queue",
 
         // ─────────────────────────────────────────────── claude
