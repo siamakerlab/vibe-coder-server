@@ -11,11 +11,11 @@
 #
 #   일반 commit push (amd64-only · v0.6.3+ 기본):
 #     docker buildx build --platform linux/amd64 \
-#         -f docker/Dockerfile -t siamakerlab/vibe-coder-server:1.111.2 --push .
+#         -f docker/Dockerfile -t siamakerlab/vibe-coder-server:1.111.3 --push .
 #
 #   마일스톤 multi-arch push (v0.7.0 / v1.0.0 등):
 #     docker buildx build --platform linux/amd64,linux/arm64 \
-#         -f docker/Dockerfile -t siamakerlab/vibe-coder-server:1.111.2 --push .
+#         -f docker/Dockerfile -t siamakerlab/vibe-coder-server:1.111.3 --push .
 
 # ------------------------------------------------------------------------------
 # Stage 1: 서버 빌드 (Gradle installDist)

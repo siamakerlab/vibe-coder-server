@@ -43,6 +43,12 @@ class GradleBuilder(private val config: ServerConfig) {
             }
         }
 
+        // v1.111.3 — gradlew 가 존재해도 실행 비트(+x)가 없으면(clone/zip 해제/파일 직접 생성 시
+        // umask·전송 방식에 따라 누락) POSIX 에서 `./gradlew` 가 error=13(EACCES)로 실패한다.
+        // bootstrap(신규 wrapper) 경로만 chmod 하던 한계를 보완 — 매 빌드 전, 이미 존재하는
+        // gradlew 에도 실행 권한을 보장한다(idempotent, 이미 +x 면 no-op).
+        if (os != OsType.WINDOWS) ensureExecutable(gradlew, logger)
+
         // Use `:module:assembleDebug` syntax which works on every OS without quoting.
         val fullTask = ":$moduleName:$debugTask"
         val signingArgs = signing?.toInjectedArgs().orEmpty()
@@ -68,6 +74,25 @@ class GradleBuilder(private val config: ServerConfig) {
 
         logger.info("Gradle exited code=${result.exitCode} timedOut=${result.timedOut} duration=${result.durationMs}ms")
         return result.exitCode
+    }
+
+    /**
+     * v1.111.3 — POSIX gradlew 에 실행 권한(owner/group/other +x)을 보장. 이미 있으면 no-op.
+     * 실패해도(예: 비-POSIX FS) 빌드는 계속 — 권한이 이미 맞아 정상일 수 있다.
+     */
+    private suspend fun ensureExecutable(gradlew: Path, logger: TaskLogger) {
+        runCatching {
+            if (!java.nio.file.Files.exists(gradlew)) return
+            val perms = java.nio.file.Files.getPosixFilePermissions(gradlew).toMutableSet()
+            val before = perms.size
+            perms += java.nio.file.attribute.PosixFilePermission.OWNER_EXECUTE
+            perms += java.nio.file.attribute.PosixFilePermission.GROUP_EXECUTE
+            perms += java.nio.file.attribute.PosixFilePermission.OTHERS_EXECUTE
+            if (perms.size != before) {
+                java.nio.file.Files.setPosixFilePermissions(gradlew, perms)
+                logger.info("gradlew 실행 권한(+x) 부여 — error=13(EACCES) 방지")
+            }
+        }.onFailure { logger.line("WARN", "gradlew chmod +x 실패(무시하고 진행): ${it.message}") }
     }
 
     private fun SigningCredentials.toInjectedArgs(): List<String> = listOf(
