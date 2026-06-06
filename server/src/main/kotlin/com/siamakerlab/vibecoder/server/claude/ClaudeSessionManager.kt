@@ -66,6 +66,9 @@ class ClaudeSessionManager(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val sessions = ConcurrentHashMap<String, ProjectSession>()
 
+    /** v1.112.0 — control_request 의 request_id 생성용 단조 증가 카운터. */
+    private val interruptSeq = java.util.concurrent.atomic.AtomicLong(0)
+
     /** Synchronizes spawn — prevents two simultaneous "first prompt" arrivals racing to start a process. */
     private val spawnLocks = ConcurrentHashMap<String, Mutex>()
 
@@ -143,6 +146,8 @@ class ClaudeSessionManager(
             session.retryJob = null
             session.rateLimitRetry = 0
         }
+        // v1.112.0 — 새 prompt 가 흐르면 직전 interrupt 의 미도착 result 표식은 무효(stale 방지).
+        session.interruptPending = false
         // v0.16.0 — user prompt 영구 적재 (sendPrompt 시점의 sessionId 사용).
         // 자동 재개 프롬프트는 사용자 입력이 아니므로 history 미적재.
         if (!isAutoResume) history?.userPrompt(projectId, session.sessionId, text)
@@ -273,25 +278,103 @@ class ClaudeSessionManager(
     /**
      * v0.13.0 — 진행 중인 turn 강제 중단.
      *
-     * Claude CLI stdin 으로 인터럽트 envelope 를 보내는 방법이 없어, 현재 자식 프로세스를
-     * SIGTERM 으로 죽이고 session-id 는 보존 (다음 prompt 시 --resume 으로 같은 대화 이어감).
-     * 사용자가 답변 도중 잘못된 방향이라고 판단하면 즉시 stop → 새 prompt 로 방향 전환 가능.
+     * v1.112.0 — SIGTERM(프로세스 kill) 대신 **control_request interrupt** 를 stdin 으로 보내
+     * 같은 프로세스·같은 세션에서 turn 만 즉시 abort 한다(cold start 제거, --resume 불필요).
+     * CLI 가 `result(error_during_execution)` 를 emit 하면 [handleStdoutLine] 의 interruptPending
+     * 분기가 정리(permit 반환 / 미완 마크 해제 / busy "stopped" / 자동화 통지)한다.
+     * interrupt 전송 실패 또는 watchdog([INTERRUPT_WATCHDOG_MS]) 내 미종료 시 기존 SIGTERM 으로 폴백.
      *
      * startNew 와 다른 점: startNew 는 session-id 삭제 → 완전 새 대화. cancel 은 그대로 이어감.
      */
     suspend fun cancelTurn(projectId: String) {
-        val existed = sessions[projectId]?.process?.isAlive == true
-        if (!existed) {
+        val session = sessions[projectId]
+        if (session?.process?.isAlive != true) {
             emitSystem(projectId, "cancel_noop", "진행 중인 Claude turn 이 없습니다.")
             return
         }
-        terminateSession(projectId)
-        clearTurnActive(projectId)  // v1.82.0 — 사용자 명시 중단 → 부팅 자동 재개 대상 아님.
-        emitSystem(
-            projectId, "turn_cancelled",
-            "사용자가 turn 을 중단했습니다. 다음 prompt 는 같은 세션 (--resume) 으로 이어집니다.",
-        )
-        fireInterrupt(projectId, "cancelled")
+        val sent = interruptTurn(projectId, "cancelled")
+        if (!sent) {
+            // 폴백: stdin 이 죽어 interrupt 를 못 보냄 → 기존 SIGTERM 경로.
+            terminateSession(projectId)
+            clearTurnActive(projectId)
+            emitSystem(projectId, "turn_cancelled",
+                "사용자가 turn 을 중단했습니다. 다음 prompt 는 같은 세션 (--resume) 으로 이어집니다.")
+            fireInterrupt(projectId, "cancelled")
+            return
+        }
+        emitSystem(projectId, "turn_cancelled",
+            "사용자가 turn 을 중단했습니다. 다음 prompt 는 같은 세션으로 이어집니다.")
+        // watchdog: result 가 안 와서 busy 가 안 풀리면(드물게 CLI hang) SIGTERM 으로 폴백.
+        scope.launch {
+            delay(INTERRUPT_WATCHDOG_MS)
+            if (busy[projectId] == true && sessions[projectId] === session && session.process.isAlive) {
+                log.warn { "[$projectId] interrupt watchdog 만료 — SIGTERM 폴백" }
+                terminateSession(projectId)
+                clearTurnActive(projectId)
+                fireInterrupt(projectId, "cancelled")
+            }
+        }
+    }
+
+    /**
+     * v1.112.0 — 진행 중 turn 을 interrupt 로 중단하고 곧바로 [text] 를 새 prompt 로 보낸다.
+     * (TUI 의 Esc → 새 입력과 동형 "끼어들기".) turn 이 중단되어 busy 가 풀릴 때까지 잠깐 기다린
+     * 뒤([INTERRUPT_WATCHDOG_MS] 한도) sendPrompt 로 새 turn 을 시작한다. 진행 중이 아니면 곧장 전송.
+     */
+    suspend fun interruptAndSend(projectId: String, text: String) {
+        val alive = sessions[projectId]?.process?.isAlive == true
+        if (alive && isBusy(projectId)) {
+            val sent = interruptTurn(projectId, "interrupted")
+            if (sent) {
+                waitUntilNotBusy(projectId, INTERRUPT_WATCHDOG_MS)
+            } else {
+                // interrupt 전송 실패 → 강제 종료 후 진행(다음 prompt 가 --resume 으로 이어감).
+                terminateSession(projectId)
+                clearTurnActive(projectId)
+                fireInterrupt(projectId, "interrupted")
+            }
+        }
+        sendPrompt(projectId, text)
+    }
+
+    /**
+     * v1.112.0 — stdin 으로 control_request interrupt 프레임을 보낸다. 성공 시 [reason] 을
+     * 세션에 기록해 result 도착 시 [handleStdoutLine] 이 같은 reason 으로 자동화/알림에 통지한다.
+     * 반환: 전송 성공 여부(false = 세션 없음 / stdin 죽음).
+     */
+    suspend fun interruptTurn(projectId: String, reason: String = "interrupted"): Boolean {
+        val session = sessions[projectId] ?: return false
+        if (!session.process.isAlive) return false
+        val rid = "int_" + interruptSeq.incrementAndGet()
+        val envelope = buildJsonObject {
+            put("type", "control_request")
+            put("request_id", rid)
+            put("request", buildJsonObject { put("subtype", "interrupt") })
+        }.toString()
+        session.interruptReason = reason
+        session.interruptPending = true
+        return session.stdinMutex.withLock {
+            try {
+                withContext(Dispatchers.IO) {
+                    session.stdin.write(envelope)
+                    session.stdin.newLine()
+                    session.stdin.flush()
+                }
+                true
+            } catch (e: IOException) {
+                log.warn(e) { "[$projectId] interrupt 전송 실패" }
+                session.interruptPending = false
+                false
+            }
+        }
+    }
+
+    /** v1.112.0 — busy 가 false 가 되거나 [timeoutMs] 경과까지 폴링 대기. */
+    private suspend fun waitUntilNotBusy(projectId: String, timeoutMs: Long) {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (busy[projectId] == true && System.currentTimeMillis() < deadline) {
+            delay(50)
+        }
     }
 
     fun isAlive(projectId: String): Boolean =
@@ -596,7 +679,7 @@ class ClaudeSessionManager(
                 // v1.99.0 — rate-limit error 직후 같은 turn 이 CLI 자체 복구로 Done 까지 도달한
                 //  경우, 예약돼 살아남은 재개(retryJob)가 백오프 후 또 발사하지 않도록 먼저 취소.
                 //  (정상 turn 에선 retryJob 이 항상 null 이라 무해.) rate-limit 카운터도 리셋.
-                sessions[projectId]?.let { it.retryJob?.cancel(); it.retryJob = null; it.rateLimitRetry = 0 }
+                sessions[projectId]?.let { it.retryJob?.cancel(); it.retryJob = null; it.rateLimitRetry = 0; it.interruptPending = false }
                 // v1.99.2 — 백그라운드 작업(Bash run_in_background / Task)이 아직 진행 중인데
                 //  claude 가 turn 을 끝낸(= 완료를 기다리려 turn 종료) 경우. 이건 "종료"가 아니라
                 //  "재개 대기"다 — 백그라운드 작업이 끝나면 claude 가 같은 turn 을 자동 재개
@@ -627,7 +710,19 @@ class ClaudeSessionManager(
                     maybeAutoCompact(projectId)
                 }
             } else if (event is ClaudeEvent.ErrorEvent) {
-                if (isRateLimitError(event)) {
+                val interrupted = sessions[projectId]
+                if (interrupted?.interruptPending == true) {
+                    // v1.112.0 — 사용자 interrupt(control_request) 로 인한 turn 종료. CLI 는
+                    //  result(subtype=error_during_execution, is_error=true) 로 끝내지만 이건
+                    //  "에러"가 아니라 "중단"이다 → 빨간 error 가 아닌 "중단됨"(stopped, 보라) 으로 정리.
+                    interrupted.interruptPending = false
+                    interrupted.retryJob?.cancel(); interrupted.retryJob = null
+                    interrupted.rateLimitRetry = 0
+                    gate.release(projectId)
+                    clearTurnActive(projectId)
+                    fireInterrupt(projectId, interrupted.interruptReason)
+                    setBusy(projectId, false, "stopped")
+                } else if (isRateLimitError(event)) {
                     // v1.99.0 — rate-limit 은 turn "종료"가 아니라 "일시중단 → 재개 대기"다.
                     //  ① gate.release 를 **하지 않는다** — permit 을 유지해 그 슬롯이 rate-limit
                     //     동안 다른 turn 에 넘어가지 않게 한다(동시 in-flight 가 실제로 줄어 burst 완화).
@@ -1173,6 +1268,15 @@ class ClaudeSessionManager(
         @Volatile var model: String? = null,
         /** v1.108.0 — 직전 turn 이 자동 /compact 였는지(루프 방지: 그 turn 직후 1회 재트리거 skip). */
         @Volatile var compacting: Boolean = false,
+        /**
+         * v1.112.0 — control_request interrupt 를 stdin 으로 보낸 직후 true. CLI 가 진행 중
+         * turn 을 abort 하고 `result(subtype=error_during_execution, is_error=true)` 를 emit 하는데,
+         * 이건 "에러" 가 아니라 "사용자 중단" 이므로 [handleStdoutLine] 의 ErrorEvent 분기가
+         * 이 플래그를 보고 빨간 error 가 아닌 "중단됨"(stopped) 으로 정리한다. result 도착 시 클리어.
+         */
+        @Volatile var interruptPending: Boolean = false,
+        /** v1.112.0 — interrupt 의 자동화/알림 통지 reason. "cancelled"(중지 버튼) | "interrupted"(끼어들기). */
+        @Volatile var interruptReason: String = "interrupted",
     )
 
     /**
@@ -1191,6 +1295,13 @@ class ClaudeSessionManager(
     companion object {
         const val MAX_PROMPT_BYTES = 32 * 1024
         const val IDLE_CHECK_INTERVAL_MS = 60_000L
+
+        /**
+         * v1.112.0 — control_request interrupt 전송 후, CLI 가 turn 을 abort 하고
+         * result 를 emit 하기까지 기다리는 한도. 초과 시 SIGTERM 으로 폴백(cancelTurn) 하거나
+         * 그대로 새 prompt 를 전송(interruptAndSend). 관측상 interrupt→result 는 수십 ms.
+         */
+        const val INTERRUPT_WATCHDOG_MS = 5_000L
 
         /**
          * v1.99.2 — 백그라운드 작업이 끝났음을 뜻하는 status 값(소문자). 진행형

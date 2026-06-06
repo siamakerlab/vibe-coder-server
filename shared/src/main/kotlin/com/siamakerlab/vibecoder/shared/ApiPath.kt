@@ -65,9 +65,19 @@ object ApiPath {
         "/api/projects/$projectId/claude/console/prompt"
     fun claudeConsoleNew(projectId: String) =
         "/api/projects/$projectId/claude/console/new"
-    /** v0.13.0 — 현재 진행 중인 Claude turn 강제 중단 (process SIGTERM + 즉시 respawn). */
+    /**
+     * v0.13.0 — 현재 진행 중인 Claude turn 강제 중단. v1.112.0 부터 내부 구현이 SIGTERM 에서
+     * control_request interrupt(같은 세션·프로세스 유지) 로 바뀜(엔드포인트/요청 형태는 동일).
+     */
     fun claudeConsoleCancel(projectId: String) =
         "/api/projects/$projectId/claude/console/cancel"
+    /**
+     * v1.112.0 — "끼어들기": 진행 중 turn 을 interrupt 로 중단하고 곧바로 새 prompt 를 전송.
+     * 요청 body 는 [claudeConsolePrompt] 와 동일(PromptRequestDto), 응답도 PromptAcceptedDto.
+     * TUI 의 Esc → 새 입력과 동형. 진행 중이 아니면 일반 prompt 와 동일하게 동작.
+     */
+    fun claudeConsoleInterrupt(projectId: String) =
+        "/api/projects/$projectId/claude/console/interrupt"
     fun claudeStatus(projectId: String) =
         "/api/projects/$projectId/claude/status"
 
