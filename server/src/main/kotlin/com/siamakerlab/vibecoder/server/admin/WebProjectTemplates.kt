@@ -1096,11 +1096,11 @@ $errHtml
             if (isCustomModel) append("""<option value="${esc(model)}" selected>${esc(model)}</option>""")
         }
         val modelSelectorHtml = """
-    <form method="post" action="/projects/${esc(p.id)}/console/model" style="display:inline" id="model-form">
+    <form method="post" action="/projects/${esc(p.id)}/console/model" style="display:inline-flex;align-items:center;margin:0" id="model-form">
       ${CsrfTokens.hiddenInput(csrf)}
       <select name="model" title="Claude 모델 — Sonnet 가 Opus 대비 토큰 사용량 약 1/5. 변경은 다음 prompt 부터 같은 대화에 적용."
               onchange="document.getElementById('model-form').submit()"
-              style="font-size:12px;padding:3px 6px;background:#1a1a1a;color:var(--text);border:1px solid #333;border-radius:5px">
+              style="font-size:12px;line-height:1.6;padding:4px 8px;height:30px;box-sizing:border-box;vertical-align:middle;background:#1a1a1a;color:var(--text);border:1px solid #333;border-radius:8px;cursor:pointer">
         $modelOptions
       </select>
     </form>"""
@@ -1134,13 +1134,13 @@ $errHtml
         // v1.106.0 (P1-a) — MCP 최소화 토글(전역 5개 MCP 툴 스키마를 빼 캐시 프리픽스 축소).
         val mcpStrictChecked = if (mcpStrict) "checked" else ""
         val mcpStrictHtml = """
-    <form method="post" action="/projects/${esc(p.id)}/console/mcp-strict" style="display:inline" id="mcp-strict-form">
+    <form method="post" action="/projects/${esc(p.id)}/console/mcp-strict" style="display:inline-flex;align-items:center;margin:0" id="mcp-strict-form">
       ${CsrfTokens.hiddenInput(csrf)}
       <input type="hidden" name="enabled" value="${if (mcpStrict) "false" else "true"}">
       <label title="전역 MCP(playwright 등 5종) 툴 스키마를 빼 매 turn 토큰을 줄입니다. 프로젝트 .mcp.json 의 서버만 사용."
-             style="font-size:12px;color:var(--text-dim,#888);cursor:pointer;display:inline-flex;align-items:center;gap:4px">
+             style="font-size:12px;line-height:1.6;height:30px;box-sizing:border-box;padding:4px 8px;color:var(--text-dim,#888);cursor:pointer;display:inline-flex;align-items:center;gap:5px;border:1px solid #333;border-radius:8px;background:var(--bg)">
         <input type="checkbox" $mcpStrictChecked onchange="document.getElementById('mcp-strict-form').submit()"
-               style="cursor:pointer">MCP 최소화
+               style="cursor:pointer;margin:0;vertical-align:middle">MCP 최소화
       </label>
     </form>"""
         // Claude CLI 미설치 또는 인증 누락 시 큰 안내 카드 + 프롬프트 폼 비활성화.
@@ -1490,12 +1490,12 @@ $errHtml
     $modelSelectorHtml
     $mcpStrictHtml
     $sideLinks
-    <button type="button" id="stop-btn" class="chip chip-danger" style="display:none"
+    <button type="button" id="stop-btn" class="chip chip-danger" style="display:none;height:30px;box-sizing:border-box;align-items:center"
             title="${esc(t("console.stop.title"))}">${esc(t("console.stop"))}</button>
-    <form method="post" action="/projects/${esc(p.id)}/console/new" style="display:inline"
+    <form method="post" action="/projects/${esc(p.id)}/console/new" style="display:inline-flex;align-items:center;margin:0"
           onsubmit="return confirm('${esc(t("console.newSession.confirm")).replace("'", "&#39;")}')">
       ${CsrfTokens.hiddenInput(csrf)}
-      <button type="submit" class="chip chip-danger">${esc(t("console.newSession"))}</button>
+      <button type="submit" class="chip chip-danger" style="height:30px;box-sizing:border-box;display:inline-flex;align-items:center">${esc(t("console.newSession"))}</button>
     </form>
   </div>
 </header>
@@ -3784,6 +3784,12 @@ ${if (status != null && !unavailable) """
         val newFolderPrompt = t("fileTree.prompt.newFolder")
         val confirmDeleteN = t("fileTree.confirm.deleteN")
         val toolbar = """<div class="card" style="margin-bottom:10px">
+  <!-- v1.107.3 — 툴바 버튼/폼/chip 높이 통일(30px)로 한 줄 정렬. 인라인이라 캐시 무관. -->
+  <style>
+    #fts-toolbar-default, #fts-toolbar-select { row-gap: 6px; }
+    #fts-toolbar-default > form, #fts-toolbar-select > form { margin: 0; display: inline-flex; align-items: center; }
+    #fts-toolbar-default .chip, #fts-toolbar-select .chip { height: 30px; box-sizing: border-box; display: inline-flex; align-items: center; }
+  </style>
   <div id="fts-toolbar-default" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
     <!-- v1.27.4 (B1) — parent 를 query param 으로도 전달. multipart part 순서에
          의존하지 않도록 (file part 가 parent FormItem 보다 먼저 와도 정확한 위치).
