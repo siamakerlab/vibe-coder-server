@@ -1138,7 +1138,7 @@ $errHtml
       ${CsrfTokens.hiddenInput(csrf)}
       <input type="hidden" name="enabled" value="${if (mcpStrict) "false" else "true"}">
       <label title="전역 MCP(playwright 등 5종) 툴 스키마를 빼 매 turn 토큰을 줄입니다. 프로젝트 .mcp.json 의 서버만 사용."
-             style="font-size:12px;line-height:1;height:30px;box-sizing:border-box;padding:0 10px;color:var(--text-dim,#888);cursor:pointer;display:inline-flex;align-items:center;gap:5px;border:1px solid #333;border-radius:8px;background:var(--bg)">
+             style="margin:0;font-size:12px;line-height:1;height:30px;box-sizing:border-box;padding:0 10px;color:var(--text-dim,#888);cursor:pointer;display:inline-flex;align-items:center;gap:5px;border:1px solid #333;border-radius:8px;background:var(--bg)">
         <input type="checkbox" $mcpStrictChecked onchange="document.getElementById('mcp-strict-form').submit()"
                style="cursor:pointer;margin:0;flex:0 0 auto;width:13px;height:13px">MCP 최소화
       </label>
@@ -3798,7 +3798,9 @@ ${if (status != null && !unavailable) """
   <style>
     #fts-toolbar-default, #fts-toolbar-select { row-gap: 6px; }
     #fts-toolbar-default > form, #fts-toolbar-select > form { margin: 0; display: inline-flex; align-items: center; }
-    #fts-toolbar-default .chip, #fts-toolbar-select .chip { height: 30px; box-sizing: border-box; display: inline-flex; align-items: center; }
+    #fts-toolbar-default .chip, #fts-toolbar-select .chip { height: 30px; box-sizing: border-box; display: inline-flex; align-items: center; margin: 0; }
+    /* 전역 label{margin-bottom:16px} 가 업로드 <label class=chip> 를 위로 밀던 것 무력화. */
+    #fts-toolbar-default label.chip, #fts-toolbar-select label.chip { margin: 0; }
   </style>
   <div id="fts-toolbar-default" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
     <!-- v1.27.4 (B1) — parent 를 query param 으로도 전달. multipart part 순서에
