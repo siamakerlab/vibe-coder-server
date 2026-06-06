@@ -193,12 +193,14 @@ class ClaudeSessionManager(
                     session.stdin.flush()
                 }
                 session.lastActivity = Instant.now()
-                if (isFollowUp) {
-                    // v1.113.0 — 진행 중 turn 에 이어붙는 사용자 입력. CLI 내부 큐가 현재 turn
-                    // 종료 후 처리한다. busy/마크/bg 추적은 현재 turn 것을 그대로 두고, Done 이
-                    // 와도 이 입력의 turn 이 끝날 때까지 종료 처리를 보류하도록 카운터만 올린다.
-                    session.queuedUserPrompts.incrementAndGet()
-                } else {
+                // v1.113.1 — follow-up(응답 중 추가 전송)은 stdin write 외엔 아무것도 건드리지
+                //  않는다. 진행 중 turn 의 busy/미완 마크/gate permit/bg 추적을 그대로 두고, CLI
+                //  내부 큐가 turn 종료 후 새 turn 으로 처리한다. 각 turn 의 Done + 자발적 재개 경로
+                //  (활동 프레임 도착 시 setBusy(true))가 busy 를 관리하므로 별도 종료 카운팅이
+                //  불필요하다. (v1.113.0 의 카운터는 isFollowUp 판정~증가 사이 직전 turn Done 이
+                //  끼어들면 실제 Done 개수보다 커져 마지막 Done 을 삼키고 영구 "응답중" 으로
+                //  고착되던 race 버그가 있어 제거.)
+                if (!isFollowUp) {
                     // v1.99.2 — 새 사용자 prompt 는 새 turn 시작 → 이전 turn 의 백그라운드 작업
                     // 잔재(완료 통지 누락 등)를 무효화한다. 안 그러면 stale 한 outstanding 때문에
                     // 이번 turn 의 Done 이 영구 suspended 로 묶일 수 있다. 자동 재개(isAutoResume)는
@@ -213,7 +215,6 @@ class ClaudeSessionManager(
                 }
             } catch (e: IOException) {
                 log.warn(e) { "[$projectId] stdin write failed; will respawn on next prompt" }
-                if (isFollowUp) session.queuedUserPrompts.decrementAndGet()
                 // busy 가 true 로 전이되기 전 실패 → setBusy(false) 전이가 안 일어나므로 여기서 명시 release.
                 if (!isFollowUp) gate.release(projectId)
                 emitSystem(projectId, "process_crashed", "Claude process is no longer accepting input (${e.message}). Retrying on next prompt.")
@@ -711,20 +712,12 @@ class ClaudeSessionManager(
                 //   ③ fireTurnDone 안 함 → 자동화가 미완 turn 을 완료로 오인해 다음 프롬프트를
                 //      쏴 turn 이 중첩되던 근본 원인 차단.
                 //  재개 turn 이 진짜 Done(outstandingBgTasks 비어있음) 될 때 아래 else 로 정상 종료.
-                // v1.113.0 — turn 진행 중 사용자가 추가로 보낸(follow-up) prompt 가 CLI 내부 큐에
-                //  남아 있으면, 이 Done 은 그 직전 turn 의 종료일 뿐 "세션 유휴" 가 아니다. 클라이언트
-                //  인위적 큐를 없애고 CLI 큐에 맡기는 TUI 동형 동작 — bg_task_suspended 와 동형으로
-                //  종료 처리(gate.release/setBusy(false)/clearTurnActive/fireTurnDone)를 보류하고
-                //  카운터만 1 감소. 다음 입력 turn 의 활동 프레임이 이어서 오면 responding 유지.
-                val followUpPending = (sessions[projectId]?.queuedUserPrompts?.get() ?: 0) > 0
+                // v1.113.1 — follow-up(응답 중 추가 전송)에 대한 종료 카운팅(v1.113.0)을 제거했다.
+                //  각 turn 은 자체 Done 을 보내고, CLI 큐의 다음 turn 첫 활동 프레임에서 자발적 재개
+                //  경로가 busy 를 복구한다. 카운팅은 Done 개수 예측이 빗나가면(race) 마지막 Done 을
+                //  삼켜 영구 "응답중" 으로 고착시켰다 → 정상 종료 처리에 맡긴다.
                 val bgOutstanding = sessions[projectId]?.outstandingBgTasks?.isNotEmpty() == true
-                if (followUpPending) {
-                    sessions[projectId]?.let {
-                        it.queuedUserPrompts.decrementAndGet()
-                        it.lastActivity = Instant.now()
-                    }
-                    setBusy(projectId, true, "responding")
-                } else if (bgOutstanding) {
+                if (bgOutstanding) {
                     // v1.100.0 — busy 는 true 로 유지하되 상태칩을 "대기중"(waiting, 노랑) 으로
                     // 전이. 재개 turn 의 활동 프레임이 오면 위(L484)에서 responding 으로 자연 복귀.
                     setBusy(projectId, true, "waiting")
@@ -750,7 +743,6 @@ class ClaudeSessionManager(
                     interrupted.interruptPending = false
                     interrupted.retryJob?.cancel(); interrupted.retryJob = null
                     interrupted.rateLimitRetry = 0
-                    interrupted.queuedUserPrompts.set(0)  // v1.113.0 — 중단 시 대기 follow-up 무효.
                     gate.release(projectId)
                     clearTurnActive(projectId)
                     fireInterrupt(projectId, interrupted.interruptReason)
@@ -1310,15 +1302,6 @@ class ClaudeSessionManager(
         @Volatile var interruptPending: Boolean = false,
         /** v1.112.0 — interrupt 의 자동화/알림 통지 reason. "cancelled"(중지 버튼) | "interrupted"(끼어들기). */
         @Volatile var interruptReason: String = "interrupted",
-        /**
-         * v1.113.0 — turn 진행 중 사용자가 추가로 보낸(follow-up) prompt 수. 클라이언트 인위적
-         * 큐를 제거하고 stream-json CLI 내부 큐에 맡기는 대신(TUI 동형), 서버가 이 카운터로
-         * "아직 처리할 사용자 입력이 남았음"을 추적한다. `Done` 이 와도 이 값이 양수면 그 turn 은
-         * 종료가 아니라 "다음 입력 이어짐" 이므로 종료 처리(gate.release / setBusy(false) /
-         * fireTurnDone / clearTurnActive)를 보류하고 1 감소시킨다. [outstandingBgTasks] 와 동형.
-         */
-        val queuedUserPrompts: java.util.concurrent.atomic.AtomicInteger =
-            java.util.concurrent.atomic.AtomicInteger(0),
     )
 
     /**
