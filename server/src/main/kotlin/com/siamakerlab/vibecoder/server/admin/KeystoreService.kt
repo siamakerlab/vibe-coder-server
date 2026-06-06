@@ -228,27 +228,50 @@ class KeystoreService(
         val p = Properties()
         runCatching { Files.newBufferedReader(admob).use { p.load(it) } }
             .onFailure { log.warn(it) { "admob read failed for $packageName" } }
-        // v1.107.1 — 외부(임포트 레포 relocate 등) 형식 호환. 저장폼/벌드프롬프트의 정규 키
-        // (admobAppId / <type>AdUnitId) 외에, Claude 가 임포트 레포에서 흔히 쓰는
-        // debug/release 분리 + snake_case (예: release.admob_banner_id, debug.admob_app_id)
-        // 도 인식한다. 실 운영 값인 release.* 를 우선, 없으면 정규/bare, 최후로 debug.*(테스트 ID).
-        fun firstNonBlank(vararg keys: String): String =
-            keys.firstNotNullOfOrNull { k -> p.getProperty(k)?.trim()?.ifBlank { null } } ?: ""
-        fun units(canonical: String, snake: String): List<String> =
-            firstNonBlank(
-                canonical,
-                "release.admob_$snake", "admob_$snake", "release.$snake", "debug.admob_$snake",
-            ).split(",").map { it.trim() }.filter { it.isNotBlank() }
+        // v1.107.4 — 키 이름 스키마가 매번 달라(저장폼: admobAppId/bannerAdUnitId, relocate 변형:
+        // release.admob_banner_id / admob.bannerId / admob.test.* 등) 화이트리스트로는 한계.
+        // → **값 패턴 + 키 키워드 기반 일반 파싱**으로 어떤 스키마든 인식한다.
+        //   · 값이 ca-app-pub-…~… (틸드) → App ID,  …/… (슬래시) → 광고 unit ID
+        //   · unit 타입은 키 키워드(banner/appOpen/native/interstitial/rewarded[Interstitial])로 분류
+        //   · **테스트 ID 는 섹션에 표시하지 않음**: 키에 test/debug 포함 OR 값이 Google 공식
+        //     테스트 publisher(ca-app-pub-3940256099942544) 면 제외. 운영(실) ID 만 노출.
+        val types = linkedMapOf(
+            "appOpen" to mutableListOf<String>(), "banner" to mutableListOf(), "native" to mutableListOf(),
+            "interstitial" to mutableListOf(), "rewardedInterstitial" to mutableListOf(), "rewarded" to mutableListOf(),
+        )
+        val appIds = mutableListOf<String>()
+        fun classify(keyLower: String): String? = when {
+            Regex("rewarded.?interstitial").containsMatchIn(keyLower) -> "rewardedInterstitial"
+            keyLower.contains("rewarded") -> "rewarded"
+            keyLower.contains("interstitial") -> "interstitial"
+            keyLower.contains("appopen") || keyLower.contains("app_open") ||
+                (keyLower.contains("open") && keyLower.contains("app")) -> "appOpen"
+            keyLower.contains("native") -> "native"
+            keyLower.contains("banner") -> "banner"
+            else -> null
+        }
+        for (name in p.stringPropertyNames()) {
+            val keyLower = name.lowercase()
+            val keyIsTest = keyLower.contains("test") || keyLower.contains("debug")
+            val tokens = p.getProperty(name).orEmpty().split(",")
+                .map { it.trim() }.filter { it.startsWith("ca-app-pub-", ignoreCase = true) }
+            for (tok in tokens) {
+                // 테스트 ID 제외: 테스트 키이거나 Google 공식 테스트 publisher.
+                if (keyIsTest || tok.startsWith("ca-app-pub-3940256099942544")) continue
+                when {
+                    tok.contains("~") -> appIds.add(tok)
+                    tok.contains("/") -> classify(keyLower)?.let { types.getValue(it).add(tok) }
+                }
+            }
+        }
         return AdmobIds(
-            appId = firstNonBlank(
-                "admobAppId", "release.admob_app_id", "admob_app_id", "release.app_id", "debug.admob_app_id",
-            ),
-            appOpenUnitIds = units("appOpenAdUnitId", "app_open_id"),
-            bannerUnitIds = units("bannerAdUnitId", "banner_id"),
-            nativeUnitIds = units("nativeAdUnitId", "native_id"),
-            interstitialUnitIds = units("interstitialAdUnitId", "interstitial_id"),
-            rewardedUnitIds = units("rewardedAdUnitId", "rewarded_id"),
-            rewardedInterstitialUnitIds = units("rewardedInterstitialAdUnitId", "rewarded_interstitial_id"),
+            appId = appIds.firstOrNull().orEmpty(),
+            appOpenUnitIds = types.getValue("appOpen").distinct(),
+            bannerUnitIds = types.getValue("banner").distinct(),
+            nativeUnitIds = types.getValue("native").distinct(),
+            interstitialUnitIds = types.getValue("interstitial").distinct(),
+            rewardedUnitIds = types.getValue("rewarded").distinct(),
+            rewardedInterstitialUnitIds = types.getValue("rewardedInterstitial").distinct(),
         )
     }
 
