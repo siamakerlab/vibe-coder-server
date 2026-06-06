@@ -167,6 +167,16 @@ internal object ProjectTabsTemplate {
         <div class="pt-ctx-sub">남음 <span id="pt-ctx-free">–</span> <span class="pt-ctx-legend"><i class="ctx-seg-read"></i>재사용 <i class="ctx-seg-create"></i>신규 <i class="ctx-seg-input"></i>입력</span></div>
       </div>
     </div>
+    <!-- v1.111.0 — Todo 요약 + 백그라운드 작업 카드(콘솔에서 이동, 컨텍스트 카드 하단). 콘솔 iframe 이
+         vibe:todo / vibe:bgtasks postMessage 로 스냅샷 전달, project-tabs.js 가 렌더. 내용 있을 때만 표시. -->
+    <div class="pt-rail-card pt-todo-card" data-card="todo" hidden>
+      <div class="pt-rail-h">📋 ${esc(t("console.todo.title"))} <span id="pt-todo-summary" class="dim"></span></div>
+      <ul id="pt-todo-list" class="pt-todo-list"></ul>
+    </div>
+    <div class="pt-rail-card pt-bg-card" data-card="bgtasks" hidden>
+      <div class="pt-rail-h">⚙ ${esc(t("console.bgtasks.title"))} <span id="pt-bg-count" class="dim"></span></div>
+      <div id="pt-bg-list" class="pt-bg-list"></div>
+    </div>
     <div class="pt-rail-card pt-hist-card" data-card="history">
       <div class="pt-rail-h">${esc(t("tabs.rail.history"))}</div>
       <div class="pt-hist-list" data-hist-hint="${esc(t("tabs.rail.history.hint"))}">$historyHtml</div>
@@ -655,6 +665,21 @@ internal object ProjectTabsTemplate {
   }
   /* vibe-busy-pulse 는 콘솔 iframe(WebProjectTemplates)에만 정의돼 부모 스코프엔 없으므로 여기서도 정의. */
   @keyframes vibe-busy-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+  /* v1.111.0 — Todo 요약 + 백그라운드 작업 카드(콘솔에서 이동, 컨텍스트 하단). */
+  #project-tabs-root .pt-todo-card, #project-tabs-root .pt-bg-card { display: flex; flex-direction: column; flex: 0 0 auto; }
+  #project-tabs-root .pt-todo-list { list-style: none; margin: 0; padding: 0; max-height: 30vh; overflow-y: auto; }
+  #project-tabs-root .pt-bg-list { display: flex; flex-direction: column; gap: 4px; max-height: 30vh; overflow-y: auto; }
+  #project-tabs-root .bg-task-card {
+    display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px;
+    background: rgba(255,255,255,0.03); font-size: 12px;
+  }
+  #project-tabs-root .bg-task-icon { flex-shrink: 0; width: 16px; text-align: center; }
+  #project-tabs-root .bg-task-card[data-status="running"] .bg-task-icon { color: #69db7c; animation: vibe-busy-pulse 1.4s ease-in-out infinite; border-radius: 50%; }
+  #project-tabs-root .bg-task-card[data-status="completed"] .bg-task-icon { color: #69db7c; }
+  #project-tabs-root .bg-task-card[data-status="failed"] .bg-task-icon { color: #ff8787; }
+  #project-tabs-root .bg-task-card[data-status="completed"] { opacity: 0.7; transition: opacity 0.4s; }
+  #project-tabs-root .bg-task-desc { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #project-tabs-root .bg-task-meta { flex-shrink: 0; color: var(--text-dim,#888); font-size: 10px; font-family: monospace; }
   /* v1.91.0 — 메모 위젯 (프롬프트 히스토리 하단). */
   #project-tabs-root .pt-memo-card { display: flex; flex-direction: column; flex: 0 0 auto; }
   #project-tabs-root .pt-memo-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }

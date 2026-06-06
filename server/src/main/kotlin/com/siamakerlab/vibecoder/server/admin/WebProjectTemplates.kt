@@ -1363,25 +1363,8 @@ $errHtml
   #busy-badge[data-state="error"] {
     background: rgba(255,107,107,0.18); color: #ff8787;
   }
-  /* v1.84.0 — 백그라운드 작업 진행 카드 패널. */
-  .bg-tasks {
-    margin-bottom:8px; border:1px solid #2a3a2a; border-radius:8px;
-    background:rgba(105,219,124,0.05); padding:8px 10px;
-  }
-  /* v1.105.1 — 헤더 클릭으로 접기/펼치기. 접으면 진행 중 개수만 표시. */
-  .bg-tasks-head {
-    font-size:11px; color:var(--text-dim,#888); margin-bottom:6px; font-weight:600;
-    display:flex; align-items:center; gap:6px; cursor:pointer; user-select:none;
-  }
-  .bg-tasks-caret { display:inline-block; transition:transform 0.15s; font-size:10px; }
-  .bg-tasks-count {
-    margin-left:auto; font-weight:600; color:#69db7c; font-family:monospace;
-    background:rgba(105,219,124,0.12); border-radius:10px; padding:1px 8px;
-  }
-  .bg-tasks.collapsed { margin-bottom:8px; }
-  .bg-tasks.collapsed .bg-tasks-head { margin-bottom:0; }
-  .bg-tasks.collapsed #bg-tasks-list { display:none; }
-  /* v1.106.1 — 컨텍스트 점유율 미터(상시) */
+  /* v1.111.0 — 백그라운드 작업 패널 CSS 는 부모 rail(ProjectTabsTemplate)로 이동. */
+  /* v1.106.1 — 컨텍스트 점유율 미터(상시 — 비임베드 standalone 콘솔에서만 렌더) */
   .ctx-meter { margin:0 0 8px; padding:6px 10px; border:1px solid #1f2330; border-radius:8px; background:#0d1018; }
   .ctx-meter[hidden] { display:none; }
   .ctx-meter-row { display:flex; align-items:center; gap:8px; }
@@ -1398,20 +1381,6 @@ $errHtml
   .ctx-legend span { display:inline-flex; align-items:center; gap:4px; }
   .ctx-dot { width:8px; height:8px; border-radius:2px; display:inline-block; }
   .ctx-dot-free { background:#1f2330; border:1px solid #333; }
-  .bg-task-card {
-    display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:6px;
-    background:rgba(255,255,255,0.03); margin-top:4px; font-size:12px;
-  }
-  .bg-task-card:first-child { margin-top:0; }
-  .bg-task-icon { flex-shrink:0; width:16px; text-align:center; }
-  .bg-task-card[data-status="running"] .bg-task-icon {
-    color:#69db7c; animation:vibe-busy-pulse 1.4s ease-in-out infinite; border-radius:50%;
-  }
-  .bg-task-card[data-status="completed"] .bg-task-icon { color:#69db7c; }
-  .bg-task-card[data-status="failed"] .bg-task-icon { color:#ff8787; }
-  .bg-task-desc { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .bg-task-meta { flex-shrink:0; color:var(--text-dim,#888); font-size:10px; font-family:monospace; }
-  .bg-task-card[data-status="completed"] { opacity:0.7; transition:opacity 0.4s; }
   /* v1.85.0 — assistant 마크다운 렌더 */
   .log-body.md { line-height:1.55; }
   .log-body.md > :first-child { margin-top:0; }
@@ -1574,28 +1543,9 @@ ${if (embed) "" else contextMeterHtml}
   v1.3.0 — Todo 요약 패널. <details> 의 open 상태는 localStorage 영속.
   콘솔 카드 표시 여부는 필터의 'todo' 카테고리로 별도 토글 가능.
 -->
-<!-- v1.84.0 — 백그라운드 작업(Bash run_in_background 등) 진행 카드. 실행 중인 task 가
-     있을 때만 표시. claude 가 작업을 띄우고 turn 을 끝내도 진행 상황을 알 수 있게 한다. -->
-<div id="bg-tasks" class="bg-tasks" hidden>
-  <div class="bg-tasks-head" id="bg-tasks-head" role="button" tabindex="0"
-       title="${esc(t("console.bgtasks.toggleHint"))}" aria-expanded="true">
-    <span class="bg-tasks-caret" id="bg-tasks-caret">▾</span>
-    <span>⚙ <span id="bg-tasks-title">${esc(t("console.bgtasks.title"))}</span></span>
-    <span class="bg-tasks-count" id="bg-tasks-count" hidden></span>
-  </div>
-  <div id="bg-tasks-list"></div>
-</div>
-
-<details id="todo-panel" style="margin-bottom:6px;font-size:12px">
-  <summary style="cursor:pointer;color:var(--text-dim);padding:4px 0;user-select:none">
-    📋 <span id="todo-panel-title">${esc(t("console.todo.title"))}</span>
-    <span id="todo-panel-summary" class="dim" style="font-size:11px"></span>
-  </summary>
-  <div style="padding:8px 10px;background:rgba(255,255,255,0.03);border:1px solid #2a2a2a;border-radius:6px;margin-top:4px;max-height:200px;overflow:auto">
-    <div id="todo-panel-empty" class="dim" style="font-size:11px">${esc(t("console.todo.empty"))}</div>
-    <ul id="todo-panel-list" style="list-style:none;margin:0;padding:0;display:none"></ul>
-  </div>
-</details>
+<!-- v1.111.0 — Todo 요약 + 백그라운드 작업 패널을 부모 오버뷰 rail(ProjectTabsTemplate,
+     컨텍스트 카드 하단)로 이동했다(사용자 요청). 콘솔은 todoStore/bgTasks 상태를 계속
+     계산하고, 스냅샷을 vibe:todo / vibe:bgtasks postMessage 로 부모에 전달만 한다. -->
 
 $quickBarHtml
 
@@ -2091,7 +2041,7 @@ $quickBarHtml
   // 키 우선순위: taskId > subject (재호출 시 동일 항목으로 갱신되도록).
   // localStorage 영속은 의도적으로 생략 — 세션 단위 휘발 (서버 재시작 / 새 세션 시 초기화).
   // 콘솔 카드 자체는 별도로 cat='todo' 로 분류돼 필터에서 토글 가능.
-  var TODO_PANEL_OPEN_KEY = 'vibe-todo-panel-open-' + projectId;
+  // v1.111.0 — Todo 요약은 부모 rail 로 이동(아래 renderTodoPanel 이 vibe:todo 로 broadcast).
   var todoStore = [];
 
   function todoStatusIcon(status) {
@@ -2151,21 +2101,10 @@ $quickBarHtml
     renderTodoPanel();
   }
 
+  // v1.111.0 — Todo 패널이 부모 rail 로 이동. DOM 직접 렌더 대신 스냅샷(html+summary)을
+  // vibe:todo postMessage 로 부모에 전달한다(부모 project-tabs.js 가 rail 카드에 렌더).
   function renderTodoPanel() {
-    var listEl = document.getElementById('todo-panel-list');
-    var emptyEl = document.getElementById('todo-panel-empty');
-    var summaryEl = document.getElementById('todo-panel-summary');
-    if (!listEl || !emptyEl || !summaryEl) return;
-    if (todoStore.length === 0) {
-      listEl.style.display = 'none';
-      emptyEl.style.display = '';
-      summaryEl.textContent = '';
-      return;
-    }
-    emptyEl.style.display = 'none';
-    listEl.style.display = '';
-    var done = 0, active = 0;
-    var html = '';
+    var done = 0, active = 0, html = '';
     for (var j = 0; j < todoStore.length; j++) {
       var t = todoStore[j];
       var si = todoStatusIcon(t.status);
@@ -2180,24 +2119,14 @@ $quickBarHtml
                 : '') +
               '</li>';
     }
-    listEl.innerHTML = html;
-    var parts = [done + '/' + todoStore.length + ' ' + ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.todo.summary.done"))}];
-    if (active > 0) parts.push(active + ' ' + ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.todo.summary.active"))});
-    summaryEl.textContent = '— ' + parts.join(' · ');
+    var summary = '';
+    if (todoStore.length > 0) {
+      var parts = [done + '/' + todoStore.length + ' ' + ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.todo.summary.done"))}];
+      if (active > 0) parts.push(active + ' ' + ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.todo.summary.active"))});
+      summary = '— ' + parts.join(' · ');
+    }
+    try { window.parent.postMessage({ type: 'vibe:todo', count: todoStore.length, html: html, summary: summary }, location.origin); } catch (e) {}
   }
-
-  // 패널 open/close 상태 영속.
-  (function initTodoPanel() {
-    var panel = document.getElementById('todo-panel');
-    if (!panel) return;
-    var saved;
-    try { saved = localStorage.getItem(TODO_PANEL_OPEN_KEY); } catch (e) { saved = null; }
-    // 기본값: 열림 (저장된 값 없으면 open).
-    panel.open = (saved === null) ? true : (saved === '1');
-    panel.addEventListener('toggle', function() {
-      try { localStorage.setItem(TODO_PANEL_OPEN_KEY, panel.open ? '1' : '0'); } catch (e) {}
-    });
-  })();
 
   // v0.13.0 → v1.70.0 — tool_use 친화 렌더링은 공용 /static/console-render.js 로 추출.
   // clip / renderToolUse 는 그 모듈을 위임 사용 (메인 콘솔 · /chat · sub-agent 공통).
@@ -2472,46 +2401,31 @@ $quickBarHtml
   }
   // v1.84.0 — 백그라운드 작업 카드 패널. task_started → 카드 추가(실행 중 spinner),
   // task_updated/notification 의 status 가 종료(completed/failed)면 ✓/✗ 후 6초 뒤 제거.
-  var bgTasks = {};  // taskId -> { el, status }
+  // v1.111.0 — 백그라운드 작업 패널이 부모 rail 로 이동. taskId → { desc, meta, status } 데이터
+  // 스토어만 유지하고, 변경 시 스냅샷 HTML 을 vibe:bgtasks postMessage 로 부모에 전달한다.
+  // (접기/펼치기는 부모 rail 카드 헤더가 담당.)
+  var bgTasks = {};  // taskId -> { desc, meta, status }
   var BG_TYPE_LABELS = { local_bash: 'shell' };
-  // v1.105.1 — 백그라운드 작업 패널 접기/펼치기. 접으면 진행 중 개수만 표시(localStorage 영속).
-  var BG_COUNT_TMPL = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.bgtasks.collapsedCount"))};
-  var bgCollapsed = false;
-  try { bgCollapsed = localStorage.getItem('vibeBgTasksCollapsed') === '1'; } catch (e) {}
   function bgRunningCount() {
     var n = 0;
     for (var k in bgTasks) { if (bgTasks[k] && bgTasks[k].status === 'running') n++; }
     return n;
   }
-  function applyBgCollapsed() {
-    var p = document.getElementById('bg-tasks');
-    if (!p) return;
-    p.classList.toggle('collapsed', bgCollapsed);
-    var head = document.getElementById('bg-tasks-head');
-    if (head) head.setAttribute('aria-expanded', bgCollapsed ? 'false' : 'true');
-    var caret = document.getElementById('bg-tasks-caret');
-    if (caret) caret.textContent = bgCollapsed ? '▸' : '▾';
-    var cnt = document.getElementById('bg-tasks-count');
-    if (cnt) {
-      if (bgCollapsed) { cnt.textContent = BG_COUNT_TMPL.replace('{n}', String(bgRunningCount())); cnt.hidden = false; }
-      else { cnt.hidden = true; }
+  function broadcastBgTasks() {
+    var ids = Object.keys(bgTasks);
+    var html = '';
+    for (var x = 0; x < ids.length; x++) {
+      var r = bgTasks[ids[x]];
+      html += '<div class="bg-task-card" data-status="' + r.status + '">' +
+              '<span class="bg-task-icon">' + bgIcon(r.status) + '</span>' +
+              '<span class="bg-task-desc">' + escHtml(r.desc || '') + '</span>' +
+              '<span class="bg-task-meta">' + escHtml(r.meta || '') + '</span></div>';
     }
+    try {
+      window.parent.postMessage({ type: 'vibe:bgtasks', count: ids.length,
+        running: bgRunningCount(), html: html }, location.origin);
+    } catch (e) {}
   }
-  function toggleBgCollapsed() {
-    bgCollapsed = !bgCollapsed;
-    try { localStorage.setItem('vibeBgTasksCollapsed', bgCollapsed ? '1' : '0'); } catch (e) {}
-    applyBgCollapsed();
-  }
-  (function initBgCollapse() {
-    var head = document.getElementById('bg-tasks-head');
-    if (head) {
-      head.addEventListener('click', toggleBgCollapsed);
-      head.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleBgCollapsed(); }
-      });
-    }
-    applyBgCollapsed();
-  })();
   // v1.106.1 — 컨텍스트 점유율 미터 갱신(상시 표시). used = input + cacheRead + cacheCreation.
   function ctxFmt(n) {
     n = Number(n) || 0;
@@ -2551,42 +2465,22 @@ $quickBarHtml
   // 초기값(서버 직전 turn 스냅샷) 렌더.
   updateContextMeter($contextInputTokens, $contextTokens, $contextCacheCreationTokens, $contextLimit);
   function bgIcon(status) { return status === 'completed' ? '✓' : (status === 'failed' ? '✗' : '●'); }
-  function refreshBgPanel() {
-    var p = document.getElementById('bg-tasks');
-    if (p) p.hidden = Object.keys(bgTasks).length === 0;
-    applyBgCollapsed();
-  }
   function bgMeta(f) {
     var parts = [BG_TYPE_LABELS[f.taskType] || f.taskType || 'task', String(f.taskId).slice(0, 8)];
     if (f.lastTool) parts.push(f.lastTool);
     if (f.toolUses) parts.push(f.toolUses + ' tools');
     return parts.join(' · ');
   }
-  function ensureBgCard(f) {
-    var rec = bgTasks[f.taskId];
-    if (rec) return rec;
-    var list = document.getElementById('bg-tasks-list');
-    if (!list) return null;
-    var card = document.createElement('div');
-    card.className = 'bg-task-card';
-    card.dataset.status = 'running';
-    card.innerHTML = '<span class="bg-task-icon">●</span><span class="bg-task-desc"></span><span class="bg-task-meta"></span>';
-    list.appendChild(card);
-    rec = bgTasks[f.taskId] = { el: card, status: 'running' };
-    refreshBgPanel();
-    return rec;
-  }
+  // v1.111.0 — DOM 카드 대신 데이터 스토어만 갱신 후 부모 rail 로 스냅샷 broadcast.
   function handleBgTask(f) {
     if (!f || !f.taskId) return;
     if (f.kind === 'started' || f.kind === 'progress') {
-      // task_progress 가 task_started 없이 첫 도착(서브에이전트)해도 카드 생성.
-      var rec = ensureBgCard(f);
-      if (!rec) return;
+      // task_progress 가 task_started 없이 첫 도착(서브에이전트)해도 항목 생성.
+      var rec = bgTasks[f.taskId] || (bgTasks[f.taskId] = { desc: '', meta: '', status: 'running' });
       rec.status = 'running';
-      rec.el.dataset.status = 'running';
-      rec.el.querySelector('.bg-task-icon').textContent = '●';
-      if (f.description) rec.el.querySelector('.bg-task-desc').textContent = f.description;
-      rec.el.querySelector('.bg-task-meta').textContent = bgMeta(f);
+      if (f.description) rec.desc = f.description;
+      rec.meta = bgMeta(f);
+      broadcastBgTasks();
     } else {  // 'updated' | 'notification'
       var rec2 = bgTasks[f.taskId];
       if (!rec2) return;
@@ -2594,16 +2488,12 @@ $quickBarHtml
       var active = (st === 'running' || st === 'in_progress' || st === 'started' || st === 'pending');
       rec2.status = active ? 'running'
         : ((st === 'failed' || st === 'error' || st === 'killed') ? 'failed' : 'completed');
-      rec2.el.dataset.status = rec2.status;
-      rec2.el.querySelector('.bg-task-icon').textContent = bgIcon(rec2.status);
-      applyBgCollapsed();  // 진행 중 개수 즉시 갱신(접힌 상태에서 표시).
+      broadcastBgTasks();
       if (!active) {
         var tid = f.taskId;
         setTimeout(function() {
-          var r = bgTasks[tid];
-          if (r && r.el && r.el.parentNode) r.el.parentNode.removeChild(r.el);
           delete bgTasks[tid];
-          refreshBgPanel();
+          broadcastBgTasks();
         }, 6000);
       }
     }
