@@ -224,7 +224,8 @@ object ConversationTurns : Table("conversation_turns") {
     val sessionId = varchar("session_id", 64).nullable()
     val turnIdx = integer("turn_idx")
     val ts = varchar("ts", 64)
-    val role = varchar("role", 16)
+    // v1.111.2 — 16 → 32. "tool_result_error"(17자) 등이 16 한도를 넘겨 persist 실패하던 버그 수정.
+    val role = varchar("role", 32)
     val content = text("content")
     val toolName = varchar("tool_name", 64).nullable()
     val toolUseId = varchar("tool_use_id", 128).nullable()

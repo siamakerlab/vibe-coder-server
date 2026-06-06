@@ -67,6 +67,11 @@ object VibeDb {
                 val database = Database.connect(ds)
                 transaction(database) {
                     SchemaUtils.createMissingTablesAndColumns(*AllTables)
+                    // v1.111.2 — conversation_turns.role 16 → 32. createMissingTablesAndColumns 는
+                    // 기존 컬럼 타입(길이)을 넓히지 않으므로 명시적 ALTER. "tool_result_error"(17자)
+                    // 등이 16 한도를 넘겨 tool 에러 turn 이 이력에 적재되지 못하던 버그 수정.
+                    // 이미 32 이상이면 Postgres no-op → idempotent.
+                    exec("ALTER TABLE conversation_turns ALTER COLUMN role TYPE varchar(32)")
                     // v0.53.0 — Phase 32 풀텍스트 검색 (tsvector + GIN).
                     // Exposed 0.55 의 schema DSL 이 generated column / GIN index 미지원 →
                     // raw SQL 로 idempotent 마이그. `IF NOT EXISTS` 가 두 번째 부팅 부터 no-op.
