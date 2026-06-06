@@ -357,6 +357,35 @@
           }
         });
       }
+      // v1.110.0 — rail 카드 접기/펼치기(헤더 클릭). 카드별 상태 localStorage 영속.
+      (function initRailCollapse() {
+        var rail = document.querySelector('#project-tabs-root .pt-rail');
+        if (!rail) return;
+        var cards = rail.querySelectorAll('.pt-rail-card');
+        Array.prototype.forEach.call(cards, function (card) {
+          var head = card.querySelector('.pt-rail-h');
+          if (!head) return;
+          var key = card.getAttribute('data-card');
+          var lsKey = key ? 'vibe.rail.collapsed.' + key : null;
+          if (lsKey) {
+            try { if (localStorage.getItem(lsKey) === '1') card.classList.add('pt-collapsed'); } catch (e) {}
+          }
+          head.setAttribute('role', 'button');
+          head.setAttribute('tabindex', '0');
+          function toggle() {
+            var collapsed = card.classList.toggle('pt-collapsed');
+            if (lsKey) { try { localStorage.setItem(lsKey, collapsed ? '1' : '0'); } catch (e) {} }
+          }
+          head.addEventListener('click', function (ev) {
+            // 헤더 내 액션(버튼/링크/입력/체크박스 라벨)은 토글 트리거 제외.
+            if (ev.target.closest('button, a, input, select, label')) return;
+            toggle();
+          });
+          head.addEventListener('keydown', function (ev) {
+            if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(); }
+          });
+        });
+      })();
       // v1.109.0 — 프롬프트 자동화(콘솔 인라인 패널에서 우측 오버뷰 rail 로 이동). 자체 입력으로
       // /claude/automation/* REST 직접 실행 + 활성 시 status 3s 폴링. 진행 프레임은 콘솔 iframe 의
       // vibe:automation postMessage 로 즉시 갱신(아래 message 핸들러 → __ptAutoRender).

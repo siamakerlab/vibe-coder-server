@@ -904,7 +904,10 @@ table.devices small.dim { font-size: 11px; }
     padding: 2px 2px 0;
     min-height: 26px;
     margin-bottom: 10px;
+    /* v1.110.0 — 세션/모델/MCP 가 하단 바로 이동해 폭이 커졌으므로 좁은 폭에서 줄바꿈 허용. */
+    flex-wrap: wrap;
 }
+.console-bottom-tools { flex-wrap: wrap; }
 .console-bottom-bar .console-spinner {
     padding: 0;          /* 패딩/구분선은 바가 담당 — 스피너는 inline 으로만 */
     border-top: none;

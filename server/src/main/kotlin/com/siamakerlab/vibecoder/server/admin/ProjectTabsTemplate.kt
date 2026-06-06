@@ -129,7 +129,7 @@ internal object ProjectTabsTemplate {
         }.joinToString("")
         val railHtml = """
   <aside class="pt-rail" aria-label="${esc(t("tabs.rail.overview"))}">
-    <div class="pt-rail-card">
+    <div class="pt-rail-card" data-card="overview">
       <div class="pt-rail-h">${esc(t("tabs.rail.overview"))}</div>
       <div class="pt-ov">
         <div class="pt-ov-row"><span class="k">${esc(t("tabs.title"))}</span><span class="v">${esc(project.name)}</span></div>
@@ -142,7 +142,7 @@ internal object ProjectTabsTemplate {
     </div>
     <!-- v1.106.3 — 컨텍스트 점유율 카드(독립, 프롬프트 히스토리 카드 위). 우상단 /compact 버튼.
          콘솔 iframe 이 vibe:context-usage postMessage 로 매 turn 미터 갱신(project-tabs.js). -->
-    <div class="pt-rail-card pt-ctx-card">
+    <div class="pt-rail-card pt-ctx-card" data-card="context">
       <div class="pt-rail-h pt-ctx-head">
         <span>${esc(t("tabs.rail.context"))}</span>
         <span class="pt-ctx-actions">
@@ -167,14 +167,14 @@ internal object ProjectTabsTemplate {
         <div class="pt-ctx-sub">남음 <span id="pt-ctx-free">–</span> <span class="pt-ctx-legend"><i class="ctx-seg-read"></i>재사용 <i class="ctx-seg-create"></i>신규 <i class="ctx-seg-input"></i>입력</span></div>
       </div>
     </div>
-    <div class="pt-rail-card pt-hist-card">
+    <div class="pt-rail-card pt-hist-card" data-card="history">
       <div class="pt-rail-h">${esc(t("tabs.rail.history"))}</div>
       <div class="pt-hist-list" data-hist-hint="${esc(t("tabs.rail.history.hint"))}">$historyHtml</div>
     </div>
     <!-- v1.109.0 — 프롬프트 자동화 카드(콘솔 인라인 패널에서 이동, 메모 위). 자체 입력으로
          /claude/automation/* REST 직접 실행 + 활성 시 status 폴링. 진행 프레임은 콘솔 iframe 이
          vibe:automation postMessage 로 즉시 전달(project-tabs.js initAutomation). -->
-    <div class="pt-rail-card pt-auto-card">
+    <div class="pt-rail-card pt-auto-card" data-card="automation">
       <div class="pt-rail-h">🤖 ${esc(t("console.automation.title"))} <span id="pt-auto-badge" class="dim"></span></div>
       <div id="pt-auto-running" class="pt-auto-running" hidden>
         <div class="pt-auto-prog"><span class="pt-auto-dot"></span><span id="pt-auto-progress"></span></div>
@@ -197,7 +197,7 @@ internal object ProjectTabsTemplate {
       </div>
     </div>
     <!-- v1.91.0 — 메모 위젯 (전역 + 이 프로젝트). 프롬프트 히스토리 하단. -->
-    <div class="pt-rail-card pt-memo-card">
+    <div class="pt-rail-card pt-memo-card" data-card="memo">
       <div class="pt-rail-h pt-memo-head">
         <span>${esc(t("tabs.rail.memos"))}</span>
         <button type="button" class="pt-memo-add" id="pt-memo-add"
@@ -561,6 +561,18 @@ internal object ProjectTabsTemplate {
   #project-tabs-root .pt-ov-row .v.mono { font-family: ui-monospace, Menlo, monospace; font-size: 11px; }
   #project-tabs-root .pt-ks.ok { color: var(--ok, #69db7c); }
   #project-tabs-root .pt-ks.miss { color: var(--text-dim, #888); }
+  /* v1.110.0 — rail 카드 접기/펼치기. 헤더(.pt-rail-h) 클릭 토글, 카드별 localStorage 영속.
+     좌측 캐럿(▾/▸) 표시. 헤더 내 액션 버튼/입력 클릭은 토글 제외(JS). */
+  #project-tabs-root .pt-rail-card > .pt-rail-h { cursor: pointer; justify-content: flex-start; }
+  #project-tabs-root .pt-rail-card > .pt-rail-h::before {
+    content: '▾'; display: inline-block; font-size: 9px; color: #5a6175;
+    margin-right: 5px; transition: transform 0.15s ease; flex-shrink: 0;
+  }
+  #project-tabs-root .pt-rail-card.pt-collapsed > .pt-rail-h::before { transform: rotate(-90deg); }
+  #project-tabs-root .pt-rail-card.pt-collapsed > .pt-rail-h { margin-bottom: 0; }
+  #project-tabs-root .pt-rail-card.pt-collapsed > :not(.pt-rail-h) { display: none !important; }
+  #project-tabs-root .pt-ctx-head .pt-ctx-actions { margin-left: auto; }
+  #project-tabs-root .pt-memo-head .pt-memo-add { margin-left: auto; }
   /* 프롬프트 히스토리 카드 — 최신 위, 2줄 축약, 5개 밑으로 점점 흐리게(inline opacity).
      v1.50.2 — flex:1 제거: 카드를 내용 높이로(이전엔 남는 높이를 채워 하단 빈 여백으로 길어짐).
      rail 하단 빈 공간은 카드가 아닌 배경. 항목이 많아도 list 자체 max-height 로만 스크롤. */
