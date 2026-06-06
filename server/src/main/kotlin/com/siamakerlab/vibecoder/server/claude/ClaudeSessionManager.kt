@@ -208,7 +208,7 @@ class ClaudeSessionManager(
         runCatching { contextTokensFile(projectId).deleteIfExists() }
         sessions[projectId]?.let {
             it.lastContextTokens = 0; it.lastInputTokens = 0; it.lastCacheCreationTokens = 0
-            it.contextWarned = false
+            it.contextWarned = false; it.compacting = false
         }
         hub.resetConsole(topic(projectId))
         emitSystem(projectId, "new_session_requested", "Session reset. The next prompt starts a fresh conversation.")
@@ -623,6 +623,8 @@ class ClaudeSessionManager(
                     setBusy(projectId, false)
                     // v1.59.0 — 자동화 리스너에 turn 완료 통지 (fire-and-forget, stdout 파싱 비blocking).
                     fireTurnDone(projectId, event.reason)
+                    // v1.108.0 — 컨텍스트 임계 초과 + auto-compact ON 이면 자동 /compact 발사(사용자 클릭과 동일 경로).
+                    maybeAutoCompact(projectId)
                 }
             } else if (event is ClaudeEvent.ErrorEvent) {
                 if (isRateLimitError(event)) {
@@ -1005,6 +1007,46 @@ class ClaudeSessionManager(
     /** v1.106.0 — 콘솔 표시용 컨텍스트 경고 임계(토큰). 0=비활성. */
     fun contextWarnTokens(): Int = config.claude.contextWarnTokens
 
+    // ── v1.108.0 — 자동 /compact. 기본 ON(off-flag 파일 부재=ON). ON 이면 turn 종료 후
+    //    컨텍스트가 autoCompactTokens 초과 시 자동으로 `/compact` 실행 후 작업 이어감.
+    private fun autoCompactOffFile(projectId: String): Path =
+        workspace.vibecoderDir(projectId).resolve("auto-compact-off")
+
+    /** 기본 ON: off-flag 파일이 없으면 ON. */
+    fun isAutoCompact(projectId: String): Boolean = !autoCompactOffFile(projectId).exists()
+
+    fun setAutoCompact(projectId: String, enabled: Boolean) {
+        val f = autoCompactOffFile(projectId)
+        runCatching {
+            if (enabled) f.deleteIfExists()
+            else { Files.createDirectories(f.parent); f.writeText("off") }
+        }.onFailure { log.warn(it) { "[$projectId] auto-compact 설정 저장 실패" } }
+    }
+
+    /**
+     * v1.108.0 — turn 정상 완료 직후 호출. 자동 /compact 조건이면 `/compact` 를 자동 발사한다
+     * (사용자 클릭과 동일 경로). 루프 방지: 직전 turn 이 /compact 였으면(compacting=true) 1회 skip.
+     */
+    private fun maybeAutoCompact(projectId: String) {
+        val s = sessions[projectId] ?: return
+        if (s.compacting) { s.compacting = false; return }  // 방금 끝난 게 자동 /compact → settle
+        if (WorkspacePath.isGhostId(projectId)) return       // chat ghost 제외
+        if (!isAutoCompact(projectId)) return
+        val threshold = config.claude.autoCompactTokens
+        if (threshold <= 0 || s.lastContextTokens < threshold) return
+        s.compacting = true
+        scope.launch {
+            runCatching {
+                emitSystem(projectId, "auto_compact",
+                    "컨텍스트 약 ${s.lastContextTokens / 1000}K — 자동 /compact 실행 후 이어갑니다.")
+                sendPrompt(projectId, "/compact", isAutoResume = true)
+            }.onFailure {
+                log.warn(it) { "[$projectId] auto /compact 실패" }
+                sessions[projectId]?.compacting = false
+            }
+        }
+    }
+
     // ── v1.106.0 (P1-a) — MCP 최소화(strict). 전역 ~/.claude/.mcp.json 의 5개 서버
     //    툴 스키마가 매 세션 캐시 프리픽스에 포함되어 토큰을 늘린다. strict 면 전역을
     //    무시하고 프로젝트 .mcp.json(있으면)만, 없으면 빈 설정 → MCP 0개로 프리픽스 축소.
@@ -1119,6 +1161,8 @@ class ClaudeSessionManager(
         @Volatile var lastCacheCreationTokens: Long = 0,
         /** v1.106.1 — init frame 의 실제 모델 id(윈도우 한도 추정용, 예: claude-opus-4-8[1m]). */
         @Volatile var model: String? = null,
+        /** v1.108.0 — 직전 turn 이 자동 /compact 였는지(루프 방지: 그 turn 직후 1회 재트리거 skip). */
+        @Volatile var compacting: Boolean = false,
     )
 
     /**

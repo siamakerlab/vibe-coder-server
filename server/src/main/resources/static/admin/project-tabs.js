@@ -347,6 +347,16 @@
           setTimeout(function () { compactBtn.classList.remove('busy'); }, 4000);
         });
       }
+      // v1.108.0 — '자동(auto-compact)' 체크박스: 콘솔 iframe 으로 전달해 서버에 영속(fetch).
+      var autoCompactCb = document.getElementById('pt-autocompact');
+      if (autoCompactCb) {
+        autoCompactCb.addEventListener('change', function () {
+          var cf = frameOf('console');
+          if (cf && cf.contentWindow) {
+            cf.contentWindow.postMessage({ type: 'vibe:set-autocompact', enabled: autoCompactCb.checked }, location.origin);
+          }
+        });
+      }
       window.addEventListener('message', function (ev) {
         if (ev.origin !== location.origin) return;
         var d = ev.data;

@@ -295,6 +295,7 @@ fun Routing.webProjectRoutes(
                 cacheHitRate = usage?.cacheHitRate,
                 promptCount = promptCount,
                 recentPrompts = recentPrompts,
+                autoCompact = sessionManager.isAutoCompact(id),
                 flashErr = err, flashOk = ok,
                 csrf = sess.csrf, lang = sess.language,
             ),
@@ -534,6 +535,22 @@ fun Routing.webProjectRoutes(
             else -> "/projects/$id/console"
         }
         call.respondRedirect(target)
+    }
+
+    // v1.108.0 — 프로젝트별 자동 /compact 토글. ON(기본) 이면 컨텍스트 임계 초과 시 turn 종료 후
+    // 서버가 자동으로 /compact 실행. 우측 오버뷰 컨텍스트 카드의 '자동' 체크박스가 호출(fetch).
+    post("/projects/{id}/console/auto-compact") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireWriteAccessOrRedirect(sess)) return@post
+        val form = requireCsrf()
+        val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
+        val enabled = form["enabled"]?.equals("true", ignoreCase = true) == true ||
+            form["enabled"]?.equals("on", ignoreCase = true) == true
+        runCatching { sessionManager.setAutoCompact(id, enabled) }
+            .onFailure { log.warn(it) { "set auto-compact failed for $id" } }
+        log.info { "auto-compact set: $id -> $enabled by ${sess.username}" }
+        call.respondText("ok", ContentType.Text.Plain)
     }
 
     // ── 빌드 ──────────────────────────────────────────────────────────

@@ -1782,6 +1782,8 @@ internal object MessagesKo {
         "tabs.rail.context" to "컨텍스트",
         "tabs.rail.context.empty" to "대화 시작 후 표시됩니다",
         "tabs.rail.compact.hint" to "/compact — 대화를 요약해 컨텍스트를 줄입니다(맥락 유지). 콘솔로 전송.",
+        "tabs.rail.autocompact" to "자동",
+        "tabs.rail.autocompact.hint" to "자동 compact — ON(기본): 컨텍스트가 임계점을 넘으면 turn 종료 후 자동으로 /compact 후 작업을 이어갑니다. OFF: 직접 /compact 버튼을 누를 때만.",
         "tabs.rail.history.empty" to "아직 프롬프트 없음",
         "tabs.rail.history.hint" to "클릭 → 콘솔 프롬프트창에 입력",
         "tabs.rail.hide" to "개요 숨기기",

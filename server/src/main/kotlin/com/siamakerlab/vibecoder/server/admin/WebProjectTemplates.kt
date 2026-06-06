@@ -1138,9 +1138,9 @@ $errHtml
       ${CsrfTokens.hiddenInput(csrf)}
       <input type="hidden" name="enabled" value="${if (mcpStrict) "false" else "true"}">
       <label title="전역 MCP(playwright 등 5종) 툴 스키마를 빼 매 turn 토큰을 줄입니다. 프로젝트 .mcp.json 의 서버만 사용."
-             style="font-size:12px;line-height:1.6;height:30px;box-sizing:border-box;padding:4px 8px;color:var(--text-dim,#888);cursor:pointer;display:inline-flex;align-items:center;gap:5px;border:1px solid #333;border-radius:8px;background:var(--bg)">
+             style="font-size:12px;line-height:1;height:30px;box-sizing:border-box;padding:0 10px;color:var(--text-dim,#888);cursor:pointer;display:inline-flex;align-items:center;gap:5px;border:1px solid #333;border-radius:8px;background:var(--bg)">
         <input type="checkbox" $mcpStrictChecked onchange="document.getElementById('mcp-strict-form').submit()"
-               style="cursor:pointer;margin:0;vertical-align:middle">MCP 최소화
+               style="cursor:pointer;margin:0;flex:0 0 auto;width:13px;height:13px">MCP 최소화
       </label>
     </form>"""
         // Claude CLI 미설치 또는 인증 누락 시 큰 안내 카드 + 프롬프트 폼 비활성화.
@@ -1890,6 +1890,16 @@ $automationPanelHtml
         if (form && form.requestSubmit) form.requestSubmit();
         else if (typeof sendPrompt === 'function') sendPrompt(d.text);
       }
+      return;
+    }
+    // v1.108.0 — 부모 rail '자동(auto-compact)' 체크박스 → 서버 영속(fetch, 리로드 없음).
+    if (d.type === 'vibe:set-autocompact') {
+      var cf = document.querySelector('input[name=_csrf]');
+      fetch('/projects/' + projectId + '/console/auto-compact', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: '_csrf=' + encodeURIComponent(cf ? cf.value : '') + '&enabled=' + (d.enabled ? 'true' : 'false'),
+      }).catch(function () {});
       return;
     }
     if (d.type !== 'pt:tab-visible' || !autoScrollOn) return;

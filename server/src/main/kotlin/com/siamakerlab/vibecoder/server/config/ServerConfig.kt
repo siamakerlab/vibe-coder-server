@@ -203,6 +203,13 @@ data class ClaudeSection(
      * 인지하고 "새 세션(컨텍스트 리셋)" 하도록 유도. 0 이하면 비활성.
      */
     val contextWarnTokens: Int = 350_000,
+    /**
+     * v1.108.0 — 자동 /compact 임계(직전 turn cache_read 토큰). 프로젝트별 auto-compact 가
+     * ON(기본)이고 컨텍스트가 이 값을 넘으면, turn 종료 후 자동으로 `/compact` 를 실행해
+     * 맥락을 줄이고 작업을 이어간다(Claude CLI 자동 compact 와 동형). 0 이하면 비활성.
+     * env VIBECODER_CLAUDE_AUTO_COMPACT_TOKENS 로 override.
+     */
+    val autoCompactTokens: Int = 700_000,
     /** v0.21.0 — usage 모니터링 정책. */
     val usage: ClaudeUsageSection = ClaudeUsageSection(),
 )
