@@ -188,14 +188,46 @@ class ClaudeStreamParser(
         val subtype = obj["subtype"]?.jsonPrimitive?.contentOrNull ?: "unknown"
         val isError = obj["is_error"]?.jsonPrimitive?.booleanOrNull ?: false
         out += if (isError) {
-            val msg = obj["error"]?.jsonPrimitive?.contentOrNull
+            val rawMsg = obj["error"]?.jsonPrimitive?.contentOrNull
                 ?: obj["result"]?.jsonPrimitive?.contentOrNull
                 ?: "claude returned an error"
-            ClaudeEvent.ErrorEvent(code = subtype, message = msg)
+            // v1.108.2 — 사용량/요금 한도(5시간 롤링 윈도우·월 한도 등)로 turn 이 끝나면 CLI 가
+            //  ① subtype="success" + is_error=true 라는 모순 조합으로,
+            //  ② result 필드에 직전 assistant 본문 복사본(한도 안내문)을 실어 보낸다.
+            //  → 기존엔 code=subtype="success" 가 그대로 실려 "success: <동일 본문>" 빨간 버블이
+            //    바로 위 청록 assistant 버블과 글자까지 중복됐다(사용자 보고).
+            //  한도로 판정되면 code 를 usage_limit 으로 정규화하고, 본문 echo 대신 명료한 안내
+            //  한 줄로 대체한다 — success 오인 제거 + 중복 제거(원문은 위 assistant 버블이 보유).
+            if (isUsageLimitMessage(rawMsg)) {
+                ClaudeEvent.ErrorEvent(
+                    code = "usage_limit",
+                    message = "⛔ 사용량 한도에 도달해 작업이 중단되었습니다 — 자동 재시도하지 않습니다. " +
+                        "한도가 리셋된 뒤 이어가 주세요. (원문 안내는 바로 위 메시지를 참고하세요.)",
+                )
+            } else {
+                // subtype="success" 인데 is_error → 모순. 그대로 두면 "success:" 로 잘못 노출되므로
+                // error 로 정규화. 그 외 정상 에러 subtype(error_during_execution 등)은 유지.
+                val code = if (subtype == "success") "error" else subtype
+                ClaudeEvent.ErrorEvent(code = code, message = rawMsg)
+            }
         } else {
             ClaudeEvent.Done(reason = subtype)
         }
         return out
+    }
+
+    /**
+     * v1.108.2 — 사용량/요금 한도(5시간 롤링 윈도우·주간·월 한도 등)로 인한 turn 종료 판정.
+     * 일시적 429(rate limit)와 구분한다 — 일시 rate limit 은 별도 경로(`rate_limit_event` /
+     * [ClaudeSessionManager.isRateLimitError])가 자동 재시도로 처리하므로, 여기선 재시도해도
+     * 소용없는 사용량/요금 한도만 좁게 매칭한다. CLI/Anthropic 이 "usage limit" / "spend limit" /
+     * "limit reached" / "5-hour limit" 등 다양한 표현을 쓰므로 패턴 기반.
+     */
+    private fun isUsageLimitMessage(msg: String): Boolean {
+        val m = msg.lowercase()
+        return ("limit" in m && ("usage" in m || "spend" in m || "monthly" in m ||
+            "weekly" in m || "5-hour" in m || "5 hour" in m || "five-hour" in m)) ||
+            "limit reached" in m || "reached your" in m
     }
 
     /**

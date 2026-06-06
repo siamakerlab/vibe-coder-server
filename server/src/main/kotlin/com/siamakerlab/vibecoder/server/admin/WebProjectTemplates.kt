@@ -1502,9 +1502,10 @@ $errHtml
 
 $authBannerHtml
 
-<!-- v1.91.4 — 콘솔 메시지 필터(버튼 → 다이얼로그) + 자동 스크롤 토글을 한 줄에.
-     좌측 필터 버튼 클릭 시 모달이 뜨고, 우측 끝에 자동 스크롤 토글. 필터 체크박스
-     로직(.filter-cb / #filter-summary / #filter-reset)은 그대로 — 모달 안으로 이동만. -->
+<!-- v1.108.2 — 콘솔 메시지 필터 버튼 + 자동 스크롤 토글을 콘솔 하단(응답중 스피너와
+     같은 줄, 우측 정렬)으로 이동. 트리거 버튼/토글 markup 은 아래 .console-bottom-bar
+     로 옮겼다. 필터 모달(#filter-modal)과 그 스타일은 위치 독립적(fixed)이라 그대로 둔다.
+     필터 체크박스 로직(.filter-cb / #filter-summary / #filter-reset)도 변동 없음. -->
 <style>
   #filter-modal { position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.55); padding:16px; }
   #filter-modal[hidden] { display:none; }
@@ -1514,18 +1515,6 @@ $authBannerHtml
   #filter-modal .filter-x { background:transparent; border:0; color:var(--text-dim); font-size:16px; cursor:pointer; line-height:1; padding:2px 6px; }
   #filter-modal .filter-x:hover { color:var(--text); }
 </style>
-<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-  <button type="button" id="filter-open" class="chip chip-link"
-          style="font-size:11px;padding:4px 11px;display:inline-flex;align-items:center;gap:5px"
-          title="${esc(t("console.filter.title"))}">
-    🔍 ${esc(t("console.filter.title"))} <span id="filter-summary" class="dim" style="font-size:11px"></span>
-  </button>
-  <label for="autoscroll-toggle" style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-dim);cursor:pointer;user-select:none;margin-left:auto"
-         title="${esc(t("console.autoscroll.tip"))}">
-    <input type="checkbox" id="autoscroll-toggle" style="margin:0">
-    📌 ${esc(t("console.autoscroll"))}
-  </label>
-</div>
 
 <div id="filter-modal" hidden>
   <div class="filter-box" role="dialog" aria-modal="true" aria-label="${esc(t("console.filter.title"))}">
@@ -1567,11 +1556,6 @@ ${if (embed) "" else contextMeterHtml}
 <!-- v1.6.4 — 스크롤 + 우하단 jump-to-bottom 버튼 wrapper. -->
 <div class="console-log-wrap">
   <div id="console-log" class="console-log" aria-live="polite"></div>
-  <!-- v1.7.12 — 응답중 indicator. setInFlight 가 hidden 속성 토글. -->
-  <div id="console-spinner" class="console-spinner" hidden aria-hidden="true">
-    <span class="spinner"></span>
-    <span class="spinner-label">${esc(t("console.busy.responding"))}</span>
-  </div>
   <!--
     v1.7.3 — 서버 재시작 후에도 기존 conversation 이 즉시 보이도록 DB 의 ConversationTurn
     을 inline JSON 으로 embed. WS ring buffer 는 in-memory 이라 재시작 시 휘발 → 이전엔
@@ -1583,6 +1567,28 @@ ${if (embed) "" else contextMeterHtml}
           title="${esc(t("console.jumpToLatest"))}" aria-label="${esc(t("console.jumpToLatest"))}">
     ↓<span class="badge" id="console-jump-badge" style="display:none">0</span>
   </button>
+</div>
+
+<!-- v1.108.2 — 콘솔 하단 바: 좌측 응답중 스피너(setInFlight 가 hidden 토글, busy 일 때만
+     노출) + 우측 정렬 필터/자동 스크롤 토글. 스피너가 숨겨져도 .console-bottom-tools 는
+     margin-left:auto 로 항상 우측에 고정된다. -->
+<div class="console-bottom-bar">
+  <div id="console-spinner" class="console-spinner" hidden aria-hidden="true">
+    <span class="spinner"></span>
+    <span class="spinner-label">${esc(t("console.busy.responding"))}</span>
+  </div>
+  <div class="console-bottom-tools">
+    <button type="button" id="filter-open" class="chip chip-link"
+            style="font-size:11px;padding:4px 11px;display:inline-flex;align-items:center;gap:5px"
+            title="${esc(t("console.filter.title"))}">
+      🔍 ${esc(t("console.filter.title"))} <span id="filter-summary" class="dim" style="font-size:11px"></span>
+    </button>
+    <label for="autoscroll-toggle" style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-dim);cursor:pointer;user-select:none;margin:0"
+           title="${esc(t("console.autoscroll.tip"))}">
+      <input type="checkbox" id="autoscroll-toggle" style="margin:0">
+      📌 ${esc(t("console.autoscroll"))}
+    </label>
+  </div>
 </div>
 
 <!--
@@ -2248,7 +2254,14 @@ $automationPanelHtml
       append(f.isError ? 'tool-err' : 'tool-out', resultLabel, clip(out, 8000), 'tool_result', { raw: out });
       // v1.90.4 — tool 결과(파일 내용/명령 출력)에도 'unauthorized' 등이 정상 등장하므로 감지 제외.
     } else if (t === 'console_error') {
-      append('err', 'error', (f.code || '') + ': ' + (f.message || ''), 'error');
+      // v1.108.2 — 사용량/요금 한도 종료(code=usage_limit)는 크래시성 에러가 아니라 '한도' 상태다.
+      //  빨간 'error' 버블 + "success:"/"usage_limit:" prefix 대신 명료한 '🛑 한도' 시스템 카드로
+      //  노출(success 오인·중복 제거). 그 외 진짜 에러는 기존대로 빨간 버블.
+      if (f.code === 'usage_limit') {
+        append('sys', '🛑 한도', f.message || '', 'system');
+      } else {
+        append('err', 'error', (f.code || '') + ': ' + (f.message || ''), 'error');
+      }
       detectAuthFailure(f.message);
     } else if (t === 'console_done') {
       append('sys', 'done', f.reason || 'end_turn', 'done');
