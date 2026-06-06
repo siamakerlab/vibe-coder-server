@@ -4,10 +4,13 @@
 // HTTPS 또는 localhost 에서만 작동 (브라우저 정책). 마이크 권한 prompt.
 //
 // 동작:
-//   - 🎤 버튼 클릭 → SpeechRecognition 시작 → 버튼 ⏺ + listening 클래스 (CSS 강조).
-//   - 인식 중 textarea 에 final + interim 결과 append (사용자가 이미 입력해둔 부분
-//     뒤에). interim 은 마지막 final 뒤에 실시간 갱신.
-//   - 한 번 더 클릭 또는 onend → 중지 → 버튼 🎤 복원.
+//   - 🎤 버튼 클릭 → SpeechRecognition 시작 → 버튼에 listening 클래스(CSS 강조: 빨강+pulse).
+//   - 인식 중 textarea 에 final + interim 결과 append (사용자가 이미 입력해둔 부분 뒤에).
+//   - 한 번 더 클릭 또는 onend → 중지 → listening 클래스 해제.
+//
+// v1.108.4 — 아이콘이 이모지(🎤/⏺) → Material 'mic' 인라인 SVG 로 바뀌어, 상태는 더 이상
+//   textContent 스왑이 아니라 .listening 클래스로만 표시한다(SVG 보존). "자동 전송"(발화 종료 시
+//   자동 submit) 옵션도 제거 — 음성 입력은 받아쓰기만 하고 전송은 사용자가 직접 한다.
 //
 // 언어: document.documentElement.lang ("ko" / "en") 으로 ko-KR / en-US 자동 선택.
 
@@ -21,28 +24,12 @@
 
     var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) {
-      // 미지원 브라우저 — 버튼 + 옵션 완전 hide.
+      // 미지원 브라우저 — 버튼 hide.
       btn.style.display = 'none';
-      var optWrap = document.getElementById('voice-auto-send-wrap');
-      if (optWrap) optWrap.style.display = 'none';
       return;
     }
     btn.hidden = false;
     btn.style.display = '';
-
-    // v1.15.1 — "자동 전송" 옵션. checked 시 발화 종료(onend) 시점에 prompt-form
-    // 을 자동 submit. 사용자 선호는 localStorage 영속.
-    var autoSend = document.getElementById('voice-auto-send');
-    if (autoSend) {
-      try {
-        autoSend.checked = localStorage.getItem('vibe.voice.autoSend') === '1';
-      } catch (e) {}
-      autoSend.addEventListener('change', function () {
-        try {
-          localStorage.setItem('vibe.voice.autoSend', autoSend.checked ? '1' : '0');
-        } catch (e) {}
-      });
-    }
 
     var rec = new SR();
     rec.continuous = true;
@@ -59,6 +46,12 @@
       // textarea auto-grow / scrollIntoView 처리는 page 별 inline JS 가 input
       // event 리스너로 이미 처리하므로 dispatchEvent 로 트리거.
       input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    function stopUi() {
+      listening = false;
+      btn.classList.remove('listening');
+      btn.title = btn.dataset.titleStart || '';
     }
 
     // v1.94.0 — 매 onresult 마다 e.results 전체를 처음부터 재구성(idempotent).
@@ -83,28 +76,12 @@
       input.dispatchEvent(new Event('input', { bubbles: true }));
     };
     rec.onend = function () {
-      listening = false;
-      btn.classList.remove('listening');
-      btn.textContent = '🎤';
-      btn.title = btn.dataset.titleStart || '🎤';
+      stopUi();
       applyResult();   // commit final text
-      // v1.15.1 — auto-send: 발화 종료 시 form 자동 submit (사용자 옵션 ON + 텍스트 있음).
-      if (autoSend && autoSend.checked && (input.value || '').trim().length > 0) {
-        var form = input.form || document.getElementById('prompt-form');
-        if (form) {
-          if (typeof form.requestSubmit === 'function') {
-            try { form.requestSubmit(); } catch (e) { form.submit(); }
-          } else {
-            form.submit();
-          }
-        }
-      }
     };
     rec.onerror = function (e) {
       console && console.warn && console.warn('voice-input:', e.error);
-      listening = false;
-      btn.classList.remove('listening');
-      btn.textContent = '🎤';
+      stopUi();
     };
 
     btn.addEventListener('click', function () {
@@ -124,8 +101,7 @@
         rec.start();
         listening = true;
         btn.classList.add('listening');
-        btn.textContent = '⏺';
-        btn.title = btn.dataset.titleStop || '⏺';
+        btn.title = btn.dataset.titleStop || '';
       } catch (e) {
         console && console.warn && console.warn('voice-input start failed:', e);
       }

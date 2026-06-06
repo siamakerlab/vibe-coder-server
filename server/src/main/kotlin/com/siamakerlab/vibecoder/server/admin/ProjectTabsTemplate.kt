@@ -95,6 +95,8 @@ internal object ProjectTabsTemplate {
         projectStatuses: Map<String, String> = emptyMap(),
         /** v1.50.0 — 우측 overview rail 데이터. */
         keystoreReady: Boolean = false,
+        /** v1.108.4 — AdMob 준비 상태(`<pkg>-admob.properties` 존재). 개요카드 키스토어 하단 행. */
+        admobReady: Boolean = false,
         tokensTotal: Long = 0,
         cacheHitRate: Double? = null,
         promptCount: Long = 0,
@@ -110,6 +112,10 @@ internal object ProjectTabsTemplate {
         val keystoreHtml = if (keystoreReady)
             """<span class="pt-ks ok">✓ ${esc(t("tabs.rail.keystore.ready"))}</span>"""
         else """<span class="pt-ks miss">✗ ${esc(t("tabs.rail.keystore.missing"))}</span>"""
+        // v1.108.4 — AdMob 준비 상태(키스토어 하단 행). admob.properties 존재 = 준비됨.
+        val admobHtml = if (admobReady)
+            """<span class="pt-ks ok">✓ ${esc(t("tabs.rail.admob.ready"))}</span>"""
+        else """<span class="pt-ks miss">✗ ${esc(t("tabs.rail.admob.missing"))}</span>"""
         val tokensHtml = fmtTokens(tokensTotal) +
             (cacheHitRate?.let { """ <span class="dim" style="font-size:10px">· ${esc(t("tabs.rail.cacheHit"))} ${"%.0f".format(it)}%</span>""" } ?: "")
         val historyHtml = if (recentPrompts.isEmpty())
@@ -129,6 +135,7 @@ internal object ProjectTabsTemplate {
         <div class="pt-ov-row"><span class="k">${esc(t("tabs.title"))}</span><span class="v">${esc(project.name)}</span></div>
         <div class="pt-ov-row"><span class="k">${esc(t("tabs.rail.package"))}</span><span class="v mono">${esc(project.packageName)}</span></div>
         <div class="pt-ov-row"><span class="k">${esc(t("tabs.rail.keystore"))}</span><span class="v">$keystoreHtml</span></div>
+        <div class="pt-ov-row"><span class="k">${esc(t("tabs.rail.admob"))}</span><span class="v">$admobHtml</span></div>
         <div class="pt-ov-row"><span class="k">${esc(t("tabs.rail.tokens"))}</span><span class="v">$tokensHtml</span></div>
         <div class="pt-ov-row"><span class="k">${esc(t("tabs.rail.prompts"))}</span><span class="v">${promptCount}</span></div>
       </div>

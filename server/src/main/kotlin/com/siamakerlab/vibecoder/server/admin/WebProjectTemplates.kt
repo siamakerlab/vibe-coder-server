@@ -1639,29 +1639,29 @@ $automationPanelHtml
               ${if (blocking) "disabled" else "required"}>${esc(starterPrompt)}</textarea>
     <div style="display:flex;flex-direction:column;gap:6px;justify-content:flex-end;flex-shrink:0">
       <!-- v1.15.0 — Web Speech API 음성 입력. 미지원 브라우저는 voice-input.js 가 자동 hide. -->
+      <!-- v1.108.4 — 아이콘을 이모지(🎤) → Google Material 'mic' 인라인 SVG 로 교체(사용자 요청).
+           외부 CDN 미사용(§3) 위해 path 직접 인라인. 녹음 중 상태는 voice-input.js 의 .listening
+           클래스(빨강+pulse)로 표시하므로 textContent 이모지 스왑은 제거. -->
       <button type="button" id="voice-btn" hidden
               data-title-start="${esc(t("console.voice.start"))}"
               data-title-stop="${esc(t("console.voice.stop"))}"
               title="${esc(t("console.voice.start"))}"
-              style="width:auto;padding:8px 12px;background:#1a1a1a;color:var(--text);border:1px solid #2a2a2a;border-radius:6px;cursor:pointer;font-size:16px"
-              ${if (blocking) "disabled" else ""}>🎤</button>
+              style="width:auto;padding:8px 12px;background:#1a1a1a;color:var(--text);border:1px solid #2a2a2a;border-radius:6px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;line-height:0"
+              ${if (blocking) "disabled" else ""}><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg></button>
       <button type="submit" class="primary" id="send-btn" style="width:auto;padding:8px 16px;white-space:nowrap" ${if (blocking) "disabled" else ""}>${esc(t("console.input.send"))}</button>
     </div>
   </div>
   <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;gap:8px;flex-wrap:wrap">
     <!-- v1.7.4 — busy 뱃지 + hint 라벨 한 줄. busy 뱃지가 좌측 끝, 그 다음 hint. -->
     <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1">
+      <!-- v1.108.4 — busy-badge 는 항상 숨김(사용자 요청). turn 상태는 콘솔 하단 '응답중'
+           스피너 + 부모 탭 헤더(#console-busy-badge, console:busy postMessage)로 노출되므로
+           힌트 라벨 좌측의 중복 칩은 제거. 단 JS(updateBusyBadge·부모 미러)가 dataset/text 를
+           계속 읽으므로 element/id 는 유지하고 display 만 끈다. -->
       <span id="busy-badge" data-state="idle"
-            style="${if (embed) "display:none;" else ""}font-size:12px;padding:3px 10px;border-radius:12px;font-weight:500;white-space:nowrap;flex-shrink:0">${esc(t("console.busy.idle"))}</span>
+            style="display:none;font-size:12px;padding:3px 10px;border-radius:12px;font-weight:500;white-space:nowrap;flex-shrink:0">${esc(t("console.busy.idle"))}</span>
       <small class="dim" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(if (blocking) t("console.input.blockedHint") else t("console.input.hint"))}</small>
     </div>
-    <!-- v1.15.1 — "자동 전송" 옵션 (voice input). checked 시 발화 종료 시 자동 submit. -->
-    <label id="voice-auto-send-wrap" for="voice-auto-send"
-           style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-dim);cursor:pointer;flex-shrink:0;user-select:none"
-           title="${esc(t("console.voice.autoSend.tip"))}">
-      <input type="checkbox" id="voice-auto-send" style="margin:0">
-      ${esc(t("console.voice.autoSend"))}
-    </label>
   </div>
 </form>
 <script src="/static/voice-input.js" defer></script>
