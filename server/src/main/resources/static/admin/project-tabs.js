@@ -470,6 +470,26 @@
             .then(function (st) { if (st) render(st); }).catch(function () {});
         });
       })();
+      // v1.111.0 — Todo 요약 + 백그라운드 작업 카드(콘솔에서 이동). 콘솔이 보낸 스냅샷 HTML 을
+      // rail 카드에 렌더하고, 내용 있을 때만 카드를 표시한다.
+      function renderRailTodo(d) {
+        var card = document.querySelector('#project-tabs-root .pt-todo-card');
+        if (!card) return;
+        var list = document.getElementById('pt-todo-list');
+        var summ = document.getElementById('pt-todo-summary');
+        if (list) list.innerHTML = d.html || '';
+        if (summ) summ.textContent = d.summary || '';
+        card.hidden = !(d.count > 0);
+      }
+      function renderRailBgTasks(d) {
+        var card = document.querySelector('#project-tabs-root .pt-bg-card');
+        if (!card) return;
+        var list = document.getElementById('pt-bg-list');
+        var cnt = document.getElementById('pt-bg-count');
+        if (list) list.innerHTML = d.html || '';
+        if (cnt) cnt.textContent = (d.running > 0) ? '· ' + d.running : '';
+        card.hidden = !(d.count > 0);
+      }
       window.addEventListener('message', function (ev) {
         if (ev.origin !== location.origin) return;
         var d = ev.data;
@@ -478,6 +498,9 @@
         if (d.type === 'vibe:context-usage') { updateRailContextMeter(d); return; }
         // v1.109.0 — 콘솔 iframe 이 포워딩한 자동화 진행/종료 프레임 → rail 카드 즉시 갱신.
         if (d.type === 'vibe:automation') { if (window.__ptAutoRender) window.__ptAutoRender(d.state); return; }
+        // v1.111.0 — Todo / 백그라운드 작업 스냅샷 → rail 카드 렌더.
+        if (d.type === 'vibe:todo') { renderRailTodo(d); return; }
+        if (d.type === 'vibe:bgtasks') { renderRailBgTasks(d); return; }
         // v1.103.0 — 콘솔 iframe 의 busy-badge 가 turn 상태를 헤더 칩으로 미러링.
         if (d.type === 'console:busy') {
           var badge = document.getElementById('console-busy-badge');
