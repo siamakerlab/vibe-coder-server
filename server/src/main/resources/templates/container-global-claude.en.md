@@ -11,7 +11,8 @@ This file is mounted as `/home/vibe/.claude/CLAUDE.md` inside the container and 
 
 1. Response language · 2. Required steps after every code change (top priority) · 3. Versioning ·
 4. Debug build package name · 5. Signing keystore · 6. Build environment (tools/Gradle/SDK/env) ·
-7. Design principles · 8. Naming rules · 9. Git · 10. Documentation · 11. Never do · 12. Guiding principles
+7. Design principles · 8. Naming rules · 9. Git · 10. Documentation · 11. Never do · 12. Guiding principles ·
+13. Android Compose UI pitfalls · 14. Emulator run / screenshots — no autonomous execution
 
 ---
 
@@ -24,7 +25,7 @@ This file is mounted as `/home/vibe/.claude/CLAUDE.md` inside the container and 
 
 **After every code change, run these in order, with nothing omitted:**
 
-1. **Build test** — confirm compile/build passes.
+1. **Build test** — confirm compile/build passes (incl. unit tests). **Here "build test" means compile + build + unit tests; it does NOT include running an emulator or reviewing screenshots (§14).**
 2. **Automatic versioning** — bump `versionName`/`versionCode` (§3).
 3. **Update `CHANGELOG.md`** (§10).
 4. **git commit / push** (§9).
@@ -84,6 +85,21 @@ Replace `<applicationId>` below with the real applicationId from `app/build.grad
   and tell the operator to create it for that applicationId under **Settings → Keystores
   (`/settings/keystores`)** in the vibe-coder server. AGP's default `debug.keystore` auto-generation
   is also forbidden. (§11 "storing keystores inside the project is forbidden".)
+
+### AdMob ad-ID file key schema (must follow)
+
+When relocating hardcoded AdMob ad IDs into `<applicationId>-admob.properties`, **always use the
+standard keys below.** (The vibe-coder server's Keystore → AdMob ID section reads/displays by this key
+convention. Do not invent a different key format each time, e.g. `admob.bannerId` / `release.admob_banner_id`.)
+
+- Put **only production (real) IDs** in this file. Keys:
+  - `admobAppId=ca-app-pub-XXXX~YYYY`
+  - `appOpenAdUnitId` / `bannerAdUnitId` / `nativeAdUnitId` / `interstitialAdUnitId` /
+    `rewardedAdUnitId` / `rewardedInterstitialAdUnitId` = `ca-app-pub-XXXX/ZZZZ` (comma-separate multiples)
+- **Do NOT put test IDs (Google official `ca-app-pub-3940256099942544/…`) in this file.** Handle debug-build
+  test ads directly in the build.gradle debug variant using Google's official test constants.
+- build.gradle loads this file via `Properties` and injects manifestPlaceholders (App ID) + buildConfigField
+  (unit IDs, `split(",")`). Never hardcode ad IDs in source.
 
 ## 6. Build environment
 
@@ -199,7 +215,75 @@ PATH=/home/vibe/.local/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/androi
 - Arbitrarily delete `/opt/*` or `/home/vibe/.gradle/`, `/home/vibe/.local/`
 - Hardcode a host path in `local.properties`
 - Change the wrapper version without recording the reason
+- **Run an emulator/device or review screenshots autonomously without explicit user request** (heavy token/time cost — §14)
 
 ## 12. Guiding principles
 
 Every decision is judged by: **maintainability · extensibility · consistency · automatability.**
+
+## 13. Android Compose UI pitfalls (regression prevention — recurring patterns)
+
+UI bug patterns that actually recurred and were fixed. **Check these first when adding a new
+screen/navigation or touching inset-related code.**
+
+### 13.1 ⚠ Double-applied WindowInsets — empty band above the header (most common)
+
+**Symptom:** an unnecessary empty strip the height of the status bar appears above each tab/screen's
+`TopAppBar` (header).
+
+**Cause:** **inset applied twice.** Typically a **nested Scaffold** — the outer `Scaffold` (usually
+hosting `bottomBar`/`NavigationBar`, no `topBar`) applies `innerPadding.top` (= status-bar height) to
+the content (NavHost) under `enableEdgeToEdge`, and the per-screen inner `Scaffold` + `TopAppBar`
+applies the status-bar inset **again**.
+
+**Rule (apply each inset once, with a clear owner):**
+- **The top (status-bar) inset owner is the screen's `TopAppBar`.** The outer Scaffold must NOT apply
+  `top` to the NavHost — only **start/end/bottom**.
+  ```kotlin
+  Scaffold(bottomBar = { ... }) { inner ->
+      val ld = LocalLayoutDirection.current
+      NavHost(..., modifier = Modifier.padding(
+          start = inner.calculateStartPadding(ld),
+          end = inner.calculateEndPadding(ld),
+          bottom = inner.calculateBottomPadding()   // top intentionally excluded
+      ))
+  }
+  ```
+- Only screens **without** a `TopAppBar` (e.g. Home) offset the status bar directly at the root via
+  `Modifier.statusBarsPadding()`.
+- Same logic for the **bottom inset — apply it in one place only**: if the outer Scaffold has a
+  `bottomBar`, it owns the bottom-nav inset. Make sure the inner screen Scaffold doesn't add a
+  `navigationBars` inset again.
+
+**Checklist (when adding a screen/nav):**
+1. Are Scaffolds **nested**? → if so, ensure each system-bar inset has **exactly one owner**.
+2. Are you applying `innerPadding` wholesale via `Modifier.padding(innerPadding)` while there's also a
+   `TopAppBar` inside? → top double-applied.
+3. You aren't using `statusBarsPadding()` / `systemBarsPadding()` **together with** a `TopAppBar`
+   (which already applies the status-bar inset)?
+4. With `enableEdgeToEdge()`, did you limit inset consumption to once per screen?
+
+### 13.2 Secondary checks (tied to general policy)
+
+- Define new colors/dimens/strings in **theme/resources and reference them** (no hardcoding, §11).
+  Semantic colors shared across screens (income/expense, etc.) use a **single shared definition** (consistency).
+- Each screen handles **loading / empty / error** states. Don't distinguish state by color alone
+  (pair with text/icon).
+- Collect lists/state lifecycle-aware (`collectAsStateWithLifecycle`) to minimize background work.
+
+---
+
+## 14. ⚠ Running an emulator / reviewing screenshots — no autonomous execution
+
+Verifying the app actually runs — **launching an emulator/device, installing & running the app,
+taking & reviewing screenshots** — consumes **a lot of tokens and time.** Therefore:
+
+- Do it **only when the user explicitly asks** (e.g. "run it on the emulator", "take a screenshot",
+  "check on a real device", "runtime verification", and similar clear instructions).
+- **Do not run it on your own judgment without explicit user request.** §2's "build test" means
+  **compile + build + unit tests** and does not include runtime execution. Build + unit tests are
+  considered sufficient default verification for a code change.
+- If runtime verification seems valuable, **do not run it** — instead **only suggest** "emulator/device
+  verification recommended" in your response and wait for the user's choice (decided in the next prompt,
+  per the non-interactive rule).
+- In a shared emulator environment, contention with other projects makes the cost/benefit low.
