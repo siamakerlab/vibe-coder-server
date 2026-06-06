@@ -537,7 +537,7 @@ internal object ProjectTabsTemplate {
   /* v1.106.2/.3 — 우측 rail 컨텍스트 점유율 카드 */
   #project-tabs-root .pt-ctx-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   #project-tabs-root .pt-ctx-actions { display: inline-flex; align-items: center; gap: 6px; }
-  #project-tabs-root .pt-autocompact { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--text-dim,#888); cursor: pointer; user-select: none; }
+  #project-tabs-root .pt-autocompact { display: inline-flex; align-items: center; gap: 3px; margin: 0; font-size: 11px; color: var(--text-dim,#888); cursor: pointer; user-select: none; }
   #project-tabs-root .pt-autocompact input { cursor: pointer; margin: 0; }
   #project-tabs-root .pt-compact-btn {
     font: inherit; font-size: 11px; line-height: 1; padding: 4px 9px; cursor: pointer;
