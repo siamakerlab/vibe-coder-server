@@ -101,6 +101,7 @@ fun Routing.consoleRoutes(
         }
 
         // v0.13.0 — 진행 중인 turn 중단. session-id 는 보존.
+        // v1.112.0 — 내부 구현이 control_request interrupt(같은 세션 유지) 로 변경(엔드포인트 동일).
         post("/api/projects/{projectId}/claude/console/cancel") {
             call.requireApiWrite()
             val projectId = call.parameters["projectId"]
@@ -111,6 +112,47 @@ fun Routing.consoleRoutes(
             val device = call.requireDevice().device
             audit.consoleCancel(device.userId, projectId, call.request.origin.remoteHost)
             call.respond(HttpStatusCode.Accepted)
+        }
+
+        // v1.112.0 — "끼어들기": 진행 중 turn 을 interrupt 로 중단하고 곧바로 새 prompt 전송.
+        // 요청/응답 형태는 console/prompt 와 동일(PromptRequestDto → PromptAcceptedDto).
+        post("/api/projects/{projectId}/claude/console/interrupt") {
+            call.requireApiWrite()
+            val projectId = call.parameters["projectId"]
+                ?: throw ApiException.localized(400, "bad_request", messageKey = "api.console.projectIdRequired")
+            call.requireProjectAcl(projects, projectId)
+            projects.rowOrThrow(projectId)
+
+            val env = envDiagnostics.run()
+            if (env.claude.status != CheckStatus.OK) {
+                throw ApiException.localized(503, "claude_cli_missing", messageKey = "api.console.claudeCliMissing")
+            }
+            if (env.claudeAuth?.status == CheckStatus.ERROR) {
+                throw ApiException.localized(503, "claude_auth_required", messageKey = "api.console.claudeAuthRequired")
+            }
+
+            val body = call.receive<PromptRequestDto>()
+            val text = body.text.trim()
+            if (text.isEmpty()) throw ApiException.localized(400, "bad_request", messageKey = "api.console.textRequired")
+            val byteSize = text.toByteArray(Charsets.UTF_8).size
+            if (byteSize > ClaudeSessionManager.MAX_PROMPT_BYTES) {
+                throw ApiException.localized(400, "prompt_too_large",
+                    messageKey = "api.console.promptTooLarge",
+                    args = listOf(ClaudeSessionManager.MAX_PROMPT_BYTES, byteSize))
+            }
+
+            try {
+                sessionManager.interruptAndSend(projectId, text)
+            } catch (e: Exception) {
+                log.warn(e) { "[$projectId] interrupt-send failed" }
+                throw ApiException.localized(500, "claude_send_failed",
+                    messageKey = "api.console.sendFailed", args = listOf(e.message ?: "unknown error"))
+            }
+
+            val device = call.requireDevice().device
+            audit.consoleCancel(device.userId, projectId, call.request.origin.remoteHost)
+            val seq = hub.consoleCurrentSeq(LogHub.consoleTopic(projectId))
+            call.respond(HttpStatusCode.Accepted, PromptAcceptedDto(seq = seq))
         }
 
         get("/api/projects/{projectId}/claude/status") {

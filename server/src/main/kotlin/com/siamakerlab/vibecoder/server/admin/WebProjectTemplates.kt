@@ -1507,48 +1507,9 @@ ${if (embed) "" else contextMeterHtml}
   </button>
 </div>
 
-<!-- v1.108.2 — 콘솔 하단 바: 좌측 응답중 스피너(setInFlight 가 hidden 토글, busy 일 때만
-     노출) + 우측 정렬 필터/자동 스크롤 토글. 스피너가 숨겨져도 .console-bottom-tools 는
-     margin-left:auto 로 항상 우측에 고정된다. -->
-<div class="console-bottom-bar">
-  <div id="console-spinner" class="console-spinner" hidden aria-hidden="true">
-    <span class="spinner"></span>
-    <span class="spinner-label">${esc(t("console.busy.responding"))}</span>
-  </div>
-  <div class="console-bottom-tools">
-    <!-- v1.110.0 — 세션 표시 + 모델 셀렉터 + MCP 최소화(헤더에서 이동). 메시지 필터 버튼 좌측. -->
-    <span class="dim" style="font-size:11px;white-space:nowrap">${esc(t("console.session"))} $statusBadge${if (sessionId != null) """ <span class="dim">${esc(sessionId.take(12))}…</span>""" else ""}</span>
-    $modelSelectorHtml
-    $mcpStrictHtml
-    <button type="button" id="filter-open" class="chip chip-link"
-            style="font-size:11px;padding:4px 11px;display:inline-flex;align-items:center;gap:5px"
-            title="${esc(t("console.filter.title"))}">
-      🔍 ${esc(t("console.filter.title"))} <span id="filter-summary" class="dim" style="font-size:11px"></span>
-    </button>
-    <label for="autoscroll-toggle" style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-dim);cursor:pointer;user-select:none;margin:0"
-           title="${esc(t("console.autoscroll.tip"))}">
-      <input type="checkbox" id="autoscroll-toggle" style="margin:0">
-      📌 ${esc(t("console.autoscroll"))}
-    </label>
-  </div>
-</div>
-
-<!--
-  v1.6.3 — 사용자 요구 순서 (콘솔 본문 → 아래로):
-    1) Todo 요약 패널
-    2) 입력창 + Send
-    3) 프롬프트 템플릿 + 관리 버튼 (한 줄)
-    4) Agent dispatch + 관리 버튼 (한 줄)
-
-  v1.3.0 — Todo 요약 패널. <details> 의 open 상태는 localStorage 영속.
-  콘솔 카드 표시 여부는 필터의 'todo' 카테고리로 별도 토글 가능.
--->
-<!-- v1.111.0 — Todo 요약 + 백그라운드 작업 패널을 부모 오버뷰 rail(ProjectTabsTemplate,
-     컨텍스트 카드 하단)로 이동했다(사용자 요청). 콘솔은 todoStore/bgTasks 상태를 계속
-     계산하고, 스냅샷을 vibe:todo / vibe:bgtasks postMessage 로 부모에 전달만 한다. -->
-
-$quickBarHtml
-
+<!-- v1.112.0 — 레이아웃 재배치(사용자 요청): 메시지 영역 바로 아래에 입력창이 오도록,
+     기존에 입력창 위에 있던 빠른프롬프트(quickBar)와 도구바(console-bottom-bar)를 모두
+     입력창 하단으로 이동했다. 순서: 메시지 → 입력창 → 빠른프롬프트 → 템플릿/에이전트 → 도구바. -->
 <form id="prompt-form" class="prompt-form" autocomplete="off">
   <!-- maxlength 는 char 단위라 ASCII 기준 32K. 한국어 등 multi-byte 입력은
        실제 UTF-8 byte 가 32K 를 넘으면 서버에서 prompt_too_large (400) 로 거절. -->
@@ -1570,6 +1531,12 @@ $quickBarHtml
               title="${esc(t("console.voice.start"))}"
               style="width:auto;padding:8px 12px;background:#1a1a1a;color:var(--text);border:1px solid #2a2a2a;border-radius:6px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;line-height:0"
               ${if (blocking) "disabled" else ""}><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg></button>
+      <!-- v1.112.0 — "끼어들기": 응답 중에만 노출(setInFlight 토글). 진행 중 turn 을
+           interrupt 로 중단하고 입력창 내용을 즉시 새 prompt 로 보낸다(TUI Esc+입력 동형). -->
+      <button type="button" id="interrupt-btn" class="chip chip-danger"
+              style="display:none;width:auto;padding:8px 12px;white-space:nowrap;justify-content:center"
+              title="${esc(t("console.interrupt.title"))}"
+              ${if (blocking) "disabled" else ""}>${esc(t("console.interrupt"))}</button>
       <button type="submit" class="primary" id="send-btn" style="width:auto;padding:8px 16px;white-space:nowrap" ${if (blocking) "disabled" else ""}>${esc(t("console.input.send"))}</button>
     </div>
   </div>
@@ -1599,6 +1566,9 @@ $quickBarHtml
   }
 </style>
 
+<!-- v1.112.0 — 빠른프롬프트 바: 입력창 하단으로 이동(기존엔 입력창 위). -->
+$quickBarHtml
+
 <!-- v1.6.3 — 프롬프트 템플릿 + 관리 버튼 (한 줄). 입력창 바로 아래. -->
 <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px">
   <select id="template-picker" style="flex:1;min-width:0;font-size:12px;padding:4px 8px;background:#1a1a1a;color:var(--text);border:1px solid #333">
@@ -1607,12 +1577,37 @@ $quickBarHtml
   <a href="/prompts" class="chip chip-link" style="font-size:11px;margin-left:0;flex-shrink:0">${esc(t("console.template.manage"))}</a>
 </div>
 
-<!-- v1.6.3 — Agent dispatch + 관리 버튼 (한 줄). 가장 하단. -->
+<!-- v1.6.3 — Agent dispatch + 관리 버튼 (한 줄). -->
 <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px">
   <select id="agent-picker" style="flex:1;min-width:0;font-size:12px;padding:4px 8px;background:#1a1a1a;color:var(--text);border:1px solid #333" title="Dispatch a registered sub-agent into the prompt">
     <option value="">${esc(t("console.agent.placeholder"))}</option>
   </select>
   <a href="/agents" class="chip chip-link" style="font-size:11px;margin-left:0;flex-shrink:0">${esc(t("console.agent.manage"))}</a>
+</div>
+
+<!-- v1.108.2/v1.112.0 — 콘솔 도구 바: 좌측 응답중 스피너(setInFlight 가 hidden 토글) +
+     세션/모델/MCP/필터/자동 스크롤. v1.112.0 에서 입력창 위 → 가장 하단으로 이동(사용자 요청). -->
+<div class="console-bottom-bar" style="margin-top:8px">
+  <div id="console-spinner" class="console-spinner" hidden aria-hidden="true">
+    <span class="spinner"></span>
+    <span class="spinner-label">${esc(t("console.busy.responding"))}</span>
+  </div>
+  <div class="console-bottom-tools">
+    <!-- v1.110.0 — 세션 표시 + 모델 셀렉터 + MCP 최소화(헤더에서 이동). 메시지 필터 버튼 좌측. -->
+    <span class="dim" style="font-size:11px;white-space:nowrap">${esc(t("console.session"))} $statusBadge${if (sessionId != null) """ <span class="dim">${esc(sessionId.take(12))}…</span>""" else ""}</span>
+    $modelSelectorHtml
+    $mcpStrictHtml
+    <button type="button" id="filter-open" class="chip chip-link"
+            style="font-size:11px;padding:4px 11px;display:inline-flex;align-items:center;gap:5px"
+            title="${esc(t("console.filter.title"))}">
+      🔍 ${esc(t("console.filter.title"))} <span id="filter-summary" class="dim" style="font-size:11px"></span>
+    </button>
+    <label for="autoscroll-toggle" style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-dim);cursor:pointer;user-select:none;margin:0"
+           title="${esc(t("console.autoscroll.tip"))}">
+      <input type="checkbox" id="autoscroll-toggle" style="margin:0">
+      📌 ${esc(t("console.autoscroll"))}
+    </label>
+  </div>
 </div>
 
 <!-- v1.90.12 — 코드블록 syntax highlight (assistant 마크다운 + tool 결과). 동기 로드해
@@ -2338,6 +2333,7 @@ $quickBarHtml
   // v0.98.0 — busy badge 추가 — 응답중/대기중 시각화.
   // v0.99.0 — pendingPrompts 큐. busy 중에도 submit 허용, console_done 후 자동 발사.
   var stopBtn = document.getElementById('stop-btn');
+  var interruptBtn = document.getElementById('interrupt-btn');  // v1.112.0 — 끼어들기.
   var busyBadge = document.getElementById('busy-badge');
   var BUSY_RESPONDING = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.busy.responding"))};
   var BUSY_IDLE = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.busy.idle"))};
@@ -2504,6 +2500,8 @@ $quickBarHtml
     var wasOn = inFlight;
     inFlight = on;
     if (stopBtn) stopBtn.style.display = on ? 'inline-block' : 'none';
+    // v1.112.0 — 끼어들기 버튼은 응답 중일 때만 노출(중지 버튼과 동기).
+    if (interruptBtn) interruptBtn.style.display = on ? 'inline-flex' : 'none';
     if (spinnerEl) spinnerEl.hidden = !on;
     updateBusyBadge();
     // busy → idle 전이 시 큐에서 하나 꺼내 자동 발사. 작은 delay 로 UI/server 안정.
@@ -2528,6 +2526,41 @@ $quickBarHtml
     }
   }
   if (stopBtn) stopBtn.addEventListener('click', cancelTurn);
+
+  // v1.112.0 — 끼어들기: 진행 중 turn 을 interrupt 로 중단하고 입력창 내용을 즉시 새 prompt 로
+  // 보낸다(TUI Esc+입력 동형). 서버가 interrupt → 정리 → sendPrompt 를 한 endpoint 에서 처리.
+  async function interruptSend() {
+    var text = input.value.trim();
+    if (!text) { input.focus(); return; }
+    if (interruptBtn) interruptBtn.disabled = true;
+    sendBtn.disabled = true;
+    try {
+      var res = await fetch('/api/projects/' + projectId + '/claude/console/interrupt', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({text: text}),
+      });
+      if (!res.ok) {
+        var msg = await res.text();
+        append('err', 'send', res.status + ' ' + msg, 'error');
+      } else {
+        append('sys', 'interrupt', ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.interrupt.sent"))}, 'system');
+        append('user', 'user', text, 'assistant');
+        input.value = '';
+        setInFlight(true);  // 새 turn 시작(서버 console_busy_state 와 수렴).
+        scrollToBottom();
+        try { window.parent.postMessage({ type: 'vibe:prompt-sent', text: text }, location.origin); } catch (e) {}
+      }
+    } catch (e) {
+      append('err', 'send', String(e), 'error');
+    } finally {
+      if (interruptBtn) interruptBtn.disabled = false;
+      sendBtn.disabled = false;
+      input.blur();
+    }
+  }
+  if (interruptBtn) interruptBtn.addEventListener('click', interruptSend);
 
   async function sendPrompt(text) {
     sendBtn.disabled = true;

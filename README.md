@@ -579,7 +579,8 @@ Highlights:
 - `POST /api/webhooks/build/{projectId}` (external trigger — `X-Vibe-Secret-Id` + `X-Vibe-Secret` + optional `X-Vibe-Signature`)
 
 **Claude console & automation**
-- `POST /api/projects/{id}/claude/console/{prompt|new|cancel}`, `GET .../claude/status`
+- `POST /api/projects/{id}/claude/console/{prompt|new|cancel|interrupt}`, `GET .../claude/status`
+  (`interrupt` = stop the running turn and immediately send a new prompt — "interrupt & send")
 - `POST /api/projects/{id}/claude/automation/{start|stop}`, `GET .../status`
 - `GET/POST /api/prompt-automations`, `PUT/DELETE /api/prompt-automations/{presetId}`
 - `GET /api/prompt-templates`
