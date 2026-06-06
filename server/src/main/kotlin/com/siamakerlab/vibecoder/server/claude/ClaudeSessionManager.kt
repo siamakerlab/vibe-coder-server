@@ -140,14 +140,21 @@ class ClaudeSessionManager(
         }
 
         val session = ensureSession(projectId)
+        // v1.113.0 — turn 진행 중(busy)에 사용자가 추가로 보낸 prompt(follow-up). 클라이언트
+        // 인위적 큐를 없애고 stream-json CLI 내부 큐에 맡기는 TUI 동형 동작. follow-up 은
+        // 새 permit/마크/bg-clear/busy-전이를 하지 않고 Done suspend 카운터만 올린다(아래).
+        // 자동 재개(isAutoResume)는 follow-up 이 아니라 같은 turn 의 연속이므로 제외.
+        val isFollowUp = !isAutoResume && isBusy(projectId)
         // v1.80.0 — 사용자 prompt 면 진행 중인 rate-limit 자동 재개를 취소하고 카운터 리셋.
-        if (!isAutoResume) {
+        // follow-up 은 진행 중 turn 의 재개 흐름을 끊으면 안 되므로 retry 상태를 건드리지 않는다.
+        if (!isAutoResume && !isFollowUp) {
             session.retryJob?.cancel()
             session.retryJob = null
             session.rateLimitRetry = 0
         }
         // v1.112.0 — 새 prompt 가 흐르면 직전 interrupt 의 미도착 result 표식은 무효(stale 방지).
-        session.interruptPending = false
+        // follow-up 은 진행 중 turn 의 표식을 건드리지 않는다.
+        if (!isFollowUp) session.interruptPending = false
         // v0.16.0 — user prompt 영구 적재 (sendPrompt 시점의 sessionId 사용).
         // 자동 재개 프롬프트는 사용자 입력이 아니므로 history 미적재.
         if (!isAutoResume) history?.userPrompt(projectId, session.sessionId, text)
@@ -167,11 +174,16 @@ class ClaudeSessionManager(
         // v1.69.0 — 동시 in-flight 상한 도달 시 permit 이 빌 때까지 대기(queue). 무제한이면 즉시 통과.
         // release 는 setBusy(true→false) 전이 단일 지점(아래 catch 의 write 실패 포함)에서 idempotent 하게.
         // v1.90.0 — 상한 도달로 대기에 들어가면 콘솔에 안내(다른 프로젝트 turn 종료 시 자동 순차 진행).
-        gate.acquire(projectId) {
-            emitSystem(
-                projectId, "rate_limit_waiting",
-                "동시 작업 한도(${gate.limit}개)에 도달해 대기 중입니다. 다른 작업이 끝나면 순서대로 자동 진행됩니다.",
-            )
+        // v1.113.0 — follow-up 은 진행 중 turn 이 이미 permit 을 보유 중이라 새로 확보하지 않는다
+        // (같은 세션은 CLI 가 순차 처리 → 실제 동시성 1). gate.acquire 는 같은 key 면 어차피
+        // no-op 이지만, 대기 안내(onWait)까지 띄우지 않도록 아예 건너뛴다.
+        if (!isFollowUp) {
+            gate.acquire(projectId) {
+                emitSystem(
+                    projectId, "rate_limit_waiting",
+                    "동시 작업 한도(${gate.limit}개)에 도달해 대기 중입니다. 다른 작업이 끝나면 순서대로 자동 진행됩니다.",
+                )
+            }
         }
         session.stdinMutex.withLock {
             try {
@@ -181,21 +193,29 @@ class ClaudeSessionManager(
                     session.stdin.flush()
                 }
                 session.lastActivity = Instant.now()
-                // v1.99.2 — 새 사용자 prompt 는 새 turn 시작 → 이전 turn 의 백그라운드 작업
-                // 잔재(완료 통지 누락 등)를 무효화한다. 안 그러면 stale 한 outstanding 때문에
-                // 이번 turn 의 Done 이 영구 suspended 로 묶일 수 있다. 자동 재개(isAutoResume)는
-                // 같은 turn 의 연속이라 건드리지 않는다.
-                if (!isAutoResume) session.outstandingBgTasks.clear()
-                // v1.82.0 — 사용자 prompt → 영속 "미완 turn" 마크 ON(재개 횟수 리셋). 정상 완료 /
-                // 취소 / 새 세션 시 OFF. 서버가 비정상 종료(재시작)되면 마크가 남아 부팅 reconcile
-                // 이 자동 재개. 자동 재개(isAutoResume) 자체는 마크를 건드리지 않는다.
-                if (!isAutoResume) markTurnActive(projectId)
-                // v0.98.0 — prompt 전송 성공 → busy=true. ConsoleEvent.Done 시 false 로 전이.
-                setBusy(projectId, true)
+                if (isFollowUp) {
+                    // v1.113.0 — 진행 중 turn 에 이어붙는 사용자 입력. CLI 내부 큐가 현재 turn
+                    // 종료 후 처리한다. busy/마크/bg 추적은 현재 turn 것을 그대로 두고, Done 이
+                    // 와도 이 입력의 turn 이 끝날 때까지 종료 처리를 보류하도록 카운터만 올린다.
+                    session.queuedUserPrompts.incrementAndGet()
+                } else {
+                    // v1.99.2 — 새 사용자 prompt 는 새 turn 시작 → 이전 turn 의 백그라운드 작업
+                    // 잔재(완료 통지 누락 등)를 무효화한다. 안 그러면 stale 한 outstanding 때문에
+                    // 이번 turn 의 Done 이 영구 suspended 로 묶일 수 있다. 자동 재개(isAutoResume)는
+                    // 같은 turn 의 연속이라 건드리지 않는다.
+                    if (!isAutoResume) session.outstandingBgTasks.clear()
+                    // v1.82.0 — 사용자 prompt → 영속 "미완 turn" 마크 ON(재개 횟수 리셋). 정상 완료 /
+                    // 취소 / 새 세션 시 OFF. 서버가 비정상 종료(재시작)되면 마크가 남아 부팅 reconcile
+                    // 이 자동 재개. 자동 재개(isAutoResume) 자체는 마크를 건드리지 않는다.
+                    if (!isAutoResume) markTurnActive(projectId)
+                    // v0.98.0 — prompt 전송 성공 → busy=true. ConsoleEvent.Done 시 false 로 전이.
+                    setBusy(projectId, true)
+                }
             } catch (e: IOException) {
                 log.warn(e) { "[$projectId] stdin write failed; will respawn on next prompt" }
+                if (isFollowUp) session.queuedUserPrompts.decrementAndGet()
                 // busy 가 true 로 전이되기 전 실패 → setBusy(false) 전이가 안 일어나므로 여기서 명시 release.
-                gate.release(projectId)
+                if (!isFollowUp) gate.release(projectId)
                 emitSystem(projectId, "process_crashed", "Claude process is no longer accepting input (${e.message}). Retrying on next prompt.")
                 terminateSession(projectId)
                 fireInterrupt(projectId, "crashed")
@@ -691,8 +711,20 @@ class ClaudeSessionManager(
                 //   ③ fireTurnDone 안 함 → 자동화가 미완 turn 을 완료로 오인해 다음 프롬프트를
                 //      쏴 turn 이 중첩되던 근본 원인 차단.
                 //  재개 turn 이 진짜 Done(outstandingBgTasks 비어있음) 될 때 아래 else 로 정상 종료.
+                // v1.113.0 — turn 진행 중 사용자가 추가로 보낸(follow-up) prompt 가 CLI 내부 큐에
+                //  남아 있으면, 이 Done 은 그 직전 turn 의 종료일 뿐 "세션 유휴" 가 아니다. 클라이언트
+                //  인위적 큐를 없애고 CLI 큐에 맡기는 TUI 동형 동작 — bg_task_suspended 와 동형으로
+                //  종료 처리(gate.release/setBusy(false)/clearTurnActive/fireTurnDone)를 보류하고
+                //  카운터만 1 감소. 다음 입력 turn 의 활동 프레임이 이어서 오면 responding 유지.
+                val followUpPending = (sessions[projectId]?.queuedUserPrompts?.get() ?: 0) > 0
                 val bgOutstanding = sessions[projectId]?.outstandingBgTasks?.isNotEmpty() == true
-                if (bgOutstanding) {
+                if (followUpPending) {
+                    sessions[projectId]?.let {
+                        it.queuedUserPrompts.decrementAndGet()
+                        it.lastActivity = Instant.now()
+                    }
+                    setBusy(projectId, true, "responding")
+                } else if (bgOutstanding) {
                     // v1.100.0 — busy 는 true 로 유지하되 상태칩을 "대기중"(waiting, 노랑) 으로
                     // 전이. 재개 turn 의 활동 프레임이 오면 위(L484)에서 responding 으로 자연 복귀.
                     setBusy(projectId, true, "waiting")
@@ -718,6 +750,7 @@ class ClaudeSessionManager(
                     interrupted.interruptPending = false
                     interrupted.retryJob?.cancel(); interrupted.retryJob = null
                     interrupted.rateLimitRetry = 0
+                    interrupted.queuedUserPrompts.set(0)  // v1.113.0 — 중단 시 대기 follow-up 무효.
                     gate.release(projectId)
                     clearTurnActive(projectId)
                     fireInterrupt(projectId, interrupted.interruptReason)
@@ -1277,6 +1310,15 @@ class ClaudeSessionManager(
         @Volatile var interruptPending: Boolean = false,
         /** v1.112.0 — interrupt 의 자동화/알림 통지 reason. "cancelled"(중지 버튼) | "interrupted"(끼어들기). */
         @Volatile var interruptReason: String = "interrupted",
+        /**
+         * v1.113.0 — turn 진행 중 사용자가 추가로 보낸(follow-up) prompt 수. 클라이언트 인위적
+         * 큐를 제거하고 stream-json CLI 내부 큐에 맡기는 대신(TUI 동형), 서버가 이 카운터로
+         * "아직 처리할 사용자 입력이 남았음"을 추적한다. `Done` 이 와도 이 값이 양수면 그 turn 은
+         * 종료가 아니라 "다음 입력 이어짐" 이므로 종료 처리(gate.release / setBusy(false) /
+         * fireTurnDone / clearTurnActive)를 보류하고 1 감소시킨다. [outstandingBgTasks] 와 동형.
+         */
+        val queuedUserPrompts: java.util.concurrent.atomic.AtomicInteger =
+            java.util.concurrent.atomic.AtomicInteger(0),
     )
 
     /**

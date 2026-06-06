@@ -2331,7 +2331,6 @@ $quickBarHtml
 
   // v0.13.0 — 진행 중 turn cancel 버튼
   // v0.98.0 — busy badge 추가 — 응답중/대기중 시각화.
-  // v0.99.0 — pendingPrompts 큐. busy 중에도 submit 허용, console_done 후 자동 발사.
   var stopBtn = document.getElementById('stop-btn');
   var interruptBtn = document.getElementById('interrupt-btn');  // v1.112.0 — 끼어들기.
   var busyBadge = document.getElementById('busy-badge');
@@ -2340,12 +2339,9 @@ $quickBarHtml
   var BUSY_WAITING = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.busy.waiting"))};
   var BUSY_STOPPED = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.busy.stopped"))};
   var BUSY_ERROR = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.busy.error"))};
-  var BUSY_QUEUED_TPL = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.busy.responding.queued", "___N___"))};
-  var QUEUE_ADDED_TPL = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.queue.added", "___N___", "___PREVIEW___"))};
-  var QUEUE_DRAINING = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.queue.draining"))};
-  var QUEUE_CLEARED_TPL = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.queue.cleared", "___N___"))};
   var inFlight = false;
-  var pendingPrompts = [];  // 큐: busy 중 submit 된 prompt 들.
+  // v1.113.0 — 클라이언트 인위적 큐(pendingPrompts) 제거. 응답 중 전송도 바로 서버로 보내고
+  // (TUI 동형) 서버가 진행 중 turn 에 follow-up 으로 이어붙여 CLI 내부 큐가 순차 처리한다.
   // v1.103.0 — 통합 탭 헤더의 #console-busy-badge 로 turn 상태 미러링(iframe → 부모 shell).
   // 콘솔 하단 busy-badge 를 헤더 콤보박스 좌측으로 "이동" 한 효과. 단독 콘솔 페이지
   // (부모=자기자신, project-tabs 없음)면 수신자가 없어 무해.
@@ -2362,9 +2358,7 @@ $quickBarHtml
     if (!busyBadge) return;
     if (inFlight) {
       busyBadge.dataset.state = 'responding';
-      busyBadge.textContent = pendingPrompts.length > 0
-        ? BUSY_QUEUED_TPL.replace('___N___', pendingPrompts.length)
-        : BUSY_RESPONDING;
+      busyBadge.textContent = BUSY_RESPONDING;
     } else {
       busyBadge.dataset.state = 'idle';
       busyBadge.textContent = BUSY_IDLE;
@@ -2497,20 +2491,12 @@ $quickBarHtml
   // v1.7.12 — 응답중 spinner element. console-log 하단에 표시.
   var spinnerEl = document.getElementById('console-spinner');
   function setInFlight(on) {
-    var wasOn = inFlight;
     inFlight = on;
     if (stopBtn) stopBtn.style.display = on ? 'inline-block' : 'none';
     // v1.112.0 — 끼어들기 버튼은 응답 중일 때만 노출(중지 버튼과 동기).
     if (interruptBtn) interruptBtn.style.display = on ? 'inline-flex' : 'none';
     if (spinnerEl) spinnerEl.hidden = !on;
     updateBusyBadge();
-    // busy → idle 전이 시 큐에서 하나 꺼내 자동 발사. 작은 delay 로 UI/server 안정.
-    if (wasOn && !on && pendingPrompts.length > 0) {
-      var next = pendingPrompts.shift();
-      append('sys', 'queue', QUEUE_DRAINING, 'system');
-      updateBusyBadge();  // 카운트 즉시 갱신
-      setTimeout(function() { sendPrompt(next); }, 150);
-    }
   }
   async function cancelTurn() {
     if (!inFlight) return;
@@ -2602,18 +2588,8 @@ $quickBarHtml
     ev.preventDefault();
     var text = input.value.trim();
     if (!text) return;
-    // v0.99.0 — busy 면 큐로 push. console_done 후 setInFlight(false) 가 자동 발사.
-    if (inFlight) {
-      pendingPrompts.push(text);
-      var preview = text.length > 60 ? text.slice(0, 60) + '…' : text;
-      append('sys', 'queue',
-             QUEUE_ADDED_TPL.replace('___N___', pendingPrompts.length).replace('___PREVIEW___', preview),
-             'system');
-      input.value = '';
-      input.blur();  // v1.7.11 — 큐에 push 후에도 동일하게 포커스 해제.
-      updateBusyBadge();
-      return;
-    }
+    // v1.113.0 — 응답 중에도 인위적 큐 없이 바로 전송(TUI 동형). 서버가 진행 중 turn 에
+    // follow-up 으로 이어붙이고 CLI 내부 큐가 순차 처리한다(대기열 메시지/상태칩 제거).
     sendPrompt(text);
   });
 
@@ -2633,17 +2609,6 @@ $quickBarHtml
 
   // v1.109.0 — 프롬프트 자동화 UI 는 부모 오버뷰 rail(project-tabs.js)로 이동했다.
   // 콘솔은 automation_progress 프레임을 부모로 postMessage 포워딩만 한다(위 WS 핸들러).
-
-  // v0.99.0 — 사용자가 큐 명시적으로 비우고 싶을 때. window 에 노출 — 콘솔에서
-  // `window.vibeClearQueue()` 로 호출 가능. UI 버튼은 차후 옵션.
-  window.vibeClearQueue = function() {
-    if (pendingPrompts.length === 0) return 0;
-    var n = pendingPrompts.length;
-    pendingPrompts.length = 0;
-    append('sys', 'queue', QUEUE_CLEARED_TPL.replace('___N___', n), 'system');
-    updateBusyBadge();
-    return n;
-  };
 
   input.addEventListener('keydown', function(ev) {
     // v1.69.0 — 전송: Enter · 줄바꿈: Ctrl/Cmd+Enter (또는 Shift+Enter)
