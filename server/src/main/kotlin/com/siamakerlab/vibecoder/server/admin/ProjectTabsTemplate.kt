@@ -52,6 +52,8 @@ internal object ProjectTabsTemplate {
     private val PRIMARY_TABS = listOf(
         Tab("console", "tabs.console", "/console", "tab-console"),
         Tab("builds", "tabs.builds", "/builds", "tab-builds"),
+        // v1.108.0 — 키스토어/AdMob 탭을 '더보기'에서 빌드 우측 상단 탭으로 이동(사용자 요청).
+        Tab("keystore", "tabs.keystore", "/keystore", "tab-keystore"),
         // v1.65.0 — 스토어 자산(앱 아이콘/그래픽/스크린샷) 탭.
         Tab("assets", "tabs.assets", "/assets", "tab-assets"),
         Tab("files", "tabs.files", "/tree", "tab-files"),
@@ -60,8 +62,6 @@ internal object ProjectTabsTemplate {
         Tab("history", "tabs.history", "/history", "tab-history"),
     )
     private val OVERFLOW_TABS = listOf(
-        // v1.93.0 — 프로젝트 스코프 키스토어/AdMob/SHA 지문 탭.
-        Tab("keystore", "tabs.keystore", "/keystore", "tab-keystore"),
         Tab("symbols", "tabs.symbols", "/symbols", "tab-symbols"),
         Tab("stats", "tabs.stats", "/stats", "tab-stats"),
         Tab("deps", "tabs.deps", "/deps", "tab-deps"),
@@ -100,6 +100,8 @@ internal object ProjectTabsTemplate {
         promptCount: Long = 0,
         /** 최신순(latest-first) user 프롬프트 본문 — 최대 7개. */
         recentPrompts: List<String> = emptyList(),
+        /** v1.108.0 — 자동 /compact ON 여부(기본 ON). 컨텍스트 카드 '자동' 체크박스 초기값. */
+        autoCompact: Boolean = true,
     ): String {
         val t = { key: String -> Messages.t(lang, key) }
         val esc = ::escapeHtml
@@ -136,8 +138,13 @@ internal object ProjectTabsTemplate {
     <div class="pt-rail-card pt-ctx-card">
       <div class="pt-rail-h pt-ctx-head">
         <span>${esc(t("tabs.rail.context"))}</span>
-        <button type="button" class="pt-compact-btn" id="pt-compact-btn"
-                title="${esc(t("tabs.rail.compact.hint"))}">/compact</button>
+        <span class="pt-ctx-actions">
+          <button type="button" class="pt-compact-btn" id="pt-compact-btn"
+                  title="${esc(t("tabs.rail.compact.hint"))}">/compact</button>
+          <label class="pt-autocompact" title="${esc(t("tabs.rail.autocompact.hint"))}">
+            <input type="checkbox" id="pt-autocompact"${if (autoCompact) " checked" else ""}>${esc(t("tabs.rail.autocompact"))}
+          </label>
+        </span>
       </div>
       <div id="pt-ctx-empty" class="pt-ctx-empty">${esc(t("tabs.rail.context.empty"))}</div>
       <div id="pt-ctx-meter" class="pt-ctx-meter" hidden
@@ -529,6 +536,9 @@ internal object ProjectTabsTemplate {
   #project-tabs-root .pt-hist-card { display: flex; flex-direction: column; flex: 0 0 auto; }
   /* v1.106.2/.3 — 우측 rail 컨텍스트 점유율 카드 */
   #project-tabs-root .pt-ctx-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  #project-tabs-root .pt-ctx-actions { display: inline-flex; align-items: center; gap: 6px; }
+  #project-tabs-root .pt-autocompact { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--text-dim,#888); cursor: pointer; user-select: none; }
+  #project-tabs-root .pt-autocompact input { cursor: pointer; margin: 0; }
   #project-tabs-root .pt-compact-btn {
     font: inherit; font-size: 11px; line-height: 1; padding: 4px 9px; cursor: pointer;
     background: #1f2937; color: #cbd5e1; border: 1px solid #2b3648; border-radius: 6px;

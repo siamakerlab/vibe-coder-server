@@ -105,6 +105,10 @@ object ConfigLoader {
             ?.toIntOrNull()?.let {
                 current = current.copy(claude = current.claude.copy(contextWarnTokens = it.coerceAtLeast(0)))
             }
+        System.getenv("VIBECODER_CLAUDE_AUTO_COMPACT_TOKENS")?.takeIf { it.isNotBlank() }
+            ?.toIntOrNull()?.let {
+                current = current.copy(claude = current.claude.copy(autoCompactTokens = it.coerceAtLeast(0)))
+            }
 
         return current
     }

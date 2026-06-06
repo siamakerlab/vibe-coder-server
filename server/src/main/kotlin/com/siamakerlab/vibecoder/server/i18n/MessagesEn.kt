@@ -1804,6 +1804,8 @@ internal object MessagesEn {
         "tabs.rail.context" to "Context",
         "tabs.rail.context.empty" to "Shown after the conversation starts",
         "tabs.rail.compact.hint" to "/compact — summarize to shrink context (keeps gist). Sent to console.",
+        "tabs.rail.autocompact" to "auto",
+        "tabs.rail.autocompact.hint" to "Auto compact — ON (default): when context crosses the threshold, automatically runs /compact after the turn and continues. OFF: only when you click /compact.",
         "tabs.rail.history.empty" to "No prompts yet",
         "tabs.rail.history.hint" to "Click → fill the console prompt box",
         "tabs.rail.hide" to "Hide overview",

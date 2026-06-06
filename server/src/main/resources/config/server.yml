@@ -2,7 +2,7 @@ server:
   name: Vibe Coder Server
   host: 0.0.0.0
   port: 17880
-  version: 1.107.5
+  version: 1.108.0
 
 workspace:
   # Each project lives at <root>/<projectId>/.
@@ -64,6 +64,10 @@ claude:
   # 1M 상한까지 누적되어 매 turn 전체 맥락을 과금하는 것을 사용자가 인지/리셋하도록 유도.
   # 0 이하 = 비활성. env VIBECODER_CLAUDE_CONTEXT_WARN_TOKENS 로 override.
   contextWarnTokens: 350000
+  # v1.108.0 — 자동 /compact 임계(직전 turn cache_read 토큰). 프로젝트별 auto-compact(기본 ON)이고
+  # 컨텍스트가 이 값을 넘으면 turn 종료 후 자동으로 /compact 실행 후 이어감(Claude CLI 자동 compact 동형).
+  # 0 이하 = 비활성. env VIBECODER_CLAUDE_AUTO_COMPACT_TOKENS 로 override.
+  autoCompactTokens: 700000
   # v0.21.0 — 사용량 모니터링 + 임계치 이메일 알림.
   # enabled=false 면 폴링/알림 둘 다 끔. pollIntervalMinutes 너무 짧으면
   # claude /status 호출 비용↑. warnThresholdPercent 도달 시 1회 + critical 도달 시
