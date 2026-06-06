@@ -276,7 +276,10 @@ fun Routing.webProjectRoutes(
             pr.id to projectStatus(pr.id, sessionManager, conversationRepo)
         }
         // v1.50.0 — 우측 overview rail 데이터.
-        val keystoreReady = runCatching { keystoreService.get(p.packageName) != null }.getOrDefault(false)
+        // v1.108.4 — keystore/admob 준비 상태를 한 번의 get() 으로 함께 계산(개요카드 행).
+        val ksEntry = runCatching { keystoreService.get(p.packageName) }.getOrNull()
+        val keystoreReady = ksEntry != null
+        val admobReady = ksEntry?.admobExists == true
         val usage = runCatching { conversationRepo.usageSummary(id) }.getOrNull()
         val promptFilter = ConversationTurnRepository.Filter(projectId = id, role = "user")
         val promptCount = runCatching { conversationRepo.count(promptFilter) }.getOrDefault(0L)
@@ -291,6 +294,7 @@ fun Routing.webProjectRoutes(
                 allProjects = allProjects,
                 projectStatuses = projectStatuses,
                 keystoreReady = keystoreReady,
+                admobReady = admobReady,
                 tokensTotal = (usage?.let { it.inputTokens + it.outputTokens }) ?: 0L,
                 cacheHitRate = usage?.cacheHitRate,
                 promptCount = promptCount,
