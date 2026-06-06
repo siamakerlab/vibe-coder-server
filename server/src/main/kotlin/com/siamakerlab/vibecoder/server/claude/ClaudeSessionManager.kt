@@ -898,9 +898,12 @@ class ClaudeSessionManager(
         val f = modelFile(projectId)
         val v = model?.trim().orEmpty()
         runCatching {
-            if (v.isBlank() || v.equals("default", ignoreCase = true)) {
+            if (v.isBlank()) {
+                // 빈 값만 override 해제(전역 기본 상속). UI 는 항상 값을 보내므로 사실상 미사용.
                 f.deleteIfExists()
             } else {
+                // v1.107.2 — "default"(CLI 기본) 포함 선택값을 명시 저장. 이전엔 "default" 시
+                // 파일을 지워 전역 기본으로 폴백 → 콤보박스가 선택과 다른 값으로 표시되던 버그.
                 Files.createDirectories(f.parent)
                 f.writeText(v)
             }
