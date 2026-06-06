@@ -171,6 +171,31 @@ internal object ProjectTabsTemplate {
       <div class="pt-rail-h">${esc(t("tabs.rail.history"))}</div>
       <div class="pt-hist-list" data-hist-hint="${esc(t("tabs.rail.history.hint"))}">$historyHtml</div>
     </div>
+    <!-- v1.109.0 — 프롬프트 자동화 카드(콘솔 인라인 패널에서 이동, 메모 위). 자체 입력으로
+         /claude/automation/* REST 직접 실행 + 활성 시 status 폴링. 진행 프레임은 콘솔 iframe 이
+         vibe:automation postMessage 로 즉시 전달(project-tabs.js initAutomation). -->
+    <div class="pt-rail-card pt-auto-card">
+      <div class="pt-rail-h">🤖 ${esc(t("console.automation.title"))} <span id="pt-auto-badge" class="dim"></span></div>
+      <div id="pt-auto-running" class="pt-auto-running" hidden>
+        <div class="pt-auto-prog"><span class="pt-auto-dot"></span><span id="pt-auto-progress"></span></div>
+        <button type="button" id="pt-auto-stop" class="pt-auto-btn danger"
+                data-confirm="${esc(t("console.automation.confirmStop"))}">${esc(t("console.automation.stop"))}</button>
+      </div>
+      <div id="pt-auto-idle" class="pt-auto-idle">
+        <div class="pt-auto-modes">
+          <label><input type="radio" name="pt-auto-mode" value="repeat" checked> ${esc(t("console.automation.repeat"))}</label>
+          <label><input type="radio" name="pt-auto-mode" value="sequence"> ${esc(t("console.automation.sequence"))}</label>
+          <label class="pt-auto-count">${esc(t("console.automation.count"))}<input type="number" id="pt-auto-count" min="1" max="200" value="20"></label>
+        </div>
+        <textarea id="pt-auto-prompts" rows="3" placeholder="${esc(t("console.automation.placeholder"))}"></textarea>
+        <div class="pt-auto-actions">
+          <button type="button" id="pt-auto-start" class="pt-auto-btn primary">${esc(t("console.automation.start"))}</button>
+          <select id="pt-auto-preset" hidden></select>
+          <button type="button" id="pt-auto-preset-start" class="pt-auto-btn" hidden>${esc(t("console.automation.presetStart"))}</button>
+          <a href="/projects/${esc(project.id)}/automation/prompts" target="_top" class="pt-auto-manage">${esc(t("console.automation.manage"))}</a>
+        </div>
+      </div>
+    </div>
     <!-- v1.91.0 — 메모 위젯 (전역 + 이 프로젝트). 프롬프트 히스토리 하단. -->
     <div class="pt-rail-card pt-memo-card">
       <div class="pt-rail-h pt-memo-head">
@@ -582,6 +607,42 @@ internal object ProjectTabsTemplate {
   }
   #project-tabs-root .pt-hist-item:hover { background: #1a1f2c; border-color: #2a3145; opacity: 1 !important; }
   #project-tabs-root .pt-hist-empty { color: #5a6175; font-size: 12px; padding: 6px 2px; }
+  /* v1.109.0 — 프롬프트 자동화 카드(메모 위). 콘솔에서 이동 — 우측 오버뷰 별개 기능. */
+  #project-tabs-root .pt-auto-card { display: flex; flex-direction: column; flex: 0 0 auto; gap: 8px; }
+  #project-tabs-root .pt-auto-modes { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+  #project-tabs-root .pt-auto-modes label { display: inline-flex; align-items: center; gap: 4px; margin: 0; font-size: 12px; color: var(--text, #ddd); cursor: pointer; }
+  #project-tabs-root .pt-auto-modes input[type="radio"] { margin: 0; cursor: pointer; }
+  #project-tabs-root .pt-auto-count { color: var(--text-dim, #888); }
+  #project-tabs-root .pt-auto-count input {
+    width: 56px; margin-left: 5px; padding: 3px 5px; font: inherit; font-size: 12px;
+    background: #0c0f17; border: 1px solid #1f2330; border-radius: 5px; color: var(--text, #ddd);
+  }
+  #project-tabs-root .pt-auto-idle textarea {
+    width: 100%; box-sizing: border-box; resize: vertical; min-height: 52px;
+    background: #0c0f17; border: 1px solid #1f2330; border-radius: 6px; color: var(--text, #ddd);
+    font: inherit; font-size: 12px; line-height: 1.4; padding: 7px 9px;
+  }
+  #project-tabs-root .pt-auto-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  #project-tabs-root .pt-auto-btn {
+    font: inherit; font-size: 12px; line-height: 1; padding: 6px 11px; cursor: pointer;
+    background: #1f2937; color: #cbd5e1; border: 1px solid #2b3648; border-radius: 6px;
+  }
+  #project-tabs-root .pt-auto-btn:hover { background: #26303f; }
+  #project-tabs-root .pt-auto-btn.primary { background: #1e40af; color: #fff; border-color: #1e40af; }
+  #project-tabs-root .pt-auto-btn.primary:hover { filter: brightness(1.1); }
+  #project-tabs-root .pt-auto-btn.danger { background: #7f1d1d; color: #fff; border-color: #991b1b; }
+  #project-tabs-root .pt-auto-preset { font: inherit; font-size: 12px; padding: 5px 7px; background: #0c0f17; color: var(--text, #ddd); border: 1px solid #1f2330; border-radius: 5px; max-width: 100%; }
+  #project-tabs-root .pt-auto-manage { font-size: 11px; color: var(--text-dim, #888); text-decoration: none; margin-left: auto; }
+  #project-tabs-root .pt-auto-manage:hover { color: var(--accent, #6aa9ff); }
+  #project-tabs-root .pt-auto-running { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  #project-tabs-root .pt-auto-prog { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: #6aa9ff; min-width: 0; }
+  #project-tabs-root .pt-auto-prog #pt-auto-progress { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #project-tabs-root .pt-auto-dot {
+    flex-shrink: 0; width: 8px; height: 8px; border-radius: 50%; background: #6aa9ff;
+    animation: vibe-busy-pulse 1.4s ease-in-out infinite;
+  }
+  /* vibe-busy-pulse 는 콘솔 iframe(WebProjectTemplates)에만 정의돼 부모 스코프엔 없으므로 여기서도 정의. */
+  @keyframes vibe-busy-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
   /* v1.91.0 — 메모 위젯 (프롬프트 히스토리 하단). */
   #project-tabs-root .pt-memo-card { display: flex; flex-direction: column; flex: 0 0 auto; }
   #project-tabs-root .pt-memo-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }

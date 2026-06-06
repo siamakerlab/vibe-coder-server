@@ -357,12 +357,98 @@
           }
         });
       }
+      // v1.109.0 — 프롬프트 자동화(콘솔 인라인 패널에서 우측 오버뷰 rail 로 이동). 자체 입력으로
+      // /claude/automation/* REST 직접 실행 + 활성 시 status 3s 폴링. 진행 프레임은 콘솔 iframe 의
+      // vibe:automation postMessage 로 즉시 갱신(아래 message 핸들러 → __ptAutoRender).
+      (function initAutomation() {
+        var card = document.querySelector('.pt-auto-card');
+        if (!card) return;
+        var badge = document.getElementById('pt-auto-badge');
+        var runningEl = document.getElementById('pt-auto-running');
+        var idleEl = document.getElementById('pt-auto-idle');
+        var progEl = document.getElementById('pt-auto-progress');
+        var startBtn = document.getElementById('pt-auto-start');
+        var stopBtn = document.getElementById('pt-auto-stop');
+        var presetSel = document.getElementById('pt-auto-preset');
+        var presetStartBtn = document.getElementById('pt-auto-preset-start');
+        var promptsEl = document.getElementById('pt-auto-prompts');
+        var countEl = document.getElementById('pt-auto-count');
+        var base = '/api/projects/' + encodeURIComponent(projectId) + '/claude/automation/';
+        var pollTimer = null;
+
+        function api(method, url, body) {
+          return fetch(url, {
+            method: method, credentials: 'same-origin',
+            headers: body ? { 'Content-Type': 'application/json' } : undefined,
+            body: body ? JSON.stringify(body) : undefined,
+          });
+        }
+        function poll() {
+          api('GET', base + 'status').then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (st) { if (st) render(st); }).catch(function () {});
+        }
+        function render(st) {
+          if (st && st.active) {
+            runningEl.hidden = false;
+            idleEl.style.display = 'none';
+            progEl.textContent = (st.name ? st.name + ' · ' : '') + (st.sent || 0) + '/' + (st.total || 0);
+            badge.textContent = '· ' + (st.sent || 0) + '/' + (st.total || 0);
+            if (!pollTimer) pollTimer = setInterval(poll, 3000);   // 폴백(즉시 갱신은 postMessage)
+          } else {
+            runningEl.hidden = true;
+            idleEl.style.display = '';
+            badge.textContent = (st && st.status) ? '· ' + st.status : '';
+            if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+          }
+        }
+        window.__ptAutoRender = render;   // message 핸들러가 진행 프레임 push 시 사용.
+
+        // 프리셋 로드(전역).
+        api('GET', '/api/prompt-automations').then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+          if (!d || !d.presets || !d.presets.length) return;
+          presetSel.innerHTML = '';
+          d.presets.forEach(function (p) {
+            var o = document.createElement('option'); o.value = p.id; o.textContent = p.name + ' (' + p.mode + ')';
+            presetSel.appendChild(o);
+          });
+          presetSel.hidden = false; presetStartBtn.hidden = false;
+        }).catch(function () {});
+
+        poll();   // 초기 상태 1회.
+
+        function doStart(body) {
+          api('POST', base + 'start', body).then(function (r) {
+            if (!r.ok) { return r.text().then(function (m) { window.alert('automation ' + r.status + ': ' + m); }); }
+            return r.json().then(render);
+          }).catch(function (e) { window.alert('automation: ' + e); });
+        }
+        if (startBtn) startBtn.addEventListener('click', function () {
+          var mode = (card.querySelector('input[name=pt-auto-mode]:checked') || {}).value || 'repeat';
+          var raw = (promptsEl.value || '').trim();
+          var prompts = raw.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+          if (!prompts.length) { promptsEl.focus(); return; }
+          var count = parseInt(countEl.value, 10) || 1;
+          doStart({ mode: mode, prompts: prompts, repeatCount: count, loops: 1, stopOnError: false });
+        });
+        if (presetStartBtn) presetStartBtn.addEventListener('click', function () {
+          if (!presetSel.value) return;
+          doStart({ presetId: presetSel.value });
+        });
+        if (stopBtn) stopBtn.addEventListener('click', function () {
+          var msg = stopBtn.getAttribute('data-confirm') || 'Stop?';
+          if (!window.confirm(msg)) return;
+          api('POST', base + 'stop').then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (st) { if (st) render(st); }).catch(function () {});
+        });
+      })();
       window.addEventListener('message', function (ev) {
         if (ev.origin !== location.origin) return;
         var d = ev.data;
         if (!d) return;
         if (d.type === 'vibe:prompt-sent') { prependHistory(d.text); return; }
         if (d.type === 'vibe:context-usage') { updateRailContextMeter(d); return; }
+        // v1.109.0 — 콘솔 iframe 이 포워딩한 자동화 진행/종료 프레임 → rail 카드 즉시 갱신.
+        if (d.type === 'vibe:automation') { if (window.__ptAutoRender) window.__ptAutoRender(d.state); return; }
         // v1.103.0 — 콘솔 iframe 의 busy-badge 가 turn 상태를 헤더 칩으로 미러링.
         if (d.type === 'console:busy') {
           var badge = document.getElementById('console-busy-badge');
