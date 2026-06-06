@@ -893,6 +893,26 @@ table.devices small.dim { font-size: 11px; }
 @keyframes vibe-spinner-rotate {
     to { transform: rotate(360deg); }
 }
+/* v1.108.2 — 콘솔 하단 바: 좌측 응답중 스피너(busy 때만) + 우측 정렬 필터/자동스크롤 토글.
+   필터/자동스크롤을 상단에서 콘솔 하단(응답중과 같은 줄)으로 이동(사용자 요청). */
+.console-bottom-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 2px 0;
+    min-height: 30px;
+    margin-bottom: 12px;
+}
+.console-bottom-bar .console-spinner {
+    padding: 0;          /* 패딩/구분선은 바가 담당 — 스피너는 inline 으로만 */
+    border-top: none;
+}
+.console-bottom-tools {
+    margin-left: auto;   /* 스피너가 hidden 이어도 항상 우측 정렬 유지 */
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
 /* v1.62.0 — MCP 카드 인라인 설치 스피너 (키프레임 재사용). */
 .mcp-spinner {
     display: inline-block;

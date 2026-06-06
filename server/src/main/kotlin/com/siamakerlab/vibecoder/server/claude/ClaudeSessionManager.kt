@@ -637,6 +637,16 @@ class ClaudeSessionManager(
                     //  (이전 v1.80.0 은 여기서 release+fireTurnDone 을 호출 → permit 빠른 회전 +
                     //   자동화 폭주 → "동시 한도 초과 + rate limit 악순환" 의 원인이었다.)
                     scheduleRateLimitRetry(projectId)
+                } else if (event.code == "usage_limit") {
+                    // v1.108.2 — 사용량/요금 한도 종료(5시간 윈도우·월 한도 등). 일시 rate-limit 과
+                    //  달리 재시도해도 소용없고, API/turn 크래시도 아니다 → "에러"(빨강) 대신
+                    //  "중단됨"(stopped, 보라) 으로 표시. 자동화엔 완료(fireTurnDone)가 아닌
+                    //  interrupt 로 통지해 다음 프롬프트 자동 발사를 막는다(한도 재충돌 방지).
+                    gate.release(projectId)
+                    sessions[projectId]?.rateLimitRetry = 0
+                    clearTurnActive(projectId)
+                    fireInterrupt(projectId, "usage_limit")
+                    setBusy(projectId, false, "stopped")
                 } else {
                     // 진짜 에러 turn 종료(rate-limit 아님) — permit 반환 + 자동화 통지 + busy 해제.
                     // v1.100.0 — 상태칩을 "에러"(error, 빨강) 로. cancel/crash/idle 의 "중단됨"
