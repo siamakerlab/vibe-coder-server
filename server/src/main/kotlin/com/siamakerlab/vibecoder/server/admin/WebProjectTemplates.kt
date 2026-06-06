@@ -1456,9 +1456,8 @@ $errHtml
     <small class="dim" style="font-size:14px;font-weight:400">${esc(p.name)}${if (isChat) "" else " (${esc(p.id)})"}</small>
   </h1>
   <div class="console-actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
-    <span class="dim" style="font-size:12px">${esc(t("console.session"))} $statusBadge${if (sessionId != null) """ <span class="dim">${esc(sessionId.take(12))}…</span>""" else ""}</span>
-    $modelSelectorHtml
-    $mcpStrictHtml
+    <!-- v1.110.0 — 세션 표시 + 모델 셀렉터 + MCP 최소화 토글은 콘솔 하단 바(메시지 필터 좌측)로
+         이동했다(사용자 요청). 헤더 우측에는 외부 링크/중지/새 세션만 남긴다. -->
     $sideLinks
     <button type="button" id="stop-btn" class="chip chip-danger" style="display:none;height:30px;box-sizing:border-box;align-items:center"
             title="${esc(t("console.stop.title"))}">${esc(t("console.stop"))}</button>
@@ -1548,6 +1547,10 @@ ${if (embed) "" else contextMeterHtml}
     <span class="spinner-label">${esc(t("console.busy.responding"))}</span>
   </div>
   <div class="console-bottom-tools">
+    <!-- v1.110.0 — 세션 표시 + 모델 셀렉터 + MCP 최소화(헤더에서 이동). 메시지 필터 버튼 좌측. -->
+    <span class="dim" style="font-size:11px;white-space:nowrap">${esc(t("console.session"))} $statusBadge${if (sessionId != null) """ <span class="dim">${esc(sessionId.take(12))}…</span>""" else ""}</span>
+    $modelSelectorHtml
+    $mcpStrictHtml
     <button type="button" id="filter-open" class="chip chip-link"
             style="font-size:11px;padding:4px 11px;display:inline-flex;align-items:center;gap:5px"
             title="${esc(t("console.filter.title"))}">
