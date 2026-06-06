@@ -11,7 +11,8 @@
 
 1. 응답 언어 · 2. 코드 수정 후 필수 절차(최우선) · 3. 버전 관리 · 4. 디버그 빌드 패키지명 ·
 5. 서명 키스토어 · 6. 빌드 환경(도구/Gradle/SDK/환경변수) · 7. 설계 원칙 · 8. 네이밍 규칙 ·
-9. Git · 10. 문서 · 11. 절대 금지 · 12. 최종 원칙
+9. Git · 10. 문서 · 11. 절대 금지 · 12. 최종 원칙 · 13. Android Compose UI 함정(재발 방지) ·
+14. 에뮬레이터 실행·스크린샷 자율 실행 금지
 
 ---
 
@@ -24,7 +25,7 @@
 
 **모든 코드 수정 작업 이후 아래를 순서대로 빠짐없이 실행한다:**
 
-1. **빌드 테스트** — 컴파일/빌드 통과 확인.
+1. **빌드 테스트** — 컴파일/빌드 통과 확인(단위 테스트 포함). **여기서 "빌드 테스트"는 컴파일·빌드·단위 테스트까지를 뜻하며, 에뮬레이터 실행/스크린샷 검토는 포함하지 않는다(§14).**
 2. **자동 버전 관리** — `versionName`/`versionCode` 갱신(§3).
 3. **`CHANGELOG.md` 업데이트** (§10).
 4. **git commit / push** (§9).
@@ -83,6 +84,21 @@ Android 서명 키스토어는 **호스트 영속 볼륨** `/home/vibe/keystores
 - **키스토어를 임의로 새로 만들지 말 것** (운영자 정책). 파일이 없으면 빌드를 멈추고, 운영자에게
   vibe-coder 서버의 **설정 → 키스토어(`/settings/keystores`)** 에서 해당 applicationId 로
   생성하도록 안내한다. AGP 의 default `debug.keystore` 자동 생성도 금지. (§11 "키스토어 내부 저장 금지")
+
+### AdMob 광고 ID 파일 키 스키마 (필수 준수)
+
+하드코딩된 AdMob 광고 ID 를 `<applicationId>-admob.properties` 로 이동배치할 때는 **반드시 아래
+표준 키**를 사용한다. (vibe-coder 서버의 키스토어 → AdMob ID 섹션이 이 키 규약으로 조회·표시한다.
+매번 다른 키 형식(`admob.bannerId` / `release.admob_banner_id` 등)을 임의로 만들지 말 것.)
+
+- **운영(실) ID 만** 이 파일에 둔다. 키:
+  - `admobAppId=ca-app-pub-XXXX~YYYY`
+  - `appOpenAdUnitId` / `bannerAdUnitId` / `nativeAdUnitId` / `interstitialAdUnitId` /
+    `rewardedAdUnitId` / `rewardedInterstitialAdUnitId` = `ca-app-pub-XXXX/ZZZZ` (다중은 콤마 구분)
+- **테스트 ID(Google 공식 `ca-app-pub-3940256099942544/…`)는 이 파일에 넣지 말 것.** 디버그 빌드의
+  테스트 광고는 build.gradle 의 debug variant 에서 Google 공식 테스트 상수로 직접 처리한다.
+- build.gradle 은 이 파일을 `Properties` 로 로드해 manifestPlaceholders(App ID) + buildConfigField
+  (unit ID, `split(",")`)로 주입한다. 광고 ID 평문을 소스에 하드코딩하지 말 것.
 
 ## 6. 빌드 환경
 
@@ -198,7 +214,65 @@ PATH=/home/vibe/.local/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/androi
 - `/opt/*` 또는 `/home/vibe/.gradle/`, `/home/vibe/.local/` 의 임의 삭제
 - `local.properties` 에 호스트 경로 하드코딩
 - Wrapper 버전 변경 시 사유 미기재
+- **에뮬레이터/기기 실행·스크린샷 검토를 사용자 명시 없이 자율 실행** (대량 토큰·시간 소모 — §14)
 
 ## 12. 최종 원칙
 
 모든 판단 기준: **유지보수성 · 확장성 · 일관성 · 자동화 가능성.**
+
+## 13. Android Compose UI 함정 (재발 방지 — 반복 발생 패턴)
+
+실제로 반복 발생해 수정한 UI 버그 패턴. **새 화면/네비게이션을 만들거나 inset 관련 코드를 손댈 때 아래를 먼저 점검한다.**
+
+### 13.1 ⚠ WindowInsets 이중 적용 — 헤더 위 빈 여백 (가장 자주 발생)
+
+**증상:** 각 탭/화면의 `TopAppBar`(헤더) 위에 상태바 높이만큼 불필요한 빈 띠가 생긴다.
+
+**원인:** **inset 을 두 번 적용**. 대표적으로 **중첩 Scaffold** —
+바깥 `Scaffold`(보통 `bottomBar`/`NavigationBar` 호스팅, `topBar` 없음)가 `enableEdgeToEdge` 환경에서
+`innerPadding.top`(=상태바 높이)을 콘텐츠(NavHost)에 적용하고, 그 안의 화면별 `Scaffold` + `TopAppBar`
+가 **또** 상태바 inset 을 적용한다.
+
+**규칙 (inset 은 한 번만, 소유자를 명확히):**
+- **상단(상태바) inset 의 소유자는 화면의 `TopAppBar`**. 바깥 Scaffold 는 NavHost 에 `top` 을 적용하지
+  말고 **좌/우/하단만** 적용한다.
+  ```kotlin
+  Scaffold(bottomBar = { ... }) { inner ->
+      val ld = LocalLayoutDirection.current
+      NavHost(..., modifier = Modifier.padding(
+          start = inner.calculateStartPadding(ld),
+          end = inner.calculateEndPadding(ld),
+          bottom = inner.calculateBottomPadding()   // top 은 의도적으로 제외
+      ))
+  }
+  ```
+- `TopAppBar` 가 **없는** 화면(예: 홈)만 루트에 `Modifier.statusBarsPadding()` 으로 상태바를 직접 비킨다.
+- 동일 논리로 **하단 inset 도 한 곳에서만**: 바깥 Scaffold 가 `bottomBar` 를 가지면 하단 네비 inset 은 바깥이
+  소유. 안쪽 화면 Scaffold 가 또 `navigationBars` inset 을 더하지 않는지 확인.
+
+**점검 체크리스트 (새 화면/네비 추가 시):**
+1. Scaffold 가 **중첩**되어 있는가? → 그렇다면 각 system-bar inset 의 **소유자가 정확히 하나**인지 확인.
+2. `innerPadding` 을 `Modifier.padding(innerPadding)` 으로 **통째 적용**하면서 안쪽에 `TopAppBar` 가 또 있는가? → top 이중.
+3. `statusBarsPadding()` / `systemBarsPadding()` 과 `TopAppBar`(기본 status-bar inset)를 **동시에** 쓰지 않는가?
+4. `enableEdgeToEdge()` 사용 시, inset 을 소비하는 지점을 화면당 한 번으로 한정했는가?
+
+### 13.2 보조 점검 (정책 일반과 연계)
+
+- 새 색상/치수/문자열은 **테마·리소스에 정의 후 참조**(하드코딩 금지, §11). 화면 간 의미 색(수입/지출 등)은 **단일 정의 재사용**(일관성).
+- 화면은 **로딩·빈 데이터·오류 상태**를 모두 처리. 색상 단독으로 상태 구분 금지(텍스트/아이콘 병행).
+- 목록/상태 수집은 생명주기 인지(`collectAsStateWithLifecycle`)로 백그라운드 작업 최소화.
+
+---
+
+## 14. ⚠ 에뮬레이터 실행·스크린샷 검토는 자율 실행 금지
+
+앱 정상 실행 확인을 위한 **에뮬레이터/기기 실행, 앱 설치·구동, 스크린샷 촬영·검토**는
+**대량의 토큰과 시간을 소모**하는 작업이다. 따라서:
+
+- **사용자가 명시적으로 요청한 경우에만** 수행한다. (예: "에뮬레이터로 실행해줘", "스크린샷 찍어줘",
+  "실기기에서 확인", "런타임 검증" 등 명확한 지시.)
+- **사용자 명시 없이 자율 판단으로 실행하지 않는다.** §2의 "빌드 테스트"는 **컴파일·빌드·단위 테스트까지**이며,
+  런타임 구동 검증을 포함하지 않는다. 코드 변경의 기본 검증은 빌드+단위 테스트로 충분하다고 간주한다.
+- 런타임 확인이 가치 있다고 판단되면 **실행하지 말고**, 응답에서 "에뮬레이터/실기기 검증 권장"으로 **제안만**
+  하고 사용자 선택을 기다린다(§비인터랙티브 규칙과 동일하게 다음 프롬프트에서 결정).
+- 공유 에뮬레이터 환경에서는 다른 프로젝트와 경합이 발생할 수 있어 비용 대비 효용도 낮다.
