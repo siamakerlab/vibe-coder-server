@@ -684,6 +684,9 @@ table.devices small.dim { font-size: 11px; }
 /* v1.6.4 — 콘솔 스크롤 + 우하단 jump-to-bottom 버튼 wrapper. */
 .console-log-wrap {
     position: relative;
+    /* v1.111.1 — 상단 헤더와 콘솔 박스가 0px 로 붙던 문제. 하단(콘솔↔버튼) 여백과 동일하게
+       맞춘다 = 콘솔 margin-bottom(2px) + 하단 바 padding-top(2px) = 4px(사용자 요청). */
+    margin-top: 4px;
     /* v1.108.3 — 콘솔 본문과 하단 바(응답중/필터/자동스크롤) 사이 여백 축소(사용자 요청). */
     margin-bottom: 2px;
 }
