@@ -762,7 +762,7 @@ internal object ProjectTabsTemplate {
     ${AdminTemplates.backButton("/projects", t("tabs.backToList"))}
     <!-- v1.103.0 — 콘솔 turn 상태칩(콤보박스 좌측). 콘솔 iframe 의 busy-badge 가
          postMessage(console:busy)로 미러링한다. 어느 탭에 있어도 콘솔 진행 상태 확인. -->
-    <span id="console-busy-badge" data-state="idle" title="${esc(t("console.busy.idle"))}">${esc(t("console.busy.idle"))}</span>
+    <span id="console-busy-badge" data-state="ready" title="${esc(t("console.busy.idle"))}">${esc(t("console.busy.idle"))}</span>
     $projectSwitcher
     <span class="spacer"></span>
     <details class="pt-settings">

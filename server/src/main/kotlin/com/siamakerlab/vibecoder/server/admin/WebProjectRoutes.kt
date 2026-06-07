@@ -18,6 +18,7 @@ import com.siamakerlab.vibecoder.server.ws.LogHub
 import com.siamakerlab.vibecoder.shared.ApiPath
 import com.siamakerlab.vibecoder.shared.dto.BuildDto
 import com.siamakerlab.vibecoder.shared.dto.ProjectReorderRequestDto
+import com.siamakerlab.vibecoder.shared.dto.ProjectState
 import com.siamakerlab.vibecoder.shared.dto.RegisterProjectRequestDto
 import com.siamakerlab.vibecoder.server.auth.AUTH_BEARER
 import com.siamakerlab.vibecoder.server.auth.requireApiWrite
@@ -1526,9 +1527,9 @@ private fun projectStatus(
     sessionManager: ClaudeSessionManager,
     conversationRepo: ConversationTurnRepository,
 ): String = when {
-    sessionManager.isBusy(id) -> "responding"
-    runCatching { conversationRepo.lastPromptInterrupted(id) }.getOrDefault(false) -> "stopped"
-    else -> "ready"
+    sessionManager.isBusy(id) -> ProjectState.RESPONDING.wire
+    runCatching { conversationRepo.lastPromptInterrupted(id) }.getOrDefault(false) -> ProjectState.STOPPED.wire
+    else -> ProjectState.READY.wire
 }
 
 /** 종료된 빌드의 디스크 로그를 읽어 화면에 prerender 할 수 있게 가공한 결과. */

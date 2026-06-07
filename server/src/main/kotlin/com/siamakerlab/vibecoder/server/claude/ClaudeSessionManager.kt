@@ -4,6 +4,7 @@ import com.siamakerlab.vibecoder.server.config.ServerConfig
 import com.siamakerlab.vibecoder.server.core.OsType
 import com.siamakerlab.vibecoder.server.core.WorkspacePath
 import com.siamakerlab.vibecoder.server.ws.LogHub
+import com.siamakerlab.vibecoder.shared.dto.ProjectState
 import com.siamakerlab.vibecoder.shared.ws.WsFrame
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineScope
@@ -81,12 +82,13 @@ class ClaudeSessionManager(
     private val busy = ConcurrentHashMap<String, Boolean>()
 
     /**
-     * v1.100.0 — projectId → 마지막 상태칩 문자열(responding/ready/waiting/stopped/error).
-     * busy(boolean) 만으로는 백그라운드 대기(waiting, busy=true 유지)·에러(error) 같은
+     * v1.100.0 — projectId → 마지막 상태칩([ProjectState]).
+     * busy(boolean) 만으로는 백그라운드 대기(WAITING, busy=true 유지)·에러(ERROR) 같은
      * 같은-boolean 다른-state 전이를 구분 못 해 뱃지가 안 바뀌었다. setBusy 가 value+state
      * 중 하나라도 바뀌면 emit 하도록 함께 추적한다.
+     * v1.114.0 — String → [ProjectState] (단일 진실).
      */
-    private val busyState = ConcurrentHashMap<String, String>()
+    private val busyState = ConcurrentHashMap<String, ProjectState>()
 
     /**
      * v1.59.0 — turn 완료(정상 Done) 리스너. 프롬프트 자동화
@@ -211,7 +213,7 @@ class ClaudeSessionManager(
                     // 이 자동 재개. 자동 재개(isAutoResume) 자체는 마크를 건드리지 않는다.
                     if (!isAutoResume) markTurnActive(projectId)
                     // v0.98.0 — prompt 전송 성공 → busy=true. ConsoleEvent.Done 시 false 로 전이.
-                    setBusy(projectId, true)
+                    setBusy(projectId, ProjectState.RESPONDING)
                 }
             } catch (e: IOException) {
                 log.warn(e) { "[$projectId] stdin write failed; will respawn on next prompt" }
@@ -414,21 +416,31 @@ class ClaudeSessionManager(
     fun isBusy(projectId: String): Boolean = busy[projectId] == true
 
     /**
-     * v0.98.0 — busy 상태 전이. 값이 실제 변경됐을 때만 ConsoleBusyState WS frame emit
+     * v1.114.0 — 해당 프로젝트의 현재 상태칩([ProjectState]). in-memory 진실.
+     * 미기록(부팅 직후 등)이면 busy 폴백. 콘솔/목록 SSR 초기 렌더가 WS frame 과 동일한
+     * 단일 소스를 보도록 노출(이전엔 SSR 이 별도 3-state 를 재계산해 불일치했다).
+     */
+    fun stateOf(projectId: String): ProjectState =
+        busyState[projectId] ?: ProjectState.fromBusy(isBusy(projectId))
+
+    /**
+     * v0.98.0 — busy 상태 전이. state 가 실제 변경됐을 때만 WS frame emit
      * (idempotent 호출 시 노이즈 방지). projectId 별로 독립 — 여러 프로젝트 동시 작업
      * 시 각 프로젝트 콘솔이 자기 상태만 받음 (hub.topic 이 프로젝트별 분리).
+     *
+     * v1.114.0 — (Boolean value, String? state) 2-인자 → 단일 [ProjectState]. busy boolean 은
+     * [ProjectState.busy] 에서 파생하므로 (busy, state) 쌍이 어긋날 footgun 이 사라졌다.
+     * 상태칩 색/의미: READY(유휴)=그레이 / RESPONDING(응답중)=초록 / WAITING(대기중,백그라운드)
+     * =노랑 / STOPPED(중단됨)=보라 / ERROR(API 에러)=빨강.
      */
-    private suspend fun setBusy(projectId: String, value: Boolean, state: String? = null) {
-        // v1.60.0 — 상태칩 명시 상태. 미지정 시 busy → responding / ready.
-        //   ready(유휴)=그레이 / responding(응답중)=초록 / waiting(대기중,백그라운드)=노랑 /
-        //   stopped(중단됨, cancel·crash·idle·rate-limit 소진)=보라 / error(API 에러)=빨강.
-        val st = state ?: if (value) "responding" else "ready"
-        // v1.99.2 → v1.100.0 — busy(boolean) 뿐 아니라 state 문자열 변화도 감지해 emit.
-        // 백그라운드 대기(waiting)는 busy=true 를 유지한 채 responding→waiting 으로만 바뀌므로,
+    private suspend fun setBusy(projectId: String, state: ProjectState) {
+        val value = state.busy
+        // v1.99.2 → v1.100.0 — busy(boolean) 뿐 아니라 state 변화도 감지해 emit.
+        // 백그라운드 대기(WAITING)는 busy=true 를 유지한 채 RESPONDING→WAITING 으로만 바뀌므로,
         // 예전처럼 busy 값만 비교하면(prev==value) 전이가 묻혀 뱃지가 갱신되지 않았다.
-        val prev = busy.put(projectId, value)
-        val prevState = busyState.put(projectId, st)
-        if (prev == value && prevState == st) return
+        busy.put(projectId, value)
+        val prevState = busyState.put(projectId, state)
+        if (prevState == state) return
         // v1.71.0 (정밀점검) — permit release 를 busy 전이에 묶지 않는다. busy=true 는
         // sendPrompt 의 stdin write 직후에야 set 되는데, 그 전에 Done/exit 이 먼저
         // 도달하면 false-전이가 안 일어나 permit 이 영구 leak (풀 wedge) 됐다. release 는
@@ -436,11 +448,12 @@ class ClaudeSessionManager(
         // (gate.release 는 heldKeys 기반 idempotent — SubAgentSessionManager 와 동일 방식).
         // v1.83.0 — 콘솔 페이지도 state 전달(이전엔 busy boolean 만 → "stopped/중단됨"
         // 구분 불가). rate-limit 재시도 소진 등 비정상 종료를 콘솔 뱃지에 정확 반영.
-        hub.emitConsole(topic(projectId)) { seq -> WsFrame.ConsoleBusyState(busy = value, seq = seq, state = st) }
+        val wire = state.wire
+        hub.emitConsole(topic(projectId)) { seq -> WsFrame.ConsoleBusyState(busy = value, seq = seq, state = wire) }
         // v1.3.0 — cross-project topic 으로도 broadcast. /ws/projects 구독자
         // (workspaces 목록 / 대시보드) 가 실시간으로 busy 뱃지 갱신.
         hub.emitConsole(PROJECTS_TOPIC) { seq ->
-            WsFrame.ProjectBusyChanged(projectId = projectId, busy = value, seq = seq, state = st)
+            WsFrame.ProjectBusyChanged(projectId = projectId, busy = value, seq = seq, state = wire)
         }
     }
 
@@ -685,7 +698,7 @@ class ClaudeSessionManager(
                 event is ClaudeEvent.ToolResult
             ) {
                 if (busy[projectId] != true) markTurnActive(projectId)
-                setBusy(projectId, true, "responding")
+                setBusy(projectId, ProjectState.RESPONDING)
             }
             hub.emitConsole(topic(projectId)) { seq -> toWsFrame(event, seq) }
             // v0.16.0 — turn 영구 적재. SessionStarted 는 자체 sessionId 사용 (위에서
@@ -720,7 +733,7 @@ class ClaudeSessionManager(
                 if (bgOutstanding) {
                     // v1.100.0 — busy 는 true 로 유지하되 상태칩을 "대기중"(waiting, 노랑) 으로
                     // 전이. 재개 turn 의 활동 프레임이 오면 위(L484)에서 responding 으로 자연 복귀.
-                    setBusy(projectId, true, "waiting")
+                    setBusy(projectId, ProjectState.WAITING)
                     emitSystem(
                         projectId, "bg_task_suspended",
                         "백그라운드 작업이 진행 중이라 turn 을 유지합니다 — 완료되면 자동으로 이어집니다.",
@@ -728,7 +741,7 @@ class ClaudeSessionManager(
                 } else {
                     gate.release(projectId)  // v1.71.0 — turn 정상 완료 → permit 반환(idempotent).
                     clearTurnActive(projectId)  // v1.82.0 — 정상 완료 → 미완 마크 OFF.
-                    setBusy(projectId, false)
+                    setBusy(projectId, ProjectState.READY)
                     // v1.59.0 — 자동화 리스너에 turn 완료 통지 (fire-and-forget, stdout 파싱 비blocking).
                     fireTurnDone(projectId, event.reason)
                     // v1.108.0 — 컨텍스트 임계 초과 + auto-compact ON 이면 자동 /compact 발사(사용자 클릭과 동일 경로).
@@ -746,7 +759,7 @@ class ClaudeSessionManager(
                     gate.release(projectId)
                     clearTurnActive(projectId)
                     fireInterrupt(projectId, interrupted.interruptReason)
-                    setBusy(projectId, false, "stopped")
+                    setBusy(projectId, ProjectState.STOPPED)
                 } else if (isRateLimitError(event)) {
                     // v1.99.0 — rate-limit 은 turn "종료"가 아니라 "일시중단 → 재개 대기"다.
                     //  ① gate.release 를 **하지 않는다** — permit 을 유지해 그 슬롯이 rate-limit
@@ -766,7 +779,7 @@ class ClaudeSessionManager(
                     sessions[projectId]?.rateLimitRetry = 0
                     clearTurnActive(projectId)
                     fireInterrupt(projectId, "usage_limit")
-                    setBusy(projectId, false, "stopped")
+                    setBusy(projectId, ProjectState.STOPPED)
                 } else {
                     // 진짜 에러 turn 종료(rate-limit 아님) — permit 반환 + 자동화 통지 + busy 해제.
                     // v1.100.0 — 상태칩을 "에러"(error, 빨강) 로. cancel/crash/idle 의 "중단됨"
@@ -775,7 +788,7 @@ class ClaudeSessionManager(
                     fireTurnDone(projectId, "error:${event.code}")
                     sessions[projectId]?.rateLimitRetry = 0
                     clearTurnActive(projectId)
-                    setBusy(projectId, false, "error")
+                    setBusy(projectId, ProjectState.ERROR)
                 }
             }
         }
@@ -800,7 +813,7 @@ class ClaudeSessionManager(
         val session = sessions[projectId] ?: run {
             // v1.99.0 — permit 반환 + 자동화 중단(다른 종료 경로와 짝 맞춤 — 좀비 방지).
             gate.release(projectId); fireInterrupt(projectId, "rate_limit_session_gone")
-            setBusy(projectId, false, "stopped"); return
+            setBusy(projectId, ProjectState.STOPPED); return
         }
         // v1.106.0 (P1-b) — 컨텍스트가 임계 초과면 rate-limit 자동 재개도 보류.
         // 거대한 맥락을 백오프 후 반복 자동 과금하는 것을 막는다(사용자가 직접 재개/리셋).
@@ -809,7 +822,7 @@ class ClaudeSessionManager(
             session.retryJob?.cancel(); session.retryJob = null
             gate.release(projectId)
             clearTurnActive(projectId)
-            setBusy(projectId, false, "stopped")
+            setBusy(projectId, ProjectState.STOPPED)
             fireInterrupt(projectId, "rate_limit_skipped_large_context")
             emitSystem(projectId, "rate_limit_skipped_large_context",
                 "rate limit 발생 — 컨텍스트가 커서(약 ${lastContextTokens(projectId) / 1000}K) 자동 재개를 보류했습니다. " +
@@ -823,7 +836,7 @@ class ClaudeSessionManager(
             // v1.99.0 — rate-limit error 에서 유지하던 permit 을 이제 반환 + 자동화 중단(좀비 방지).
             gate.release(projectId)
             clearTurnActive(projectId)  // v1.82.0 — rate-limit 자동 재개 포기 → 미완 마크 OFF.
-            setBusy(projectId, false, "stopped")
+            setBusy(projectId, ProjectState.STOPPED)
             fireInterrupt(projectId, "rate_limit_giveup")
             emitSystem(projectId, "rate_limit_giveup",
                 "서버측 rate limit 이 ${MAX_RATE_LIMIT_RETRIES}회 자동 재개 후에도 지속됩니다. " +
@@ -834,7 +847,7 @@ class ClaudeSessionManager(
         val delayMs = RATE_LIMIT_BASE_BACKOFF_MS shl (attempt - 1)  // 30 / 60 / 120 s
         session.retryJob?.cancel()
         // 재개 대기 동안 busy 유지(응답 중 표시) — 사용자에게 진행 예정 안내.
-        setBusy(projectId, true, "responding")
+        setBusy(projectId, ProjectState.RESPONDING)
         emitSystem(projectId, "rate_limit_retry",
             "서버측 일시 rate limit (사용량 한도 아님). ${delayMs / 1000}초 후 자동으로 이어서 진행합니다 " +
             "($attempt/$MAX_RATE_LIMIT_RETRIES).")
@@ -845,7 +858,7 @@ class ClaudeSessionManager(
                 // v1.99.0 — 재개 전 세션 교체/종료 → 유지하던 permit 반환 + 자동화 중단.
                 gate.release(projectId)
                 fireInterrupt(projectId, "rate_limit_session_gone")
-                setBusy(projectId, false, "stopped"); return@launch
+                setBusy(projectId, ProjectState.STOPPED); return@launch
             }
             runCatching { sendPrompt(projectId, RATE_LIMIT_RESUME_PROMPT, isAutoResume = true) }
                 .onFailure {
@@ -853,7 +866,7 @@ class ClaudeSessionManager(
                     log.warn(it) { "[$projectId] rate-limit 자동 재개 실패" }
                     gate.release(projectId)
                     fireInterrupt(projectId, "rate_limit_resume_failed")
-                    setBusy(projectId, false, "stopped")
+                    setBusy(projectId, ProjectState.STOPPED)
                 }
         }
     }
@@ -912,7 +925,7 @@ class ClaudeSessionManager(
         //     뜨던 회귀(특히 clean exit code 0)를 명시 가드로 해소.
         if (!session.intentionalKill) {
             val wasBusy = busy[projectId] == true
-            scope.launch { setBusy(projectId, false, if (wasBusy) "stopped" else "ready") }
+            scope.launch { setBusy(projectId, if (wasBusy) ProjectState.STOPPED else ProjectState.READY) }
         }
         if (session.intentionalKill) {
             // B1 (21차 점검) — 의도된 종료(cancel/startNew/idle reap/shutdown). SIGTERM 의
@@ -973,7 +986,7 @@ class ClaudeSessionManager(
         // boolean idempotency 에 기댔지만, v1.100.0 state-aware 전환 후 정상 완료(ready) 세션이
         // idle reap 될 때 ready→stopped 가 emit 되던 회귀를 명시 분기로 해소.
         val wasBusy = busy[projectId] == true
-        setBusy(projectId, false, if (wasBusy) "stopped" else "ready")
+        setBusy(projectId, if (wasBusy) ProjectState.STOPPED else ProjectState.READY)
     }
 
     private suspend fun reapIdleSessions() {
