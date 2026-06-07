@@ -11,6 +11,7 @@ import com.siamakerlab.vibecoder.shared.dto.GitDiffDto
 import com.siamakerlab.vibecoder.shared.dto.GitLogDto
 import com.siamakerlab.vibecoder.shared.dto.GitStatusDto
 import com.siamakerlab.vibecoder.shared.dto.ProjectDto
+import com.siamakerlab.vibecoder.shared.dto.ProjectState
 
 /**
  * 프로젝트 / 콘솔 / 빌드 SSR 템플릿. v0.5.0 Phase 2 추가.
@@ -615,7 +616,7 @@ object WebProjectTemplates {
                 val href = "/projects/${esc(p.id)}#console"
                 val cellLinkStyle = "display:block;color:inherit;text-decoration:none"
                 // v1.53.0 — 제일 왼쪽 상태칩. data-pid 로 WS patch 대상 식별, data-state 로 색 분기.
-                val state = statuses[p.id] ?: "ready"
+                val state = statuses[p.id] ?: ProjectState.READY.wire
                 val chip = """<span class="pstat pstat-$state" data-pid="${esc(p.id)}" data-state="$state">${esc(t("projects.status.$state"))}</span>"""
                 // v1.64.0 — 앱 아이콘(없으면 placeholder vibe-coder 아이콘) + 이름 우측 버전.
                 val iconSrc = if (appIcons[p.id] == true) "/projects/${p.id.encodeUrlSeg()}/app-icon" else "/static/icon.png"

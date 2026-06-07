@@ -3,6 +3,7 @@ package com.siamakerlab.vibecoder.server.admin
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens
 import com.siamakerlab.vibecoder.server.i18n.Messages
 import com.siamakerlab.vibecoder.shared.dto.ProjectDto
+import com.siamakerlab.vibecoder.shared.dto.ProjectState
 
 /**
  * v1.11.0 — 통합 프로젝트 탭 페이지.
@@ -250,8 +251,8 @@ internal object ProjectTabsTemplate {
             .joinToString("") { pr ->
                 val active = pr.id == project.id
                 // v1.56.0 — 좌측 상태칩 (목록 페이지와 동일 .pstat / data-state, /ws/projects 로 실시간 patch).
-                // v1.60.0 — 3-state (응답중/대기중/중지됨). 누락 시 ready.
-                val state = projectStatuses[pr.id] ?: "ready"
+                // v1.60.0 — 5-state (응답중/대기중/중지됨/에러/유휴). 누락 시 READY.
+                val state = projectStatuses[pr.id] ?: ProjectState.READY.wire
                 val chip = """<span class="pstat pstat-$state" data-pid="${esc(pr.id)}" data-state="$state"
                                     title="${esc(t("projects.status.$state"))}">${esc(t("projects.status.$state"))}</span>"""
                 // v1.75.0 — 프로젝트 간 이동 시 이전에 보던 탭과 무관하게 콘솔을 우선 표시
