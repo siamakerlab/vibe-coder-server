@@ -263,6 +263,13 @@ fun Routing.projectKeystoreRoutes(
             call.respondRedirect("/projects/$id/keystore?err=${enc("키스토어가 없습니다 — 먼저 생성하세요.")}")
             return@post
         }
+        // v1.114.1 — 서명 적용도 콘솔 프롬프트를 쏘므로 유휴일 때만(형제 라우트 admob/apply·
+        // upload 와 동일 가드). 이전엔 이 라우트만 가드가 빠져, 콘솔이 작업 중일 때 프롬프트가
+        // 충돌하던 선재 결함을 해소.
+        if (!consoleIdle(id)) {
+            call.respondRedirect("/projects/$id/keystore?err=${enc("콘솔이 작업 중입니다 — 유휴 상태에서 다시 시도하세요.")}")
+            return@post
+        }
         val prompt = buildApplySigningPrompt(p.id, p.moduleName, keystore, entry)
         val sent = runCatching { sessionManager.sendPrompt(id, prompt) }
             .onFailure { log.warn(it) { "apply-signing prompt failed for $id / ${p.packageName}" } }
@@ -756,6 +763,10 @@ internal object ProjectKeystoreTemplates {
 </details>"""
 
         // 서명 적용 + 삭제 (존재 시) ------------------------------------------------
+        // v1.114.1 — 서명 적용은 콘솔 프롬프트를 쏘므로 유휴일 때만 활성(admob/apply·upload 와 동일).
+        val applySigningDisabled = if (consoleIdle) "" else "disabled"
+        val applySigningNote = if (consoleIdle) "" else
+            """<small class="dim" style="display:block;margin-top:4px">⚠ 콘솔이 작업 중입니다 — 유휴 상태가 되면 서명 적용할 수 있습니다.</small>"""
         val actionsCard = if (!exists) "" else """
 <div class="card" style="margin-bottom:14px">
   <h3 style="margin:0 0 8px;font-size:14px">빌드 적용 / 관리</h3>
@@ -763,7 +774,7 @@ internal object ProjectKeystoreTemplates {
     <form method="post" action="/projects/${esc(p.id)}/keystore/apply" style="margin:0"
           onsubmit="return confirm('이 키스토어로 build.gradle.kts 의 signingConfigs 를 수정하도록 Claude 콘솔에 요청합니다. 진행할까요?')">
       $csrfHidden
-      <button type="submit" class="primary">build.gradle.kts 서명 적용 (Claude)</button>
+      <button type="submit" class="primary" $applySigningDisabled>build.gradle.kts 서명 적용 (Claude)</button>
     </form>
     <form method="post" action="/projects/${esc(p.id)}/keystore/delete" style="margin:0"
           onsubmit="return confirm('키스토어 set(release/debug/properties/admob) 을 삭제합니다. 복구 불가 — 진행할까요?')">
@@ -771,6 +782,7 @@ internal object ProjectKeystoreTemplates {
       <button type="submit" style="background:#7f1d1d;color:#fff;border:0;padding:8px 14px;border-radius:6px;cursor:pointer">키스토어 삭제</button>
     </form>
   </div>
+  $applySigningNote
 </div>"""
 
         // 업로드 (외부 키스토어 가져오기) — 항상 표시, 콘솔 유휴일 때만 활성 ----------

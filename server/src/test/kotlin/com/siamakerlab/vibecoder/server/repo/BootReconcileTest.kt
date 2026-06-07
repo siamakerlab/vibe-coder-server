@@ -108,9 +108,15 @@ class BootReconcileTest {
         cleaned shouldBe 1
 
         val rows = transaction {
-            PromptAutomationRuns.selectAll().associate { it[PromptAutomationRuns.id] to it[PromptAutomationRuns.status] }
+            PromptAutomationRuns.selectAll().associate {
+                it[PromptAutomationRuns.id] to Pair(it[PromptAutomationRuns.status], it[PromptAutomationRuns.finishedAt])
+            }
         }
-        rows["r-running"] shouldBe PromptAutomationStatus.STOPPED
-        rows["r-done"] shouldBe PromptAutomationStatus.DONE
+        // 고아 RUNNING → STOPPED + finishedAt 세팅(orphaned_by_restart).
+        rows["r-running"]!!.first shouldBe PromptAutomationStatus.STOPPED
+        rows["r-running"]!!.second shouldBe "2026-06-07T00:00:00"
+        // 이미 종료된 run 은 상태·finishedAt 모두 불변.
+        rows["r-done"]!!.first shouldBe PromptAutomationStatus.DONE
+        rows["r-done"]!!.second shouldBe "2026-06-05T00:01:00"
     }
 }
