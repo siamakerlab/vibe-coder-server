@@ -1555,6 +1555,7 @@ ${if (embed) "" else contextMeterHtml}
   </div>
 </form>
 <script src="/static/voice-input.js" defer></script>
+<script src="/static/prompt-templates.js?v=1.115.0" defer></script>
 <style>
   /* v1.15.0 — 음성 입력 listening 시각 강조. */
   #voice-btn.listening {
@@ -1575,7 +1576,7 @@ $quickBarHtml
   <select id="template-picker" style="flex:1;min-width:0;font-size:12px;padding:4px 8px;background:#1a1a1a;color:var(--text);border:1px solid #333">
     <option value="">${esc(t("console.template.placeholder"))}</option>
   </select>
-  <a href="/prompts" class="chip chip-link" style="font-size:11px;margin-left:0;flex-shrink:0">${esc(t("console.template.manage"))}</a>
+  <button type="button" id="manage-templates-btn" class="chip chip-link" style="font-size:11px;margin-left:0;flex-shrink:0">${esc(t("console.template.manage"))}</button>
 </div>
 
 <!-- v1.6.3 — Agent dispatch + 관리 버튼 (한 줄). -->
@@ -2630,47 +2631,9 @@ $quickBarHtml
     form.requestSubmit();
   });
 
-  // v0.13.0 — 프롬프트 템플릿 드롭다운 채우기. JSON API → optgroup by category.
-  var picker = document.getElementById('template-picker');
-  if (picker) {
-    fetch('/api/prompt-templates', { credentials: 'same-origin' })
-      .then(function(r) { return r.ok ? r.json() : { templates: [] }; })
-      .then(function(d) {
-        var byCat = {};
-        (d.templates || []).forEach(function(t) {
-          if (!byCat[t.category]) byCat[t.category] = [];
-          byCat[t.category].push(t);
-        });
-        var cats = Object.keys(byCat).sort();
-        cats.forEach(function(cat) {
-          var og = document.createElement('optgroup');
-          og.label = cat;
-          byCat[cat].sort(function(a, b) { return a.title.localeCompare(b.title); }).forEach(function(t) {
-            var opt = document.createElement('option');
-            opt.value = t.id;
-            opt.textContent = t.title;
-            opt.dataset.body = t.body;
-            og.appendChild(opt);
-          });
-          picker.appendChild(og);
-        });
-      })
-      .catch(function() { /* 빈 채로 두기 */ });
-
-    picker.addEventListener('change', function() {
-      var opt = picker.options[picker.selectedIndex];
-      if (!opt || !opt.value) return;
-      var body = opt.dataset.body || '';
-      // 기존 입력이 있으면 줄바꿈 후 append, 없으면 그대로 채움.
-      if (input.value && input.value.trim().length > 0) {
-        input.value = input.value.replace(/\s+$/,'') + '\n\n' + body;
-      } else {
-        input.value = body;
-      }
-      input.focus();
-      picker.selectedIndex = 0;
-    });
-  }
+  // v1.115.0 — 프롬프트 템플릿 picker 채우기 + 삽입(변수 치환) + 관리 다이얼로그는
+  // /static/prompt-templates.js (window.PromptTemplates) 로 이관. 이 콘솔 페이지는
+  // #template-picker / #manage-templates-btn 만 제공하면 모듈이 자동 와이어링한다.
 
   // v0.41.0 — agent dispatch dropdown.
   // GET /api/agents 결과로 등록된 sub-agent 목록을 채운 뒤 선택 시

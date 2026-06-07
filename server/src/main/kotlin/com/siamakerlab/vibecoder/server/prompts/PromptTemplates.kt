@@ -26,6 +26,11 @@ object PromptTemplates {
         val grouped = templates.sortedWith(compareBy({ it.category.lowercase() }, { it.title.lowercase() }))
             .groupBy { it.category }
 
+        // v1.115.0 — 카테고리 콤보박스(datalist) 옵션: 기존 카테고리 중복 제거 + 정렬.
+        val catOptions = templates.map { it.category }.filter { it.isNotBlank() }
+            .distinct().sortedBy { it.lowercase() }
+            .joinToString("") { """<option value="${esc(it)}">""" }
+
         val listHtml = if (grouped.isEmpty()) {
             """<p class="dim">아직 저장된 템플릿이 없습니다. 우측 폼에서 추가하세요.</p>"""
         } else {
@@ -43,13 +48,13 @@ object PromptTemplates {
                       ${CsrfTokens.hiddenInput(csrf)}
                       <button type="submit" class="chip chip-danger" style="padding:4px 10px;font-size:11px">삭제</button>
                     </form>
-                    <button type="button" class="chip" style="padding:4px 10px;font-size:11px"
-                            onclick="prefillEdit('${esc(t.id)}', ${jsLitString(t.title)}, ${jsLitString(t.category)}, ${jsLitString(t.body)})">편집</button>
+                    <button type="button" class="chip pt-edit-btn" style="padding:4px 10px;font-size:11px"
+                            data-id="${esc(t.id)}" data-title="${esc(t.title)}" data-cat="${esc(t.category)}" data-body="${esc(t.body)}">편집</button>
                   </div>
                 </details>"""
                 }
                 """<section style="margin-top:12px">
-              <h3 style="font-size:13px;margin:0 0 6px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px">${esc(cat)}</h3>
+              <h3 style="font-size:13px;margin:0 0 6px;color:var(--text-dim);letter-spacing:.5px">${esc(cat)}</h3>
               $rows
             </section>"""
             }
@@ -83,8 +88,9 @@ $errHtml
       <label>제목
         <input type="text" name="title" id="form-title-input" required maxlength="200" placeholder="예: Android 신규 화면 추가">
       </label>
-      <label>카테고리 (선택)
-        <input type="text" name="category" id="form-cat-input" maxlength="100" placeholder="예: Android · 비우면 General">
+      <label>카테고리 (기존 선택 또는 새로 입력 · 비우면 General)
+        <input type="text" name="category" id="form-cat-input" maxlength="100" list="cat-list" autocomplete="off" placeholder="예: Android">
+        <datalist id="cat-list">$catOptions</datalist>
       </label>
       <label>본문 (Claude 프롬프트)
         <textarea name="body" id="form-body-input" required rows="10" maxlength="16000"
@@ -113,37 +119,24 @@ function prefillEdit(id, title, cat, body) {
   document.getElementById('prompt-form').action = '/prompts/' + encodeURIComponent(id) + '/update';
   document.getElementById('form-id').value = id;
   document.getElementById('form-title-input').value = title;
-  document.getElementById('form-cat-input').value = cat;
+  document.getElementById('form-cat-input').value = (cat === 'General' ? '' : cat);
   document.getElementById('form-body-input').value = body;
   document.getElementById('form-title').textContent = '템플릿 편집';
   document.getElementById('form-submit').textContent = '수정 저장';
   document.getElementById('form-title-input').focus();
+  document.getElementById('form-title-input').scrollIntoView({ block: 'center', behavior: 'smooth' });
 }
+// v1.115.0 — 편집 버튼은 data-* 속성 + 위임 리스너로 처리. 이전엔 onclick="prefillEdit(...,
+//   "큰따옴표문자열", ...)" 가 onclick="..." 속성을 조기 종료시켜 편집이 깨졌다.
+document.querySelectorAll('.pt-edit-btn').forEach(function (b) {
+  b.addEventListener('click', function () {
+    prefillEdit(b.dataset.id, b.dataset.title, b.dataset.cat, b.dataset.body);
+  });
+});
 </script>
 """,
             lang = lang,
             embed = embed,
         )
-    }
-
-    /** JS string literal context 전용 safe escape. */
-    private fun jsLitString(s: String): String {
-        val sb = StringBuilder(s.length + 2)
-        sb.append('"')
-        for (c in s) {
-            when (c.code) {
-                0x5C -> sb.append("\\\\")
-                0x22 -> sb.append("\\\"")
-                0x0A -> sb.append("\\n")
-                0x0D -> sb.append("\\r")
-                0x09 -> sb.append("\\t")
-                0x3C -> sb.append("\\u003C")
-                0x3E -> sb.append("\\u003E")
-                0x26 -> sb.append("\\u0026")
-                else -> if (c.code < 0x20) sb.append("\\u%04x".format(c.code)) else sb.append(c)
-            }
-        }
-        sb.append('"')
-        return sb.toString()
     }
 }

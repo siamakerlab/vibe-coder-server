@@ -42,6 +42,10 @@ class PromptTemplateStore(
         val body: String,
         val createdAt: String,
         val updatedAt: String,
+        // v1.115.0 — 즐겨찾기 고정 + 사용 빈도. 기존 JSON 에 필드가 없어도 default 로 역직렬화.
+        val pinned: Boolean = false,
+        val useCount: Int = 0,
+        val lastUsedAt: String? = null,
     )
 
     @Serializable
@@ -123,6 +127,94 @@ class PromptTemplateStore(
         if (removed) persist(s)
         removed
     }
+
+    /** v1.115.0 — 즐겨찾기 고정 토글. 없는 id 면 null. */
+    fun setPinned(id: String, pinned: Boolean): Template? = lock.write {
+        val s = read()
+        val idx = s.templates.indexOfFirst { it.id == id }
+        if (idx < 0) return@write null
+        val updated = s.templates[idx].copy(pinned = pinned, updatedAt = clock.nowIso())
+        s.templates[idx] = updated
+        persist(s)
+        updated
+    }
+
+    /** v1.115.0 — 삽입 시 사용 빈도 +1 + lastUsedAt 갱신(정렬·추천용). 없는 id 면 null. */
+    fun recordUse(id: String): Template? = lock.write {
+        val s = read()
+        val idx = s.templates.indexOfFirst { it.id == id }
+        if (idx < 0) return@write null
+        val now = clock.nowIso()
+        // updatedAt 은 건드리지 않는다(목록 "수정일" 이 사용으로 흔들리지 않게).
+        val updated = s.templates[idx].copy(useCount = s.templates[idx].useCount + 1, lastUsedAt = now)
+        s.templates[idx] = updated
+        persist(s)
+        updated
+    }
+
+    /** v1.115.0 — 템플릿 복제. 제목 뒤 " (copy)" 부여, 사용횟수·고정은 초기화. */
+    fun duplicate(id: String): Template = lock.write {
+        val s = read()
+        val src = s.templates.firstOrNull { it.id == id }
+            ?: throw ApiException.localized(404, "template_not_found", messageKey = "api.prompt.notFound", args = listOf(id))
+        if (s.templates.size >= MAX_TOTAL)
+            throw ApiException.localized(400, "limit_reached", messageKey = "api.prompt.limitReached", args = listOf(MAX_TOTAL))
+        val now = clock.nowIso()
+        val copy = src.copy(
+            id = Ids.taskId(),
+            title = (src.title + " (copy)").take(MAX_TITLE_LEN),
+            pinned = false, useCount = 0, lastUsedAt = null,
+            createdAt = now, updatedAt = now,
+        )
+        s.templates.add(copy)
+        persist(s)
+        copy
+    }
+
+    /** v1.115.0 — 카테고리 목록(중복 제거, 대소문자 무시 정렬). 콤보박스 datalist 용. */
+    fun categories(): List<String> = lock.read {
+        read().templates.map { it.category }.filter { it.isNotBlank() }
+            .distinct().sortedBy { it.lowercase() }
+    }
+
+    /**
+     * v1.115.0 — 가져오기(import). [replace]=true 면 기존 전체 교체, false 면 병합(append).
+     * 들어온 항목은 새 id 발급 + 검증/clamp(제목·본문 길이, 카테고리 General 폴백). MAX_TOTAL 초과분은 버림.
+     * 반환값 = 실제 적재된 개수.
+     */
+    fun importTemplates(incoming: List<ImportItem>, replace: Boolean): Int = lock.write {
+        val s = read()
+        if (replace) s.templates.clear()
+        val now = clock.nowIso()
+        var added = 0
+        for (item in incoming) {
+            if (s.templates.size >= MAX_TOTAL) break
+            val title = item.title.trim().take(MAX_TITLE_LEN)
+            val body = item.body.trim().take(MAX_BODY_LEN)
+            if (title.isEmpty() || body.isEmpty()) continue
+            s.templates.add(
+                Template(
+                    id = Ids.taskId(), title = title,
+                    category = item.category.trim().ifBlank { "General" }.take(100),
+                    body = body, createdAt = now, updatedAt = now,
+                    pinned = item.pinned, useCount = item.useCount.coerceAtLeast(0),
+                ),
+            )
+            added++
+        }
+        persist(s)
+        added
+    }
+
+    /** import 입력 항목(외부 JSON). id/타임스탬프는 무시하고 서버가 새로 발급. */
+    @Serializable
+    data class ImportItem(
+        val title: String = "",
+        val category: String = "",
+        val body: String = "",
+        val pinned: Boolean = false,
+        val useCount: Int = 0,
+    )
 
     private fun read(): Storage {
         val p = path()

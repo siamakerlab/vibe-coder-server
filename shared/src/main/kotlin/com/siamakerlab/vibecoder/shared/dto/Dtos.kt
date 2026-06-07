@@ -482,6 +482,10 @@ data class PromptTemplateDto(
     val body: String,
     val createdAt: String,
     val updatedAt: String,
+    // v1.115.0 — 즐겨찾기 고정 + 사용 빈도(정렬용). 구버전 클라 호환 위해 default 부여.
+    val pinned: Boolean = false,
+    val useCount: Int = 0,
+    val lastUsedAt: String? = null,
 )
 
 @Serializable
