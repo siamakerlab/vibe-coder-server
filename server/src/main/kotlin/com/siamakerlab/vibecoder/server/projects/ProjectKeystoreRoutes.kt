@@ -11,6 +11,7 @@ import com.siamakerlab.vibecoder.server.admin.KeystoreService
 import com.siamakerlab.vibecoder.server.admin.buildApplySigningPrompt
 import com.siamakerlab.vibecoder.server.admin.buildKeystorePlacementPrompt
 import com.siamakerlab.vibecoder.server.admin.isBuildRunning
+import com.siamakerlab.vibecoder.server.admin.isProjectIdle
 import com.siamakerlab.vibecoder.server.admin.isEmbeddedRequest
 import com.siamakerlab.vibecoder.server.admin.requireProjectAccessOrThrow
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
@@ -71,8 +72,9 @@ fun Routing.projectKeystoreRoutes(
 ) {
     // v1.101.0 — 콘솔이 유휴(응답중/빌드중/자동화중 모두 아님)인지. 업로드는 직후 콘솔
     // 프롬프트를 쏘므로 유휴일 때만 허용한다(파괴적/이동 라우트 idle 가드와 동일 체계).
+    // v1.114.0 — 단일 헬퍼 isProjectIdle 공유(가드 판정 일원화).
     fun consoleIdle(id: String): Boolean =
-        !(sessionManager.isBusy(id) || isBuildRunning(buildRepo, id) || promptAutomationManager.isActive(id))
+        isProjectIdle(sessionManager, buildRepo, promptAutomationManager, id)
 
     get("/projects/{id}/keystore") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get

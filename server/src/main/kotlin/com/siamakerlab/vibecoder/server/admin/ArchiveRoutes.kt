@@ -60,7 +60,8 @@ fun Routing.archiveRoutes(
         requireCsrf()
         val id = call.parameters["id"]!!
         // H1 — 동작 중(응답/빌드/자동화) 프로젝트는 아카이브 거부. 폴더 rename 과 동일 가드.
-        if (sessionManager.isBusy(id) || isBuildRunning(buildRepo, id) || promptAutomationManager.isActive(id)) {
+        // v1.114.0 — 단일 헬퍼 isProjectIdle 공유.
+        if (!isProjectIdle(sessionManager, buildRepo, promptAutomationManager, id)) {
             call.respondRedirect("/projects?err=${enc(Messages.t(sess.language, "flash.project.rename.notIdle"))}")
             return@post
         }

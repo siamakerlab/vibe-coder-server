@@ -60,6 +60,25 @@ internal fun isBuildRunning(buildRepo: BuildRepository, id: String): Boolean =
     }
 
 /**
+ * v1.114.0 — 프로젝트가 **완전 유휴**인지 단일 판정. turn 응답중(busy) / 빌드중(RUNNING·PENDING)
+ * / 자동화중(active) 중 하나라도 진행 중이면 false.
+ *
+ * 직후 콘솔 프롬프트를 쏘거나 파일/구조를 바꾸는 동작(키스토어·AdMob 저장/삭제, 폴더·패키지
+ * 변경, 아카이브)의 idle 가드와 그 **표시**(structuralEnabled 등)가 모두 이 함수를 공유한다.
+ * 이전엔 가드 식이 `consoleIdle()`/인라인 OR/부분식(structuralEnabled 는 isActive 누락)으로
+ * 3가지로 흩어져, 자동화 진행 중일 때 "폼은 활성인데 제출은 차단" 되는 표시=동작 불일치가
+ * 있었다 → 단일 헬퍼로 해소.
+ */
+internal fun isProjectIdle(
+    sessionManager: ClaudeSessionManager,
+    buildRepo: BuildRepository,
+    promptAutomationManager: com.siamakerlab.vibecoder.server.automation.PromptAutomationManager,
+    id: String,
+): Boolean = !sessionManager.isBusy(id) &&
+    !isBuildRunning(buildRepo, id) &&
+    !promptAutomationManager.isActive(id)
+
+/**
  * 프로젝트 / 콘솔 / 빌드 SSR 라우트.
  *
  * 인증 모델: AdminRoutes 와 동일하게 `vibe_session` 쿠키 기반 (requireSessionOrRedirect).
@@ -331,8 +350,10 @@ fun Routing.webProjectRoutes(
             WebProjectTemplates.projectDetailPage(
                 sess.username, p, recent, flashErr = err, flashOk = ok, csrf = sess.csrf,
                 lang = sess.language,
-                // v1.71.0 — 폴더/패키지 변경은 대기중(turn·빌드 미진행)일 때만.
-                structuralEnabled = !sessionManager.isBusy(id) && !isBuildRunning(buildRepo, id),
+                // v1.71.0 — 폴더/패키지 변경은 완전 유휴(turn·빌드·자동화 미진행)일 때만.
+                // v1.114.0 — 제출 가드와 동일한 isProjectIdle 공유(이전엔 isActive 누락 → 자동화
+                //   진행 중일 때 폼은 활성인데 제출은 차단되던 표시=동작 불일치).
+                structuralEnabled = isProjectIdle(sessionManager, buildRepo, promptAutomationManager, id),
                 embed = call.isEmbeddedRequest(),
             ),
             ContentType.Text.Html,
@@ -379,7 +400,7 @@ fun Routing.webProjectRoutes(
         val newPkg = params["packageName"]?.trim().orEmpty()
         // 대기중 가드: turn 진행 중 / 빌드 중 / 자동화 진행 중이면 거부.
         // (alive 메인 프로세스엔 프롬프트를 보낼 것이므로 허용. 자동화는 sendPrompt 와 충돌.)
-        if (sessionManager.isBusy(id) || isBuildRunning(buildRepo, id) || promptAutomationManager.isActive(id)) {
+        if (!isProjectIdle(sessionManager, buildRepo, promptAutomationManager, id)) {
             call.respondRedirect("/projects/$id/overview?err=${Messages.t(sess.language, "flash.project.rename.notIdle").encodeUrl()}")
             return@post
         }
@@ -411,7 +432,7 @@ fun Routing.webProjectRoutes(
         val newId = params["newId"]?.trim().orEmpty()
         // 폴더 이동은 프로세스 cwd 를 옮기므로 완전 idle 필요: turn/빌드/자동화 미진행.
         // v1.71.0 (정밀점검 H4) — 자동화는 rename 직후에도 옛 id 로 sendPrompt 를 시도하므로 거부.
-        if (sessionManager.isBusy(id) || isBuildRunning(buildRepo, id) || promptAutomationManager.isActive(id)) {
+        if (!isProjectIdle(sessionManager, buildRepo, promptAutomationManager, id)) {
             call.respondRedirect("/projects/$id/overview?err=${Messages.t(sess.language, "flash.project.rename.notIdle").encodeUrl()}")
             return@post
         }
@@ -1515,21 +1536,23 @@ private fun String.encodeUrl(): String =
     java.net.URLEncoder.encode(this, Charsets.UTF_8).replace("+", "%20")
 
 /**
- * v1.60.0 — 프로젝트 상태칩 3-state. 프로세스 생존이 아닌 **대화 이력 기반**이라
- * 서버 재시작 후에도 정확하다.
- *  - responding(응답중) : 현재 응답 stream 중(in-memory busy).
- *  - stopped(중지됨)    : 최신 user 프롬프트 이후 완료(assistant/usage)가 없음
- *                         (cancel / crash / 서버중단으로 끊김).
- *  - ready(대기중)      : 완료됐거나 대화가 없는(fresh) 상태 — 프롬프트 대기.
+ * 프로젝트 상태칩의 SSR 초기 렌더 값([ProjectState] wire).
+ *
+ * v1.114.0 — 이전엔 isBusy + lastPromptInterrupted 로 **3-state(responding/stopped/ready)** 를
+ * 별도 재계산해, WS frame 이 쓰는 5-state(waiting/error 포함) live 진실([ClaudeSessionManager.
+ * busyState])과 불일치했다(새로고침하면 waiting/error 가 사라지고 WS 푸시로만 잠깐 보임).
+ * 이제 단일 소스로 통일:
+ *  1. in-memory live 상태가 있으면 그것이 진실 — 5-state 전부 정확 반영(WS 와 동형).
+ *  2. 없으면(서버 재시작 등) 대화 이력으로 폴백 — 끊긴 turn 은 stopped, 그 외 ready.
  */
 private fun projectStatus(
     id: String,
     sessionManager: ClaudeSessionManager,
     conversationRepo: ConversationTurnRepository,
-): String = when {
-    sessionManager.isBusy(id) -> ProjectState.RESPONDING.wire
-    runCatching { conversationRepo.lastPromptInterrupted(id) }.getOrDefault(false) -> ProjectState.STOPPED.wire
-    else -> ProjectState.READY.wire
+): String {
+    sessionManager.busyStateOrNull(id)?.let { return it.wire }
+    val interrupted = runCatching { conversationRepo.lastPromptInterrupted(id) }.getOrDefault(false)
+    return if (interrupted) ProjectState.STOPPED.wire else ProjectState.READY.wire
 }
 
 /** 종료된 빌드의 디스크 로그를 읽어 화면에 prerender 할 수 있게 가공한 결과. */
