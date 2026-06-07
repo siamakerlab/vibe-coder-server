@@ -168,7 +168,8 @@ sealed class WsFrame {
         val busy: Boolean,
         val seq: Long,
         /**
-         * v1.83.0 — 콘솔 페이지 상태 뱃지 정확성용. "responding" | "ready" | "stopped".
+         * v1.83.0 — 콘솔 페이지 상태 뱃지 정확성용 [com.siamakerlab.vibecoder.shared.dto.ProjectState]
+         * 의 wire 값: "responding" | "ready" | "waiting" | "stopped" | "error".
          * null 이면 구버전 호환 — 클라가 busy 로 responding/ready 도출. rate-limit
          * 재시도 소진 등 비정상 종료 시 "stopped"(중단됨) 로 emit 해, busy=false 만으론
          * 구분 못 하던 "중단됨" 을 콘솔에서도 live 반영([ProjectBusyChanged.state] 와 동형).
@@ -208,9 +209,10 @@ sealed class WsFrame {
         val busy: Boolean,
         val seq: Long,
         /**
-         * v1.60.0 — 상태칩(목록/switcher) 실시간 정확성용 명시 상태.
-         * "responding" | "ready" | "stopped". null 이면 구버전 호환 — 클라가
-         * busy 로 responding/ready 도출. cancel/crash 시 "stopped" 로 emit 해
+         * v1.60.0 — 상태칩(목록/switcher) 실시간 정확성용 명시 상태
+         * ([com.siamakerlab.vibecoder.shared.dto.ProjectState] wire):
+         * "responding" | "ready" | "waiting" | "stopped" | "error". null 이면 구버전 호환 —
+         * 클라가 busy 로 responding/ready 도출. cancel/crash 시 "stopped" 로 emit 해
          * busy=false 만으론 구분 못 하던 "중지됨" 을 live 반영.
          */
         val state: String? = null,

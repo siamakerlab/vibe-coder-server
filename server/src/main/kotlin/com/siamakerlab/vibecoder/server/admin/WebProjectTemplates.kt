@@ -1547,7 +1547,7 @@ ${if (embed) "" else contextMeterHtml}
            스피너 + 부모 탭 헤더(#console-busy-badge, console:busy postMessage)로 노출되므로
            힌트 라벨 좌측의 중복 칩은 제거. 단 JS(updateBusyBadge·부모 미러)가 dataset/text 를
            계속 읽으므로 element/id 는 유지하고 display 만 끈다. -->
-      <span id="busy-badge" data-state="idle"
+      <span id="busy-badge" data-state="ready"
             style="display:none;font-size:12px;padding:3px 10px;border-radius:12px;font-weight:500;white-space:nowrap;flex-shrink:0">${esc(t("console.busy.idle"))}</span>
       <small class="dim" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(if (blocking) t("console.input.blockedHint") else t("console.input.hint"))}</small>
     </div>
@@ -2360,7 +2360,8 @@ $quickBarHtml
       busyBadge.dataset.state = 'responding';
       busyBadge.textContent = BUSY_RESPONDING;
     } else {
-      busyBadge.dataset.state = 'idle';
+      // v1.114.0 — 상태 토큰을 서버 wire 값(ProjectState.READY)과 통일('idle' 별칭 폐지).
+      busyBadge.dataset.state = 'ready';
       busyBadge.textContent = BUSY_IDLE;
     }
     notifyParentBusy();
