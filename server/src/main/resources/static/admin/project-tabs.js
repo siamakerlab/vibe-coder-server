@@ -505,7 +505,7 @@
         if (d.type === 'console:busy') {
           var badge = document.getElementById('console-busy-badge');
           if (badge) {
-            badge.dataset.state = d.state || 'idle';
+            badge.dataset.state = d.state || 'ready'; // v1.114.1 — 'idle' 별칭 폐지, 서버 wire 'ready' 통일
             if (typeof d.text === 'string') { badge.textContent = d.text; badge.title = d.text; }
           }
           return;
