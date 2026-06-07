@@ -424,6 +424,13 @@ class ClaudeSessionManager(
         busyState[projectId] ?: ProjectState.fromBusy(isBusy(projectId))
 
     /**
+     * v1.114.0 — in-memory 로 추적 중인 상태만(폴백 없음). null = 이 세션에서 turn 이력 없음
+     * (부팅 직후 / fresh). SSR 이 "라이브 상태가 있으면 그게 단일 소스, 없으면 DB 폴백" 을
+     * 구분하는 데 쓴다(projectStatus).
+     */
+    fun busyStateOrNull(projectId: String): ProjectState? = busyState[projectId]
+
+    /**
      * v0.98.0 — busy 상태 전이. state 가 실제 변경됐을 때만 WS frame emit
      * (idempotent 호출 시 노이즈 방지). projectId 별로 독립 — 여러 프로젝트 동시 작업
      * 시 각 프로젝트 콘솔이 자기 상태만 받음 (hub.topic 이 프로젝트별 분리).
