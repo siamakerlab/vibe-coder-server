@@ -422,6 +422,31 @@ class ClaudeSessionManager(
      */
     fun busyStateOrNull(projectId: String): ProjectState? = busyState[projectId]
 
+    /*
+     * ─── 상태머신 전이 표 (단일 권위 문서, v1.114.0) ──────────────────────────────────
+     * 상태는 setBusy(projectId, ProjectState) 한 곳으로만 바뀐다. 아래가 전이의 전부다.
+     *
+     *   트리거                                          → 상태        permit   turn-active
+     *   ─────────────────────────────────────────────────────────────────────────────
+     *   sendPrompt(새 turn) / 활동 프레임 자발적 재개      RESPONDING   acquire  mark
+     *   Done, 백그라운드 작업(outstandingBgTasks) 남음     WAITING      유지      유지
+     *   Done, 정상 완료(bg 없음)                          READY        release  clear
+     *   ErrorEvent: interrupt(interruptPending)          STOPPED      release  clear
+     *   ErrorEvent: rate-limit                            (상태 유지)   유지★    유지   → retryJob 예약
+     *   ErrorEvent: usage_limit                           STOPPED      release  clear
+     *   ErrorEvent: 그 외 API 에러                         ERROR        release  clear
+     *   rate-limit 재시도 소진(MAX_RATE_LIMIT_RETRIES)     STOPPED      release  clear
+     *   onProcessExit: busy 중 종료(미완)                  STOPPED      release  -
+     *   onProcessExit: 유휴 중 clean exit                  READY        release  -
+     *   terminateSession(cancel/startNew/idle reap/shutdown) busy?STOPPED:READY release clear
+     *   부팅 reconcileInterruptedTurns                     RESPONDING   acquire  (retries++)
+     *
+     *   ★ rate-limit 은 turn "종료"가 아니라 "일시중단→재개 대기"라 permit 을 일부러 보유한 채
+     *     같은 슬롯으로 재개한다(동시 한도 무력화·자동화 폭주 방지, v1.99.0). 자세한 회귀 이력은
+     *     각 분기 주석 참고. busy boolean 은 ProjectState.busy 에서 파생되므로 별도 추적 안 함.
+     * ──────────────────────────────────────────────────────────────────────────────
+     */
+
     /**
      * v0.98.0 — busy 상태 전이. state 가 실제 변경됐을 때만 WS frame emit
      * (idempotent 호출 시 노이즈 방지). projectId 별로 독립 — 여러 프로젝트 동시 작업
