@@ -353,13 +353,19 @@ fun main(args: Array<String>) {
             }.onFailure { log.warn(it) { "[notify] interrupt emit failed for $pid ($reason)" } }
         }
     }
-    // 부팅 reconcile — 재시작으로 끊긴 RUNNING run 을 STOPPED 로 정리.
+    // ─── 부팅 reconcile (규약) ────────────────────────────────────────────────────
+    // 규약: "진행중(in-progress) 상태를 갖는 모든 DB 테이블은 여기서 reconcileOrphans() 로
+    //   종료 상태로 정리한다." 서버는 빌드·자동화를 in-process 로 돌리므로, 도중에 재시작/
+    //   크래시되면 종료 콜백(onSuccess/onFailure/onCancel)이 실행되지 못해 row 가 RUNNING/
+    //   PENDING 으로 영구 고착되고, isBuildRunning()/isActive() 가 영구 true → idle 가드(키스토어·
+    //   AdMob 저장 등)가 무한 차단된다(서버 재시작으로도 해소 안 됨 — DB 영속 상태).
+    //   부팅 직후엔 진행 중인 작업이 있을 수 없으므로 모든 진행중 row 를 고아로 보고 정리한다.
+    //   ★ 새로 "진행중" 상태 컬럼을 갖는 테이블을 추가하면 (1) 해당 repo 에 reconcileOrphans()
+    //     를 만들고 (2) 여기에 호출을 추가하고 (3) BootReconcileTest 에 회귀 테스트를 더한다.
+    // 현재 대상: PromptAutomationRuns(RUNNING→STOPPED), Builds(RUNNING/PENDING→FAILED).
     runCatching { promptAutomationRunRepo.reconcileOrphans() }
         .onSuccess { if (it > 0) log.info { "reconciled $it orphaned automation run(s) → stopped" } }
         .onFailure { log.warn(it) { "automation run reconcile failed" } }
-    // 부팅 reconcile — 재시작으로 끊긴 RUNNING/PENDING 빌드를 FAILED 로 정리.
-    // (in-process 빌드라 재시작 시 종료 콜백 미실행 → row 가 RUNNING 으로 남아 idle 가드를
-    //  무한 차단하던 버그 해소. isBuildRunning() 이 영구 true 가 되던 근본 원인.)
     runCatching { buildRepo.reconcileOrphans() }
         .onSuccess { if (it > 0) log.info { "reconciled $it orphaned build(s) → failed" } }
         .onFailure { log.warn(it) { "build reconcile failed" } }
