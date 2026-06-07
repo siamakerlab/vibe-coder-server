@@ -357,6 +357,12 @@ fun main(args: Array<String>) {
     runCatching { promptAutomationRunRepo.reconcileOrphans() }
         .onSuccess { if (it > 0) log.info { "reconciled $it orphaned automation run(s) → stopped" } }
         .onFailure { log.warn(it) { "automation run reconcile failed" } }
+    // 부팅 reconcile — 재시작으로 끊긴 RUNNING/PENDING 빌드를 FAILED 로 정리.
+    // (in-process 빌드라 재시작 시 종료 콜백 미실행 → row 가 RUNNING 으로 남아 idle 가드를
+    //  무한 차단하던 버그 해소. isBuildRunning() 이 영구 true 가 되던 근본 원인.)
+    runCatching { buildRepo.reconcileOrphans() }
+        .onSuccess { if (it > 0) log.info { "reconciled $it orphaned build(s) → failed" } }
+        .onFailure { log.warn(it) { "build reconcile failed" } }
     // v1.82.0 — 재시작으로 끊긴 콘솔 미완 turn 자동 재개 (비동기 — claude spawn 무거움).
     runCatching { sessionManager.reconcileInterruptedTurnsAsync() }
         .onFailure { log.warn(it) { "interrupted-turn reconcile 트리거 실패" } }
