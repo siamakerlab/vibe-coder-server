@@ -131,6 +131,26 @@ class BuildRepository(private val clock: Clock) {
         Builds.deleteWhere { Builds.projectId eq projectId }
     }
 
+    /**
+     * 부팅 reconcile — 재시작으로 끊긴 RUNNING/PENDING 빌드를 FAILED 로 정리. 반환값 = 정리된 행 수.
+     *
+     * 빌드는 in-process 큐(BuildService)로 실행되므로 서버가 빌드 도중 재시작/크래시되면
+     * onSuccess/onFailure/onCancel 어느 콜백도 실행되지 못해 row 가 영원히 RUNNING/PENDING 으로
+     * 남는다. 그러면 isBuildRunning() 이 영구히 true 를 반환해 idle 가드(키스토어/AdMob 저장·
+     * 업로드·아카이브 등)가 무한 차단된다. 부팅 직후엔 진행 중인 빌드가 있을 수 없으므로
+     * 모든 RUNNING/PENDING 을 고아로 보고 정리한다(automation run reconcile 과 동일 체계).
+     */
+    fun reconcileOrphans(): Int = transaction {
+        val now = clock.nowIso()
+        Builds.update({
+            (Builds.status eq TaskStatus.RUNNING.name) or (Builds.status eq TaskStatus.PENDING.name)
+        }) {
+            it[status] = TaskStatus.FAILED.name
+            it[finishedAt] = now
+            it[errorMessage] = "orphaned_by_restart"
+        }
+    }
+
     /** Number of builds currently in PENDING or RUNNING state across the whole server. */
     fun countRunning(): Int = transaction {
         Builds.selectAll()
