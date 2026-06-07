@@ -86,6 +86,9 @@ dependencies {
     testImplementation(libs.ktor.server.test.host)
     testImplementation(libs.mockk)
     testImplementation(libs.turbine)
+    // v1.114.0 (P3) — BootReconcileTest 의 인메모리 DB(Exposed reconcileOrphans 검증)용.
+    // 운영은 PostgreSQL 이지만 reconcileOrphans 는 portable Exposed DSL 이라 sqlite 로 충분.
+    testImplementation(libs.sqlite.jdbc)
 }
 
 tasks.test {

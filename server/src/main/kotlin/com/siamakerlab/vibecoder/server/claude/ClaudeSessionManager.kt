@@ -416,14 +416,6 @@ class ClaudeSessionManager(
     fun isBusy(projectId: String): Boolean = busy[projectId] == true
 
     /**
-     * v1.114.0 — 해당 프로젝트의 현재 상태칩([ProjectState]). in-memory 진실.
-     * 미기록(부팅 직후 등)이면 busy 폴백. 콘솔/목록 SSR 초기 렌더가 WS frame 과 동일한
-     * 단일 소스를 보도록 노출(이전엔 SSR 이 별도 3-state 를 재계산해 불일치했다).
-     */
-    fun stateOf(projectId: String): ProjectState =
-        busyState[projectId] ?: ProjectState.fromBusy(isBusy(projectId))
-
-    /**
      * v1.114.0 — in-memory 로 추적 중인 상태만(폴백 없음). null = 이 세션에서 turn 이력 없음
      * (부팅 직후 / fresh). SSR 이 "라이브 상태가 있으면 그게 단일 소스, 없으면 DB 폴백" 을
      * 구분하는 데 쓴다(projectStatus).
