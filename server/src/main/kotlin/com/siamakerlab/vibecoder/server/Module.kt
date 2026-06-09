@@ -7,6 +7,7 @@ import com.siamakerlab.vibecoder.server.actions.projectActionRoutes
 import com.siamakerlab.vibecoder.server.admin.AdminRoutesDeps
 import com.siamakerlab.vibecoder.server.admin.adminRoutes
 import com.siamakerlab.vibecoder.server.admin.archiveRoutes
+import com.siamakerlab.vibecoder.server.admin.jsonArchiveRoutes
 import com.siamakerlab.vibecoder.server.admin.backupRoutes
 import com.siamakerlab.vibecoder.server.admin.memosRoutes
 import com.siamakerlab.vibecoder.server.admin.logSearchRoutes
@@ -15,6 +16,8 @@ import com.siamakerlab.vibecoder.server.build.buildAutomationRoutes
 import com.siamakerlab.vibecoder.server.automation.promptAutomationRoutes
 import com.siamakerlab.vibecoder.server.build.buildCacheRoutes
 import com.siamakerlab.vibecoder.server.build.dependencyAuditRoutes
+import com.siamakerlab.vibecoder.server.build.jsonQualityRoutes
+import com.siamakerlab.vibecoder.server.build.qualityRoutes
 import com.siamakerlab.vibecoder.server.projects.codeAnalysisRoutes
 import com.siamakerlab.vibecoder.server.projects.envFilesRoutes
 import com.siamakerlab.vibecoder.server.projects.projectClaudeMdRoutes
@@ -197,6 +200,10 @@ data class ServerContext(
     val promptSuggestionService: com.siamakerlab.vibecoder.server.claude.PromptSuggestionService,
     /** v0.32.0 — Gradle 의존성 audit. */
     val dependencyAudit: com.siamakerlab.vibecoder.server.build.DependencyAudit,
+    /** v1.116.0 — Android Lint 기반 품질/접근성 검사 (프로젝트 "품질" 탭). */
+    val lintQuality: com.siamakerlab.vibecoder.server.build.LintQualityService,
+    /** v1.117.0 — 인스트루먼트 테스트(에뮬레이터) 실행기 — 품질 탭 phase 2. */
+    val instrumentedTest: com.siamakerlab.vibecoder.server.build.InstrumentedTestService,
     /** v0.33.0 — Cron 빌드 schedule. */
     val buildScheduleRepo: com.siamakerlab.vibecoder.server.repo.BuildScheduleRepository,
     val buildScheduler: com.siamakerlab.vibecoder.server.build.BuildScheduler,
@@ -421,12 +428,14 @@ fun Application.module(ctx: ServerContext) {
         // v1.73.0 — 안드로이드 에뮬레이터(헤드리스) 상태/제어. lifecycle 은 ServerMain hoist.
         emulatorRoutes(adminDeps, ctx.emulator)
         // v1.98.0 — 프로젝트 아카이브(압축 보관)/복원. Tools 탭 'Archive' + 프로젝트 목록 버튼.
+        // v1.119.0 — 같은 서비스로 JSON API(/api/archives ...)도 노출(android `/archives`).
         run {
             val archivedRepo = com.siamakerlab.vibecoder.server.repo.ArchivedProjectRepository()
             val archiveService = com.siamakerlab.vibecoder.server.projects.ProjectArchiveService(
                 ctx.workspace, ctx.keystoreService, ctx.projectRepo, archivedRepo,
             ) { ctx.projects.delete(it) }
             archiveRoutes(adminDeps, archiveService, ctx.sessionManager, ctx.buildRepo, ctx.promptAutomationManager)
+            jsonArchiveRoutes(archiveService, ctx.sessionManager, ctx.buildRepo, ctx.promptAutomationManager)
         }
         // v0.10.0 — admin SSR 라우트들의 JSON API 이중 노출 (vibe-coder-android wire)
         envSetupApiRoutes(
@@ -502,6 +511,10 @@ fun Application.module(ctx: ServerContext) {
         projectSkillRoutes(adminDeps, ctx.projects, ctx.workspace, globalSkillRegistry)
         projectPluginRoutes(adminDeps, ctx.projects, ctx.workspace, ctx.plugins)
         dependencyAuditRoutes(adminDeps, ctx.projects, ctx.dependencyAudit)
+        // v1.116.0 — 품질/접근성 검사 (Android Lint) + 인스트루먼트 테스트(에뮬레이터) + 콘솔 전송.
+        qualityRoutes(adminDeps, ctx.projects, ctx.lintQuality, ctx.instrumentedTest, ctx.sessionManager)
+        // v1.119.0 — 품질(Lint) JSON API (Bearer, android `/quality`). 인스트루먼트 테스트(에뮬레이터) 제외.
+        jsonQualityRoutes(ctx.projects, ctx.lintQuality, ctx.sessionManager)
         logSearchRoutes(adminDeps, ctx.logSearchService)
         // v0.33.0 — Cron 빌드 + webhook trigger.
         buildAutomationRoutes(

@@ -1462,6 +1462,9 @@ internal object MessagesKo {
         "api.common.projectIdRequired" to "projectId 가 필요합니다",
         "api.common.projectNotFound" to "프로젝트 '%s' 를 찾을 수 없습니다",
         "api.common.artifactNotFound" to "아티팩트 '%s' 를 찾을 수 없습니다",
+        "api.common.archiveNotFound" to "아카이브 파일을 찾을 수 없습니다",
+        "api.common.archiveFailed" to "아카이브에 실패했습니다",
+        "api.quality.noSelection" to "선택된 항목이 없습니다",
 
         // ─────────────────────────────────────────────── console filter (v0.97.0)
         "console.filter.title" to "메시지 필터",
@@ -1867,6 +1870,7 @@ internal object MessagesKo {
         "tabs.settings.editProject" to "이름·패키지·폴더 변경…",
         "tabs.stats" to "코드 통계",
         "tabs.deps" to "의존성",
+        "tabs.quality" to "품질",
         "tabs.wrapper" to "Wrapper",
         "tabs.automation" to "자동화",
         "tabs.envFiles" to "환경 파일",

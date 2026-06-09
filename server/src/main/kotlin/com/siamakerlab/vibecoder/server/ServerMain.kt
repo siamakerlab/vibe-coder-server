@@ -312,6 +312,10 @@ fun main(args: Array<String>) {
     val promptSuggestionService = com.siamakerlab.vibecoder.server.claude.PromptSuggestionService()
     // v0.32.0 — Gradle 의존성 audit.
     val dependencyAudit = com.siamakerlab.vibecoder.server.build.DependencyAudit(workspace)
+    // v1.117.0 — 프로젝트별 Gradle 실행 가드(lint/connectedTest 동시 spawn 방지). 두 서비스 공유.
+    val gradleRunGuard = com.siamakerlab.vibecoder.server.build.GradleRunGuard()
+    // v1.116.0 — Android Lint 기반 품질/접근성 검사 (프로젝트 "품질" 탭).
+    val lintQuality = com.siamakerlab.vibecoder.server.build.LintQualityService(workspace, gradleRunGuard)
     // v0.33.0 — Cron 빌드 scheduler (buildScheduleRepo/buildWebhookSecretRepo 는 위에서 생성).
     val buildScheduler = com.siamakerlab.vibecoder.server.build.BuildScheduler(buildScheduleRepo, build, hub)
     buildScheduler.start()
@@ -473,6 +477,9 @@ fun main(args: Array<String>) {
     val adbService = com.siamakerlab.vibecoder.server.device.AdbService()
     // v1.73.0 — 안드로이드 에뮬레이터(헤드리스, Claude 로그분석용). 미설치/미가속이면 페이지가 안내.
     val emulatorService = com.siamakerlab.vibecoder.server.device.EmulatorService(adbService)
+    // v1.117.0 — 인스트루먼트 테스트(에뮬레이터) 실행기. 빌드환경 > Emulator 의 컨테이너
+    //  에뮬레이터(emulatorService.serial)를 connectedDebugAndroidTest 타겟으로 고정.
+    val instrumentedTest = com.siamakerlab.vibecoder.server.build.InstrumentedTestService(workspace, emulatorService, gradleRunGuard)
     val diskMonitor = com.siamakerlab.vibecoder.server.disk.DiskMonitor(
         rootProvider = { workspace.root },
         notifiers = notifiers,
@@ -538,6 +545,8 @@ fun main(args: Array<String>) {
         conversationExport = conversationExport,
         promptSuggestionService = promptSuggestionService,
         dependencyAudit = dependencyAudit,
+        lintQuality = lintQuality,
+        instrumentedTest = instrumentedTest,
         buildScheduleRepo = buildScheduleRepo,
         buildScheduler = buildScheduler,
         buildWebhookSecretRepo = buildWebhookSecretRepo,

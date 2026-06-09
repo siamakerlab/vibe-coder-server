@@ -1484,6 +1484,9 @@ internal object MessagesEn {
         "api.common.projectIdRequired" to "projectId is required",
         "api.common.projectNotFound" to "project '%s' not found",
         "api.common.artifactNotFound" to "Artifact '%s' not found",
+        "api.common.archiveNotFound" to "Archive file not found",
+        "api.common.archiveFailed" to "Archive failed",
+        "api.quality.noSelection" to "No items selected",
 
         // ─────────────────────────────────────────────── console filter (v0.97.0)
         "console.filter.title" to "Filter messages",
@@ -1889,6 +1892,7 @@ internal object MessagesEn {
         "tabs.settings.editProject" to "Rename (name / package / folder)…",
         "tabs.stats" to "Code stats",
         "tabs.deps" to "Deps",
+        "tabs.quality" to "Quality",
         "tabs.wrapper" to "Wrapper",
         "tabs.automation" to "Automation",
         "tabs.envFiles" to "Env files",

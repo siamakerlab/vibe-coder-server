@@ -66,6 +66,8 @@ internal object ProjectTabsTemplate {
         Tab("symbols", "tabs.symbols", "/symbols", "tab-symbols"),
         Tab("stats", "tabs.stats", "/stats", "tab-stats"),
         Tab("deps", "tabs.deps", "/deps", "tab-deps"),
+        // v1.116.0 — 품질·접근성 검사 (Android Lint) 탭.
+        Tab("quality", "tabs.quality", "/quality", "tab-quality"),
         Tab("wrapper", "tabs.wrapper", "/wrapper", "tab-wrapper"),
         Tab("automation", "tabs.automation", "/automation", "tab-automation"),
         Tab("envFiles", "tabs.envFiles", "/env-files", "tab-env-files"),
