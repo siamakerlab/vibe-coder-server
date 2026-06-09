@@ -5,6 +5,7 @@ import com.siamakerlab.vibecoder.server.auth.requireApiWrite
 import com.siamakerlab.vibecoder.server.auth.requireDevice
 import com.siamakerlab.vibecoder.server.auth.requireProjectAcl
 import com.siamakerlab.vibecoder.shared.ApiPath
+import com.siamakerlab.vibecoder.shared.dto.ProjectRenameRequestDto
 import com.siamakerlab.vibecoder.shared.dto.RegisterProjectRequestDto
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
@@ -46,6 +47,20 @@ fun Routing.projectRoutes(service: ProjectService) {
                     403, "project_forbidden", messageKey = "api.auth.projectForbidden",
                 )
             }
+            call.respond(service.get(id))
+        }
+
+        // v1.122.0 — 프로젝트 표시 이름 변경(P2). 폴더/패키지 무관.
+        post("/api/projects/{projectId}/rename") {
+            call.requireApiWrite()
+            val id = call.parameters["projectId"]
+                ?: throw com.siamakerlab.vibecoder.server.error.ApiException.localized(400, "bad_request", messageKey = "api.common.projectIdRequired")
+            call.requireProjectAcl(service, id)
+            val name = call.receive<ProjectRenameRequestDto>().name.trim()
+            if (name.isEmpty()) {
+                throw com.siamakerlab.vibecoder.server.error.ApiException.localized(400, "bad_request", messageKey = "api.common.projectIdRequired")
+            }
+            service.rename(id, name)
             call.respond(service.get(id))
         }
 
