@@ -175,5 +175,63 @@ fun Routing.consoleRoutes(
             val suggestions = promptSuggestionService.suggest(projectId, prefix, limit)
             call.respond(mapOf("suggestions" to suggestions))
         }
+
+        // ── v1.120.0 콘솔 토큰/모델 설정 (SSR /console/{model|mcp-strict|auto-compact} 의 JSON) ──
+        get("/api/projects/{projectId}/claude/console/settings") {
+            val projectId = call.parameters["projectId"]
+                ?: throw ApiException.localized(400, "bad_request", messageKey = "api.console.projectIdRequired")
+            call.requireProjectAcl(projects, projectId)
+            projects.rowOrThrow(projectId)
+            call.respond(buildConsoleSettings(sessionManager, projectId))
+        }
+        post("/api/projects/{projectId}/claude/console/model") {
+            call.requireApiWrite()
+            val projectId = call.parameters["projectId"]
+                ?: throw ApiException.localized(400, "bad_request", messageKey = "api.console.projectIdRequired")
+            call.requireProjectAcl(projects, projectId)
+            projects.rowOrThrow(projectId)
+            val model = call.receive<com.siamakerlab.vibecoder.shared.dto.ConsoleModelRequestDto>().model
+                ?.trim()?.ifBlank { null }
+            sessionManager.setProjectModelAndRestart(projectId, model)
+            call.respond(buildConsoleSettings(sessionManager, projectId))
+        }
+        post("/api/projects/{projectId}/claude/console/mcp-strict") {
+            call.requireApiWrite()
+            val projectId = call.parameters["projectId"]
+                ?: throw ApiException.localized(400, "bad_request", messageKey = "api.console.projectIdRequired")
+            call.requireProjectAcl(projects, projectId)
+            projects.rowOrThrow(projectId)
+            val enabled = call.receive<com.siamakerlab.vibecoder.shared.dto.ConsoleToggleRequestDto>().enabled
+            sessionManager.setMcpStrictAndRestart(projectId, enabled)
+            call.respond(buildConsoleSettings(sessionManager, projectId))
+        }
+        post("/api/projects/{projectId}/claude/console/auto-compact") {
+            call.requireApiWrite()
+            val projectId = call.parameters["projectId"]
+                ?: throw ApiException.localized(400, "bad_request", messageKey = "api.console.projectIdRequired")
+            call.requireProjectAcl(projects, projectId)
+            projects.rowOrThrow(projectId)
+            val enabled = call.receive<com.siamakerlab.vibecoder.shared.dto.ConsoleToggleRequestDto>().enabled
+            sessionManager.setAutoCompact(projectId, enabled)
+            call.respond(buildConsoleSettings(sessionManager, projectId))
+        }
     }
 }
+
+/** v1.120.0 — 콘솔 설정 현재 상태 → DTO. 모델 목록은 알려진 4종(기본 포함). */
+private fun buildConsoleSettings(
+    sessionManager: ClaudeSessionManager,
+    projectId: String,
+): com.siamakerlab.vibecoder.shared.dto.ConsoleSettingsDto =
+    com.siamakerlab.vibecoder.shared.dto.ConsoleSettingsDto(
+        model = sessionManager.readProjectModel(projectId),
+        effectiveModel = sessionManager.effectiveModel(projectId),
+        autoCompact = sessionManager.isAutoCompact(projectId),
+        mcpStrict = sessionManager.isMcpStrict(projectId),
+        availableModels = listOf(
+            com.siamakerlab.vibecoder.shared.dto.ConsoleModelOptionDto("", "CLI default"),
+            com.siamakerlab.vibecoder.shared.dto.ConsoleModelOptionDto("sonnet", "Sonnet"),
+            com.siamakerlab.vibecoder.shared.dto.ConsoleModelOptionDto("opus", "Opus"),
+            com.siamakerlab.vibecoder.shared.dto.ConsoleModelOptionDto("haiku", "Haiku"),
+        ),
+    )

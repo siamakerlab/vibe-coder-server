@@ -78,6 +78,21 @@ object ApiPath {
      */
     fun claudeConsoleInterrupt(projectId: String) =
         "/api/projects/$projectId/claude/console/interrupt"
+    /**
+     * v1.120.0 — 콘솔 토큰/모델 설정 조회. 응답 ConsoleSettingsDto
+     * (model/effectiveModel/autoCompact/mcpStrict/availableModels).
+     */
+    fun consoleSettings(projectId: String) =
+        "/api/projects/$projectId/claude/console/settings"
+    /** v1.120.0 — 모델 변경(body ConsoleModelRequestDto). 적용 시 세션 재시작(컨텍스트 유지). */
+    fun consoleModel(projectId: String) =
+        "/api/projects/$projectId/claude/console/model"
+    /** v1.120.0 — MCP 최소화 토글(body ConsoleToggleRequestDto). */
+    fun consoleMcpStrict(projectId: String) =
+        "/api/projects/$projectId/claude/console/mcp-strict"
+    /** v1.120.0 — 자동 /compact 토글(body ConsoleToggleRequestDto). */
+    fun consoleAutoCompact(projectId: String) =
+        "/api/projects/$projectId/claude/console/auto-compact"
     fun claudeStatus(projectId: String) =
         "/api/projects/$projectId/claude/status"
 
