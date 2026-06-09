@@ -18,6 +18,8 @@ import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Routing
 import io.ktor.server.routing.post
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * v1.119.0 — 품질·접근성 검사 JSON API (Bearer 토큰 인증). SSR `qualityRoutes`
@@ -39,7 +41,9 @@ fun Routing.jsonQualityRoutes(
                 ?: throw ApiException.localized(400, "bad_request", messageKey = "api.common.projectIdRequired")
             call.requireProjectAcl(projects, projectId)
             val module = safeModule(call.request.queryParameters["module"], "app")
-            val result = svc.lint(projectId, module)
+            // lint 는 gradle 프로세스를 spawn 해 수십 초~수 분 블로킹 → Ktor 워커 스레드
+            // 점유 방지 위해 IO 디스패처로 분리(P1-1 정밀재검).
+            val result = withContext(Dispatchers.IO) { svc.lint(projectId, module) }
             call.respond(
                 LintResultDto(
                     ok = result.ok,

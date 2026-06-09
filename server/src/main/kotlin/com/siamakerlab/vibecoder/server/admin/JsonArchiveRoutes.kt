@@ -19,6 +19,8 @@ import io.ktor.server.routing.Routing
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * v1.119.0 — 프로젝트 아카이브 JSON API (Bearer 토큰 인증). SSR `archiveRoutes`(`/archive`,
@@ -38,7 +40,8 @@ fun Routing.jsonArchiveRoutes(
     authenticate(AUTH_BEARER) {
         get(ApiPath.ARCHIVES) {
             call.requireApiWrite()
-            call.respond(archive.list().map { it.toDto() })
+            val rows = withContext(Dispatchers.IO) { archive.list() }
+            call.respond(rows.map { it.toDto() })
         }
 
         // 현재 프로젝트 아카이브(압축 보관 + DB 정리). idle 가드.
@@ -49,7 +52,8 @@ fun Routing.jsonArchiveRoutes(
             if (!isProjectIdle(sessionManager, buildRepo, promptAutomationManager, projectId)) {
                 throw ApiException.localized(409, "project_busy", messageKey = "flash.project.rename.notIdle")
             }
-            val archiveId = archive.archive(projectId)
+            // tar.gz 압축 + DB 정리는 수 초~분 블로킹 → IO 디스패처(P1-1 정밀재검).
+            val archiveId = withContext(Dispatchers.IO) { archive.archive(projectId) }
             val row = archive.get(archiveId)
                 ?: throw ApiException.localized(500, "archive_failed", messageKey = "api.common.archiveFailed")
             call.respond(HttpStatusCode.Accepted, row.toDto())
@@ -59,7 +63,7 @@ fun Routing.jsonArchiveRoutes(
         post("/api/archives/{aid}/restore") {
             call.requireApiWrite()
             val aid = call.parameters["aid"]!!
-            archive.unarchive(aid)
+            withContext(Dispatchers.IO) { archive.unarchive(aid) }
             call.respond(HttpStatusCode.Accepted)
         }
 
@@ -67,7 +71,7 @@ fun Routing.jsonArchiveRoutes(
         delete("/api/archives/{aid}") {
             call.requireApiWrite()
             val aid = call.parameters["aid"]!!
-            val ok = archive.deleteArchive(aid)
+            val ok = withContext(Dispatchers.IO) { archive.deleteArchive(aid) }
             call.respond(if (ok) HttpStatusCode.OK else HttpStatusCode.NotFound)
         }
 
