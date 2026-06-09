@@ -59,6 +59,8 @@ object ApiPath {
     /** v1.60.0 — 프로젝트 목록 드래그 순서변경(body: ProjectReorderRequestDto). */
     const val PROJECTS_REORDER = "/api/projects/reorder"
     fun project(id: String) = "/api/projects/$id"
+    /** v1.122.0 — 프로젝트 표시 이름 변경(body ProjectRenameRequestDto). 응답 갱신된 ProjectDto. */
+    fun projectRename(id: String) = "/api/projects/$id/rename"
 
     // Claude console (persistent session)
     fun claudeConsolePrompt(projectId: String) =

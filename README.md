@@ -570,6 +570,7 @@ Highlights:
 **Server & projects**
 - `GET /api/server/status`, `GET /api/server/stats`, `GET /api/server/environment[/check]`
 - `GET /api/projects`, `POST /api/projects/register` (`sourceType=clone`, `templateId`)
+- `POST /api/projects/{id}/rename` (body `{name}` — display-name rename), `DELETE /api/projects/{id}`
 - `POST /api/projects/reorder` (body `{offset, order:[id…]}` — persists custom order)
 
 **Build**
