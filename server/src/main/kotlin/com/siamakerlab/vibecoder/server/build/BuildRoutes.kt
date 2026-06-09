@@ -5,18 +5,27 @@ import com.siamakerlab.vibecoder.server.auth.requireApiWrite
 import com.siamakerlab.vibecoder.server.auth.requireProjectAcl
 import com.siamakerlab.vibecoder.server.error.ApiException
 import com.siamakerlab.vibecoder.server.projects.ProjectService
+import com.siamakerlab.vibecoder.server.publish.PlayPublishService
 import com.siamakerlab.vibecoder.server.repo.BuildRow
 import com.siamakerlab.vibecoder.server.ws.LogHub
 import com.siamakerlab.vibecoder.shared.dto.BuildDto
+import com.siamakerlab.vibecoder.shared.dto.PlayUploadRequestDto
+import com.siamakerlab.vibecoder.shared.dto.StoreUploadResponseDto
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
 import io.ktor.server.auth.authenticate
+import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Routing
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 
-fun Routing.buildRoutes(service: BuildService, hub: LogHub, projects: ProjectService) {
+fun Routing.buildRoutes(
+    service: BuildService,
+    hub: LogHub,
+    projects: ProjectService,
+    playPublishService: PlayPublishService,
+) {
     authenticate(AUTH_BEARER) {
         post("/api/projects/{projectId}/build/debug") {
             call.requireApiWrite()
@@ -60,6 +69,23 @@ fun Routing.buildRoutes(service: BuildService, hub: LogHub, projects: ProjectSer
             val buildId = call.parameters["buildId"]!!
             service.cancel(buildId)
             call.respond(HttpStatusCode.Accepted)
+        }
+        // v1.121.0 — Google Play 업로드 트리거(빌드→배포 완결). Claude 콘솔로 업로드 프롬프트 전송.
+        post("/api/projects/{projectId}/play-upload") {
+            call.requireApiWrite()
+            val projectId = call.parameters["projectId"]
+                ?: throw ApiException.localized(400, "bad_request", messageKey = "api.common.projectIdRequired")
+            call.requireProjectAcl(projects, projectId)
+            projects.get(projectId)  // 존재 검증
+            val req = call.receive<PlayUploadRequestDto>()
+            val aab = req.aabPath.trim().ifBlank { "app/build/outputs/bundle/release/app-release.aab" }
+            playPublishService.trigger(
+                projectId = projectId,
+                aabRelativePath = aab,
+                track = req.track,
+                releaseNotes = req.releaseNotes,
+            )
+            call.respond(HttpStatusCode.Accepted, StoreUploadResponseDto(ok = true))
         }
     }
 }

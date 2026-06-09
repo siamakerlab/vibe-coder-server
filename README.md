@@ -576,6 +576,7 @@ Highlights:
 - `POST /api/projects/{id}/build/debug`, `GET /api/projects/{id}/builds`
 - `POST /api/projects/{id}/build/release` (assembleRelease, APK), `POST /api/projects/{id}/build/bundle` (bundleRelease, AAB) — keystore-signed; `409 keystore_required` if no matching keystore
 - `POST /api/projects/{id}/builds/{buildId}/cancel`
+- `POST /api/projects/{id}/play-upload` (body `{aabPath?, track?, releaseNotes?}` — triggers a Claude console prompt to upload the AAB to Google Play)
 - `GET /api/projects/{id}/artifacts/{artifactId}/download`
 - `POST /api/webhooks/build/{projectId}` (external trigger — `X-Vibe-Secret-Id` + `X-Vibe-Secret` + optional `X-Vibe-Signature`)
 

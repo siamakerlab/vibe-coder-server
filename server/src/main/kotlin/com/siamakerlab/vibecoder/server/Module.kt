@@ -474,7 +474,7 @@ fun Application.module(ctx: ServerContext) {
         projectRoutes(ctx.projects)
         consoleRoutes(ctx.projects, ctx.sessionManager, ctx.hub, ctx.claudeStatusService, ctx.env, ctx.auditLogger, ctx.promptSuggestionService)
         projectActionRoutes(ctx.projects, ctx.actionRegistry, ctx.actionHandler, ctx.capabilityService)
-        buildRoutes(ctx.build, ctx.hub, ctx.projects)
+        buildRoutes(ctx.build, ctx.hub, ctx.projects, ctx.playPublishService)
         artifactRoutes(ctx.artifactRepo, ctx.workspace, ctx.artifacts, ctx.apkVerifier, ctx.projects)
         gitRoutes(ctx.projects, ctx.git, ctx.gitWriter, ctx.auditLogger)
         fileRoutes(ctx.uploads, ctx.projects)

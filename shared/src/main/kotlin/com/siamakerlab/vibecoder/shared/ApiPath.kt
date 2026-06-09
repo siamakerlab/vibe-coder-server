@@ -127,6 +127,11 @@ object ApiPath {
      * body 없음, 응답 BuildDto(202). 키스토어 미존재 시 409 keystore_required.
      */
     fun buildBundle(projectId: String) = "/api/projects/$projectId/build/bundle"
+    /**
+     * v1.121.0 — Google Play 업로드 트리거(body PlayUploadRequestDto). Claude 콘솔에
+     * "이 .aab 를 Play <track> 에 업로드" 프롬프트 전송. 응답 StoreUploadResponseDto(202).
+     */
+    fun playUpload(projectId: String) = "/api/projects/$projectId/play-upload"
     fun builds(projectId: String) = "/api/projects/$projectId/builds"
     fun build(projectId: String, buildId: String) =
         "/api/projects/$projectId/builds/$buildId"
