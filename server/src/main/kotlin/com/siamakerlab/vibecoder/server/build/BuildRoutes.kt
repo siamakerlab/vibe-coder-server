@@ -5,6 +5,7 @@ import com.siamakerlab.vibecoder.server.auth.requireApiWrite
 import com.siamakerlab.vibecoder.server.auth.requireProjectAcl
 import com.siamakerlab.vibecoder.server.error.ApiException
 import com.siamakerlab.vibecoder.server.projects.ProjectService
+import com.siamakerlab.vibecoder.server.repo.BuildRow
 import com.siamakerlab.vibecoder.server.ws.LogHub
 import com.siamakerlab.vibecoder.shared.dto.BuildDto
 import io.ktor.http.HttpStatusCode
@@ -22,12 +23,24 @@ fun Routing.buildRoutes(service: BuildService, hub: LogHub, projects: ProjectSer
             val projectId = call.parameters["projectId"] ?: throw ApiException.localized(400, "bad_request", messageKey = "api.common.projectIdRequired")
             call.requireProjectAcl(projects, projectId)
             val row = service.enqueueDebug(projectId, hub)
-            call.respond(HttpStatusCode.Accepted, BuildDto(
-                id = row.id, projectId = row.projectId, variant = row.variant,
-                status = row.status, startedAt = row.startedAt ?: row.createdAt,
-                finishedAt = row.finishedAt, artifactId = row.artifactId, errorMessage = row.errorMessage,
-                gitBranch = row.gitBranch, gitSha = row.gitSha,
-            ))
+            call.respond(HttpStatusCode.Accepted, row.toBuildDto())
+        }
+        // v1.118.0 — Release(APK) / AAB 번들 JSON endpoint. SSR 폼(/projects/{id}/builds/{release|bundle})
+        // 과 동일 동작을 ApiPath SSOT 로 노출(§8.A). 키스토어 가드는 service.enqueue* 내부
+        // requireKeystoreOrThrow 가 처리(미존재 시 409 keystore_required).
+        post("/api/projects/{projectId}/build/release") {
+            call.requireApiWrite()
+            val projectId = call.parameters["projectId"] ?: throw ApiException.localized(400, "bad_request", messageKey = "api.common.projectIdRequired")
+            call.requireProjectAcl(projects, projectId)
+            val row = service.enqueueRelease(projectId, hub)
+            call.respond(HttpStatusCode.Accepted, row.toBuildDto())
+        }
+        post("/api/projects/{projectId}/build/bundle") {
+            call.requireApiWrite()
+            val projectId = call.parameters["projectId"] ?: throw ApiException.localized(400, "bad_request", messageKey = "api.common.projectIdRequired")
+            call.requireProjectAcl(projects, projectId)
+            val row = service.enqueueBundle(projectId, hub)
+            call.respond(HttpStatusCode.Accepted, row.toBuildDto())
         }
         get("/api/projects/{projectId}/builds") {
             val projectId = call.parameters["projectId"] ?: throw ApiException.localized(400, "bad_request", messageKey = "api.common.projectIdRequired")
@@ -50,3 +63,11 @@ fun Routing.buildRoutes(service: BuildService, hub: LogHub, projects: ProjectSer
         }
     }
 }
+
+/** [BuildRow] → wire [BuildDto] 매핑. debug/release/bundle JSON 응답 공통. */
+private fun BuildRow.toBuildDto(): BuildDto = BuildDto(
+    id = id, projectId = projectId, variant = variant,
+    status = status, startedAt = startedAt ?: createdAt,
+    finishedAt = finishedAt, artifactId = artifactId, errorMessage = errorMessage,
+    gitBranch = gitBranch, gitSha = gitSha,
+)

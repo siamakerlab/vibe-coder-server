@@ -102,11 +102,39 @@ object ApiPath {
 
     // Builds
     fun buildDebug(projectId: String) = "/api/projects/$projectId/build/debug"
+    /**
+     * v1.118.0 — Release(APK) 빌드 큐 등록(assembleRelease, 키스토어 서명 주입).
+     * body 없음, 응답 BuildDto(202). 키스토어 미존재 시 409 keystore_required.
+     */
+    fun buildRelease(projectId: String) = "/api/projects/$projectId/build/release"
+    /**
+     * v1.118.0 — Release AAB 번들 빌드 큐 등록(bundleRelease, Play Console 업로드용).
+     * body 없음, 응답 BuildDto(202). 키스토어 미존재 시 409 keystore_required.
+     */
+    fun buildBundle(projectId: String) = "/api/projects/$projectId/build/bundle"
     fun builds(projectId: String) = "/api/projects/$projectId/builds"
     fun build(projectId: String, buildId: String) =
         "/api/projects/$projectId/builds/$buildId"
     fun buildCancel(projectId: String, buildId: String) =
         "/api/projects/$projectId/builds/$buildId/cancel"
+
+    // Project archive (v1.119.0 — JSON; SSR `/archive` 는 유지). 응답은 ArchivedProjectDto.
+    /** 아카이브 레지스트리 목록 — `List<ArchivedProjectDto>`. */
+    const val ARCHIVES = "/api/archives"
+    /** 현재 프로젝트를 아카이브(압축 보관). idle 가드. 응답 ArchivedProjectDto(202). */
+    fun projectArchive(projectId: String) = "/api/projects/${pathSeg(projectId)}/archive"
+    /** 아카이브 복원(원래 projectId 로 되살림). 응답 202. */
+    fun archiveRestore(archiveId: String) = "/api/archives/${pathSeg(archiveId)}/restore"
+    /** 아카이브 영구 삭제(DELETE). 파일 + 레지스트리 행 제거. */
+    fun archiveDelete(archiveId: String) = "/api/archives/${pathSeg(archiveId)}"
+    /** 아카이브 .tar.gz 다운로드(GET, attachment). */
+    fun archiveDownload(archiveId: String) = "/api/archives/${pathSeg(archiveId)}/download"
+
+    // Quality (v1.119.0 — Android Lint JSON; SSR `/projects/{id}/quality` 는 유지).
+    /** Lint(:module:lintDebug) 실행 + 결과. POST `?module=app`. 응답 LintResultDto. */
+    fun qualityLint(projectId: String) = "/api/projects/${pathSeg(projectId)}/quality/lint"
+    /** 선택 lint 이슈를 콘솔(Claude)로 수정요청 전송(body QualityFixRequestDto). 응답 QualityFixResponseDto. */
+    fun qualityFix(projectId: String) = "/api/projects/${pathSeg(projectId)}/quality/fix"
 
     // Artifacts
     fun artifacts(projectId: String) = "/api/projects/$projectId/artifacts"
