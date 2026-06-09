@@ -574,9 +574,19 @@ Highlights:
 
 **Build**
 - `POST /api/projects/{id}/build/debug`, `GET /api/projects/{id}/builds`
+- `POST /api/projects/{id}/build/release` (assembleRelease, APK), `POST /api/projects/{id}/build/bundle` (bundleRelease, AAB) — keystore-signed; `409 keystore_required` if no matching keystore
 - `POST /api/projects/{id}/builds/{buildId}/cancel`
 - `GET /api/projects/{id}/artifacts/{artifactId}/download`
 - `POST /api/webhooks/build/{projectId}` (external trigger — `X-Vibe-Secret-Id` + `X-Vibe-Secret` + optional `X-Vibe-Signature`)
+
+**Quality (Android Lint)**
+- `POST /api/projects/{id}/quality/lint?module=app` → `LintResultDto` (runs `:module:lintDebug`; emulator not required)
+- `POST /api/projects/{id}/quality/fix` (body `{module, kind, selected:[…]}`) → sends selected issues to the console (Claude) as a fix request
+
+**Project archive**
+- `GET /api/archives` → `[ArchivedProjectDto]`
+- `POST /api/projects/{id}/archive` (idle-guarded; `409 project_busy` while running) → `ArchivedProjectDto`
+- `POST /api/archives/{aid}/restore`, `DELETE /api/archives/{aid}`, `GET /api/archives/{aid}/download` (.tar.gz)
 
 **Claude console & automation**
 - `POST /api/projects/{id}/claude/console/{prompt|new|cancel|interrupt}`, `GET .../claude/status`
