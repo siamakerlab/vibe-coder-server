@@ -2,7 +2,7 @@ server:
   name: Vibe Coder Server
   host: 0.0.0.0
   port: 17880
-  version: 1.122.1
+  version: 1.123.0
 
 workspace:
   # Each project lives at <root>/<projectId>/.
@@ -68,6 +68,16 @@ claude:
   # 컨텍스트가 이 값을 넘으면 turn 종료 후 자동으로 /compact 실행 후 이어감(Claude CLI 자동 compact 동형).
   # 0 이하 = 비활성. env VIBECODER_CLAUDE_AUTO_COMPACT_TOKENS 로 override.
   autoCompactTokens: 700000
+  # v1.123.0 — 2단계 경고의 CRITICAL(2차) 임계. contextWarnTokens(1차)보다 강한 문구 +
+  # 즉시 '새 세션' 권장. 0 이하 = 비활성. env VIBECODER_CLAUDE_CONTEXT_CRITICAL_TOKENS.
+  contextCriticalTokens: 600000
+  # v1.123.0 — 세션 길이 캡(컨텍스트). turn 종료 후 직전 cache_read 가 이 값을 넘으면 자동으로
+  # 새 세션 시작(savedId 폐기 → 다음 prompt fresh). /compact 로도 못 막는 누적 폭주를 끊는다.
+  # **맥락 손실이 크므로 기본 0(비활성)** — 켜려면 권장 900000. env VIBECODER_CLAUDE_SESSION_RESET_TOKENS.
+  sessionResetTokens: 0
+  # v1.123.0 — 세션 길이 캡(turn 수). 정상 완료 turn 수가 이 값에 도달하면 자동 새 세션(컨텍스트 캡과 OR).
+  # 0 = 비활성. env VIBECODER_CLAUDE_SESSION_TURN_CAP.
+  sessionTurnCap: 0
   # v0.21.0 — 사용량 모니터링 + 임계치 이메일 알림.
   # enabled=false 면 폴링/알림 둘 다 끔. pollIntervalMinutes 너무 짧으면
   # claude /status 호출 비용↑. warnThresholdPercent 도달 시 1회 + critical 도달 시
