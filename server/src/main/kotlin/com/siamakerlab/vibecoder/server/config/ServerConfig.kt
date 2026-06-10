@@ -208,8 +208,10 @@ data class ClaudeSection(
      * ON(기본)이고 컨텍스트가 이 값을 넘으면, turn 종료 후 자동으로 `/compact` 를 실행해
      * 맥락을 줄이고 작업을 이어간다(Claude CLI 자동 compact 와 동형). 0 이하면 비활성.
      * env VIBECODER_CLAUDE_AUTO_COMPACT_TOKENS 로 override.
+     * v1.123.1 — 700K → 500K. 더 일찍/자주 compact 해 컨텍스트를 작게 유지(긴 turn 의
+     * step 당 cacheRead 누적을 줄임). warn(350K) < compact(500K) < critical(600K) 순.
      */
-    val autoCompactTokens: Int = 700_000,
+    val autoCompactTokens: Int = 500_000,
     /**
      * v1.123.0 — 2단계 컨텍스트 경고의 CRITICAL 임계(직전 turn cache_read 토큰).
      * [contextWarnTokens] 가 1차(주의)라면 이 값은 2차(위험): 매 turn 전체 맥락이 반복
