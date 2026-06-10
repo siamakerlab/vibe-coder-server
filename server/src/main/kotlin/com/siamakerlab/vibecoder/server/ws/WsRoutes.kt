@@ -265,6 +265,19 @@ private suspend fun WebSocketServerSession.handleConsoleStream(
         runCatching { sendFrame(WsFrame.ConsoleReplayEnd) }
     }
 
+    // v1.122.1 — replay 직후 서버 in-memory busy 스냅샷을 1회 무조건 push.
+    // ConsoleBusyState 는 setBusy() 의 "상태 전이" 시점에만 emit 돼 ring 에 적재되는데,
+    // 도구 호출이 많은 긴 turn 이면 busy=true 를 켰던 프레임이 ring sliding window 밖으로
+    // 밀려난다. 그러면 새로고침/탭전환/재연결 클라이언트의 replay slice 엔 busy=true 가 없고
+    // (assistant/tool 프레임은 inFlight 를 켜지 않음), 콘솔 칩/통합 탭 헤더 칩이 'ready'(유휴)
+    // 로 고착됐다 — 정작 응답 중인데. 프로젝트 목록은 projectStatus(busyStateOrNull) 로 같은
+    // SSOT 를 직접 읽어 정확했던 것과의 불일치. busyStateOrNull 을 권위로 1회 내려보내 ring
+    // window 와 무관하게 정확한 turn 상태로 수렴시킨다. null(부팅 직후 turn 이력 없음)이면
+    // 클라이언트 기본값 ready 유지. seq=0L — 클라이언트는 busy_state 처리에 seq 를 쓰지 않는다.
+    sessionManager.busyStateOrNull(projectId)?.let { st ->
+        runCatching { sendFrame(WsFrame.ConsoleBusyState(busy = st.busy, seq = 0L, state = st.wire)) }
+    }
+
     // Concurrent task: read client → server frames (user_prompt / action_invoke).
     // This task is scoped to the session and cancels when collect() returns.
     val incomingJob = launch {
