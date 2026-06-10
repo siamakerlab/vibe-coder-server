@@ -237,6 +237,7 @@ class ClaudeSessionManager(
         sessions[projectId]?.let {
             it.lastContextTokens = 0; it.lastInputTokens = 0; it.lastCacheCreationTokens = 0
             it.contextWarned = false; it.compacting = false
+            it.criticalWarned = false; it.turnCount = 0  // v1.123.0 — 2단계 경고/캡 카운터 리셋
         }
         hub.resetConsole(topic(projectId))
         emitSystem(projectId, "new_session_requested", "Session reset. The next prompt starts a fresh conversation.")
@@ -697,8 +698,17 @@ class ClaudeSessionManager(
                     hub.emitConsole(topic(projectId)) { seq ->
                         WsFrame.ConsoleContextUsage(input, cacheRead, cacheCreate, limit, seq)
                     }
+                    // v1.123.0 — 2단계 경고. CRITICAL(2차) 우선 — WARN 보다 강한 문구 + 자동 캡 임박 안내.
                     val warn = config.claude.contextWarnTokens
-                    if (warn > 0 && cacheRead >= warn && s != null && !s.contextWarned) {
+                    val crit = config.claude.contextCriticalTokens
+                    if (s != null && crit > 0 && cacheRead >= crit && !s.criticalWarned) {
+                        s.criticalWarned = true; s.contextWarned = true  // WARN 도 소비(중복 방지)
+                        emitSystem(
+                            projectId, "context_critical",
+                            "🛑 컨텍스트 약 ${cacheRead / 1000}K (위험) — 매 turn 전체 맥락이 반복 과금되어 한 작업에 " +
+                                "세션 한도의 큰 비중을 소모합니다. 지금 '새 세션(컨텍스트 리셋)' 으로 끊기를 강력 권장합니다.",
+                        )
+                    } else if (s != null && warn > 0 && cacheRead >= warn && !s.contextWarned) {
                         s.contextWarned = true
                         emitSystem(
                             projectId, "context_large",
@@ -766,10 +776,13 @@ class ClaudeSessionManager(
                     gate.release(projectId)  // v1.71.0 — turn 정상 완료 → permit 반환(idempotent).
                     clearTurnActive(projectId)  // v1.82.0 — 정상 완료 → 미완 마크 OFF.
                     setBusy(projectId, ProjectState.READY)
+                    // v1.123.0 — 정상 완료 turn 카운트(세션 길이 캡 판정용). 자동 /compact settle
+                    // turn(compacting=true)은 사용자 turn 이 아니므로 제외.
+                    sessions[projectId]?.let { if (!it.compacting) it.turnCount++ }
                     // v1.59.0 — 자동화 리스너에 turn 완료 통지 (fire-and-forget, stdout 파싱 비blocking).
                     fireTurnDone(projectId, event.reason)
-                    // v1.108.0 — 컨텍스트 임계 초과 + auto-compact ON 이면 자동 /compact 발사(사용자 클릭과 동일 경로).
-                    maybeAutoCompact(projectId)
+                    // v1.123.0 — 세션 길이 캡(컨텍스트/turn 수) 우선 → 초과면 자동 새 세션, 아니면 자동 /compact.
+                    maybeSessionCapOrCompact(projectId)
                 }
             } else if (event is ClaudeEvent.ErrorEvent) {
                 val interrupted = sessions[projectId]
@@ -1191,6 +1204,40 @@ class ClaudeSessionManager(
     }
 
     /**
+     * v1.123.0 — turn 정상 완료 직후 호출. **세션 길이 캡**(컨텍스트/turn 수)을 먼저 검사해
+     * 초과면 자동으로 새 세션을 시작(컨텍스트 완전 리셋)하고, 아니면 기존 자동 /compact 로직에
+     * 위임한다. 캡은 /compact 로도 못 막는 누적 폭주(긴 세션 → 매 step cache_read 비례 증가)를
+     * 끊는 근본 차단막이다.
+     *
+     * 루프/오발동 방지:
+     *  - 자동 /compact settle turn(compacting=true)은 캡 판정에서 제외하고 compact 쪽에 위임
+     *    (settle 처리 일원화 + compact 직후 줄어든 컨텍스트로 즉시 리셋되는 일 방지).
+     *  - ghost(chat)는 제외.
+     */
+    private fun maybeSessionCapOrCompact(projectId: String) {
+        val s = sessions[projectId]
+        if (s == null || s.compacting || WorkspacePath.isGhostId(projectId)) {
+            maybeAutoCompact(projectId); return
+        }
+        val resetTokens = config.claude.sessionResetTokens
+        val turnCap = config.claude.sessionTurnCap
+        val ctxOver = resetTokens > 0 && s.lastContextTokens >= resetTokens
+        val turnOver = turnCap > 0 && s.turnCount >= turnCap
+        if (!ctxOver && !turnOver) { maybeAutoCompact(projectId); return }
+        val why = if (ctxOver) "컨텍스트 ${s.lastContextTokens / 1000}K" else "turn ${s.turnCount}회"
+        scope.launch {
+            runCatching {
+                emitSystem(
+                    projectId, "session_auto_reset",
+                    "⟳ 세션 길이 캡 도달($why) — 컨텍스트 누적 비용을 끊기 위해 새 세션을 시작합니다. " +
+                        "다음 메시지부터 맥락이 리셋됩니다(작업 파일·CLAUDE.md 는 유지).",
+                )
+                startNew(projectId)  // savedId 폐기 + 컨텍스트/경고/turnCount 리셋
+            }.onFailure { log.warn(it) { "[$projectId] 세션 길이 캡 자동 리셋 실패" } }
+        }
+    }
+
+    /**
      * v1.108.0 — turn 정상 완료 직후 호출. 자동 /compact 조건이면 `/compact` 를 자동 발사한다
      * (사용자 클릭과 동일 경로). 루프 방지: 직전 turn 이 /compact 였으면(compacting=true) 1회 skip.
      */
@@ -1323,6 +1370,10 @@ class ClaudeSessionManager(
         @Volatile var lastContextTokens: Long = 0,
         /** v1.106.0 — 컨텍스트 임계 경고를 이 세션에서 이미 1회 emit 했는지(노이즈 방지). */
         @Volatile var contextWarned: Boolean = false,
+        /** v1.123.0 — CRITICAL(2차) 경고를 이 세션에서 이미 1회 emit 했는지. */
+        @Volatile var criticalWarned: Boolean = false,
+        /** v1.123.0 — 이 세션의 정상 완료 turn 수(세션 길이 캡 판정용). startNew 시 0 리셋. */
+        @Volatile var turnCount: Int = 0,
         /** v1.106.1 — 컨텍스트 미터용 토큰 분해(직전 turn). */
         @Volatile var lastInputTokens: Long = 0,
         @Volatile var lastCacheCreationTokens: Long = 0,

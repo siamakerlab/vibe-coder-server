@@ -210,6 +210,28 @@ data class ClaudeSection(
      * env VIBECODER_CLAUDE_AUTO_COMPACT_TOKENS 로 override.
      */
     val autoCompactTokens: Int = 700_000,
+    /**
+     * v1.123.0 — 2단계 컨텍스트 경고의 CRITICAL 임계(직전 turn cache_read 토큰).
+     * [contextWarnTokens] 가 1차(주의)라면 이 값은 2차(위험): 매 turn 전체 맥락이 반복
+     * 과금되는 구간임을 더 강하게 알리고 즉시 '새 세션' 을 권한다. 0 이하면 비활성.
+     * env VIBECODER_CLAUDE_CONTEXT_CRITICAL_TOKENS 로 override.
+     */
+    val contextCriticalTokens: Int = 600_000,
+    /**
+     * v1.123.0 — 세션 길이 캡(컨텍스트). turn 정상 종료 후 직전 cache_read 가 이 값을 넘으면
+     * 자동으로 새 세션을 시작(savedId 폐기 → 다음 prompt 는 fresh)한다. 누적 세션이
+     * 길어질수록 매 step cache_read 가 비례 증가하는 폭주를 끊는 근본 차단막. /compact 와
+     * 달리 컨텍스트를 완전 리셋한다(작업 파일·CLAUDE.md 는 유지). **맥락 손실이 크므로
+     * 기본 0(비활성) — 운영자가 의도적으로 켠다.** 권장 900000(1M 윈도우에서 compact 700K
+     * 로도 안 줄 때의 안전판). env VIBECODER_CLAUDE_SESSION_RESET_TOKENS.
+     */
+    val sessionResetTokens: Int = 0,
+    /**
+     * v1.123.0 — 세션 길이 캡(turn 수). 한 세션의 정상 완료 turn 수가 이 값에 도달하면
+     * 자동으로 새 세션을 시작한다(컨텍스트 캡과 OR). 토큰과 무관하게 "오래된 세션 끊기".
+     * 기본 0(비활성). env VIBECODER_CLAUDE_SESSION_TURN_CAP.
+     */
+    val sessionTurnCap: Int = 0,
     /** v0.21.0 — usage 모니터링 정책. */
     val usage: ClaudeUsageSection = ClaudeUsageSection(),
 )

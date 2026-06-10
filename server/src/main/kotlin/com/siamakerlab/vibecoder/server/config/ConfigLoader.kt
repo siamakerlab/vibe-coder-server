@@ -109,6 +109,19 @@ object ConfigLoader {
             ?.toIntOrNull()?.let {
                 current = current.copy(claude = current.claude.copy(autoCompactTokens = it.coerceAtLeast(0)))
             }
+        // v1.123.0 — 2단계 경고 + 세션 길이 캡.
+        System.getenv("VIBECODER_CLAUDE_CONTEXT_CRITICAL_TOKENS")?.takeIf { it.isNotBlank() }
+            ?.toIntOrNull()?.let {
+                current = current.copy(claude = current.claude.copy(contextCriticalTokens = it.coerceAtLeast(0)))
+            }
+        System.getenv("VIBECODER_CLAUDE_SESSION_RESET_TOKENS")?.takeIf { it.isNotBlank() }
+            ?.toIntOrNull()?.let {
+                current = current.copy(claude = current.claude.copy(sessionResetTokens = it.coerceAtLeast(0)))
+            }
+        System.getenv("VIBECODER_CLAUDE_SESSION_TURN_CAP")?.takeIf { it.isNotBlank() }
+            ?.toIntOrNull()?.let {
+                current = current.copy(claude = current.claude.copy(sessionTurnCap = it.coerceAtLeast(0)))
+            }
 
         return current
     }
