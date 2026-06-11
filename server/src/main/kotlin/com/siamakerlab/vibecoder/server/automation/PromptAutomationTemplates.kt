@@ -109,7 +109,7 @@ internal object PromptAutomationTemplates {
               <td class="dim">${esc(r.mode)}</td>
               <td>${r.sent}/${r.total}</td>
               <td>$badge</td>
-              <td class="dim" style="font-family:ui-monospace,Menlo,monospace;font-size:11px">${esc(r.startedAt)}</td>
+              <td class="dim" style="font-family:ui-monospace,Menlo,monospace;font-size:11px">${esc(AdminTemplates.fmtTs(r.startedAt, lang))}</td>
             </tr>"""
         }
 

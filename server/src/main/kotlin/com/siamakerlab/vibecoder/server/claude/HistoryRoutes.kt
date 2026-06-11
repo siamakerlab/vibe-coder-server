@@ -372,7 +372,7 @@ object HistoryTemplates {
                 } else """<div class="user-memo dim" style="margin-top:4px;font-size:11px;cursor:pointer" data-memo="0">+ 메모</div>"""
                 """<tr data-turn-id="${esc(r.id)}">
                   <td class="dim" style="font-family:ui-monospace,Menlo,monospace;font-size:11px;white-space:nowrap">
-                    ${esc(r.ts)}
+                    ${esc(AdminTemplates.fmtTs(r.ts, lang))}
                     <div style="margin-top:4px">
                       <button type="button" class="star-btn $starCls" data-starred="${r.starred}"
                               style="background:none;border:none;font-size:16px;cursor:pointer;padding:0"

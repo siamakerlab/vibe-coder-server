@@ -238,12 +238,12 @@ private fun renderWebauthnPage(
           등록된 passkey 가 없습니다. 아래 "이 디바이스에서 passkey 등록" 버튼을 눌러 시작하세요.
         </td></tr>"""
     } else creds.joinToString("\n") { c ->
-        val lastUsed = c.lastUsedAt ?: "—"
+        val lastUsed = AdminTemplates.fmtTs(c.lastUsedAt, lang)
         """
         <tr>
           <td><strong>${esc(c.name)}</strong>
             <div class="dim" style="font-size:11px;margin-top:2px">${esc(c.attestationType ?: "unknown")}${if (c.transports != null) " · " + esc(c.transports) else ""}</div></td>
-          <td class="dim" style="font-size:11px">${esc(c.createdAt)}</td>
+          <td class="dim" style="font-size:11px">${esc(AdminTemplates.fmtTs(c.createdAt, lang))}</td>
           <td class="dim" style="font-size:11px">${esc(lastUsed)}</td>
           <td>
             <form method="post" action="/webauthn/delete/${esc(c.id)}" style="display:inline"

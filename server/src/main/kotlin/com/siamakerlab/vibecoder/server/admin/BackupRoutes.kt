@@ -209,7 +209,7 @@ private fun renderPage(
         """<tr>
           <td><code>${esc(entry.fileName)}</code></td>
           <td style="text-align:right">${humanBytes(entry.sizeBytes)}</td>
-          <td class="dim" style="font-size:11px">${esc(java.time.Instant.ofEpochMilli(entry.createdAtMs).toString())}</td>
+          <td class="dim" style="font-size:11px">${esc(AdminTemplates.fmtTsEpochMs(entry.createdAtMs, lang))}</td>
           <td>
             <a href="/backup/auto/${esc(entry.fileName)}" class="chip chip-link" style="font-size:11px">⬇</a>
             <form method="post" action="/backup/auto/${esc(entry.fileName)}/delete?_csrf=${esc(csrf ?: "")}" style="display:inline" onsubmit="return confirm('$delConfirm')">

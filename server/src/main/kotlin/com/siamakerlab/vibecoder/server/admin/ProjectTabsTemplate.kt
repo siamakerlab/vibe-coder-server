@@ -779,7 +779,7 @@ internal object ProjectTabsTemplate {
             <dt>${esc(t("projects.detail.source"))}</dt><dd>${esc(project.sourcePath)}</dd>
             <dt>${esc(t("projects.detail.debugTask"))}</dt><dd>${esc(project.debugTask)}</dd>
             <dt>${esc(t("projects.lastBuild"))}</dt><dd>${esc(project.lastBuildStatus ?: "-")}</dd>
-            <dt>${esc(t("projects.detail.updated"))}</dt><dd>${esc(project.updatedAt)}</dd>
+            <dt>${esc(t("projects.detail.updated"))}</dt><dd>${esc(AdminTemplates.fmtTs(project.updatedAt, lang))}</dd>
           </dl>
         </div>
         <!-- v1.81.0 — 이름/패키지명/폴더명 변경 폼이 있는 설정 페이지 링크(이전엔 동선 누락). -->

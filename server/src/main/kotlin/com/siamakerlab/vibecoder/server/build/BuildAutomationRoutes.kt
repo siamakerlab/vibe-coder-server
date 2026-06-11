@@ -316,7 +316,7 @@ private object AutomationTemplates {
             """<tr>
               <td><code>${esc(sec.name)}</code></td>
               <td class="dim" style="font-family:ui-monospace,Menlo,monospace;font-size:11px">${esc(sec.id.take(12))}…</td>
-              <td class="dim" style="font-family:ui-monospace,Menlo,monospace;font-size:11px">${esc(sec.lastUsedAt ?: "-")}</td>
+              <td class="dim" style="font-family:ui-monospace,Menlo,monospace;font-size:11px">${esc(AdminTemplates.fmtTs(sec.lastUsedAt, lang))}</td>
               <td>
                 <form method="post" action="/projects/${esc(p.id)}/automation/secrets/${esc(sec.id)}/delete" style="display:inline">
                   ${CsrfTokens.hiddenInput(csrf)}

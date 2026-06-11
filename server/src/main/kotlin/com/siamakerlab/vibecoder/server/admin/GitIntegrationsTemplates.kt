@@ -73,7 +73,7 @@ object GitIntegrationsTemplates {
   <td><code>${esc(tk.host)}</code></td>
   <td><code>${esc(tk.username)}</code></td>
   <td><code style="font-family:ui-monospace,Menlo,monospace">${esc(tk.tokenMasked)}</code></td>
-  <td class="dim" style="font-size:11px">${esc(tk.createdAt)}</td>
+  <td class="dim" style="font-size:11px">${esc(AdminTemplates.fmtTs(tk.createdAt, lang))}</td>
   <td>
     <form method="post" action="/settings/git-integrations/delete" style="display:inline"
           onsubmit="return confirm(${jsLit(delConfirm)})">

@@ -43,7 +43,7 @@ object AuditTemplates {
                     else -> "dim"
                 }
                 """<tr>
-                  <td class="dim" style="font-family:ui-monospace,Menlo,monospace;font-size:11px;white-space:nowrap">${esc(r.ts)}</td>
+                  <td class="dim" style="font-family:ui-monospace,Menlo,monospace;font-size:11px;white-space:nowrap">${esc(AdminTemplates.fmtTs(r.ts, lang))}</td>
                   <td><code>${esc(r.action)}</code></td>
                   <td class="$resultCls">${esc(r.result)}</td>
                   <td>${esc(r.userId ?: "-")}</td>

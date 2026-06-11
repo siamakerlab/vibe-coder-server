@@ -480,7 +480,7 @@ internal object KeystoreTemplates {
             """<tr>
               <td><code>${esc(e.packageName)}</code></td>
               <td class="dim">${esc(files)}</td>
-              <td class="dim" style="font-size:12px">${esc(e.createdAt ?: "—")}</td>
+              <td class="dim" style="font-size:12px">${esc(AdminTemplates.fmtTs(e.createdAt, lang))}</td>
               <td>$applyCell</td>
               <td style="text-align:right">
                 <form method="post" action="/settings/keystores/${esc(e.packageName)}/delete"
