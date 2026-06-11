@@ -682,6 +682,13 @@ object WebProjectTemplates {
                 val iconSrc = if (appIcons[p.id] == true) "/projects/${p.id.encodeUrlSeg()}/app-icon" else "/static/icon.png"
                 val verBadge = versions[p.id]?.takeIf { it.isNotBlank() }
                     ?.let { """ <span class="proj-ver">v${esc(it)}</span>""" } ?: ""
+                // v1.128.1 — 패키지명 우측 프로젝트 타입 뱃지(Kotlin/Flutter). Flutter=브랜드 블루, Kotlin=퍼플.
+                val typeBadge = run {
+                    val isFlutter = p.projectType == "flutter"
+                    val label = if (isFlutter) "Flutter" else "Kotlin"
+                    val bg = if (isFlutter) "#02569B" else "#7F52FF"
+                    """<span style="margin-left:8px;font-size:10px;font-weight:600;padding:2px 7px;border-radius:4px;background:$bg;color:#fff;vertical-align:middle;white-space:nowrap">$label</span>"""
+                }
                 """<tr class="row-link proj-row" data-pid="${esc(p.id)}">
                     <td><a href="$href" style="$cellLinkStyle">$chip</a></td>
                     <td><a href="$href" style="$cellLinkStyle;display:flex;align-items:center;gap:10px">
@@ -689,7 +696,7 @@ object WebProjectTemplates {
                              onerror="this.onerror=null;this.src='/static/icon.png'">
                         <span style="min-width:0"><strong>${esc(p.name)}</strong>$verBadge<br><small class="dim">${esc(p.id)}</small></span>
                       </a></td>
-                    <td><a href="$href" style="$cellLinkStyle"><code>${esc(p.packageName)}</code></a></td>
+                    <td><a href="$href" style="$cellLinkStyle"><code>${esc(p.packageName)}</code></a>$typeBadge</td>
                     <td class="proj-handle" title="${esc(t("projects.reorder.handle"))}" aria-label="${esc(t("projects.reorder.handle"))}">☰</td>
                   </tr>"""
             }
