@@ -702,6 +702,9 @@ internal object ProjectTabsTemplate {
   #project-tabs-root .pt-auto-manage { font-size: 11px; color: var(--text-dim, #888); text-decoration: none; margin-left: auto; }
   #project-tabs-root .pt-auto-manage:hover { color: var(--accent, #6aa9ff); }
   #project-tabs-root .pt-auto-running { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  /* v1.131.1 — hidden 속성이 위 display:flex(구체성 1,1,0)에 밀려 무력화 → 진행 중이 아닌데도
+     점(pt-auto-dot)이 항상 깜빡이던 버그. [hidden] 규칙(1,2,0)으로 명시적으로 숨김. */
+  #project-tabs-root .pt-auto-running[hidden] { display: none; }
   #project-tabs-root .pt-auto-prog { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: #6aa9ff; min-width: 0; }
   #project-tabs-root .pt-auto-prog #pt-auto-progress { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #project-tabs-root .pt-auto-dot {
