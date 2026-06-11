@@ -693,6 +693,19 @@ $errHtml
         </label>
       </fieldset>
 
+      <!-- v1.127.0 — 프로젝트 타입(Kotlin/Flutter). empty/clone 공통. 기본 Kotlin. 둘 다 Android 빌드 타깃. -->
+      <fieldset style="border:1px solid #333;padding:10px;border-radius:6px;margin-top:10px">
+        <legend style="padding:0 6px;font-size:13px">${esc(t("projects.new.projectType"))}</legend>
+        <label style="display:flex;gap:8px;align-items:center;cursor:pointer">
+          <input type="radio" name="projectType" value="kotlin" checked>
+          <span><strong>${esc(t("projects.new.typeKotlin"))}</strong>${esc(t("projects.new.typeKotlinDesc"))}</span>
+        </label>
+        <label style="display:flex;gap:8px;align-items:center;cursor:pointer;margin-top:6px">
+          <input type="radio" name="projectType" value="flutter">
+          <span><strong>${esc(t("projects.new.typeFlutter"))}</strong>${esc(t("projects.new.typeFlutterDesc"))}</span>
+        </label>
+      </fieldset>
+
       <!-- clone path: cloneUrl 만 필수 + branch optional. 다른 정보는 자동 도출. -->
       <div id="clone-fields" style="display:none;margin-top:10px">
         <label>${esc(t("projects.new.cloneUrl"))}

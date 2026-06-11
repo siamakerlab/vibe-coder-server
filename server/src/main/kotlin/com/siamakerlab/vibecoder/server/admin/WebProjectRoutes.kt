@@ -208,6 +208,9 @@ fun Routing.webProjectRoutes(
         val cloneUrl = params["cloneUrl"]?.trim()?.ifBlank { null }
         val cloneBranch = params["cloneBranch"]?.trim()?.ifBlank { null }
         val templateId = params["templateId"]?.trim()?.ifBlank { null }
+        // v1.127.0 — 프로젝트 타입(kotlin/flutter). 기본 kotlin. clone 시에도 사용자 선택 우선
+        // (register 의 ProjectTypes.normalize 가 최종 검증). 폼 미전송 시 kotlin.
+        val projectType = params["projectType"]?.trim()?.ifBlank { null } ?: "kotlin"
         // v1.7.18 — clone path 의 "기존 폴더 덮어쓰기" 체크박스.
         val overwrite = params["overwrite"]?.let { it == "true" || it == "on" || it == "1" } == true
 
@@ -246,6 +249,7 @@ fun Routing.webProjectRoutes(
                     cloneBranch = cloneBranch,
                     templateId = templateId,
                     overwrite = overwrite,
+                    projectType = projectType,
                 )
             )
         }

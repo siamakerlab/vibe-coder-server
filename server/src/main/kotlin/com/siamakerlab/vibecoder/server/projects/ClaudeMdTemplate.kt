@@ -1,5 +1,7 @@
 package com.siamakerlab.vibecoder.server.projects
 
+import com.siamakerlab.vibecoder.shared.dto.ProjectTypes
+
 object ClaudeMdTemplate {
 
     /**
@@ -22,6 +24,8 @@ object ClaudeMdTemplate {
         val sourceType: String? = null,  // "empty" | "clone"
         val cloneUrl: String? = null,
         val cloneBranch: String? = null,
+        /** v1.127.0 — "kotlin" | "flutter". Flutter 면 Android 전용 Flutter body 를 생성. */
+        val projectType: String = ProjectTypes.KOTLIN,
     )
 
     fun render(info: ProjectInfo? = null): String {
@@ -33,6 +37,12 @@ object ClaudeMdTemplate {
             }
             else -> "- **Source**: empty scaffold (no upstream)"
         }
+        // v1.127.0 — projectType 으로 Kotlin / Flutter(Android 전용) body 분기.
+        return if (info.projectType == ProjectTypes.FLUTTER) renderFlutter(info, cloneLine)
+        else renderKotlin(info, cloneLine)
+    }
+
+    private fun renderKotlin(info: ProjectInfo, cloneLine: String): String {
         val infoBlock = """# CLAUDE.md — ${info.appName}
 
 ## Project Info (auto-populated on project creation)
@@ -53,6 +63,29 @@ $cloneLine
 """
         // CONTENT 의 첫 `# CLAUDE.md` 라인을 위 헤더로 치환. 본문 (Project Rules 이하) 은 그대로.
         val body = CONTENT.substringAfter("# CLAUDE.md — Vibe Coder Android Project Rules\n\n")
+        return infoBlock + body
+    }
+
+    // v1.127.0 — Flutter(Android 앱 빌드 전용) 프로젝트 body. applicationId 는 android/app
+    // 모듈의 defaultConfig.applicationId 이고, 플랫폼은 android 로만 제한(iOS/web/desktop 금지).
+    private fun renderFlutter(info: ProjectInfo, cloneLine: String): String {
+        val infoBlock = """# CLAUDE.md — ${info.appName}
+
+## Project Info (auto-populated on project creation)
+
+- **App name (display)**: ${info.appName}
+- **Project ID (workspace folder)**: `${info.projectId}`
+- **Android applicationId**: `${info.packageName}` (in `android/app/build.gradle(.kts)` defaultConfig.applicationId)
+- **Project type**: Flutter — **Android build target only**
+$cloneLine
+
+> Flutter (Dart) project, **Android only**. When scaffolding a new app run
+> `flutter create --platforms=android .` (never create ios/web/linux/windows/macos).
+> Set `android/app/build.gradle(.kts)` defaultConfig.applicationId = "${info.packageName}".
+> The applicationId is canonical — do not change it without explicit user request.
+
+"""
+        val body = CONTENT_FLUTTER.substringAfter("# CLAUDE.md — Vibe Coder Flutter (Android-only) Project Rules\n\n")
         return infoBlock + body
     }
 
@@ -101,6 +134,55 @@ CANNOT answer TUI prompts, menus, or stdin. Every turn is one-shot.
 - No AskUserQuestion / interactive menus / key-press affordances.
 - No stdin-waiting commands (`npm init` without `-y`, interactive `gh auth login`, `claude login`).
 - No watch/REPL/TUI or unbounded commands (`tail -f`, `adb logcat` without a stop condition). `gradle --console=plain` is fine.
+- Never pause to ask "should I continue?". Proceed with a sensible default, OR list questions at the END as (A)(B)(C) with a "권장/Recommended" default — the user replies in the NEXT prompt.
+- 한국어: 인터랙티브 입력 불가. 확인이 필요하면 응답 끝에 (A)(B)(C) + 권장안을 적고 멈추세요(다음 프롬프트에서 선택). 대기성 명령 금지, 한 턴은 자기완결.
+"""
+
+    // v1.127.0 — Flutter(Android 앱 빌드 전용) 프로젝트 기본 CLAUDE.md. iOS/web/desktop 은
+    // 의도적으로 금지(로드맵 §4 정책). 신규 flutter 프로젝트 생성 시 적용.
+    const val CONTENT_FLUTTER = """# CLAUDE.md — Vibe Coder Flutter (Android-only) Project Rules
+
+## Project Rules
+- Flutter (Dart) project managed through Vibe Coder. **Android build target ONLY.**
+- Prefer Material 3. Clean architecture; keep business logic out of widgets.
+- Avoid unnecessary packages. Preserve existing structure unless asked.
+- Run `flutter analyze` and fix obvious build errors before finishing a task.
+
+## Platform Restriction (CRITICAL — Android only)
+- This project ships an Android APK/AAB only. Do NOT add or build iOS / web / desktop.
+- `flutter create` MUST pass `--platforms=android`. Never create ios/web/linux/windows/macos folders.
+- Never run `flutter build ios|web|macos|windows|linux` or enable those platforms.
+- applicationId lives in `android/app/build.gradle(.kts)` defaultConfig.applicationId.
+
+## Build Rules
+- Build with `flutter build apk --debug` / `--release`, or `flutter build appbundle --release`.
+- The server build pipeline runs these; artifacts land in `build/app/outputs/flutter-apk/`
+  (APK) and `build/app/outputs/bundle/release/` (AAB).
+- Release signing: `android/key.properties` + `signingConfigs.release` in app/build.gradle
+  (flutter build does NOT use Gradle injected signing).
+
+## Installed Build Tools — USE THESE, DO NOT RE-DOWNLOAD
+Host provisioned these into bind-mounted volumes (via `/env-setup`). Use these exact paths.
+- Flutter SDK: `/home/vibe/.local/flutter` (on PATH as `flutter` / `dart`; Android-only precache).
+- Android SDK: `${'$'}ANDROID_HOME` (cmdline-tools, platform-tools/adb, platforms;android-35, build-tools).
+- JDK 17 (`java`) + Node 20 + Claude CLI (`claude`): bundled in image.
+- Flutter invokes `android/gradlew` internally — do not bypass it.
+
+### Cache policy (saves disk + minutes + tokens)
+- Do NOT delete `~/.gradle/caches/`, `${'$'}ANDROID_HOME/build-tools/*`, `${'$'}HOME/.pub-cache`,
+  or `/home/vibe/.local/flutter` — shared bind-mounted caches; re-downloading is expensive.
+- `flutter build` runs `pub get` automatically; run `flutter pub get` after editing `pubspec.yaml`.
+
+## Response Rules
+- Summarize modified files + key decisions; state whether build ran; if it failed, give likely cause + next step.
+
+## Non-Interactive Environment (CRITICAL)
+Claude runs as a non-interactive child process behind a web/mobile UI. The user
+CANNOT answer TUI prompts, menus, or stdin. Every turn is one-shot.
+- No AskUserQuestion / interactive menus / key-press affordances.
+- No stdin-waiting commands (interactive `gh auth login`, `claude login`, `flutter create` prompts).
+- No watch/REPL/TUI or unbounded commands (`tail -f`, `adb logcat` without a stop condition,
+  `flutter run` without an exit). One-shot `flutter build` is fine.
 - Never pause to ask "should I continue?". Proceed with a sensible default, OR list questions at the END as (A)(B)(C) with a "권장/Recommended" default — the user replies in the NEXT prompt.
 - 한국어: 인터랙티브 입력 불가. 확인이 필요하면 응답 끝에 (A)(B)(C) + 권장안을 적고 멈추세요(다음 프롬프트에서 선택). 대기성 명령 금지, 한 턴은 자기완결.
 """
