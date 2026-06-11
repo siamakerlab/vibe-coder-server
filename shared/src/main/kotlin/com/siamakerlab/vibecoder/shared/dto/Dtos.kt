@@ -128,6 +128,18 @@ data class SshKeyDto(
     val createdAt: String? = null,
 )
 
+/**
+ * v1.125.0 — 프로젝트 빌드 타입 상수 (SSOT). 둘 다 **Android 빌드 타깃** — 프레임워크 구분만.
+ * 서버/안드 공용. wire 는 String 으로 흐르고 unknown/null 값은 [normalize] 가 KOTLIN 으로 흡수
+ * (추후 오류 방지 안전망). enum 이 아니라 const String — 구버전 클라이언트가 새 값을 만나도 안전.
+ */
+object ProjectTypes {
+    const val KOTLIN = "kotlin"
+    const val FLUTTER = "flutter"
+    val ALL = setOf(KOTLIN, FLUTTER)
+    fun normalize(value: String?): String = if (value == FLUTTER) FLUTTER else KOTLIN
+}
+
 @Serializable
 data class ProjectDto(
     val id: String,
@@ -145,6 +157,11 @@ data class ProjectDto(
      * 안 떠있거나 미감지). additive default-value 라 wire 호환.
      */
     val busy: Boolean = false,
+    /**
+     * v1.125.0 — 프로젝트 빌드 타입. `kotlin`(Android-Kotlin) | `flutter`(Android-Flutter).
+     * 둘 다 Android 빌드 타깃. additive default → 구버전 클라이언트 wire 호환. [ProjectTypes].
+     */
+    val projectType: String = ProjectTypes.KOTLIN,
 )
 
 /**
@@ -206,6 +223,15 @@ data class RegisterProjectRequestDto(
      * field 추가 필요 (default false 라 backward-compatible).
      */
     val overwrite: Boolean = false,
+    /**
+     * v1.125.0 — 프로젝트 타입. `kotlin`(기본) | `flutter`. clone 시에도 사용자 선택 우선
+     * (기본 kotlin — pubspec.yaml 자동감지는 힌트만, P4). 서버가 [ProjectTypes.normalize] 로
+     * 검증(알 수 없으면 kotlin).
+     *
+     * **Wire change**: Android shared/ 의 RegisterProjectRequestDto + ProjectDto 에도 같은
+     * field 추가 필요 (additive default 라 backward-compatible).
+     */
+    val projectType: String = ProjectTypes.KOTLIN,
 )
 
 @Serializable

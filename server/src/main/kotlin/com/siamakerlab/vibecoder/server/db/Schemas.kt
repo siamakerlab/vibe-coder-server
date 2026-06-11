@@ -77,6 +77,10 @@ object Projects : Table("projects") {
     // v1.60.0 — 사용자 정의 정렬. 작을수록 위. 새 프로젝트는 (현재 min)-1 로 맨 위.
     // 기존 행은 default 0 → 정렬 tiebreak(updatedAt DESC)로 기존 순서 유지.
     val sortOrder = integer("sort_order").default(0)
+    // v1.125.0 — 프로젝트 빌드 타입 SSOT. "kotlin"(Android-Kotlin) | "flutter"(Android-Flutter).
+    // 둘 다 Android 빌드 타깃. default("kotlin") → 기존 행은 자동 kotlin 으로 마이그
+    // (createMissingTablesAndColumns 가 ADD COLUMN ... DEFAULT 'kotlin' NOT NULL 수행, sortOrder 선례).
+    val projectType = varchar("project_type", 16).default("kotlin")
     override val primaryKey = PrimaryKey(id)
 }
 
