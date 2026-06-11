@@ -188,11 +188,13 @@ internal object ProjectTabsTemplate {
          /claude/automation/* REST 직접 실행 + 활성 시 status 폴링. 진행 프레임은 콘솔 iframe 이
          vibe:automation postMessage 로 즉시 전달(project-tabs.js initAutomation). -->
     <div class="pt-rail-card pt-auto-card" data-card="automation">
-      <div class="pt-rail-h">🤖 ${esc(t("console.automation.title"))} <span id="pt-auto-badge" class="dim"></span></div>
+      <div class="pt-rail-h">🤖 ${esc(t("console.automation.title"))}
+        <span id="pt-auto-badge" class="pt-auto-badge" data-running="${esc(t("console.automation.running"))}"></span>
+      </div>
+      <!-- v1.131.0 — 예약 보내기(one-shot). 카드 상단 진입점 → 부모 레이어 모달(pt-sched-modal). -->
+      <button type="button" id="pt-sched-open" class="pt-auto-btn pt-sched-open">⏰ ${esc(t("console.schedule.open"))}</button>
       <div id="pt-auto-running" class="pt-auto-running" hidden>
         <div class="pt-auto-prog"><span class="pt-auto-dot"></span><span id="pt-auto-progress"></span></div>
-        <button type="button" id="pt-auto-stop" class="pt-auto-btn danger"
-                data-confirm="${esc(t("console.automation.confirmStop"))}">${esc(t("console.automation.stop"))}</button>
       </div>
       <div id="pt-auto-idle" class="pt-auto-idle">
         <div class="pt-auto-modes">
@@ -242,6 +244,43 @@ internal object ProjectTabsTemplate {
         <span class="pt-memo-spacer"></span>
         <button type="button" class="pt-memo-btn ghost" id="pt-memo-cancel">${esc(t("memos.close"))}</button>
         <button type="button" class="pt-memo-btn primary" id="pt-memo-save">${esc(t("memos.save"))}</button>
+      </div>
+    </div>
+  </div>
+  <!-- v1.131.0 — 프롬프트 예약 보내기(one-shot) 미니창. 부모 레이어(fixed) — iframe 무관. -->
+  <div class="pt-sched-modal" id="pt-sched-modal" hidden>
+    <div class="pt-sched-box" role="dialog" aria-modal="true">
+      <h2>${esc(t("console.schedule.title"))}</h2>
+      <p class="pt-sched-sub">${esc(t("console.schedule.hint"))}</p>
+      <textarea id="pt-sched-prompt" rows="3" placeholder="${esc(t("console.schedule.placeholder"))}"></textarea>
+      <div class="pt-sched-trig">
+        <label><input type="radio" name="pt-sched-trig" value="time" checked> ${esc(t("console.schedule.time"))}</label>
+        <label><input type="radio" name="pt-sched-trig" value="session_reset"> ${esc(t("console.schedule.sessionReset"))}</label>
+        <label><input type="radio" name="pt-sched-trig" value="weekly_reset"> ${esc(t("console.schedule.weeklyReset"))}</label>
+      </div>
+      <div id="pt-sched-time" class="pt-sched-time">
+        <label><input type="radio" name="pt-sched-when" value="in" checked> ${esc(t("console.schedule.relative"))}</label>
+        <span id="pt-sched-in" class="pt-sched-in">
+          <input type="number" id="pt-sched-amt" min="1" max="10000" value="30">
+          <select id="pt-sched-unit">
+            <option value="minutes">${esc(t("console.schedule.minutes"))}</option>
+            <option value="hours">${esc(t("console.schedule.hours"))}</option>
+          </select>
+        </span>
+        <label><input type="radio" name="pt-sched-when" value="at"> ${esc(t("console.schedule.exact"))}</label>
+        <input type="datetime-local" id="pt-sched-at" hidden>
+      </div>
+      <p id="pt-sched-reset-hint" class="pt-sched-hint" hidden>${esc(t("console.schedule.resetHint"))}</p>
+      <div class="pt-sched-err" id="pt-sched-err"></div>
+      <div class="pt-rail-h pt-sched-listh">${esc(t("console.schedule.list"))}</div>
+      <div id="pt-sched-list" class="pt-sched-list"
+           data-empty="${esc(t("console.schedule.empty"))}"
+           data-cancel="${esc(t("console.schedule.cancel"))}"
+           data-confirm="${esc(t("console.schedule.confirmCancel"))}"></div>
+      <div class="pt-sched-foot">
+        <button type="button" class="pt-memo-btn ghost" id="pt-sched-close">${esc(t("console.schedule.close"))}</button>
+        <span class="pt-memo-spacer"></span>
+        <button type="button" class="pt-memo-btn primary" id="pt-sched-add">${esc(t("console.schedule.add"))}</button>
       </div>
     </div>
   </div>"""
@@ -671,6 +710,10 @@ internal object ProjectTabsTemplate {
   }
   /* vibe-busy-pulse 는 콘솔 iframe(WebProjectTemplates)에만 정의돼 부모 스코프엔 없으므로 여기서도 정의. */
   @keyframes vibe-busy-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+  /* v1.131.0 — 자동화 사용중 인디케이터(badge) + 예약 보내기 진입 버튼. */
+  #project-tabs-root .pt-auto-badge { font-size: 11px; color: var(--text-dim, #888); }
+  #project-tabs-root .pt-auto-badge.on { color: #34d399; font-weight: 600; }
+  #project-tabs-root .pt-sched-open { align-self: flex-start; }
   /* v1.111.0 — Todo 요약 + 백그라운드 작업 카드(콘솔에서 이동, 컨텍스트 하단). */
   #project-tabs-root .pt-todo-card, #project-tabs-root .pt-bg-card { display: flex; flex-direction: column; flex: 0 0 auto; }
   #project-tabs-root .pt-todo-list { list-style: none; margin: 0; padding: 0; max-height: 30vh; overflow-y: auto; }
@@ -743,6 +786,60 @@ internal object ProjectTabsTemplate {
   #project-tabs-root .pt-memo-btn.danger { background: transparent; color: #ff9e9e; border: 1px solid #3a2424; }
   #project-tabs-root .pt-memo-btn.danger:hover { background: #2c1a1a; }
   #project-tabs-root .pt-memo-err { color: #ff6b6b; font-size: 11px; min-height: 13px; }
+  /* v1.131.0 — 예약 보내기 모달 (메모 모달과 동일 부모 레이어 패턴, pt-memo-btn 재사용). */
+  #project-tabs-root .pt-sched-modal {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 400;
+    display: flex; align-items: center; justify-content: center; padding: 16px;
+  }
+  #project-tabs-root .pt-sched-modal[hidden] { display: none; }
+  #project-tabs-root .pt-sched-box {
+    background: #131722; border: 1px solid #2a3145; border-radius: 10px; padding: 18px;
+    width: 100%; max-width: 460px; max-height: 85vh; overflow-y: auto;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.5); display: flex; flex-direction: column; gap: 10px;
+  }
+  #project-tabs-root .pt-sched-box h2 { margin: 0; font-size: 14px; }
+  #project-tabs-root .pt-sched-sub { margin: 0; font-size: 11px; color: var(--text-dim, #888); line-height: 1.45; }
+  #project-tabs-root .pt-sched-box textarea {
+    background: #0c0f17; border: 1px solid #2a3145; border-radius: 6px; color: var(--text, #ddd);
+    font: inherit; font-size: 12px; padding: 8px 10px; box-sizing: border-box; width: 100%;
+    resize: vertical; min-height: 60px; line-height: 1.45;
+  }
+  #project-tabs-root .pt-sched-trig { display: flex; flex-direction: column; gap: 5px; }
+  #project-tabs-root .pt-sched-trig label,
+  #project-tabs-root .pt-sched-time label {
+    display: inline-flex; align-items: center; gap: 5px; margin: 0; font-size: 12px; color: var(--text, #ddd); cursor: pointer;
+  }
+  #project-tabs-root .pt-sched-time { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+  #project-tabs-root .pt-sched-in { display: inline-flex; gap: 5px; align-items: center; }
+  #project-tabs-root .pt-sched-time input[type="number"] { width: 64px; }
+  #project-tabs-root .pt-sched-time input, #project-tabs-root .pt-sched-time select {
+    background: #0c0f17; border: 1px solid #2a3145; border-radius: 5px; color: var(--text, #ddd);
+    font: inherit; font-size: 12px; padding: 4px 6px;
+  }
+  #project-tabs-root .pt-sched-hint { margin: 0; font-size: 11px; color: #8b96a8; }
+  #project-tabs-root .pt-sched-err { color: #ff6b6b; font-size: 11px; }
+  #project-tabs-root .pt-sched-err:empty { display: none; }
+  #project-tabs-root .pt-sched-listh { margin-top: 4px; }
+  #project-tabs-root .pt-sched-list { display: flex; flex-direction: column; gap: 4px; max-height: 30vh; overflow-y: auto; }
+  #project-tabs-root .pt-sched-item {
+    display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px;
+    background: rgba(255,255,255,0.03); font-size: 12px;
+  }
+  #project-tabs-root .pt-sched-item .si-icon { flex-shrink: 0; width: 16px; text-align: center; }
+  #project-tabs-root .pt-sched-item .si-main { flex: 1; min-width: 0; overflow: hidden; }
+  #project-tabs-root .pt-sched-item .si-label { color: var(--text, #ddd); }
+  #project-tabs-root .pt-sched-item .si-prompt { color: var(--text-dim, #888); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #project-tabs-root .pt-sched-item[data-status="pending"] .si-icon { color: #6aa9ff; }
+  #project-tabs-root .pt-sched-item[data-status="sent"] .si-icon { color: #69db7c; }
+  #project-tabs-root .pt-sched-item[data-status="failed"] .si-icon { color: #ff8787; }
+  #project-tabs-root .pt-sched-item[data-status="sent"],
+  #project-tabs-root .pt-sched-item[data-status="cancelled"] { opacity: 0.6; }
+  #project-tabs-root .pt-sched-cancel {
+    flex-shrink: 0; background: transparent; border: 1px solid #3a2424; color: #ff9e9e;
+    border-radius: 5px; font-size: 11px; padding: 3px 7px; cursor: pointer;
+  }
+  #project-tabs-root .pt-sched-empty { color: #5a6175; font-size: 12px; padding: 4px 2px; }
+  #project-tabs-root .pt-sched-foot { display: flex; gap: 8px; align-items: center; margin-top: 2px; }
   /* rail 접기/펼치기 토글 — rail 좌측 가장자리 손잡이. */
   /* v1.50.1 — 토글을 rail 세로 중앙에 배치(이전 top:8px 는 콘솔 헤더의 "새 세션" 버튼과
      겹쳐 오클릭 위험). transform 으로 세로 중앙 정렬. */
@@ -819,7 +916,7 @@ $railHtml
   </div>
 </div>
 
-<script src="/static/project-tabs.js?v=1.103.0" defer></script>
+<script src="/static/project-tabs.js?v=1.131.0" defer></script>
 <!-- v1.56.0 — 콤보박스 상태칩 실시간 동기. 목록 페이지와 동일하게 `/ws/projects`
      (단방향) 의 ProjectBusyChanged 로 responding↔ready patch. -->
 <script>

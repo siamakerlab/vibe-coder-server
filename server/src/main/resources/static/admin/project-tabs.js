@@ -397,7 +397,6 @@
         var idleEl = document.getElementById('pt-auto-idle');
         var progEl = document.getElementById('pt-auto-progress');
         var startBtn = document.getElementById('pt-auto-start');
-        var stopBtn = document.getElementById('pt-auto-stop');
         var presetSel = document.getElementById('pt-auto-preset');
         var presetStartBtn = document.getElementById('pt-auto-preset-start');
         var promptsEl = document.getElementById('pt-auto-prompts');
@@ -418,15 +417,18 @@
         }
         function render(st) {
           if (st && st.active) {
+            // v1.131.0 — 인디케이터(badge)는 "사용중" 상태 표시(● 진행 중). 진행률은 running 영역.
             runningEl.hidden = false;
             idleEl.style.display = 'none';
             progEl.textContent = (st.name ? st.name + ' · ' : '') + (st.sent || 0) + '/' + (st.total || 0);
-            badge.textContent = '· ' + (st.sent || 0) + '/' + (st.total || 0);
+            badge.textContent = '● ' + (badge.getAttribute('data-running') || '');
+            badge.classList.add('on');
             if (!pollTimer) pollTimer = setInterval(poll, 3000);   // 폴백(즉시 갱신은 postMessage)
           } else {
             runningEl.hidden = true;
             idleEl.style.display = '';
-            badge.textContent = (st && st.status) ? '· ' + st.status : '';
+            badge.textContent = '';
+            badge.classList.remove('on');
             if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
           }
         }
@@ -463,11 +465,96 @@
           if (!presetSel.value) return;
           doStart({ presetId: presetSel.value });
         });
-        if (stopBtn) stopBtn.addEventListener('click', function () {
-          var msg = stopBtn.getAttribute('data-confirm') || 'Stop?';
-          if (!window.confirm(msg)) return;
-          api('POST', base + 'stop').then(function (r) { return r.ok ? r.json() : null; })
-            .then(function (st) { if (st) render(st); }).catch(function () {});
+      })();
+      // v1.131.0 — 프롬프트 예약 보내기(one-shot). 자동화 카드 상단 "⏰ 예약 보내기" → 부모 레이어 모달.
+      // 시각(N분/시간 뒤·정확한 시각) / 세션·주간 한도 해제 트리거를 JSON API 로 등록/취소.
+      (function initSchedule() {
+        var openBtn = document.getElementById('pt-sched-open');
+        var modal = document.getElementById('pt-sched-modal');
+        if (!openBtn || !modal) return;
+        var promptEl = document.getElementById('pt-sched-prompt');
+        var timeBox = document.getElementById('pt-sched-time');
+        var inBox = document.getElementById('pt-sched-in');
+        var atEl = document.getElementById('pt-sched-at');
+        var amtEl = document.getElementById('pt-sched-amt');
+        var unitEl = document.getElementById('pt-sched-unit');
+        var resetHint = document.getElementById('pt-sched-reset-hint');
+        var errEl = document.getElementById('pt-sched-err');
+        var listEl = document.getElementById('pt-sched-list');
+        var addBtn = document.getElementById('pt-sched-add');
+        var closeBtn = document.getElementById('pt-sched-close');
+        var base = '/api/projects/' + encodeURIComponent(projectId) + '/claude/schedule';
+
+        function api(method, url, body) {
+          return fetch(url, {
+            method: method, credentials: 'same-origin',
+            headers: body ? { 'Content-Type': 'application/json' } : undefined,
+            body: body ? JSON.stringify(body) : undefined,
+          });
+        }
+        function trig() { return (modal.querySelector('input[name=pt-sched-trig]:checked') || {}).value || 'time'; }
+        function whenMode() { return (modal.querySelector('input[name=pt-sched-when]:checked') || {}).value || 'in'; }
+        function syncTrig() { var isTime = trig() === 'time'; timeBox.style.display = isTime ? 'flex' : 'none'; resetHint.hidden = isTime; }
+        function syncWhen() { var m = whenMode(); inBox.style.display = (m === 'in') ? 'inline-flex' : 'none'; atEl.hidden = (m !== 'at'); }
+        Array.prototype.forEach.call(modal.querySelectorAll('input[name=pt-sched-trig]'), function (r) { r.addEventListener('change', syncTrig); });
+        Array.prototype.forEach.call(modal.querySelectorAll('input[name=pt-sched-when]'), function (r) { r.addEventListener('change', syncWhen); });
+
+        function esc(s) { var d = document.createElement('div'); d.textContent = (s == null) ? '' : s; return d.innerHTML; }
+        function icon(s) { return s === 'pending' ? '⏳' : s === 'sent' ? '✓' : s === 'failed' ? '⚠' : '■'; }
+        function renderList(items) {
+          if (!items || !items.length) { listEl.innerHTML = '<div class="pt-sched-empty">' + esc(listEl.getAttribute('data-empty')) + '</div>'; return; }
+          var cancelLbl = listEl.getAttribute('data-cancel') || 'Cancel';
+          listEl.innerHTML = '';
+          items.forEach(function (it) {
+            var row = document.createElement('div');
+            row.className = 'pt-sched-item'; row.setAttribute('data-status', it.status);
+            var firstLine = (it.prompt || '').split('\n')[0];
+            var cancelBtn = (it.status === 'pending')
+              ? '<button type="button" class="pt-sched-cancel" data-id="' + esc(it.id) + '">' + esc(cancelLbl) + '</button>' : '';
+            row.innerHTML =
+              '<span class="si-icon">' + icon(it.status) + '</span>' +
+              '<span class="si-main"><div class="si-label">' + esc(it.triggerLabel || it.triggerType) + '</div>' +
+              '<div class="si-prompt">' + esc(firstLine) + '</div></span>' + cancelBtn;
+            listEl.appendChild(row);
+          });
+        }
+        function loadList() {
+          api('GET', base).then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (d) { if (d) renderList(d.schedules || []); }).catch(function () {});
+        }
+        listEl.addEventListener('click', function (ev) {
+          var btn = ev.target.closest ? ev.target.closest('.pt-sched-cancel') : null;
+          if (!btn) return;
+          if (!window.confirm(listEl.getAttribute('data-confirm') || 'Cancel?')) return;
+          api('DELETE', base + '/' + encodeURIComponent(btn.getAttribute('data-id'))).then(loadList).catch(function () {});
+        });
+
+        function openModal() { modal.hidden = false; errEl.textContent = ''; syncTrig(); syncWhen(); loadList(); promptEl.focus(); }
+        function closeModal() { modal.hidden = true; }
+        openBtn.addEventListener('click', openModal);
+        closeBtn.addEventListener('click', closeModal);
+        modal.addEventListener('click', function (ev) { if (ev.target === modal) closeModal(); });
+
+        addBtn.addEventListener('click', function () {
+          var prompt = (promptEl.value || '').trim();
+          if (!prompt) { promptEl.focus(); return; }
+          var t = trig();
+          var body = { prompt: prompt, triggerType: t };
+          if (t === 'time') {
+            if (whenMode() === 'at') {
+              if (!atEl.value) { atEl.focus(); return; }
+              body.atEpochMs = new Date(atEl.value).getTime();
+            } else {
+              var amt = parseInt(amtEl.value, 10) || 0;
+              if (amt <= 0) { amtEl.focus(); return; }
+              body.delayMinutes = (unitEl.value === 'hours') ? amt * 60 : amt;
+            }
+          }
+          errEl.textContent = '';
+          api('POST', base, body).then(function (r) {
+            if (!r.ok) { return r.text().then(function (m) { errEl.textContent = r.status + ': ' + m; }); }
+            promptEl.value = ''; loadList();
+          }).catch(function (e) { errEl.textContent = String(e); });
         });
       })();
       // v1.111.0 — Todo 요약 + 백그라운드 작업 카드(콘솔에서 이동). 콘솔이 보낸 스냅샷 HTML 을

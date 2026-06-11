@@ -165,7 +165,6 @@ fun Routing.promptAutomationRoutes(
                 presets = presetStore.listAll(),
                 status = manager.statusOf(id),
                 runs = runRepo.listForProject(id, limit = 15),
-                schedules = schedRepo.listForProject(id, limit = 30).map { it.toDto() },
                 ok = call.request.queryParameters["ok"],
                 err = call.request.queryParameters["err"],
                 csrf = sess.csrf, lang = sess.language,
@@ -220,51 +219,6 @@ fun Routing.promptAutomationRoutes(
         requireProjectAccessOrThrow(sess, projects, id)
         manager.stop(id)
         call.respondRedirect("/projects/$id/automation/prompts?ok=${enc("자동화를 중지했습니다.")}")
-    }
-
-    // ── 예약 전송 SSR ─────────────────────────────────────────────────
-    post("/projects/{id}/automation/prompts/schedule") {
-        val sess = requireSessionOrRedirect(authDeps) ?: return@post
-        if (!requireWriteAccessOrRedirect(sess)) return@post
-        val form = requireCsrf()
-        val id = call.parameters["id"]!!
-        requireProjectAccessOrThrow(sess, projects, id)
-        runCatching {
-            val prompt = form["prompt"].orEmpty()
-            val triggerType = ScheduledPromptTriggers.normalize(form["triggerType"])
-            // time 트리거 입력: when=in(상대) | at(절대). in 이면 분 단위 환산.
-            val whenMode = form["whenMode"]?.trim().orEmpty()
-            val atEpochMs = when {
-                triggerType != ScheduledPromptTriggers.TIME -> null
-                whenMode == "at" -> parseLocalDateTime(form["atLocal"])
-                else -> null
-            }
-            val delayMinutes = if (triggerType == ScheduledPromptTriggers.TIME && whenMode != "at") {
-                val unit = form["delayUnit"]?.trim().orEmpty()
-                val amount = form["delayAmount"]?.trim()?.toLongOrNull() ?: 0L
-                if (unit == "hours") amount * 60 else amount
-            } else null
-            createSchedule(
-                id,
-                ScheduleSendRequestDto(prompt, triggerType, atEpochMs, delayMinutes),
-                schedRepo, statusService, clock, lang = sess.language,
-            )
-        }.onFailure {
-            val msg = (it as? ApiException)?.message ?: it.message ?: "invalid"
-            call.respondRedirect("/projects/$id/automation/prompts?err=${enc(msg)}")
-            return@post
-        }
-        call.respondRedirect("/projects/$id/automation/prompts?ok=${enc("예약을 등록했습니다.")}")
-    }
-
-    post("/projects/{id}/automation/prompts/schedule/{scheduleId}/cancel") {
-        val sess = requireSessionOrRedirect(authDeps) ?: return@post
-        if (!requireWriteAccessOrRedirect(sess)) return@post
-        requireCsrf()
-        val id = call.parameters["id"]!!
-        requireProjectAccessOrThrow(sess, projects, id)
-        schedRepo.cancel(call.parameters["scheduleId"].orEmpty(), id)
-        call.respondRedirect("/projects/$id/automation/prompts?ok=${enc("예약을 취소했습니다.")}")
     }
 
     post("/projects/{id}/automation/prompts/presets") {
@@ -381,16 +335,6 @@ private fun delayLabel(minutes: Long): String = when {
     minutes < 60 -> "${minutes}분 뒤"
     minutes % 60 == 0L -> "${minutes / 60}시간 뒤"
     else -> "${minutes / 60}시간 ${minutes % 60}분 뒤"
-}
-
-/** datetime-local ("yyyy-MM-dd'T'HH:mm") → epoch millis (서버 기본 시간대). 실패 시 null. */
-private fun parseLocalDateTime(s: String?): Long? {
-    val t = s?.trim()?.ifBlank { null } ?: return null
-    return runCatching {
-        java.time.LocalDateTime.parse(t)
-            .atZone(java.time.ZoneId.systemDefault())
-            .toInstant().toEpochMilli()
-    }.getOrNull()
 }
 
 internal fun ScheduledPromptRow.toDto() = ScheduledPromptDto(
