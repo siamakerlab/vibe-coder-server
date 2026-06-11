@@ -472,7 +472,7 @@ object WebProjectTemplates {
 <div class="card" style="margin-bottom:16px">
   <h2>${esc(t("build.compare.title"))} $scopeHtml $toggleHtml</h2>
   <p class="dim" style="margin:0 0 8px;font-size:12px">
-    ${com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "build.compare.desc", esc(cmp.previous.id.take(12)), esc(cmp.previous.createdAt))}
+    ${com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "build.compare.desc", esc(cmp.previous.id.take(12)), esc(AdminTemplates.fmtTs(cmp.previous.createdAt, lang)))}
   </p>
   $branchInfoHtml
   <table class="table" style="width:100%">
@@ -1010,7 +1010,7 @@ $errHtml
                 """<tr>
                     <td><a href="/projects/${esc(p.id)}/builds/${esc(b.id)}"><code>${esc(b.id.take(12))}</code></a></td>
                     <td>${esc(b.status.name)}</td>
-                    <td>${esc(fmtInstant(b.startedAt))}</td>
+                    <td>${esc(fmtInstant(b.startedAt, lang))}</td>
                   </tr>"""
             }
         }
@@ -1037,7 +1037,7 @@ $errHtml
       <dt>${esc(t("projects.detail.module"))}</dt><dd>${esc(p.moduleName)}</dd>
       <dt>${esc(t("projects.detail.debugTask"))}</dt><dd><code>${esc(p.debugTask)}</code></dd>
       <dt>${esc(t("projects.lastBuild"))}</dt><dd>${esc(p.lastBuildStatus ?: "-")}</dd>
-      <dt>${esc(t("projects.detail.updated"))}</dt><dd>${esc(p.updatedAt)}</dd>
+      <dt>${esc(t("projects.detail.updated"))}</dt><dd>${esc(AdminTemplates.fmtTs(p.updatedAt, lang))}</dd>
     </dl>
   </div>
 
@@ -2869,7 +2869,7 @@ $quickBarHtml
                 """<tr>
                     <td><a href="/projects/${esc(p.id)}/builds/${esc(b.id)}"><code>${esc(b.id.take(12))}</code></a></td>
                     <td><span class="$statusCls">${esc(b.status.name)}</span></td>
-                    <td>${esc(fmtInstant(b.startedAt))}</td>
+                    <td>${esc(fmtInstant(b.startedAt, lang))}</td>
                     <td>${esc(fmtBuildDuration(b.startedAt, b.finishedAt))}</td>
                     <td>$downloadCell</td>
                   </tr>"""
@@ -3163,17 +3163,11 @@ ${renderBuildHistoryChart(builds, artifactsByBuild, lang)}
     }
 
     /**
-     * v1.107.1 — 빌드 히스토리 시작 시간을 `yyyy-MM-dd HH:mm:ss`(24시간, 컨테이너 TZ=Asia/Seoul)
-     * 로 단순화. 파싱 실패 시 원문 그대로.
+     * v1.128.2 — 빌드 히스토리 시작 시간을 lang-aware 표시로(ko=yyyy/MM/dd, en=MM/dd/yyyy,
+     * 둘 다 KST HH:mm:ss). 공통 헬퍼 AdminTemplates.fmtTs 로 위임. 파싱 실패 시 원문 그대로.
      */
-    private val buildTsFormatter: java.time.format.DateTimeFormatter =
-        java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
-            .withZone(java.time.ZoneId.systemDefault())
-
-    private fun fmtInstant(iso: String?): String {
-        if (iso.isNullOrBlank()) return "-"
-        return runCatching { buildTsFormatter.format(java.time.Instant.parse(iso)) }.getOrDefault(iso)
-    }
+    private fun fmtInstant(iso: String?, lang: String): String =
+        AdminTemplates.fmtTs(iso, lang)
 
     /**
      * v1.107.1 — 빌드 소요 시간을 초 단위로 표시(예: 5분 → "300s"). 미완료/파싱 실패 시 "-".
@@ -3269,8 +3263,8 @@ ${renderBuildHistoryChart(builds, artifactsByBuild, lang)}
     </div>
   </div>
   <dl style="margin-top:12px;display:grid;grid-template-columns:max-content 1fr;gap:6px 12px">
-    <dt class="dim">${esc(t("build.detail.startedAt"))}</dt><dd>${esc(b.startedAt)}</dd>
-    <dt class="dim">${esc(t("build.detail.finishedAt"))}</dt><dd>${esc(b.finishedAt ?: "-")}</dd>
+    <dt class="dim">${esc(t("build.detail.startedAt"))}</dt><dd>${esc(AdminTemplates.fmtTs(b.startedAt, lang))}</dd>
+    <dt class="dim">${esc(t("build.detail.finishedAt"))}</dt><dd>${esc(AdminTemplates.fmtTs(b.finishedAt, lang))}</dd>
     ${b.gitBranch?.let { """<dt class="dim">${esc(t("build.detail.gitBranch"))}</dt><dd><code>${esc(it)}</code></dd>""" } ?: ""}
     ${b.gitSha?.let { """<dt class="dim">${esc(t("build.detail.gitSha"))}</dt><dd><code title="${esc(it)}">${esc(it.take(12))}</code></dd>""" } ?: ""}
   </dl>
@@ -3391,7 +3385,7 @@ ${if (attachWs) """
                     <td>${esc(f.originalName)}</td>
                     <td><span class="dim">${esc(f.mimeType ?: "-")}</span></td>
                     <td>${sizeKb}KB</td>
-                    <td>${esc(f.createdAt)}</td>
+                    <td>${esc(AdminTemplates.fmtTs(f.createdAt, lang))}</td>
                     <td style="display:flex;gap:6px">
                       <a href="/projects/${esc(p.id)}/files/${esc(f.id)}/download" class="chip chip-link">${esc(t("files.action.download"))}</a>
                       <form method="post" action="/projects/${esc(p.id)}/files/${esc(f.id)}/delete" style="display:inline"

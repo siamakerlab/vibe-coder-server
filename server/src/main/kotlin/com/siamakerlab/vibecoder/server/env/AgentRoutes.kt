@@ -133,7 +133,7 @@ private object AgentTemplates {
         } else {
             agents.joinToString("") { a ->
                 val sizeKb = (a.sizeBytes + 512L) / 1024L
-                val ts = java.time.Instant.ofEpochMilli(a.updatedAtMs).toString()
+                val ts = AdminTemplates.fmtTsEpochMs(a.updatedAtMs, lang)
                 """<tr>
                   <td><a href="/agents/${esc(a.name)}/edit"><code>${esc(a.name)}</code></a></td>
                   <td>${sizeKb}KB</td>

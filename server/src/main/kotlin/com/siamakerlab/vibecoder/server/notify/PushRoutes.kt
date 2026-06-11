@@ -153,7 +153,7 @@ private fun renderPushSettings(
         <tr>
           <td>${if (mine) "<strong>(나)</strong>" else "다른 사용자"}
             <div class="dim" style="font-size:11px;margin-top:2px">${esc(ua)}</div></td>
-          <td class="dim" style="font-size:11px">${esc(row.createdAt)}</td>
+          <td class="dim" style="font-size:11px">${esc(AdminTemplates.fmtTs(row.createdAt, lang))}</td>
           <td class="dim" style="font-size:11px;max-width:280px;word-break:break-all">${esc(row.endpoint.take(80))}…</td>
           <td>
             <form method="post" action="/settings/push/delete/${esc(row.id)}" style="display:inline"

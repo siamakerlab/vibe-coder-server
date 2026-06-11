@@ -142,7 +142,7 @@ private fun renderPage(
                 }
             }
             """<tr>
-              <td class="dim" style="font-family:ui-monospace,Menlo,monospace;font-size:11px;white-space:nowrap">${esc(r.ts)}</td>
+              <td class="dim" style="font-family:ui-monospace,Menlo,monospace;font-size:11px;white-space:nowrap">${esc(AdminTemplates.fmtTs(r.ts, lang))}</td>
               <td><a href="$href"><code>${esc(r.projectId.take(20))}</code></a><br><span class="$roleCls" style="font-size:11px;text-transform:uppercase">${esc(r.role)}</span>${if (r.toolName != null) """<small class="dim" style="font-size:11px"> · ${esc(r.toolName)}</small>""" else ""}</td>
               <td><pre style="margin:0;font-size:12px;white-space:pre-wrap;word-break:break-word;max-width:900px">${highlightMatch(excerpted, q ?: "")}</pre></td>
             </tr>"""

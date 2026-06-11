@@ -39,7 +39,7 @@ object PromptTemplates {
                     """<details style="margin:6px 0;border:1px solid #2a2a2a;border-radius:6px;padding:8px">
                   <summary style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px">
                     <strong>${esc(t.title)}</strong>
-                    <span class="dim" style="font-size:11px">${esc(t.updatedAt)}</span>
+                    <span class="dim" style="font-size:11px">${esc(AdminTemplates.fmtTs(t.updatedAt, lang))}</span>
                   </summary>
                   <pre class="diff-block" style="margin:8px 0;max-height:200px;overflow:auto">${esc(t.body)}</pre>
                   <div style="display:flex;gap:6px;flex-wrap:wrap">

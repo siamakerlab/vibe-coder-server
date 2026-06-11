@@ -26,6 +26,24 @@ object AdminTemplates {
     private fun jsLitString(s: String): String =
         "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
+    private val KO_TS = java.time.format.DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss")
+        .withZone(java.time.ZoneId.systemDefault())
+    private val EN_TS = java.time.format.DateTimeFormatter.ofPattern("MM/dd/yyyy HH:mm:ss")
+        .withZone(java.time.ZoneId.systemDefault())
+
+    /** v1.128.2 — ISO Instant 문자열 → 사람친화 표시. ko=yyyy/MM/dd, en=MM/dd/yyyy, 둘 다 KST HH:mm:ss(초까지, 마이크로초/T/Z 제거). null/blank→"-", 파싱실패→원본. */
+    internal fun fmtTs(iso: String?, lang: String): String {
+        if (iso.isNullOrBlank()) return "-"
+        val fmt = if (lang == "ko") KO_TS else EN_TS
+        return runCatching { fmt.format(java.time.Instant.parse(iso)) }.getOrDefault(iso)
+    }
+
+    /** epochMilli 버전(백업 등). */
+    internal fun fmtTsEpochMs(ms: Long, lang: String): String {
+        val fmt = if (lang == "ko") KO_TS else EN_TS
+        return runCatching { fmt.format(java.time.Instant.ofEpochMilli(ms)) }.getOrDefault(ms.toString())
+    }
+
     /**
      * v1.76.0 — 일관된 "뒤로가기" 아이콘 버튼. arrow-left(Lucide) SVG + 라벨, `.back-btn` 스타일.
      * 프로젝트/설정 통합 탭 sub-page 의 복귀 링크 공통 컴포넌트(이전엔 "← " 텍스트 + chip 으로
@@ -845,7 +863,7 @@ $gitIdentityBanner
   <div class="card">
     <h2>${esc(t("dashboard.claude.title"))}</h2>
     <dl>
-      <dt>${esc(t("dashboard.claude.lastPolled"))}</dt><dd>${esc(snapshot.updatedAt)}</dd>
+      <dt>${esc(t("dashboard.claude.lastPolled"))}</dt><dd>${esc(fmtTs(snapshot.updatedAt, lang))}</dd>
       <dt>${esc(t("dashboard.usageQuotaLine"))}</dt><dd><code>${esc(snapshot.quotaRemaining ?: t("dashboard.usageParseFailed"))}</code></dd>
     </dl>
     <p class="hint">${t("dashboard.claude.quotaParseFail")}</p>
@@ -1071,8 +1089,8 @@ $errHtml
             """<tr>
                 <td>${esc(d.name)}</td>
                 <td>${esc(d.channel)}</td>
-                <td>${esc(d.createdAt)}</td>
-                <td>${esc(d.lastSeenAt ?: "-")}</td>
+                <td>${esc(fmtTs(d.createdAt, lang))}</td>
+                <td>${esc(fmtTs(d.lastSeenAt, lang))}</td>
                 <td>$action</td>
               </tr>"""
         }
