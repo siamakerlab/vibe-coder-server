@@ -681,7 +681,11 @@ object WebProjectTemplates {
                 // v1.64.0 — 앱 아이콘(없으면 placeholder vibe-coder 아이콘) + 이름 우측 버전.
                 val iconSrc = if (appIcons[p.id] == true) "/projects/${p.id.encodeUrlSeg()}/app-icon" else "/static/icon.png"
                 val verBadge = versions[p.id]?.takeIf { it.isNotBlank() }
-                    ?.let { """ <span class="proj-ver">v${esc(it)}</span>""" } ?: ""
+                    ?.let { ver ->
+                        // v1.128.7 — versionName 에 이미 v/V 접두가 있으면 중복 'v' 를 붙이지 않음.
+                        val label = if (ver.startsWith("v") || ver.startsWith("V")) ver else "v$ver"
+                        """ <span class="proj-ver">${esc(label)}</span>"""
+                    } ?: ""
                 // v1.128.1 — 패키지명 우측 프로젝트 타입 뱃지(Kotlin/Flutter). Flutter=브랜드 블루, Kotlin=퍼플.
                 val typeBadge = run {
                     val isFlutter = p.projectType == "flutter"
