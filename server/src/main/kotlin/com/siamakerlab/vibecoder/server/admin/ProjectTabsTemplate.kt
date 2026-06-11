@@ -249,7 +249,10 @@ internal object ProjectTabsTemplate {
         // v1.49.0 — 상단 프로젝트명을 <details> 콤보박스로: 클릭 → 다른 프로젝트로 즉시 이동.
         // 현재 프로젝트는 active 표시. 항목이 많으면 상단 필터 input 으로 즉시 검색(project-tabs.js).
         // v1.60.0 — 사용자 정의 순서(sort_order)를 그대로 — allProjects 는 이미 그 순서.
+        // v1.128.3 — 유휴 아닌 busy(responding/waiting) 프로젝트를 상단으로(같은 그룹 내 sort_order
+        // 유지 — stable sort). JS patch 가 실시간 상태 변경 시 busy 전환 항목을 추가로 최상단 이동.
         val switcherItems = allProjects
+            .sortedByDescending { ProjectState.fromWire(projectStatuses[it.id])?.busy == true }
             .joinToString("") { pr ->
                 val active = pr.id == project.id
                 // v1.56.0 — 좌측 상태칩 (목록 페이지와 동일 .pstat / data-state, /ws/projects 로 실시간 patch).
@@ -838,6 +841,13 @@ $railHtml
     el.dataset.state = state;
     el.textContent = LABELS[state] || state;
     el.title = LABELS[state] || state;
+    // v1.128.3 — busy(responding/waiting)로 전환된 프로젝트를 콤보박스 리스트 최상단으로
+    // (마지막 상태 변경이 위에 남도록). idle 전환은 위치 유지(다음 새로고침 시 SSR 정렬로 재배치).
+    if (state === 'responding' || state === 'waiting') {
+      var item = el.closest('.pt-switch-item');
+      var list = item && item.parentNode;
+      if (item && list && list.firstChild !== item) list.insertBefore(item, list.firstChild);
+    }
   }
   var ws = null;
   function connect() {
