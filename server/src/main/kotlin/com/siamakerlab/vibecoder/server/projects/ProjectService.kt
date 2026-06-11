@@ -716,26 +716,35 @@ class ProjectService(
      */
     fun resolveAppIcon(projectId: String, moduleName: String): Path? {
         if (isGhost(projectId)) return null
-        val resRoot = runCatching { workspace.projectRoot(projectId) }.getOrNull()
-            ?.resolve(moduleName)?.resolve("src/main/res") ?: return null
-        if (!Files.isDirectory(resRoot)) return null
+        val projectRoot = runCatching { workspace.projectRoot(projectId) }.getOrNull() ?: return null
+        // v1.128.5 — Kotlin(app/src/main/res) + Flutter(android/app/src/main/res) 양쪽 탐색.
+        // Flutter 는 ic_launcher 가 android/app 하위에 있어 기존 moduleName 경로로는 미인식이었다.
+        val resCandidates = listOf(
+            moduleName.replace(':', '/'),               // Kotlin: app (또는 nested gradle 모듈)
+            "android/app",                              // Flutter 표준
+            "android/" + moduleName.replace(':', '/'),  // Flutter nested 모듈 대비
+        ).distinct()
         val densities = listOf("xxxhdpi", "xxhdpi", "xhdpi", "hdpi", "mdpi", "")
         val bases = listOf("mipmap", "drawable")
         val names = listOf("ic_launcher", "ic_launcher_round", "ic_launcher_foreground")
-        for (d in densities) for (b in bases) {
-            val dir = resRoot.resolve(if (d.isEmpty()) b else "$b-$d")
-            if (!Files.isDirectory(dir)) continue
-            for (n in names) for (ext in listOf("png", "webp")) {
-                val f = dir.resolve("$n.$ext")
-                if (Files.isRegularFile(f)) {
-                    return runCatching { workspace.ensureUnderWorkspace(f.toRealPath()) }.getOrNull()
+        for (modPath in resCandidates) {
+            val resRoot = projectRoot.resolve(modPath).resolve("src/main/res")
+            if (!Files.isDirectory(resRoot)) continue
+            for (d in densities) for (b in bases) {
+                val dir = resRoot.resolve(if (d.isEmpty()) b else "$b-$d")
+                if (!Files.isDirectory(dir)) continue
+                for (n in names) for (ext in listOf("png", "webp")) {
+                    val f = dir.resolve("$n.$ext")
+                    if (Files.isRegularFile(f)) {
+                        return runCatching { workspace.ensureUnderWorkspace(f.toRealPath()) }.getOrNull()
+                    }
                 }
             }
         }
         // v1.65.0 — res 에 raster 가 없으면 업로드된 프로젝트 루트 icon.png fallback
         // (App Icon 탭 업로드 직후, Claude 가 res 에 적용하기 전에도 미리보기/목록 반영).
-        val rootIcon = runCatching { workspace.projectRoot(projectId) }.getOrNull()?.resolve("icon.png")
-        if (rootIcon != null && Files.isRegularFile(rootIcon)) {
+        val rootIcon = projectRoot.resolve("icon.png")
+        if (Files.isRegularFile(rootIcon)) {
             return runCatching { workspace.ensureUnderWorkspace(rootIcon.toRealPath()) }.getOrNull()
         }
         return null
