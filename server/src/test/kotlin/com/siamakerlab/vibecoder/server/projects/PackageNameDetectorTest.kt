@@ -152,4 +152,22 @@ class PackageNameDetectorTest {
         PackageNameDetector.detectAppModule(root) shouldBe "app"
         PackageNameDetector.detectApplicationId(root) shouldBe "com.multi.app"
     }
+
+    @Test
+    fun `detectProjectType — pubspec=flutter, gradle=kotlin, 불명확=null, pubspec 우선`() {
+        val base = root()
+        // flutter: 루트 pubspec.yaml
+        write(base, "f/pubspec.yaml", "name: myapp")
+        PackageNameDetector.detectProjectType(base.resolve("f")) shouldBe "flutter"
+        // kotlin: settings.gradle
+        write(base, "k/settings.gradle.kts", """include(":app")""")
+        PackageNameDetector.detectProjectType(base.resolve("k")) shouldBe "kotlin"
+        // 불명확: 빈 폴더 → null (경고 안 함)
+        Files.createDirectories(base.resolve("u"))
+        PackageNameDetector.detectProjectType(base.resolve("u")) shouldBe null
+        // 둘 다: pubspec 우선(flutter) — Flutter 도 android/ 하위에 gradle 이 있으므로
+        write(base, "b/pubspec.yaml", "name: myapp")
+        write(base, "b/settings.gradle", "")
+        PackageNameDetector.detectProjectType(base.resolve("b")) shouldBe "flutter"
+    }
 }

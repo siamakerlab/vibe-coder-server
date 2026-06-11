@@ -234,6 +234,12 @@ data class RegisterProjectRequestDto(
      * field 추가 필요 (additive default 라 backward-compatible).
      */
     val projectType: String = ProjectTypes.KOTLIN,
+    /**
+     * v1.128.0 — clone 시 사용자 선택 타입 ≠ 서버 감지 타입(pubspec.yaml/gradle)일 때, 확인
+     * 페이지에서 "진행" 을 누르면 true 로 재제출된다. true 면 mismatch 검사를 skip 하고 선택값을
+     * 따르며, 직전 clone 을 재사용(재clone 안 함). additive default → backward-compatible.
+     */
+    val projectTypeAck: Boolean = false,
 )
 
 @Serializable
