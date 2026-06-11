@@ -698,14 +698,15 @@ class ProjectService(
     fun appVersionName(projectId: String, moduleName: String): String? {
         if (isGhost(projectId)) return null
         val projectRoot = runCatching { workspace.projectRoot(projectId) }.getOrNull() ?: return null
-        // Kotlin: <module>/build.gradle(.kts) 의 versionName = "..."
+        // Kotlin: <module>/build.gradle(.kts). v1.128.7 — 리터럴뿐 아니라 변수 참조 / 문자열 보간 /
+        // version.properties 참조까지 정적 해석([VersionNameResolver]).
         val moduleDir = projectRoot.resolve(moduleName.replace(':', '/'))
-        val re = Regex("""versionName\s*=?\s*["']([^"']+)["']""")
+        val props = loadVersionProps(projectRoot)
         for (g in listOf("build.gradle.kts", "build.gradle")) {
             val gf = moduleDir.resolve(g)
             if (!Files.isRegularFile(gf)) continue
             val text = runCatching { Files.readString(gf) }.getOrNull() ?: continue
-            re.find(text)?.let { return it.groupValues[1].take(32) }
+            VersionNameResolver.resolve(text, props)?.let { return it }
         }
         // v1.128.6 — Flutter: pubspec.yaml 의 `version: 1.2.3+4` → 1.2.3 (+ 뒤 build number 제외).
         // Flutter 의 android/app/build.gradle 은 versionName 이 변수(flutterVersionName)라 위
@@ -719,6 +720,21 @@ class ProjectService(
             }
         }
         return null
+    }
+
+    /** v1.128.7 — version.properties(rootProject) 의 KEY=VALUE 파싱. versionName 의
+     *  `versionProps["KEY"]` 보간 해석에 사용. 파일 없거나 실패 시 빈 맵. */
+    private fun loadVersionProps(root: java.nio.file.Path): Map<String, String> {
+        val f = root.resolve("version.properties")
+        if (!Files.isRegularFile(f)) return emptyMap()
+        return runCatching {
+            Files.readAllLines(f).mapNotNull { line ->
+                val t = line.trim()
+                if (t.isEmpty() || t.startsWith("#")) return@mapNotNull null
+                val i = t.indexOf('=')
+                if (i < 0) null else t.substring(0, i).trim() to t.substring(i + 1).trim()
+            }.toMap()
+        }.getOrDefault(emptyMap())
     }
 
     /**
