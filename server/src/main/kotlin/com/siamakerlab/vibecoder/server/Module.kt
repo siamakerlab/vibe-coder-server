@@ -276,6 +276,8 @@ data class ServerContext(
     val promptAutomationPresetStore: com.siamakerlab.vibecoder.server.automation.PromptAutomationPresetStore,
     val promptAutomationRunRepo: com.siamakerlab.vibecoder.server.repo.PromptAutomationRunRepository,
     val promptAutomationManager: com.siamakerlab.vibecoder.server.automation.PromptAutomationManager,
+    /** v1.130.0 — 프롬프트 예약(one-shot) 저장소 (자동화 페이지에서 등록/취소). */
+    val scheduledPromptRepo: com.siamakerlab.vibecoder.server.repo.ScheduledPromptRepository,
     /** v1.91.0 — 독립 메모 (전역/프로젝트별). */
     val memoRepo: com.siamakerlab.vibecoder.server.repo.MemoRepository,
 )
@@ -525,6 +527,7 @@ fun Application.module(ctx: ServerContext) {
         promptAutomationRoutes(
             adminDeps, ctx.projects, ctx.promptAutomationManager,
             ctx.promptAutomationPresetStore, ctx.promptAutomationRunRepo,
+            ctx.scheduledPromptRepo, ctx.claudeStatusService, ctx.clock,
         )
         // v0.34.0 — 백업 / 복원 UI.
         backupRoutes(adminDeps, ctx.workspace, ctx.backupService)

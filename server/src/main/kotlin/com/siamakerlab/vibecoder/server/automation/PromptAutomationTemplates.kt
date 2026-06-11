@@ -8,6 +8,8 @@ import com.siamakerlab.vibecoder.shared.dto.PromptAutomationPresetDto
 import com.siamakerlab.vibecoder.shared.dto.PromptAutomationStatus
 import com.siamakerlab.vibecoder.shared.dto.PromptAutomationStatusDto
 import com.siamakerlab.vibecoder.shared.dto.ProjectDto
+import com.siamakerlab.vibecoder.shared.dto.ScheduledPromptDto
+import com.siamakerlab.vibecoder.shared.dto.ScheduledPromptStatus
 
 /**
  * v1.59.0 — `/projects/{id}/automation/prompts` SSR 페이지.
@@ -28,6 +30,7 @@ internal object PromptAutomationTemplates {
         presets: List<PromptAutomationPresetDto>,
         status: PromptAutomationStatusDto,
         runs: List<PromptAutomationRunRow>,
+        schedules: List<ScheduledPromptDto> = emptyList(),
         ok: String?,
         err: String?,
         csrf: String?,
@@ -113,6 +116,34 @@ internal object PromptAutomationTemplates {
             </tr>"""
         }
 
+        // ⏰ 예약 보내기 — 목록(pending + 이력).
+        val schedRows = if (schedules.isEmpty()) {
+            """<tr><td colspan="5" class="dim" style="text-align:center;padding:14px">등록된 예약이 없습니다.</td></tr>"""
+        } else schedules.joinToString("") { s ->
+            val badge = when (s.status) {
+                ScheduledPromptStatus.PENDING -> "<span style=\"color:#3b82f6\">⏳ 대기</span>"
+                ScheduledPromptStatus.SENT -> "<span class=\"ok\">✓ 전송됨</span>"
+                ScheduledPromptStatus.FAILED -> "<span class=\"warn\">⚠ 실패</span>"
+                else -> "<span class=\"dim\">■ 취소됨</span>"
+            }
+            val firstLine = s.prompt.lineSequence().firstOrNull().orEmpty()
+            val preview = firstLine.take(60) + if (s.prompt.length > 60 || firstLine.length < s.prompt.length) "…" else ""
+            val cancelBtn = if (s.status == ScheduledPromptStatus.PENDING) {
+                """<form method="post" action="/projects/${esc(p.id)}/automation/prompts/schedule/${esc(s.id)}/cancel" style="display:inline">
+                  ${CsrfTokens.hiddenInput(csrf)}
+                  <button type="submit" class="chip chip-danger" onclick="return confirm('예약을 취소할까요?')">취소</button>
+                </form>"""
+            } else ""
+            val errLine = s.lastError?.let { "<br><small class=\"warn\">${esc(it.take(80))}</small>" } ?: ""
+            """<tr>
+              <td><strong>${esc(s.triggerLabel ?: s.triggerType)}</strong></td>
+              <td class="dim"><small>${esc(preview)}</small>$errLine</td>
+              <td>$badge</td>
+              <td class="dim" style="font-family:ui-monospace,Menlo,monospace;font-size:11px">${esc(AdminTemplates.fmtTs(s.createdAt, lang))}</td>
+              <td style="text-align:right">$cancelBtn</td>
+            </tr>"""
+        }
+
         return AdminTemplates.shell(
             title = "${esc(p.name)} · 프롬프트 자동화",
             username = username,
@@ -136,6 +167,56 @@ internal object PromptAutomationTemplates {
 $okHtml
 $errHtml
 $statusCard
+
+<div class="card" style="margin-bottom:14px;border-color:#7c3aed;background:rgba(124,58,237,0.06)">
+  <h2 style="margin-top:0">⏰ 예약 보내기</h2>
+  <p class="dim" style="margin:4px 0 10px;font-size:13px">지정한 시점이 되면 아래 프롬프트를 콘솔에 <strong>1회</strong> 자동 전송합니다. 발사는 콘솔이 유휴일 때 새 작업으로 시작됩니다.</p>
+  <form method="post" action="/projects/${esc(p.id)}/automation/prompts/schedule">
+    ${CsrfTokens.hiddenInput(csrf)}
+    <textarea name="prompt" rows="3" required style="width:100%;padding:8px" placeholder="예약 시점에 보낼 프롬프트 (예: 빌드하고 결과 알려줘)"></textarea>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;margin:10px 0">
+      <label style="margin:0"><input type="radio" name="triggerType" value="time" checked onclick="vsTrig('time')"> 시간 지정</label>
+      <label style="margin:0"><input type="radio" name="triggerType" value="session_reset" onclick="vsTrig('reset')"> 세션 한도 해제 후</label>
+      <label style="margin:0"><input type="radio" name="triggerType" value="weekly_reset" onclick="vsTrig('reset')"> 주간 한도 해제 후</label>
+    </div>
+    <div id="vs-time-opts" style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
+      <label style="margin:0"><input type="radio" name="whenMode" value="in" checked onclick="vsWhen('in')"> 상대 시간</label>
+      <span id="vs-in" style="display:inline-flex;gap:6px;align-items:center">
+        <input name="delayAmount" type="number" min="1" max="10000" value="30" style="width:90px;padding:6px">
+        <select name="delayUnit" style="padding:6px"><option value="minutes">분 뒤</option><option value="hours">시간 뒤</option></select>
+      </span>
+      <label style="margin:0 0 0 8px"><input type="radio" name="whenMode" value="at" onclick="vsWhen('at')"> 정확한 시각</label>
+      <input id="vs-at" name="atLocal" type="datetime-local" style="display:none;padding:6px">
+    </div>
+    <p id="vs-reset-hint" class="dim" style="display:none;margin:8px 0 0;font-size:12px">한도가 해제되는 즉시(다음 폴링, 약 5분 해상도) 자동 전송됩니다.</p>
+    <button type="submit" class="primary" style="margin-top:12px;padding:8px 16px">⏰ 예약 등록</button>
+  </form>
+</div>
+
+<div class="card" style="margin-bottom:14px">
+  <h2 style="margin-top:0">예약 목록</h2>
+  <table style="width:100%;border-collapse:collapse">
+    <thead><tr style="border-bottom:1px solid #333">
+      <th style="text-align:left;padding:8px">트리거</th>
+      <th style="text-align:left;padding:8px">프롬프트</th>
+      <th style="text-align:left;padding:8px">상태</th>
+      <th style="text-align:left;padding:8px">등록</th>
+      <th></th>
+    </tr></thead>
+    <tbody>$schedRows</tbody>
+  </table>
+</div>
+
+<script>
+function vsTrig(t){
+  document.getElementById('vs-time-opts').style.display=(t==='time')?'flex':'none';
+  document.getElementById('vs-reset-hint').style.display=(t==='time')?'none':'block';
+}
+function vsWhen(m){
+  document.getElementById('vs-in').style.display=(m==='in')?'inline-flex':'none';
+  document.getElementById('vs-at').style.display=(m==='at')?'inline-block':'none';
+}
+</script>
 
 <div class="card" style="margin-bottom:14px">
   <h2 style="margin-top:0">즉석 시작</h2>

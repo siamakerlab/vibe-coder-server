@@ -11,14 +11,22 @@ import com.siamakerlab.vibecoder.server.auth.CsrfTokens
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens.requireCsrf
 import com.siamakerlab.vibecoder.server.auth.requireApiWrite
 import com.siamakerlab.vibecoder.server.auth.requireProjectAcl
+import com.siamakerlab.vibecoder.server.claude.ClaudeStatusService
+import com.siamakerlab.vibecoder.server.core.Clock
 import com.siamakerlab.vibecoder.server.error.ApiException
 import com.siamakerlab.vibecoder.server.projects.ProjectService
 import com.siamakerlab.vibecoder.server.repo.PromptAutomationRunRepository
+import com.siamakerlab.vibecoder.server.repo.ScheduledPromptRepository
+import com.siamakerlab.vibecoder.server.repo.ScheduledPromptRow
 import com.siamakerlab.vibecoder.shared.ApiPath
 import com.siamakerlab.vibecoder.shared.dto.PromptAutomationMode
 import com.siamakerlab.vibecoder.shared.dto.PromptAutomationPresetUpsertDto
 import com.siamakerlab.vibecoder.shared.dto.PromptAutomationPresetsResponseDto
 import com.siamakerlab.vibecoder.shared.dto.PromptAutomationStartRequestDto
+import com.siamakerlab.vibecoder.shared.dto.ScheduleSendRequestDto
+import com.siamakerlab.vibecoder.shared.dto.ScheduledPromptDto
+import com.siamakerlab.vibecoder.shared.dto.ScheduledPromptsResponseDto
+import com.siamakerlab.vibecoder.shared.dto.ScheduledPromptTriggers
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
@@ -58,6 +66,9 @@ fun Routing.promptAutomationRoutes(
     manager: PromptAutomationManager,
     presetStore: PromptAutomationPresetStore,
     runRepo: PromptAutomationRunRepository,
+    schedRepo: ScheduledPromptRepository,
+    statusService: ClaudeStatusService,
+    clock: Clock,
 ) {
     // ── JSON API ──────────────────────────────────────────────────────
     authenticate(AUTH_BEARER) {
@@ -109,6 +120,34 @@ fun Routing.promptAutomationRoutes(
             val ok = presetStore.delete(presetId)
             call.respond(if (ok) HttpStatusCode.NoContent else HttpStatusCode.NotFound)
         }
+
+        // ── 프롬프트 예약 전송 (one-shot) ──────────────────────────────
+        get(ApiPath.scheduledPrompts("{projectId}")) {
+            val projectId = projectId()
+            call.requireProjectAcl(projects, projectId)
+            projects.rowOrThrow(projectId)
+            call.respond(ScheduledPromptsResponseDto(schedRepo.listForProject(projectId).map { it.toDto() }))
+        }
+
+        post(ApiPath.scheduledPrompts("{projectId}")) {
+            call.requireApiWrite()
+            val projectId = projectId()
+            call.requireProjectAcl(projects, projectId)
+            projects.rowOrThrow(projectId)
+            val req = call.receive<ScheduleSendRequestDto>()
+            val row = createSchedule(projectId, req, schedRepo, statusService, clock, lang = "ko")
+            call.respond(HttpStatusCode.Created, row.toDto())
+        }
+
+        delete(ApiPath.scheduledPrompt("{projectId}", "{scheduleId}")) {
+            call.requireApiWrite()
+            val projectId = projectId()
+            call.requireProjectAcl(projects, projectId)
+            projects.rowOrThrow(projectId)
+            val scheduleId = call.parameters["scheduleId"].orEmpty()
+            val n = schedRepo.cancel(scheduleId, projectId)
+            call.respond(if (n > 0) HttpStatusCode.NoContent else HttpStatusCode.NotFound)
+        }
     }
 
     // ── SSR (cookie 세션 + CSRF) ──────────────────────────────────────
@@ -126,6 +165,7 @@ fun Routing.promptAutomationRoutes(
                 presets = presetStore.listAll(),
                 status = manager.statusOf(id),
                 runs = runRepo.listForProject(id, limit = 15),
+                schedules = schedRepo.listForProject(id, limit = 30).map { it.toDto() },
                 ok = call.request.queryParameters["ok"],
                 err = call.request.queryParameters["err"],
                 csrf = sess.csrf, lang = sess.language,
@@ -180,6 +220,51 @@ fun Routing.promptAutomationRoutes(
         requireProjectAccessOrThrow(sess, projects, id)
         manager.stop(id)
         call.respondRedirect("/projects/$id/automation/prompts?ok=${enc("자동화를 중지했습니다.")}")
+    }
+
+    // ── 예약 전송 SSR ─────────────────────────────────────────────────
+    post("/projects/{id}/automation/prompts/schedule") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireWriteAccessOrRedirect(sess)) return@post
+        val form = requireCsrf()
+        val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
+        runCatching {
+            val prompt = form["prompt"].orEmpty()
+            val triggerType = ScheduledPromptTriggers.normalize(form["triggerType"])
+            // time 트리거 입력: when=in(상대) | at(절대). in 이면 분 단위 환산.
+            val whenMode = form["whenMode"]?.trim().orEmpty()
+            val atEpochMs = when {
+                triggerType != ScheduledPromptTriggers.TIME -> null
+                whenMode == "at" -> parseLocalDateTime(form["atLocal"])
+                else -> null
+            }
+            val delayMinutes = if (triggerType == ScheduledPromptTriggers.TIME && whenMode != "at") {
+                val unit = form["delayUnit"]?.trim().orEmpty()
+                val amount = form["delayAmount"]?.trim()?.toLongOrNull() ?: 0L
+                if (unit == "hours") amount * 60 else amount
+            } else null
+            createSchedule(
+                id,
+                ScheduleSendRequestDto(prompt, triggerType, atEpochMs, delayMinutes),
+                schedRepo, statusService, clock, lang = sess.language,
+            )
+        }.onFailure {
+            val msg = (it as? ApiException)?.message ?: it.message ?: "invalid"
+            call.respondRedirect("/projects/$id/automation/prompts?err=${enc(msg)}")
+            return@post
+        }
+        call.respondRedirect("/projects/$id/automation/prompts?ok=${enc("예약을 등록했습니다.")}")
+    }
+
+    post("/projects/{id}/automation/prompts/schedule/{scheduleId}/cancel") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireWriteAccessOrRedirect(sess)) return@post
+        requireCsrf()
+        val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
+        schedRepo.cancel(call.parameters["scheduleId"].orEmpty(), id)
+        call.respondRedirect("/projects/$id/automation/prompts?ok=${enc("예약을 취소했습니다.")}")
     }
 
     post("/projects/{id}/automation/prompts/presets") {
@@ -243,3 +328,73 @@ private fun resolveSpec(
 }
 
 private fun enc(s: String) = java.net.URLEncoder.encode(s, Charsets.UTF_8).replace("+", "%20")
+
+/** 최대 예약 프롬프트 크기(UTF-8 byte). 콘솔 textarea 한도와 동급. */
+private const val MAX_SCHEDULE_PROMPT_BYTES = 32 * 1024
+
+/**
+ * v1.130.0 — 예약 생성 공통 로직. trigger 별 fireAtEpochMs / baselinePercent / 표시 라벨을
+ * 계산해 [ScheduledPromptRepository.create] 로 저장한다. (JSON · SSR 양쪽에서 호출)
+ */
+private fun createSchedule(
+    projectId: String,
+    req: ScheduleSendRequestDto,
+    schedRepo: ScheduledPromptRepository,
+    statusService: ClaudeStatusService,
+    clock: Clock,
+    lang: String,
+): ScheduledPromptRow {
+    val prompt = req.prompt.trim()
+    if (prompt.isBlank()) throw ApiException(400, "empty_prompt", "프롬프트를 입력하세요.")
+    if (prompt.toByteArray(Charsets.UTF_8).size > MAX_SCHEDULE_PROMPT_BYTES) {
+        throw ApiException(400, "prompt_too_large", "프롬프트가 너무 깁니다.")
+    }
+    val triggerType = ScheduledPromptTriggers.normalize(req.triggerType)
+    var fireAt: Long? = null
+    var baseline: Int? = null
+    val label: String
+    when (triggerType) {
+        ScheduledPromptTriggers.TIME -> {
+            val nowMs = clock.nowInstant().toEpochMilli()
+            fireAt = req.atEpochMs
+                ?: req.delayMinutes?.takeIf { it > 0 }?.let { nowMs + it * 60_000L }
+                ?: throw ApiException(400, "no_time", "예약 시각(분/시간 또는 정확한 시각)을 지정하세요.")
+            if (fireAt < nowMs - 60_000L) throw ApiException(400, "past_time", "과거 시각으로는 예약할 수 없습니다.")
+            label = if (req.atEpochMs != null) AdminTemplates.fmtTsEpochMs(fireAt, lang)
+            else delayLabel(req.delayMinutes ?: 0L)
+        }
+        ScheduledPromptTriggers.SESSION_RESET -> {
+            baseline = statusService.cachedSnapshot(projectId).sessionUsagePercent
+            label = "세션 한도 해제 후"
+        }
+        ScheduledPromptTriggers.WEEKLY_RESET -> {
+            baseline = statusService.cachedSnapshot(projectId).weeklyUsagePercent
+            label = "주간 한도 해제 후"
+        }
+        else -> throw ApiException(400, "invalid_trigger", "알 수 없는 트리거입니다.")
+    }
+    return schedRepo.create(projectId, prompt, triggerType, fireAt, label, baseline)
+}
+
+private fun delayLabel(minutes: Long): String = when {
+    minutes <= 0 -> "곧"
+    minutes < 60 -> "${minutes}분 뒤"
+    minutes % 60 == 0L -> "${minutes / 60}시간 뒤"
+    else -> "${minutes / 60}시간 ${minutes % 60}분 뒤"
+}
+
+/** datetime-local ("yyyy-MM-dd'T'HH:mm") → epoch millis (서버 기본 시간대). 실패 시 null. */
+private fun parseLocalDateTime(s: String?): Long? {
+    val t = s?.trim()?.ifBlank { null } ?: return null
+    return runCatching {
+        java.time.LocalDateTime.parse(t)
+            .atZone(java.time.ZoneId.systemDefault())
+            .toInstant().toEpochMilli()
+    }.getOrNull()
+}
+
+internal fun ScheduledPromptRow.toDto() = ScheduledPromptDto(
+    id = id, projectId = projectId, prompt = prompt, triggerType = triggerType,
+    fireAtEpochMs = fireAtEpochMs, triggerLabel = triggerLabel, status = status,
+    createdAt = createdAt, sentAt = sentAt, lastError = lastError,
+)

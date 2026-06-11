@@ -154,6 +154,8 @@ class ProjectRepository(private val clock: Clock) {
         com.siamakerlab.vibecoder.server.db.ProjectAcls.update({ com.siamakerlab.vibecoder.server.db.ProjectAcls.projectId eq oldId }) { it[com.siamakerlab.vibecoder.server.db.ProjectAcls.projectId] = newId }
         // v1.91.0 — Memos.projectId 는 nullable FK. 프로젝트 전용 메모만 repoint (전역 메모는 NULL → 매칭 안 됨).
         com.siamakerlab.vibecoder.server.db.Memos.update({ com.siamakerlab.vibecoder.server.db.Memos.projectId eq oldId }) { it[com.siamakerlab.vibecoder.server.db.Memos.projectId] = newId }
+        // v1.130.0 — ScheduledPrompts.projectId 는 Projects FK. pending 예약을 새 id 로 이전.
+        com.siamakerlab.vibecoder.server.db.ScheduledPrompts.update({ com.siamakerlab.vibecoder.server.db.ScheduledPrompts.projectId eq oldId }) { it[com.siamakerlab.vibecoder.server.db.ScheduledPrompts.projectId] = newId }
         Projects.deleteWhere { Projects.id eq oldId }
         true
     }

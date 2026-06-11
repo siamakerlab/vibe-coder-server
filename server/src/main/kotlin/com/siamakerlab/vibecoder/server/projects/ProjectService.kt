@@ -54,6 +54,8 @@ class ProjectService(
     private val buildWebhookSecretRepo: com.siamakerlab.vibecoder.server.repo.BuildWebhookSecretRepository? = null,
     /** v1.59.0 — 프롬프트 자동화 실행 이력 (Projects.id FK). delete cascade 정리용. */
     private val promptAutomationRunRepo: com.siamakerlab.vibecoder.server.repo.PromptAutomationRunRepository? = null,
+    /** v1.130.0 — 프롬프트 예약(one-shot) (Projects.id FK). delete cascade 정리용. */
+    private val scheduledPromptRepo: com.siamakerlab.vibecoder.server.repo.ScheduledPromptRepository? = null,
     /** v1.91.0 — 독립 메모 (Projects.id nullable FK). delete cascade 시 프로젝트 전용 메모 정리(전역 보존). */
     private val memoRepo: com.siamakerlab.vibecoder.server.repo.MemoRepository? = null,
     /**
@@ -500,6 +502,7 @@ class ProjectService(
             buildScheduleRepo?.deleteForProject(id)
             buildWebhookSecretRepo?.deleteForProject(id)
             promptAutomationRunRepo?.deleteForProject(id)
+            scheduledPromptRepo?.deleteForProject(id)
             // v1.91.0 — 프로젝트 전용 메모만 정리. 전역 메모(projectId NULL)는 보존.
             memoRepo?.deleteForProject(id)
             projectAclRepo?.deleteAllForProject(id)
