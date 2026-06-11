@@ -436,8 +436,10 @@ fun Application.module(ctx: ServerContext) {
             val archiveService = com.siamakerlab.vibecoder.server.projects.ProjectArchiveService(
                 ctx.workspace, ctx.keystoreService, ctx.projectRepo, archivedRepo,
             ) { ctx.projects.delete(it) }
-            archiveRoutes(adminDeps, archiveService, ctx.sessionManager, ctx.buildRepo, ctx.promptAutomationManager)
+            archiveRoutes(adminDeps, archiveService, ctx.projects, ctx.sessionManager, ctx.buildRepo, ctx.promptAutomationManager)
             jsonArchiveRoutes(archiveService, ctx.sessionManager, ctx.buildRepo, ctx.promptAutomationManager)
+            // v1.132.0 — 프로젝트 백업 업로드 복원은 archiveService.restoreFromTar 사용 → 같은 블록에서 등록.
+            backupRoutes(adminDeps, ctx.workspace, ctx.backupService, archiveService)
         }
         // v0.10.0 — admin SSR 라우트들의 JSON API 이중 노출 (vibe-coder-android wire)
         envSetupApiRoutes(
@@ -529,8 +531,7 @@ fun Application.module(ctx: ServerContext) {
             ctx.promptAutomationPresetStore, ctx.promptAutomationRunRepo,
             ctx.scheduledPromptRepo, ctx.claudeStatusService, ctx.clock,
         )
-        // v0.34.0 — 백업 / 복원 UI.
-        backupRoutes(adminDeps, ctx.workspace, ctx.backupService)
+        // v0.34.0 — 백업 / 복원 UI. v1.132.0 — archiveService 가 필요해 위 archive run 블록에서 등록.
         // v0.35.0 — 코드 분석 묶음 (wrapper / stats / search).
         codeAnalysisRoutes(
             adminDeps, ctx.projects, ctx.gradleWrapperService, ctx.codeStatsService, ctx.codeSearchService,

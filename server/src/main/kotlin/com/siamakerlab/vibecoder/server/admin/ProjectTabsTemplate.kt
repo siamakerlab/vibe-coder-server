@@ -76,6 +76,8 @@ internal object ProjectTabsTemplate {
         Tab("mcpProject", "tabs.mcpProject", "/mcp", "tab-mcp-project"),
         Tab("skills", "tabs.skills", "/skills", "tab-skills"),
         Tab("plugins", "tabs.plugins", "/plugins", "tab-plugins"),
+        // v1.132.0 — 프로젝트 백업(소스+키스토어+문서+설정 → tar.gz 다운로드). 복원은 설정→백업.
+        Tab("backup", "tabs.backup", "/backup", "tab-backup"),
     )
     private val TABS = PRIMARY_TABS + OVERFLOW_TABS
 

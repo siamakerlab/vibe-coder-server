@@ -5,6 +5,7 @@ import com.siamakerlab.vibecoder.server.automation.PromptAutomationManager
 import com.siamakerlab.vibecoder.server.claude.ClaudeSessionManager
 import com.siamakerlab.vibecoder.server.i18n.Messages
 import com.siamakerlab.vibecoder.server.projects.ProjectArchiveService
+import com.siamakerlab.vibecoder.server.projects.ProjectService
 import com.siamakerlab.vibecoder.server.repo.BuildRepository
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentType
@@ -17,6 +18,7 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import java.nio.file.Files
 
 private val log = KotlinLogging.logger {}
 
@@ -32,10 +34,49 @@ private val log = KotlinLogging.logger {}
 fun Routing.archiveRoutes(
     authDeps: AdminRoutesDeps,
     archive: ProjectArchiveService,
+    projects: ProjectService,
     sessionManager: ClaudeSessionManager,
     buildRepo: BuildRepository,
     promptAutomationManager: PromptAutomationManager,
 ) {
+    // ── 프로젝트 백업 (원본 보존, 다운로드 — 프로젝트 더보기 탭 inner) ─────────────────
+    get("/projects/{id}/backup") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@get
+        if (!requireAdminOrRedirect(sess)) return@get
+        val id = call.parameters["id"]!!
+        val p = runCatching { projects.get(id) }.getOrNull()
+        if (p == null) {
+            call.respondRedirect("/projects?err=${enc("프로젝트 '$id' 를 찾을 수 없습니다.")}")
+            return@get
+        }
+        call.respondText(
+            ArchiveTemplates.projectBackupPage(
+                username = sess.username, projectId = p.id, projectName = p.name,
+                packageName = p.packageName,
+                ok = call.request.queryParameters["ok"], err = call.request.queryParameters["err"],
+                csrf = sess.csrf, lang = sess.language, embed = call.isEmbeddedRequest(),
+            ),
+            ContentType.Text.Html,
+        )
+    }
+
+    get("/projects/{id}/backup/download") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@get
+        if (!requireAdminOrRedirect(sess)) return@get
+        val id = call.parameters["id"]!!
+        val tar = runCatching { archive.backupToTar(id) }.getOrElse {
+            log.warn(it) { "backup failed: $id" }
+            call.respondRedirect("/projects/$id/backup?err=${enc("${Messages.t(sess.language, "backup.proj.failed")}: ${it.message ?: "error"}")}")
+            return@get
+        }
+        try {
+            call.response.headers.append("Content-Disposition", "attachment; filename=\"$id-backup.tar.gz\"")
+            call.respondFile(tar.toFile())
+        } finally {
+            runCatching { Files.deleteIfExists(tar) }
+        }
+    }
+
     get("/archive") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
         if (!requireAdminOrRedirect(sess)) return@get
