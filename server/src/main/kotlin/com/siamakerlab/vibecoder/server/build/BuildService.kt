@@ -13,6 +13,7 @@ import com.siamakerlab.vibecoder.server.tasks.TaskLogger
 import com.siamakerlab.vibecoder.server.tasks.TaskQueue
 import com.siamakerlab.vibecoder.server.ws.LogHub
 import com.siamakerlab.vibecoder.shared.dto.BuildDto
+import com.siamakerlab.vibecoder.shared.dto.ProjectTypes
 import com.siamakerlab.vibecoder.shared.dto.TaskStatus
 import com.siamakerlab.vibecoder.shared.ws.WsFrame
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -36,6 +37,13 @@ class BuildService(
      */
     private val keystores: com.siamakerlab.vibecoder.server.admin.KeystoreService? = null,
 ) {
+
+    // v1.126.0 (P3) — projectType 별 빌드 toolchain. builder/config 는 이미 생성자 주입 → DI 무변경.
+    // kotlin → Gradle(기존 동작 동일), flutter → flutter build apk/appbundle (Android 전용).
+    private val gradleToolchain: BuildToolchain = GradleToolchain(builder)
+    private val flutterToolchain: BuildToolchain = FlutterToolchain(config)
+    private fun toolchainFor(projectType: String): BuildToolchain =
+        if (projectType == ProjectTypes.FLUTTER) flutterToolchain else gradleToolchain
 
     /**
      * v1.26.1 — 운영 정책 "키스토어 임의 생성 금지" SSOT 가드. SSR / JSON API / WS
@@ -62,8 +70,7 @@ class BuildService(
     fun enqueueDebug(projectId: String, hub: LogHub): BuildRow {
         val row = projects.rowOrThrow(projectId)
         requireKeystoreOrThrow(row)   // v1.26.1 — SSOT 가드
-        return enqueueBuild(row, hub, variant = "debug", gradleTask = row.debugTask,
-            findOutput = ApkFinder::findLatestDebug, ext = "apk", artifactType = "debug-apk")
+        return enqueueBuild(row, hub, BuildVariant.DEBUG)
     }
 
     /**
@@ -73,8 +80,7 @@ class BuildService(
     fun enqueueRelease(projectId: String, hub: LogHub): BuildRow {
         val row = projects.rowOrThrow(projectId)
         requireKeystoreOrThrow(row)
-        return enqueueBuild(row, hub, variant = "release", gradleTask = releaseTaskFor(row.debugTask),
-            findOutput = ApkFinder::findLatestReleaseApk, ext = "apk", artifactType = "release-apk")
+        return enqueueBuild(row, hub, BuildVariant.RELEASE)
     }
 
     /**
@@ -84,36 +90,27 @@ class BuildService(
     fun enqueueBundle(projectId: String, hub: LogHub): BuildRow {
         val row = projects.rowOrThrow(projectId)
         requireKeystoreOrThrow(row)
-        return enqueueBuild(row, hub, variant = "release-bundle", gradleTask = "bundleRelease",
-            findOutput = ApkFinder::findLatestReleaseBundle, ext = "aab", artifactType = "release-aab")
-    }
-
-    /** debugTask 로부터 release assemble task 추정 (assembleDebug → assembleRelease). */
-    private fun releaseTaskFor(debugTask: String): String = when {
-        debugTask.equals("assembleDebug", ignoreCase = true) -> "assembleRelease"
-        debugTask.contains("Debug") -> debugTask.replace("Debug", "Release")
-        else -> "assembleRelease"
+        return enqueueBuild(row, hub, BuildVariant.BUNDLE)
     }
 
     /**
-     * v1.107.0 — debug/release/bundle 공통 enqueue. variant·gradleTask·산출물 finder·
-     * 확장자·artifact type 만 다르고 큐/로그/서명/알림 흐름은 동일.
+     * v1.107.0 — debug/release/bundle 공통 enqueue. 큐/로그/서명/알림 흐름은 동일.
+     * v1.126.0 (P3) — variant·gradleTask·산출물 finder·확장자·artifact type 파라미터를
+     * [BuildVariant] + [BuildToolchain] 으로 대체. 실제 빌드 명령/산출물 해석은
+     * `row.projectType` 으로 선택한 toolchain 에 위임(Gradle/Flutter).
      */
     private fun enqueueBuild(
         row: com.siamakerlab.vibecoder.server.repo.ProjectRow,
         hub: LogHub,
-        variant: String,
-        gradleTask: String,
-        findOutput: (java.nio.file.Path, String) -> java.nio.file.Path?,
-        ext: String,
-        artifactType: String,
+        variant: BuildVariant,
     ): BuildRow {
+        val toolchain = toolchainFor(row.projectType)
         val projectId = row.id
         val buildId = Ids.buildId()
         val logFile = workspace.buildLogFile(projectId, buildId)
         // v0.71.0 — Phase 51 #9: git 메타데이터 수집 (실패 시 graceful — null).
         val (branch, sha) = collectGitMetadata(java.nio.file.Path.of(row.sourcePath))
-        val build = buildRepo.create(buildId, projectId, variant, logFile.toString(),
+        val build = buildRepo.create(buildId, projectId, variant.wire, logFile.toString(),
             gitBranch = branch, gitSha = sha)
 
         val signing = resolveSigning(row, hub, buildId)
@@ -123,21 +120,22 @@ class BuildService(
             executor = { cancel ->
                 val logger = TaskLogger(buildId, logFile, hub, clock)
                 try {
-                    val exit = builder.runAssembleDebug(
+                    val exit = toolchain.runBuild(
                         source = java.nio.file.Path.of(row.sourcePath),
                         moduleName = row.moduleName,
-                        debugTask = gradleTask,
+                        variant = variant,
+                        debugTask = row.debugTask,
                         logger = logger,
                         cancellation = cancel,
                         signing = signing,
                     )
                     if (exit != 0) throw ApiException.localized(500, "build_failed",
                         messageKey = "api.build.gradleExit", args = listOf(exit))
-                    val out = findOutput(java.nio.file.Path.of(row.sourcePath), row.moduleName)
+                    val out = toolchain.findArtifact(java.nio.file.Path.of(row.sourcePath), row.moduleName, variant)
                         ?: throw ApiException.localized(500, "artifact_not_found", messageKey = "api.build.apkNotFound")
-                    logger.info("Found output ($variant): $out")
+                    logger.info("Found output (${variant.wire}): $out")
                     val artifact = artifactService.storeBuildArtifact(
-                        projectId, buildId, out, row.packageName, variant, ext, artifactType,
+                        projectId, buildId, out, row.packageName, variant.wire, variant.ext, variant.artifactType,
                     )
                     buildRepo.attachArtifact(buildId, artifact.id)
                     logger.info("Stored artifact ${artifact.id} (sha256=${artifact.sha256.take(12)}..., size=${artifact.sizeBytes} bytes)")
