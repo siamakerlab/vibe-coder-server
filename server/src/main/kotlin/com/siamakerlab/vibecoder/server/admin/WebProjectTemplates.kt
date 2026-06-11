@@ -578,6 +578,66 @@ object WebProjectTemplates {
     // /projects — 목록 + 등록 폼
     // ────────────────────────────────────────────────────────────────────
 
+    /**
+     * v1.128.0 — clone 프로젝트 타입 불일치 확인 페이지. 사용자 선택([selected]: kotlin/flutter)과
+     * 서버 감지([detected])가 다를 때(예: Kotlin 선택했지만 루트 pubspec.yaml 감지) 표시한다.
+     * 두 버튼: 감지값 수용 / 선택값 강제 — 둘 다 `projectTypeAck=true` 로 재제출(직전 clone 재사용).
+     */
+    fun projectTypeMismatchPage(
+        username: String,
+        projectId: String,
+        appName: String,
+        packageName: String,
+        cloneUrl: String?,
+        cloneBranch: String?,
+        selected: String,
+        detected: String,
+        csrf: String?,
+        lang: String,
+    ): String {
+        val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
+        val tArgs = { key: String, a: String, b: String ->
+            com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key, a, b)
+        }
+        fun typeLabel(x: String): String = if (x == "flutter") "Flutter" else "Kotlin"
+        val hidden = """${CsrfTokens.hiddenInput(csrf)}
+      <input type="hidden" name="sourceType" value="clone">
+      <input type="hidden" name="projectId" value="${esc(projectId)}">
+      <input type="hidden" name="appName" value="${esc(appName)}">
+      <input type="hidden" name="packageName" value="${esc(packageName)}">
+      <input type="hidden" name="cloneUrl" value="${esc(cloneUrl.orEmpty())}">
+      <input type="hidden" name="cloneBranch" value="${esc(cloneBranch.orEmpty())}">
+      <input type="hidden" name="projectTypeAck" value="true">"""
+        return AdminTemplates.shell(
+            title = t("projects.mismatch.title"),
+            username = username,
+            currentPath = "/projects",
+            csrf = csrf,
+            lang = lang,
+            body = """
+<header><h1>${esc(t("projects.mismatch.title"))}</h1></header>
+<div class="card" style="border-color:var(--warn)">
+  <p style="margin:0 0 6px"><strong style="color:var(--warn)">${esc(t("projects.mismatch.heading"))}</strong></p>
+  <p style="margin:0 0 14px;line-height:1.6">${esc(tArgs("projects.mismatch.body", typeLabel(selected), typeLabel(detected)))}</p>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+    <form method="post" action="/projects" style="display:inline">
+      $hidden
+      <input type="hidden" name="projectType" value="${esc(detected)}">
+      <button type="submit" class="primary" style="padding:10px 18px">${esc(tArgs("projects.mismatch.useDetected", typeLabel(detected), ""))}</button>
+    </form>
+    <form method="post" action="/projects" style="display:inline">
+      $hidden
+      <input type="hidden" name="projectType" value="${esc(selected)}">
+      <button type="submit" style="padding:10px 18px">${esc(tArgs("projects.mismatch.forceSelected", typeLabel(selected), ""))}</button>
+    </form>
+    ${AdminTemplates.backButton("/projects", t("projects.mismatch.cancel"))}
+  </div>
+  <p class="hint" style="margin-top:12px;font-size:12px">${esc(t("projects.mismatch.note"))}</p>
+</div>
+""",
+        )
+    }
+
     fun projectsPage(
         username: String,
         projects: List<ProjectDto>,

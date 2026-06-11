@@ -1,5 +1,6 @@
 package com.siamakerlab.vibecoder.server.projects
 
+import com.siamakerlab.vibecoder.shared.dto.ProjectTypes
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -90,6 +91,21 @@ internal object PackageNameDetector {
                 null
             }
         }.getOrNull()
+    }
+
+    /**
+     * v1.128.0 — clone 된 repo 의 프로젝트 타입 추정. `pubspec.yaml`(루트) → flutter,
+     * gradle settings/build(.kts) → kotlin, 둘 다 또는 어느 것도 없으면 null(불명확 →
+     * 경고 안 함). clone 시 사용자 선택과 비교해 mismatch 경고에 사용.
+     *
+     * Flutter 도 android/ 하위에 build.gradle 이 있으므로 **루트 pubspec.yaml** 이 판별 핵심.
+     */
+    fun detectProjectType(root: Path): String? {
+        if (!Files.isDirectory(root)) return null
+        if (Files.isRegularFile(root.resolve("pubspec.yaml"))) return ProjectTypes.FLUTTER
+        val hasGradle = (GRADLE_FILES + listOf("settings.gradle.kts", "settings.gradle"))
+            .any { Files.isRegularFile(root.resolve(it)) }
+        return if (hasGradle) ProjectTypes.KOTLIN else null
     }
 
     private fun readIncludes(root: Path): List<String> {

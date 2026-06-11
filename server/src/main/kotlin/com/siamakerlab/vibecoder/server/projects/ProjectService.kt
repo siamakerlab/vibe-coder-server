@@ -128,26 +128,33 @@ class ProjectService(
             // clone 은 빈 디렉토리에만 — 이미 존재하면 거부.
             // v1.7.18 — body.overwrite=true 면 기존 폴더 내용 모두 삭제 후 clone.
             // 사용자가 이전 clone 실패 후 orphan 폴더 정리 없이 재시도하는 흔한 케이스.
+            // v1.128.0 — 타입 mismatch 확인 후 ack 재제출이면 직전 clone 을 재사용(재clone skip).
+            val reuseCloned = body.projectTypeAck && Files.isDirectory(srcRoot.resolve(".git"))
             if (srcRoot.exists() && Files.list(srcRoot).use { it.findFirst().isPresent }) {
-                if (body.overwrite) {
-                    log.info { "[clone:${body.projectId}] overwrite=true — wiping existing $srcRoot" }
-                    runCatching {
-                        Files.walk(srcRoot)
-                            .sorted(Comparator.reverseOrder())
-                            .forEach { Files.deleteIfExists(it) }
-                        if (!srcRoot.exists()) Files.createDirectories(srcRoot)
-                    }.onFailure { e ->
-                        throw ApiException.localized(500, "overwrite_failed",
-                            messageKey = "api.project.overwriteFailed", args = listOf(e.message ?: ""))
+                when {
+                    reuseCloned ->
+                        log.info { "[clone:${body.projectId}] reusing previously cloned repo (project-type ack)" }
+                    body.overwrite -> {
+                        log.info { "[clone:${body.projectId}] overwrite=true — wiping existing $srcRoot" }
+                        runCatching {
+                            Files.walk(srcRoot)
+                                .sorted(Comparator.reverseOrder())
+                                .forEach { Files.deleteIfExists(it) }
+                            if (!srcRoot.exists()) Files.createDirectories(srcRoot)
+                        }.onFailure { e ->
+                            throw ApiException.localized(500, "overwrite_failed",
+                                messageKey = "api.project.overwriteFailed", args = listOf(e.message ?: ""))
+                        }
                     }
-                } else {
-                    throw ApiException.localized(409, "target_not_empty",
+                    else -> throw ApiException.localized(409, "target_not_empty",
                         messageKey = "api.project.targetNotEmpty")
                 }
             }
-            log.info { "cloning $url → $srcRoot (branch=${body.cloneBranch ?: "(default)"})" }
-            svc.clone(url, srcRoot, body.cloneBranch) { line ->
-                log.debug { "[clone:${body.projectId}] $line" }
+            if (!reuseCloned) {
+                log.info { "cloning $url → $srcRoot (branch=${body.cloneBranch ?: "(default)"})" }
+                svc.clone(url, srcRoot, body.cloneBranch) { line ->
+                    log.debug { "[clone:${body.projectId}] $line" }
+                }
             }
             // v1.7.0 — clone 완료 후 build.gradle.kts / AndroidManifest.xml 에서
             // 진짜 packageName 추출 시도. 성공 시 placeholder (com.example.<projectId>)
@@ -172,6 +179,17 @@ class ProjectService(
         val moduleNameFinal = detectedModule ?: DEFAULT_MODULE
         if (detectedModule != null && detectedModule != DEFAULT_MODULE) {
             log.info { "[clone:${body.projectId}] auto-detected app moduleName: $detectedModule" }
+        }
+        // v1.128.0 — clone 한 repo 의 실제 타입(pubspec.yaml/gradle)과 사용자 선택이 불일치하면
+        // 확인 요구(ack 전까지 중단). clone 폴더는 보존 — ack 재제출 시 위 reuseCloned 로 재사용.
+        if (isClone && !body.projectTypeAck) {
+            val detectedType = PackageNameDetector.detectProjectType(srcRoot)
+            val selected = ProjectTypes.normalize(body.projectType)
+            if (detectedType != null && detectedType != selected) {
+                log.info { "[clone:${body.projectId}] project-type mismatch: selected=$selected detected=$detectedType" }
+                throw ApiException.localized(409, "project_type_mismatch",
+                    messageKey = "api.project.typeMismatch", args = listOf(selected, detectedType))
+            }
         }
         // CLAUDE.md / .claude/settings.json 은 clone 후에도 동일하게 보강 — 기존 파일 보존.
         // v0.99.0 — 프로젝트 입력 정보 (appName / packageName / projectId / moduleName /

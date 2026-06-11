@@ -211,6 +211,8 @@ fun Routing.webProjectRoutes(
         // v1.127.0 — 프로젝트 타입(kotlin/flutter). 기본 kotlin. clone 시에도 사용자 선택 우선
         // (register 의 ProjectTypes.normalize 가 최종 검증). 폼 미전송 시 kotlin.
         val projectType = params["projectType"]?.trim()?.ifBlank { null } ?: "kotlin"
+        // v1.128.0 — clone 타입 mismatch 확인 페이지에서 "진행" 시 true (mismatch 검사 skip).
+        val projectTypeAck = params["projectTypeAck"]?.let { it == "true" || it == "on" || it == "1" } == true
         // v1.7.18 — clone path 의 "기존 폴더 덮어쓰기" 체크박스.
         val overwrite = params["overwrite"]?.let { it == "true" || it == "on" || it == "1" } == true
 
@@ -250,12 +252,29 @@ fun Routing.webProjectRoutes(
                     templateId = templateId,
                     overwrite = overwrite,
                     projectType = projectType,
+                    projectTypeAck = projectTypeAck,
                 )
             )
         }
 
         val created = result.getOrElse { e ->
-            val msg = (e as? ApiException)?.message ?: e.message ?: Messages.t(sess.language, "flash.project.createFailed")
+            val apiEx = e as? ApiException
+            // v1.128.0 — clone 타입 mismatch → 확인 페이지(감지값 수용 / 선택값 강제 진행 두 버튼).
+            if (apiEx?.code == "project_type_mismatch") {
+                val selected = apiEx.messageArgs.getOrNull(0)?.toString() ?: projectType
+                val detected = apiEx.messageArgs.getOrNull(1)?.toString().orEmpty()
+                call.respondText(
+                    WebProjectTemplates.projectTypeMismatchPage(
+                        username = sess.username, projectId = projectId, appName = appName,
+                        packageName = packageName, cloneUrl = cloneUrl, cloneBranch = cloneBranch,
+                        selected = selected, detected = detected, csrf = sess.csrf, lang = sess.language,
+                    ),
+                    ContentType.Text.Html,
+                    HttpStatusCode.Conflict,
+                )
+                return@post
+            }
+            val msg = apiEx?.message ?: e.message ?: Messages.t(sess.language, "flash.project.createFailed")
             log.warn(e) { "project register failed: $projectId by ${sess.username}" }
             val list = projects.listForUser(sess.userId, sess.isAdmin)
             call.respondText(
