@@ -670,7 +670,7 @@ object WebProjectTemplates {
         // v1.14.4 — row 전체 영역이 클릭 가능 + 첫 화면 무조건 console (#console hash 명시).
         // v1.60.0 — 우측 드래그 핸들(☰) 열 추가 + 3-state 상태칩(idle 제거 → ready 폴백).
         val rowsHtml = if (projects.isEmpty()) {
-            """<tr><td colspan="4" class="dim">${esc(t("projects.list.empty"))}</td></tr>"""
+            """<tr><td colspan="5" class="dim">${esc(t("projects.list.empty"))}</td></tr>"""
         } else {
             projects.joinToString("\n") { p ->
                 val href = "/projects/${esc(p.id)}#console"
@@ -696,7 +696,8 @@ object WebProjectTemplates {
                              onerror="this.onerror=null;this.src='/static/icon.png'">
                         <span style="min-width:0"><strong>${esc(p.name)}</strong>$verBadge<br><small class="dim">${esc(p.id)}</small></span>
                       </a></td>
-                    <td><a href="$href" style="$cellLinkStyle"><code>${esc(p.packageName)}</code></a>$typeBadge</td>
+                    <td><a href="$href" style="$cellLinkStyle"><code>${esc(p.packageName)}</code></a></td>
+                    <td style="text-align:right;white-space:nowrap">$typeBadge</td>
                     <td class="proj-handle" title="${esc(t("projects.reorder.handle"))}" aria-label="${esc(t("projects.reorder.handle"))}">☰</td>
                   </tr>"""
             }
