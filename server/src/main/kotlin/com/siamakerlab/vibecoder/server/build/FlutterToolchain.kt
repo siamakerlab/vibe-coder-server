@@ -31,6 +31,17 @@ class FlutterToolchain(private val config: ServerConfig) : BuildToolchain {
         cancellation: Flow<Unit>,
         signing: SigningCredentials?,
     ): Int {
+        // v1.127.2 (정밀리뷰 #1) — flutter 미설치 시 ProcessRunner.run 의 pb.start() 가 IOException
+        // 을 던져(try/catch 밖) onFailure 로 raw 예외만 노출됐다. GradleBuilder 가 gradlew 를
+        // 선체크하듯, flutter 가용성을 먼저 확인해 친절 안내 + 127 반환.
+        if (!isFlutterAvailable()) {
+            logger.line(
+                "ERROR",
+                "flutter 명령을 찾을 수 없습니다. 빌드환경 페이지(/env-setup)의 Flutter 카드로 설치하세요 " +
+                    "(vibe-doctor flutter).",
+            )
+            return 127
+        }
         // Android 앱 빌드 전용 — apk(debug/release) / appbundle(release).
         val sub = when (variant) {
             BuildVariant.DEBUG -> listOf("build", "apk", "--debug")
@@ -55,12 +66,23 @@ class FlutterToolchain(private val config: ServerConfig) : BuildToolchain {
         ) { level, line -> logger.line(level, line) }
 
         logger.info("Flutter exited code=${result.exitCode} timedOut=${result.timedOut} duration=${result.durationMs}ms")
-        if (result.exitCode == 127) {
-            logger.line("ERROR",
-                "flutter 명령을 찾을 수 없습니다. 빌드환경 페이지(/env-setup)의 Flutter 카드로 설치하세요 " +
-                    "(vibe-doctor flutter).")
-        }
         return result.exitCode
+    }
+
+    /**
+     * flutter 실행 가능 여부. 미설치면 ProcessRunner 의 `pb.start()` 가 IOException 을 던지므로
+     * (try/catch 밖) 빌드 전에 선확인해 친절 안내 + 127 로 끝낸다. 설치돼 있으면 `flutter
+     * --version` 은 빠르고, 미설치면 즉시 IOException → false.
+     */
+    private fun isFlutterAvailable(): Boolean = try {
+        val p = ProcessBuilder(flutterBin(), "--version")
+            .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+            .redirectError(ProcessBuilder.Redirect.DISCARD)
+            .start()
+        if (p.waitFor(10, java.util.concurrent.TimeUnit.SECONDS)) p.exitValue() == 0
+        else { p.destroyForcibly(); false }
+    } catch (_: Throwable) {
+        false
     }
 
     override fun findArtifact(source: Path, moduleName: String, variant: BuildVariant): Path? {

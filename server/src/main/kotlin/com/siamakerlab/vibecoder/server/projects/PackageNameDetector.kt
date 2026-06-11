@@ -30,7 +30,12 @@ import java.nio.file.Path
 internal object PackageNameDetector {
 
     private val APP_PLUGIN = Regex("""com\.android\.application""")
-    private val INCLUDE = Regex("""include\s*\(?\s*["':]([a-zA-Z0-9_.:\-]+)["']""")
+    // gradle 모듈 path 는 따옴표+콜론 시작 (":app", ":service:session-service"). settings 의
+    // include 구문(한 줄 다중 `include(":a", ":b")` / 멀티라인 / 연속 include 모두)에서 콜론-
+    // prefixed 문자열을 전부 추출. rootProject.name="x"(콜론 없음)·plugin id 는 매칭 안 됨.
+    // v1.127.2 (정밀리뷰 #2) — 이전 `include\s*\(?...` 정규식은 한 줄 다중 include 의 첫 인자만
+    // 잡아, app 모듈이 둘째 이후면 detectAppModule 이 null 이 되던 사각지대를 회수.
+    private val MODULE_PATH = Regex("""["']:([a-zA-Z0-9_.:\-]+)["']""")
 
     // `applicationId = "..."`(kts) / `applicationId "..."`(groovy). "applicationIdSuffix" 는
     // "applicationId" 직후가 "Suffix" 라 `\s*=?\s*["']` 패턴에 매칭되지 않아 자동 제외된다
@@ -92,8 +97,9 @@ internal object PackageNameDetector {
             val f = root.resolve(name)
             if (!Files.isRegularFile(f)) continue
             val text = runCatching { Files.readString(f) }.getOrNull() ?: continue
-            return INCLUDE.findAll(text)
-                .mapNotNull { m -> m.groupValues[1].trim().trimStart(':').ifEmpty { null } }
+            // MODULE_PATH 캡처는 leading `:` 이후라 trimStart(':') 불필요.
+            return MODULE_PATH.findAll(text)
+                .mapNotNull { m -> m.groupValues[1].trim().ifEmpty { null } }
                 .toList()
         }
         return emptyList()
