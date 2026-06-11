@@ -209,6 +209,9 @@ fun main(args: Array<String>) {
     // 생성 순서를 ProjectService 앞으로.
     val promptAutomationRunRepo =
         com.siamakerlab.vibecoder.server.repo.PromptAutomationRunRepository(clock)
+    // v1.130.0 — 프롬프트 예약(one-shot) repo. ProjectService delete/rename cascade 정리에 필요해 앞에서 생성.
+    val scheduledPromptRepo =
+        com.siamakerlab.vibecoder.server.repo.ScheduledPromptRepository(clock)
     // v1.91.0 — 독립 메모 repo. ProjectService delete cascade 정리에 필요해 생성 순서를 앞으로.
     val memoRepo = com.siamakerlab.vibecoder.server.repo.MemoRepository(clock)
     val projects = ProjectService(
@@ -219,6 +222,7 @@ fun main(args: Array<String>) {
         buildScheduleRepo = buildScheduleRepo,
         buildWebhookSecretRepo = buildWebhookSecretRepo,
         promptAutomationRunRepo = promptAutomationRunRepo,
+        scheduledPromptRepo = scheduledPromptRepo,
         memoRepo = memoRepo,
         isBusyOf = sessionManager::isBusy,
     )
@@ -328,6 +332,12 @@ fun main(args: Array<String>) {
     val promptAutomationManager = com.siamakerlab.vibecoder.server.automation.PromptAutomationManager(
         sessionManager, promptAutomationRunRepo, hub,
     )
+    // v1.130.0 — 프롬프트 예약(one-shot) 스케줄러. 지정 시각 / Claude 한도 해제 시점에 프롬프트
+    // 1회 자동 전송(유휴 시). claudeStatusService(usage % 캐시) 는 위에서 이미 생성됨.
+    val scheduledPromptManager = com.siamakerlab.vibecoder.server.automation.ScheduledPromptManager(
+        scheduledPromptRepo, sessionManager, claudeStatusService, hub, clock,
+    )
+    scheduledPromptManager.start()
     // turn 완료/중단 hook 주입 (순환의존 방지를 위해 생성 후 setter).
     // v1.88.0 — 자동화(PromptAutomationManager) hook 에 더해 알림(NotificationService) emit 합성.
     //   단일 var listener 라 합성 필수(덮어쓰면 자동화 깨짐). 자동화 active 중 turn 완료는
@@ -581,6 +591,7 @@ fun main(args: Array<String>) {
         promptAutomationPresetStore = promptAutomationPresetStore,
         promptAutomationRunRepo = promptAutomationRunRepo,
         promptAutomationManager = promptAutomationManager,
+        scheduledPromptRepo = scheduledPromptRepo,
         memoRepo = memoRepo,
     )
 

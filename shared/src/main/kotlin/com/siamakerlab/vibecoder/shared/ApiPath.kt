@@ -112,6 +112,13 @@ object ApiPath {
     fun promptAutomationPreset(presetId: String) =
         "/api/prompt-automations/${pathSeg(presetId)}"
 
+    // v1.130.0 — 프롬프트 예약 전송. 지정 시각 / 상대 지연 / Claude 한도 해제 시점에
+    // 프롬프트 1회 자동 전송(one-shot). 자동화(연쇄)와 달리 단발 예약.
+    fun scheduledPrompts(projectId: String) =
+        "/api/projects/${pathSeg(projectId)}/claude/schedule"
+    fun scheduledPrompt(projectId: String, scheduleId: String) =
+        "/api/projects/${pathSeg(projectId)}/claude/schedule/${pathSeg(scheduleId)}"
+
     // Project actions (chip system)
     fun projectActions(projectId: String) = "/api/projects/$projectId/actions"
     fun projectActionsInvoke(projectId: String) =

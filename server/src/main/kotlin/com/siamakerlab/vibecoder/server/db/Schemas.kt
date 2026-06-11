@@ -456,8 +456,41 @@ object ArchivedProjects : Table("archived_projects") {
     override val primaryKey = PrimaryKey(id)
 }
 
+/**
+ * v1.130.0 — 프롬프트 예약 전송(one-shot). 지정 시각 / 상대 지연(생성 시 epoch 환산) /
+ * Claude 세션·주간 한도 해제 시점에 프롬프트 1회를 콘솔로 자동 전송한다.
+ *
+ * `triggerType`:
+ *   - time          : [fireAtEpochMs] 도달 시.
+ *   - session_reset : 세션(5h) 사용 한도 해제 감지 시 ([baselinePercent] = 예약 시 사용량%).
+ *   - weekly_reset  : 주간(7d) 사용 한도 해제 감지 시.
+ *
+ * `status`: pending → (sent | failed | cancelled). pending 만 스케줄러가 폴링한다.
+ * projectId 는 Projects FK — 프로젝트 삭제/이름변경 시 ProjectService 의 단일 transaction
+ * 안에서 deleteForProject / repointProject 로 수동 정리(다른 자식 테이블과 동일 패턴).
+ */
+object ScheduledPrompts : Table("scheduled_prompts") {
+    val id = varchar("id", 64)
+    val projectId = varchar("project_id", 64).references(Projects.id)
+    val prompt = text("prompt")
+    val triggerType = varchar("trigger_type", 24)      // time | session_reset | weekly_reset
+    val fireAtEpochMs = long("fire_at_epoch_ms").nullable()
+    val triggerLabel = varchar("trigger_label", 200).nullable()
+    val baselinePercent = integer("baseline_percent").nullable()
+    val status = varchar("status", 16)                 // pending | sent | cancelled | failed
+    val createdAt = varchar("created_at", 64)
+    val sentAt = varchar("sent_at", 64).nullable()
+    val lastError = text("last_error").nullable()
+    override val primaryKey = PrimaryKey(id)
+
+    init {
+        index(isUnique = false, columns = arrayOf(status))
+        index(isUnique = false, columns = arrayOf(projectId, createdAt))
+    }
+}
+
 val AllTables = arrayOf(
     AdminUsers, Devices, Projects, Builds, Artifacts, UploadedFiles, AuditLog, ConversationTurns,
     BuildSchedules, BuildWebhookSecrets, PushSubscriptions, WebauthnCredentials, ProjectAcls,
-    NotificationEvents, PromptAutomationRuns, Memos, ArchivedProjects,
+    NotificationEvents, PromptAutomationRuns, Memos, ArchivedProjects, ScheduledPrompts,
 )
