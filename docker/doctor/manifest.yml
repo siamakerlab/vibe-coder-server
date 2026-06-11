@@ -19,6 +19,17 @@ android:
     - "emulator"
     - "system-images;android-35;google_apis;x86_64"
 
+# Flutter SDK (Android 앱 빌드 전용). git channel 을 /home/vibe/.local/flutter 에 clone.
+# lib/flutter.sh 가 이 값을 grep 으로 읽는다.
+#   - channel: stable | beta | master (보통 stable)
+#   - version: 빈 문자열이면 channel HEAD. 특정 git tag 로 고정하려면 "3.24.5" 처럼.
+# 운영자 정책: precache 는 android 로만 한정 → iOS/web/desktop artifact(수 GB) 미다운로드.
+flutter:
+  channel: "stable"
+  version: ""
+  precache_platforms:
+    - "android"
+
 # 선택적 MCP (npm). doctor가 사용자에게 individually 묻고 설치.
 mcp_optional:
   - name: "filesystem"

@@ -166,9 +166,14 @@ For per-release history, see [CHANGELOG.md](CHANGELOG.md).
 ### Build & deploy
 
 - **One-click build environment installer** — Android SDK, Gradle binary &
-  cache, Node + Claude CLI, and MCP packages, all persisted under one host
-  directory. New projects' `CLAUDE.md` is wired to use the installed Gradle to
-  avoid redundant wrapper downloads.
+  cache, the Flutter SDK (Android-only), Node + Claude CLI, and MCP packages,
+  all persisted under one host directory. New projects' `CLAUDE.md` is wired to
+  use the installed Gradle to avoid redundant wrapper downloads.
+- **Flutter (Android-only) SDK installer** — the `/env-setup` "Flutter" card
+  clones the stable channel to `/home/vibe/.local/flutter` and precaches
+  **Android artifacts only** (`flutter precache --android --no-ios --no-web …`),
+  intentionally skipping iOS/web/desktop engine artifacts to save several GB of
+  disk. Optional component — excluded from "Install all".
 - **Pre-installed image tooling** — the runtime image ships ImageMagick,
   Pillow (`python3-pil` + NumPy), `rsvg-convert`, `cwebp`/`dwebp`,
   `poppler-utils`, Ghostscript, and `optipng`/`pngquant`/`jpegoptim` so Claude
@@ -459,6 +464,7 @@ servers, Playwright browsers, or Claude auth.
 | Android SDK (3-4 GB)              | `./vibe-coder-data/dev-tools/android-sdk/`          | `/opt/android-sdk`              | ✅ kept |
 | Gradle dependency cache (1-2 GB)  | `./vibe-coder-data/dev-tools/gradle/`               | `/home/vibe/.gradle`            | ✅ kept |
 | MCP server packages (`npm -g`)    | `./vibe-coder-data/dev-tools/npm-global/`           | `/home/vibe/.local`             | ✅ kept |
+| Flutter SDK (Android-only, ~2.5 GB) | `./vibe-coder-data/dev-tools/npm-global/flutter/` | `/home/vibe/.local/flutter`     | ✅ kept (shares `.local` volume) |
 | npx cache                         | `./vibe-coder-data/dev-tools/npm-cache/`            | `/home/vibe/.npm`               | ✅ kept |
 | Playwright browsers (optional)    | `./vibe-coder-data/dev-tools/playwright/`           | `/home/vibe/.cache/ms-playwright` | ✅ kept |
 | Other tool config                 | `./vibe-coder-data/dev-tools/config/`               | `/home/vibe/.config`            | ✅ kept |

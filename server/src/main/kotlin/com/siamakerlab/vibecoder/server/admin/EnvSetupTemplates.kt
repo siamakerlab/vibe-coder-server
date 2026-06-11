@@ -141,9 +141,10 @@ docker compose up -d --force-recreate</pre>
         SetupComponent.CLAUDE_AUTH -> 0      // 인증 — 이게 없으면 아무것도 안 됨
         SetupComponent.ANDROID_SDK -> 1
         SetupComponent.GRADLE -> 2
-        SetupComponent.PLATFORM_TOOLS -> 3
-        SetupComponent.ANDROID_EMULATOR -> 4
-        SetupComponent.MCP_DEFAULTS -> 5
+        SetupComponent.FLUTTER -> 3          // v1.124.0 — Flutter (Android 전용); SDK/Gradle 위에서 동작
+        SetupComponent.PLATFORM_TOOLS -> 4
+        SetupComponent.ANDROID_EMULATOR -> 5
+        SetupComponent.MCP_DEFAULTS -> 6
         else -> 9                            // built-in (JDK/Git/Node/Claude CLI)
     }
 
@@ -345,6 +346,25 @@ git config --global user.email "&lt;email&gt;"
                 </form>
                 <p class="hint" style="margin-top:8px;font-size:12px">${esc(t("env.action.emulatorNote"))}
                   <a href="/emulator" class="chip-link" style="margin-left:4px">${esc(t("env.action.emulatorOpen"))}</a></p>"""
+            }
+
+            // v1.124.0 — Flutter SDK (Android 앱 빌드 전용). git stable channel clone +
+            // Android-only precache (iOS/web/desktop artifact 미다운로드 → 리소스 절약).
+            // 빌드 파이프라인 연동(FlutterToolchain)은 후속 Phase. 여기선 설치 메뉴만.
+            SetupComponent.FLUTTER -> {
+                val label = when (status) {
+                    ComponentStatus.INSTALLED -> t("env.action.flutterLabel.installed")
+                    else -> t("env.action.flutterLabel.missing")
+                }
+                """<form method="post" action="/env-setup/${esc(c.id)}/install" style="margin-top:10px"
+                        onsubmit="return confirm(${jsLit(t("env.action.flutterConfirm"))})">
+                  ${CsrfTokens.hiddenInput(csrf)}
+                  <button type="submit" class="primary" style="width:auto;padding:8px 16px">${esc(label)}</button>
+                </form>
+                <p class="hint" style="margin-top:8px;font-size:12px">${esc(t("env.action.flutterNote"))}</p>
+                <details style="margin-top:8px"><summary class="dim" style="cursor:pointer;font-size:12px">${esc(t("env.action.cliHint"))}</summary>
+                  <pre class="diff-block" style="margin-top:6px">docker exec -it vibe-coder-server vibe-doctor flutter</pre>
+                </details>"""
             }
         }
     }

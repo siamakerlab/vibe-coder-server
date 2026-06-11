@@ -25,6 +25,8 @@ source "$DOCTOR_HOME/lib/claude-auth.sh"
 source "$DOCTOR_HOME/lib/mcp.sh"
 # shellcheck source=lib/gradle.sh
 source "$DOCTOR_HOME/lib/gradle.sh"
+# shellcheck source=lib/flutter.sh
+source "$DOCTOR_HOME/lib/flutter.sh"
 
 print_banner() {
     cat <<'EOF'
@@ -49,6 +51,7 @@ usage() {
   claude      Claude CLI 인증 셋업
   mcp         선택적 MCP 패키지 설치
   gradle [ver] Gradle 설치/업데이트 (생략 시 latest stable 자동 조회)
+  flutter [ref] Flutter SDK 설치/업데이트 (Android 전용; 생략 시 manifest/stable)
   --help, -h  이 도움말
 
 기본 (인자 없음): 인터랙티브 모드 — 각 단계를 묻고 진행.
@@ -87,6 +90,12 @@ case "$cmd" in
         # 위치 인자 또는 GRADLE_VERSION env 로 버전 지정 — 없으면 latest stable.
         shift || true
         install_gradle "${1:-}"
+        ;;
+    flutter)
+        # 위치 인자(channel|tag) 또는 FLUTTER_VERSION env — 없으면 manifest/stable.
+        # Android 앱 빌드 전용: precache 를 --android 로만 한정 (lib/flutter.sh).
+        shift || true
+        install_flutter "${1:-}"
         ;;
     install)
         # 비대화형 자동 설치

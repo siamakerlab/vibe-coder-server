@@ -353,6 +353,10 @@ internal object MessagesKo {
         "env.size.platformTools" to "약 12 MB",
         "env.size.optional" to "선택적",
         "env.size.gradle" to "약 130 MB",
+        // v1.124.0 — Flutter (Android 앱 빌드 전용)
+        "env.comp.flutter.name" to "Flutter (안드로이드 전용)",
+        "env.comp.flutter.desc" to "Dart 로 Android APK/AAB 를 빌드하는 Flutter SDK. stable 채널을 /home/vibe/.local/flutter 에 clone + Android 전용 precache — iOS/web/desktop artifact 는 디스크 절약을 위해 의도적으로 받지 않음. Android SDK + Gradle 필요.",
+        "env.size.flutter" to "~2.5 GB (Android 전용 precache)",
         // v1.7.16 — EnvSetupService probe 메시지.
         "probe.cmd.missing" to "미설치: %s 실행 실패",
         "probe.claudeAuth.apiKey" to "API 키 모드 (ANTHROPIC_API_KEY)",
@@ -377,6 +381,8 @@ internal object MessagesKo {
         "probe.gradle.fetchFail" to "%s (최신 조회 실패)",
         "probe.gradle.update" to "현재 %s → 최신 %s 사용가능",
         "probe.gradle.latest" to "%s (최신)",
+        "probe.flutter.ok" to "설치됨 — %s",
+        "probe.flutter.missing" to "Flutter 미발견. 설치 버튼으로 stable 채널을 clone 합니다 (Android 전용).",
         // v1.7.17 — Claude Auth help text + workspace probe.
         "diag.claudeAuth.help" to "자격증명 파일이 없습니다: %s/.credentials.json\n\n도커 환경 — `--user vibe` 옵션 필수 (root 로 실행하면 /root/.claude 로 저장됨):\n  docker exec -it --user vibe vibe-coder-server claude login\n\n호스트 환경 (compose 가 ~/.claude 를 마운트한 경우 호스트에서 한 번만 해도 됨):\n  claude login\n\n로그인 완료 후 이 페이지를 새로고침하세요. refresh token 으로 access token 은 자동 갱신되므로 한 번만 진행하면 됩니다.",
         "diag.workspace.ok" to "읽기/쓰기 정상",
@@ -853,6 +859,10 @@ internal object MessagesKo {
         "env.action.gradleLabel.missing" to "설치 (최신 stable)",
         "env.action.gradleConfirm" to "Gradle 최신 stable 을 다운로드해 /home/vibe/.local/gradle 에 설치합니다 (~130MB). 신규 프로젝트의 wrapper bootstrap 에 사용됩니다. 계속할까요?",
         "env.action.gradleNote" to "Wrapper bootstrap 도구. 한 번 설치 후엔 사용자 build.gradle.kts 의 wrapper 버전이 실제 빌드에 사용됨. 영구 보존 (bind mount).",
+        "env.action.flutterLabel.installed" to "재설치 / 업데이트",
+        "env.action.flutterLabel.missing" to "설치 (Android 전용)",
+        "env.action.flutterConfirm" to "Flutter stable 을 /home/vibe/.local/flutter 에 clone 하고 Android artifact 만 precache 합니다 (~2.5GB). iOS/web/desktop 은 받지 않습니다. 계속할까요?",
+        "env.action.flutterNote" to "Android 앱 빌드 전용 — iOS/web/desktop 은 리소스 절약을 위해 비활성. Android SDK 가 먼저 필요(없으면 먼저 설치). 영구 보존 (bind mount).",
         // v1.10.0 — 안드로이드 에뮬레이터 카드 액션.
 
         // ── claude flash blurbs ──────────────────────────────────────

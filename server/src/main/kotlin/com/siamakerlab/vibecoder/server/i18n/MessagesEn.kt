@@ -376,6 +376,10 @@ internal object MessagesEn {
         "env.size.platformTools" to "~12 MB",
         "env.size.optional" to "Optional",
         "env.size.gradle" to "~130 MB",
+        // v1.124.0 — Flutter (Android 앱 빌드 전용)
+        "env.comp.flutter.name" to "Flutter (Android-only)",
+        "env.comp.flutter.desc" to "Flutter SDK for building Android APK/AAB from Dart. Cloned (stable channel) to /home/vibe/.local/flutter with Android-only precache — iOS/web/desktop artifacts are intentionally skipped to save disk. Requires Android SDK + Gradle.",
+        "env.size.flutter" to "~2.5 GB (Android-only precache)",
         // v1.7.16 — EnvSetupService probe messages.
         "probe.cmd.missing" to "Not installed: %s failed",
         "probe.claudeAuth.apiKey" to "API key mode (ANTHROPIC_API_KEY)",
@@ -400,6 +404,8 @@ internal object MessagesEn {
         "probe.gradle.fetchFail" to "%s (latest check failed)",
         "probe.gradle.update" to "Current %s → latest %s available",
         "probe.gradle.latest" to "%s (latest)",
+        "probe.flutter.ok" to "Installed — %s",
+        "probe.flutter.missing" to "Flutter not found. Click install to clone the stable channel (Android-only).",
         // v1.7.17 — Claude Auth help text + workspace probe.
         "diag.claudeAuth.help" to "Credentials file missing: %s/.credentials.json\n\nDocker — `--user vibe` required (root saves to /root/.claude):\n  docker exec -it --user vibe vibe-coder-server claude login\n\nHost — if compose mounts ~/.claude, you can log in on the host once:\n  claude login\n\nReload this page after login. refresh_token auto-renews access_token, so this is a one-time step.",
         "diag.workspace.ok" to "read/write OK",
@@ -875,6 +881,10 @@ internal object MessagesEn {
         "env.action.gradleLabel.missing" to "Install (latest stable)",
         "env.action.gradleConfirm" to "Downloads the latest Gradle stable and installs it under /home/vibe/.local/gradle (~130 MB). Used to bootstrap wrappers in new projects. Continue?",
         "env.action.gradleNote" to "Wrapper bootstrap tool. After install the wrapper version pinned in your build.gradle.kts is what actually runs. Persisted via bind mount.",
+        "env.action.flutterLabel.installed" to "Reinstall / Update",
+        "env.action.flutterLabel.missing" to "Install (Android-only)",
+        "env.action.flutterConfirm" to "Clones Flutter stable to /home/vibe/.local/flutter and precaches Android artifacts only (~2.5 GB). iOS/web/desktop are skipped. Continue?",
+        "env.action.flutterNote" to "Android app builds only — iOS/web/desktop are disabled to save resources. Requires the Android SDK (install it first). Persisted via bind mount.",
 
         // ── claude flash blurbs ──────────────────────────────────────
         "env.flash.uploaded" to "✓ Claude credentials file is registered. Available in the console immediately.",
