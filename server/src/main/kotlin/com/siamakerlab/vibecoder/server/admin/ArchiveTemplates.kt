@@ -79,4 +79,51 @@ $list
 """,
         )
     }
+
+    /**
+     * v1.132.0 — 프로젝트 백업 페이지(프로젝트 더보기 탭 inner, embed 대응).
+     * 소스+키스토어+문서+설정을 단일 tar.gz 로 다운로드. 복원은 설정→백업 페이지.
+     */
+    fun projectBackupPage(
+        username: String,
+        projectId: String,
+        projectName: String,
+        packageName: String,
+        ok: String?,
+        err: String?,
+        csrf: String?,
+        lang: String,
+        embed: Boolean,
+    ): String {
+        val t = { k: String -> Messages.t(lang, k) }
+        val flash = buildString {
+            if (!ok.isNullOrBlank()) append("""<div class="flash ok">${esc(ok)}</div>""")
+            if (!err.isNullOrBlank()) append("""<div class="flash err">${esc(err)}</div>""")
+        }
+        return AdminTemplates.shell(
+            title = t("backup.proj.title"),
+            username = username,
+            currentPath = "/projects",
+            csrf = csrf,
+            lang = lang,
+            embed = embed,
+            body = """
+<header><h1>💾 ${esc(t("backup.proj.title"))}
+  <small class="dim" style="font-size:14px;font-weight:400">${esc(projectName)} (${esc(projectId)})</small>
+</h1></header>
+$flash
+<div class="card" style="max-width:680px">
+  <p>${esc(t("backup.proj.desc"))}</p>
+  <ul class="dim" style="font-size:13px;line-height:1.8;margin:10px 0 16px;padding-left:20px">
+    <li>${esc(t("backup.proj.incl.source"))}</li>
+    <li>${esc(t("backup.proj.incl.keystore"))} <code>${esc(packageName)}</code></li>
+    <li>${esc(t("backup.proj.incl.meta"))}</li>
+  </ul>
+  <a href="/projects/${esc(projectId)}/backup/download" class="primary"
+     style="display:inline-block;padding:10px 18px;text-decoration:none;border-radius:6px;font-weight:600">⬇ ${esc(t("backup.proj.download"))}</a>
+  <p class="dim" style="font-size:12px;margin-top:16px;line-height:1.6">${esc(t("backup.proj.restoreHint"))}</p>
+</div>
+""",
+        )
+    }
 }

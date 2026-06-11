@@ -25,7 +25,7 @@ private val log = KotlinLogging.logger {}
 /** tar.gz 안 manifest.json — 복원에 필요한 Projects row 필드. */
 @Serializable
 data class ArchiveManifest(
-    val version: Int = 1,
+    val version: Int = 2,                       // v1.132.0 — projectType 추가
     val originalId: String,
     val name: String,
     val packageName: String,
@@ -34,6 +34,8 @@ data class ArchiveManifest(
     val debugTask: String,
     val createdAt: String,
     val archivedAt: String,
+    // v1.132.0 — kotlin | flutter. 구 manifest(version 1)엔 없어 default kotlin (backward compat).
+    val projectType: String = "kotlin",
 )
 
 /**
@@ -88,7 +90,7 @@ class ProjectArchiveService(
             ArchiveManifest(
                 originalId = p.id, name = p.name, packageName = p.packageName,
                 sourcePath = p.sourcePath, moduleName = p.moduleName, debugTask = p.debugTask,
-                createdAt = p.createdAt, archivedAt = archivedAt.toString(),
+                createdAt = p.createdAt, archivedAt = archivedAt.toString(), projectType = p.projectType,
             )
         )
 
@@ -192,7 +194,7 @@ class ProjectArchiveService(
             // DB row 재삽입 — sourcePath 는 현재 환경 경로로 갱신
             projectRepo.insert(
                 targetId, manifest.name, manifest.packageName,
-                projRoot.toString(), manifest.moduleName, manifest.debugTask,
+                projRoot.toString(), manifest.moduleName, manifest.debugTask, manifest.projectType,
             )
             archivedRepo.delete(archiveId)
             runCatching { Files.deleteIfExists(tar) }
@@ -207,6 +209,110 @@ class ProjectArchiveService(
         val row = archivedRepo.findById(archiveId) ?: return false
         safeArchivePath(row.archivePath)?.let { runCatching { Files.deleteIfExists(it) } }
         archivedRepo.delete(archiveId) > 0
+    }
+
+    // ── 백업/복원 (아카이브와 달리 원본 보존 + 다른 서버 이식) ─────────────────────────
+    //
+    // 같은 tar 레이아웃(manifest.json + project/ + vibecoder/ + keystores/)을 archive 와 공유하므로
+    // 다른 서버에서 [restoreFromTar] 로 동일 상태 복원 가능. archive(보관 후 원본 삭제)와 달리
+    // backup 은 원본/DB 를 건드리지 않고 다운로드용 tar 만 만든다.
+
+    /**
+     * v1.132.0 — 프로젝트를 portable tar.gz 로 백업(원본/DB 불변).
+     * @return 생성된 tar 경로. 호출측이 전송 후 [Files.deleteIfExists] 로 정리.
+     */
+    fun backupToTar(projectId: String): Path = synchronized(lock) {
+        require(projectId != "__scratch__") { "scratch_protected" }
+        val p = projectRepo.findById(projectId)
+            ?: throw IllegalArgumentException("project_not_found: $projectId")
+        val now = Instant.now()
+        val ts = tsFmt.format(now)
+        val manifestJson = json.encodeToString(
+            ArchiveManifest(
+                originalId = p.id, name = p.name, packageName = p.packageName,
+                sourcePath = p.sourcePath, moduleName = p.moduleName, debugTask = p.debugTask,
+                createdAt = p.createdAt, archivedAt = now.toString(), projectType = p.projectType,
+            )
+        )
+        val archivesDir = workspace.archivesDir()
+        val staging = archivesDir.resolve(".backup-staging-$projectId-$ts")
+        val tar = archivesDir.resolve(".backup-$projectId-$ts.tar.gz")
+        val projRoot = workspace.projectRoot(projectId)
+        val vibeDir = workspace.vibecoderDir(projectId)
+        val ksFiles = keystore.keystoreFiles(p.packageName)
+        try {
+            rmrf(staging); Files.createDirectories(staging)
+            Files.writeString(staging.resolve("manifest.json"), manifestJson)
+            if (projRoot.exists()) copyTree(projRoot, staging.resolve("project"))
+            if (vibeDir.exists()) copyTree(vibeDir, staging.resolve("vibecoder"))
+            if (ksFiles.isNotEmpty()) {
+                val ksStage = staging.resolve("keystores").also { Files.createDirectories(it) }
+                ksFiles.forEach { copyFile(it, ksStage.resolve(it.name)) }
+            }
+            runCatching { Files.deleteIfExists(tar) }
+            if (!run(listOf("tar", "czf", tar.toString(), "-C", staging.toString(), "."))) {
+                runCatching { Files.deleteIfExists(tar) }
+                throw IllegalStateException("tar_failed")
+            }
+            if (!tar.exists() || tar.fileSize() <= 0L) throw IllegalStateException("backup_empty")
+            log.info { "project backup created: $projectId → ${tar.name} (${tar.fileSize()} bytes)" }
+            return tar
+        } finally {
+            rmrf(staging)
+        }
+    }
+
+    /**
+     * v1.132.0 — 업로드된 백업 tar.gz 로 프로젝트 복원(다른 서버 이전). 폴더/키스토어 충돌 시 거부.
+     * archived_projects 레지스트리와 무관(다른 서버에서 만든 백업도 복원). @return 복원된 projectId.
+     */
+    fun restoreFromTar(tarPath: Path): String = synchronized(lock) {
+        if (!tarPath.exists()) throw IllegalStateException("backup_file_missing")
+        val restore = workspace.archivesDir().resolve(".restore-upload-${tsFmt.format(Instant.now())}")
+        try {
+            rmrf(restore); Files.createDirectories(restore)
+            // hardening: 절대경로/소유자 무시. 해제는 격리 디렉토리에만.
+            if (!run(listOf("tar", "xzf", tarPath.toString(), "-C", restore.toString(),
+                    "--no-absolute-names", "--no-same-owner"))) {
+                throw IllegalStateException("untar_failed")
+            }
+            val manifestFile = restore.resolve("manifest.json")
+            if (!manifestFile.exists()) throw IllegalStateException("manifest_missing")
+            val manifest = json.decodeFromString<ArchiveManifest>(Files.readString(manifestFile))
+            val targetId = manifest.originalId
+            require(targetId.isNotBlank() && targetId != "__scratch__") { "invalid_target" }
+            if (projectRepo.findById(targetId) != null) throw IllegalStateException("project_exists: $targetId")
+            val projRoot = workspace.projectRoot(targetId)
+            if (projRoot.exists()) throw IllegalStateException("folder_exists: $targetId")
+            // 같은 packageName 의 현역 키스토어가 있으면 복원이 덮어쓰므로 거부(서명키 보호).
+            if (keystore.keystoreFiles(manifest.packageName).isNotEmpty())
+                throw IllegalStateException("keystore_conflict: ${manifest.packageName}")
+
+            restore.resolve("project").takeIf { it.exists() }?.let { rp ->
+                projRoot.parent?.let { Files.createDirectories(it) }
+                Files.move(rp, projRoot)
+            }
+            restore.resolve("vibecoder").takeIf { it.exists() }?.let { rv ->
+                val vd = workspace.vibecoderDir(targetId); rmrf(vd); Files.move(rv, vd)
+            }
+            restore.resolve("keystores").takeIf { it.exists() }?.let { rk ->
+                val ksDir = keystore.keystoreDirPath().also { Files.createDirectories(it) }
+                Files.list(rk).use { s ->
+                    s.forEach { f ->
+                        val dst = ksDir.resolve(f.name)
+                        if (Files.notExists(dst)) copyFile(f, dst)
+                    }
+                }
+            }
+            projectRepo.insert(
+                targetId, manifest.name, manifest.packageName,
+                projRoot.toString(), manifest.moduleName, manifest.debugTask, manifest.projectType,
+            )
+            log.info { "project restored from upload: $targetId" }
+            return targetId
+        } finally {
+            rmrf(restore)
+        }
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────

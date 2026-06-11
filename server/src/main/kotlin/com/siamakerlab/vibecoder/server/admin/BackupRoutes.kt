@@ -2,20 +2,27 @@ package com.siamakerlab.vibecoder.server.admin
 
 import com.siamakerlab.vibecoder.server.core.WorkspacePath
 import com.siamakerlab.vibecoder.server.i18n.Messages
+import com.siamakerlab.vibecoder.server.projects.ProjectArchiveService
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
+import io.ktor.http.content.PartData
 import io.ktor.server.application.call
+import io.ktor.server.request.receiveMultipart
 import io.ktor.server.response.header
 import io.ktor.server.response.respondOutputStream
 import io.ktor.server.response.respondRedirect
 import io.ktor.server.response.respondFile
 import io.ktor.server.response.respondText
+import io.ktor.utils.io.jvm.javaio.toInputStream
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 import io.ktor.server.routing.Routing
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import kotlin.io.path.name
 
 private val log = KotlinLogging.logger {}
@@ -42,6 +49,8 @@ fun Routing.backupRoutes(
     workspace: WorkspacePath,
     /** v0.60.0 — Phase 39 BackupService (수동 download + 자동 목록 + rotation). */
     service: BackupService,
+    /** v1.132.0 — 프로젝트 백업 파일(.tar.gz) 업로드 복원. */
+    archive: ProjectArchiveService,
 ) {
     get("/backup") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
@@ -49,9 +58,48 @@ fun Routing.backupRoutes(
         val sizes = measureSubdirs(workspace.root)
         val autoBackups = service.listAutoBackups()
         call.respondText(
-            renderPage(sess.username, sess.csrf, sizes, autoBackups, authDeps.config.backup, sess.language, embed = call.isEmbeddedRequest()),
+            renderPage(
+                sess.username, sess.csrf, sizes, autoBackups, authDeps.config.backup, sess.language,
+                ok = call.request.queryParameters["ok"], err = call.request.queryParameters["err"],
+                embed = call.isEmbeddedRequest(),
+            ),
             ContentType.Text.Html,
         )
+    }
+
+    // v1.132.0 — 프로젝트 백업(.tar.gz) 업로드 → 복원(다른 서버 이전). id/폴더/키스토어 충돌 시 거부.
+    post("/backup/project-restore") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireAdminOrRedirect(sess)) return@post
+        com.siamakerlab.vibecoder.server.auth.CsrfTokens.verifyCsrfFromQueryOrHeader(call)
+        Files.createDirectories(workspace.archivesDir())
+        val tmp = Files.createTempFile(workspace.archivesDir(), ".upload-restore-", ".tar.gz")
+        var received = false
+        try {
+            val multipart = call.receiveMultipart()
+            while (true) {
+                val part = multipart.readPart() ?: break
+                if (part is PartData.FileItem) {
+                    part.provider().toInputStream().use { ins ->
+                        Files.copy(ins, tmp, StandardCopyOption.REPLACE_EXISTING)
+                    }
+                    received = true
+                }
+                part.dispose()
+            }
+            if (!received || Files.size(tmp) <= 0L) {
+                call.respondRedirect("/backup?err=${enc(Messages.t(sess.language, "backup.restore.proj.fail"))}")
+                return@post
+            }
+            val id = archive.restoreFromTar(tmp)
+            log.info { "project restored from upload by ${sess.username}: $id" }
+            call.respondRedirect("/backup?ok=${enc(Messages.t(sess.language, "backup.restore.proj.ok"))}")
+        } catch (e: Throwable) {
+            log.warn(e) { "project restore failed" }
+            call.respondRedirect("/backup?err=${enc("${Messages.t(sess.language, "backup.restore.proj.fail")}: ${e.message ?: "error"}")}")
+        } finally {
+            runCatching { Files.deleteIfExists(tmp) }
+        }
     }
 
     get("/backup/download") {
@@ -137,6 +185,8 @@ private fun esc(s: String?): String =
         .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         .replace("\"", "&quot;").replace("'", "&#39;")
 
+private fun enc(s: String) = URLEncoder.encode(s, StandardCharsets.UTF_8)
+
 private fun renderPage(
     username: String,
     csrf: String?,
@@ -144,10 +194,16 @@ private fun renderPage(
     autoBackups: List<BackupService.AutoBackupEntry> = emptyList(),
     backupCfg: com.siamakerlab.vibecoder.server.config.BackupSection? = null,
     lang: String,
+    ok: String? = null,
+    err: String? = null,
     embed: Boolean = false,
 ): String {
     val t = { key: String -> Messages.t(lang, key) }
     val total = sizes.sumOf { it.bytes }
+    val flash = buildString {
+        if (!ok.isNullOrBlank()) append("""<div class="flash ok">${esc(ok)}</div>""")
+        if (!err.isNullOrBlank()) append("""<div class="flash err">${esc(err)}</div>""")
+    }
     val rowsHtml = sizes.joinToString("") { s ->
         val excluded = s.name in setOf("postgres", "dev-tools") || s.name == ".vibecoder"
         val note = when (s.name) {
@@ -169,6 +225,18 @@ private fun renderPage(
 <header>
   <h1>${esc(t("backup.heading"))} <small class="dim" style="font-size:14px;font-weight:400"></small></h1>
 </header>
+$flash
+
+<div class="card" style="margin-top:0;margin-bottom:14px;background:rgba(124,58,237,0.06)">
+  <h2 style="margin-top:0">${esc(t("backup.restore.proj.title"))}</h2>
+  <p>${esc(t("backup.restore.proj.desc"))}</p>
+  <form method="post" action="/backup/project-restore?_csrf=${esc(csrf ?: "")}" enctype="multipart/form-data"
+        style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <input type="file" name="backup" accept=".gz,.tgz,application/gzip,application/x-gzip" required>
+    <button type="submit" class="primary" style="padding:8px 16px">${esc(t("backup.restore.proj.btn"))}</button>
+  </form>
+  <p class="hint" style="margin-top:8px">${esc(t("backup.restore.proj.hint"))}</p>
+</div>
 
 <div class="card" style="margin-bottom:14px">
   <h2 style="margin-top:0">${esc(Messages.t(lang, "backup.currentSize", humanBytes(total)))}</h2>
