@@ -153,7 +153,7 @@ class ProjectService(
             // 진짜 packageName 추출 시도. 성공 시 placeholder (com.example.<projectId>)
             // 를 덮어씀. 실패 시 placeholder 그대로 (사용자가 후속 콘솔에서 수정 가능).
             if (body.packageName.startsWith("com.example.")) {
-                detectPackageFromClonedRepo(srcRoot)?.let { detected ->
+                PackageNameDetector.detectApplicationId(srcRoot)?.let { detected ->
                     log.info { "[clone:${body.projectId}] auto-detected packageName: $detected" }
                     body = body.copy(packageName = detected)
                 }
@@ -167,7 +167,7 @@ class ProjectService(
         // 파싱 + com.android.application plugin 모듈 찾기. empty 신규 프로젝트는
         // 디폴트 "app" 그대로.
         val detectedModule = if (isClone) {
-            runCatching { detectAppModuleFromClonedRepo(srcRoot) }.getOrNull()
+            runCatching { PackageNameDetector.detectAppModule(srcRoot) }.getOrNull()
         } else null
         val moduleNameFinal = detectedModule ?: DEFAULT_MODULE
         if (detectedModule != null && detectedModule != DEFAULT_MODULE) {
@@ -668,58 +668,10 @@ class ProjectService(
         return sanitized
     }
 
-    /**
-     * v1.7.0 — clone 된 repo 에서 Android packageName 추출 시도.
-     *
-     * 검색 순서 (재귀 walk depth ≤ 5):
-     *  1. build.gradle.kts 의 `applicationId = "..."` 또는 `namespace = "..."`
-     *  2. build.gradle (groovy) 의 `applicationId "..."` 또는 `namespace "..."`
-     *  3. AndroidManifest.xml 의 `package="..."` (legacy)
-     *
-     * 첫 매치 반환. 모두 실패 시 null.
-     */
-    /**
-     * v1.7.22 — clone 후 settings.gradle.kts 의 `include(":...")` 항목 중
-     * `com.android.application` plugin 이 적용된 모듈을 찾아 server 의
-     * `moduleName` 으로 사용. 기본값 `"app"` 가 multi-module 프로젝트
-     * (예: vibe-coder-android 의 `:android-app:app`) 에서 작동 안 하던
-     * "project 'app' not found in root project" 빌드 실패 해소.
-     *
-     * 반환 형식 — Gradle path 의 leading `:` 제거. BuildService 가
-     * `":$moduleName:$debugTask"` 로 조립하므로 nested 모듈은 콜론 그대로
-     * (예: `"android-app:app"`).
-     */
-    private fun detectAppModuleFromClonedRepo(root: Path): String? {
-        if (!Files.isDirectory(root)) return null
-        val includeRegex = Regex("""include\s*\(?\s*["':]([a-zA-Z0-9_.:\-]+)["']""")
-        val appPluginRegex = Regex("""com\.android\.application""")
-        // 1) settings.gradle(.kts) 파싱 → include 된 module path 모두 수집.
-        val settingsCandidates = listOf("settings.gradle.kts", "settings.gradle")
-        val includes = mutableListOf<String>()
-        for (name in settingsCandidates) {
-            val f = root.resolve(name)
-            if (!f.toFile().isFile) continue
-            val text = runCatching { Files.readString(f) }.getOrNull() ?: continue
-            includeRegex.findAll(text).forEach { m ->
-                val raw = m.groupValues[1].trim().trimStart(':')
-                if (raw.isNotEmpty()) includes.add(raw)
-            }
-            break
-        }
-        if (includes.isEmpty()) return null
-        // 2) 각 module 의 build.gradle(.kts) 에서 com.android.application 적용 여부 확인.
-        for (mod in includes) {
-            val moduleDir = root.resolve(mod.replace(':', '/'))
-            val candidates = listOf("build.gradle.kts", "build.gradle")
-            for (g in candidates) {
-                val gf = moduleDir.resolve(g)
-                if (!gf.toFile().isFile) continue
-                val text = runCatching { Files.readString(gf) }.getOrNull() ?: continue
-                if (appPluginRegex.containsMatchIn(text)) return mod
-            }
-        }
-        return null
-    }
+    // v1.128.0 — clone 패키지명(applicationId) / app 모듈 감지는 [PackageNameDetector] 로 이관.
+    // 멀티모듈에서 라이브러리 서브모듈 namespace 를 applicationId 로 오인하던 버그 회수
+    // (siashell: com.siashell.app 인데 com.siashell.service 채택 / Calculator). 규칙·테스트는
+    // PackageNameDetector.kt 참조.
 
     /**
      * v1.64.0 — 모듈 build.gradle(.kts) 의 versionName. 없으면 null (목록 행 "v1.2.3" 표시용).
@@ -769,35 +721,6 @@ class ProjectService(
             return runCatching { workspace.ensureUnderWorkspace(rootIcon.toRealPath()) }.getOrNull()
         }
         return null
-    }
-
-    private fun detectPackageFromClonedRepo(root: Path): String? {
-        if (!Files.isDirectory(root)) return null
-        val gradleRegex = Regex("""(?:applicationId|namespace)\s*[=]?\s*["']([a-zA-Z][a-zA-Z0-9_.]+)["']""")
-        val manifestRegex = Regex("""package\s*=\s*["']([a-zA-Z][a-zA-Z0-9_.]+)["']""")
-        return runCatching {
-            Files.walk(root, 5).use { stream ->
-                for (path in stream) {
-                    if (Files.isDirectory(path)) continue
-                    val name = path.fileName?.toString() ?: continue
-                    val isGradle = name == "build.gradle.kts" || name == "build.gradle"
-                    val isManifest = name == "AndroidManifest.xml"
-                    if (!isGradle && !isManifest) continue
-                    val text = runCatching { Files.readString(path) }.getOrNull() ?: continue
-                    val match = if (isGradle) {
-                        gradleRegex.find(text)
-                    } else {
-                        manifestRegex.find(text)
-                    }
-                    if (match != null) {
-                        val pkg = match.groupValues[1]
-                        // Android applicationId 규칙: 최소 1개 `.` 필요.
-                        if (pkg.contains('.')) return@use pkg
-                    }
-                }
-                null
-            }
-        }.getOrNull()
     }
 
     companion object {
