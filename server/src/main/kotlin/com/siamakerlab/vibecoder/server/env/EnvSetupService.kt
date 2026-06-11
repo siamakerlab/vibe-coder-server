@@ -114,6 +114,16 @@ enum class SetupComponent(
         description = "env.comp.gradle.desc",
         sizeHint = "env.size.gradle",
     ),
+    // v1.124.0 — Flutter SDK (Android 앱 빌드 전용). doctorCmd="flutter" → vibe-doctor flutter
+    // 가 git stable channel 을 /home/vibe/.local/flutter 에 clone + Android-only precache.
+    // 선택적 컴포넌트 — "모두 설치"(install-all) 에서는 제외(Kotlin 사용자에겐 불필요한 2.5GB).
+    FLUTTER(
+        id = "flutter",
+        displayName = "env.comp.flutter.name",
+        doctorCmd = "flutter",
+        description = "env.comp.flutter.desc",
+        sizeHint = "env.size.flutter",
+    ),
     ;
 
     companion object {
@@ -179,6 +189,7 @@ class EnvSetupService(
         SetupComponent.ANDROID_EMULATOR -> probeAndroidEmulator(c, lang)
         SetupComponent.MCP_DEFAULTS -> probeMcpDefaults(c, lang)
         SetupComponent.GRADLE -> probeGradle(c, lang)
+        SetupComponent.FLUTTER -> probeFlutter(c, lang)
     }
 
     private fun t(lang: String, key: String, vararg args: Any?): String =
@@ -330,6 +341,35 @@ class EnvSetupService(
     }
 
     /**
+     * Flutter 진단 — 표준 설치 경로(`.local/flutter/bin/flutter`) 존재를 우선 검사하고,
+     * 없으면 PATH 의 `flutter --version` 을 시도. Gradle 과 달리 latest 비교는 하지 않는다
+     * (Flutter 는 git channel 기반 — `flutter upgrade` 로 갱신, 버전 비교 의미가 약함).
+     *
+     * v1.124.0 — Android 앱 빌드 전용 컴포넌트. 실제 설치/precache 는 vibe-doctor flutter.
+     */
+    private fun probeFlutter(c: SetupComponent, lang: String): ComponentState {
+        val bin = flutterBinPath()
+        if (bin != null && bin.exists()) {
+            return ComponentState(c, ComponentStatus.INSTALLED, t(lang, "probe.flutter.ok", bin.toString()))
+        }
+        val r = runtimeCommand(listOf("flutter", "--version"), timeoutSec = 8)
+        return if (r.exitCode == 0) {
+            val first = r.combined.lineSequence().firstOrNull().orEmpty().trim().ifBlank { "OK" }
+            ComponentState(c, ComponentStatus.INSTALLED, first)
+        } else {
+            ComponentState(c, ComponentStatus.MISSING, t(lang, "probe.flutter.missing"))
+        }
+    }
+
+    /** 표준 Flutter 설치 위치 — `<user.home>/.local/flutter/bin/flutter` (lib/flutter.sh 와 동기). */
+    private fun flutterBinPath(): Path? {
+        val home = System.getProperty("user.home")?.ifBlank { null }
+            ?: System.getenv("HOME")?.ifBlank { null }
+            ?: return null
+        return Path.of(home).resolve(".local/flutter/bin/flutter")
+    }
+
+    /**
      * services.gradle.org/versions/current 의 .version 추출. 실패 시 null.
      *
      * v0.12.4 — 30분 TTL 캐시. 이전엔 매 detect 마다 (대시보드 로드 시점마다)
@@ -438,9 +478,10 @@ class EnvSetupService(
     fun spawnInstallAll(): String {
         val taskId = Ids.taskId()
         val steps = SetupComponent.entries
-            .mapNotNull { c -> c.doctorCmd?.takeIf { c != SetupComponent.CLAUDE_AUTH }?.let { c to it } }
-        // CLAUDE_AUTH 는 OAuth 라 자동 불가. 나머지 (android / mcp 등) 만.
-        SetupComponent.entries.forEach { c -> if (c.doctorCmd != null) lastTask[c] = taskId }
+            .mapNotNull { c -> c.doctorCmd?.takeIf { c != SetupComponent.CLAUDE_AUTH && c != SetupComponent.FLUTTER }?.let { c to it } }
+        // CLAUDE_AUTH 는 OAuth 라 자동 불가. FLUTTER 는 선택적(Android 빌드 전용, ~2.5GB) —
+        // Kotlin 사용자에겐 불필요하므로 개별 카드 버튼으로만 설치. 나머지 (android / gradle / mcp) 만.
+        SetupComponent.entries.forEach { c -> if (c.doctorCmd != null && c != SetupComponent.FLUTTER) lastTask[c] = taskId }
         submitDoctor(taskId, label = "모두 설치/업데이트", steps = steps.map { it.second }, displaySteps = steps.map { it.first.displayName })
         return taskId
     }
