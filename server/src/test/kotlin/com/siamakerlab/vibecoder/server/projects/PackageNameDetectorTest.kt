@@ -134,4 +134,22 @@ class PackageNameDetectorTest {
 
         PackageNameDetector.detectAppModule(root) shouldBe "android-app:app"
     }
+
+    @Test
+    fun `한 줄 다중 include 에서 app 이 둘째여도 감지`() {
+        // 정밀리뷰 #2 회귀 — include(":core", ":app") 한 줄에 app 이 둘째.
+        val root = root()
+        write(root, "settings.gradle.kts", """include(":core", ":app")""")
+        write(root, "core/build.gradle.kts", """plugins { id("com.android.library") }""")
+        write(
+            root, "app/build.gradle.kts",
+            """
+            plugins { id("com.android.application") }
+            android { defaultConfig { applicationId = "com.multi.app" } }
+            """.trimIndent(),
+        )
+
+        PackageNameDetector.detectAppModule(root) shouldBe "app"
+        PackageNameDetector.detectApplicationId(root) shouldBe "com.multi.app"
+    }
 }

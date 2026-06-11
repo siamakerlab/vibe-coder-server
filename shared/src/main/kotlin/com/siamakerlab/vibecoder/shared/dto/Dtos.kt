@@ -137,7 +137,9 @@ object ProjectTypes {
     const val KOTLIN = "kotlin"
     const val FLUTTER = "flutter"
     val ALL = setOf(KOTLIN, FLUTTER)
-    fun normalize(value: String?): String = if (value == FLUTTER) FLUTTER else KOTLIN
+    // v1.127.2 — trim + lowercase 로 `"Flutter"` / ` flutter ` 등 비정규 입력도 흡수
+    // (JSON API 직접 호출 robustness). 알 수 없는 값/null → KOTLIN.
+    fun normalize(value: String?): String = if (value?.trim()?.lowercase() == FLUTTER) FLUTTER else KOTLIN
 }
 
 @Serializable
