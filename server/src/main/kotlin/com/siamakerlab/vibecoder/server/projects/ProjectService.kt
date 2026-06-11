@@ -188,6 +188,7 @@ class ProjectService(
                 sourceType = body.sourceType,
                 cloneUrl = body.cloneUrl,
                 cloneBranch = body.cloneBranch,
+                projectType = ProjectTypes.normalize(body.projectType),
             )
             Files.writeString(claudeMd, ClaudeMdTemplate.render(info))
         }
