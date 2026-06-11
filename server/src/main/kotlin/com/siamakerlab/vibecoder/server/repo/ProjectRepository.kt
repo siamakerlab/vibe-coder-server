@@ -19,6 +19,8 @@ data class ProjectRow(
     val debugTask: String,
     val createdAt: String,
     val updatedAt: String,
+    /** v1.125.0 — "kotlin" | "flutter" (둘 다 Android 빌드 타깃). [com.siamakerlab.vibecoder.shared.dto.ProjectTypes]. */
+    val projectType: String = "kotlin",
 )
 
 class ProjectRepository(private val clock: Clock) {
@@ -30,6 +32,7 @@ class ProjectRepository(private val clock: Clock) {
         sourcePath: String,
         moduleName: String,
         debugTask: String,
+        projectType: String = "kotlin",   // v1.125.0
     ): ProjectRow = transaction {
         val now = clock.nowIso()
         // v1.60.0 — 새 프로젝트는 맨 위: 현재 최소 sort_order - 1 (없으면 0).
@@ -43,11 +46,12 @@ class ProjectRepository(private val clock: Clock) {
             it[Projects.sourcePath] = sourcePath
             it[Projects.moduleName] = moduleName
             it[Projects.debugTask] = debugTask
+            it[Projects.projectType] = projectType
             it[createdAt] = now
             it[updatedAt] = now
             it[sortOrder] = topOrder
         }
-        ProjectRow(id, name, packageName, sourcePath, moduleName, debugTask, now, now)
+        ProjectRow(id, name, packageName, sourcePath, moduleName, debugTask, now, now, projectType)
     }
 
     fun findById(id: String): ProjectRow? = transaction {
@@ -131,6 +135,7 @@ class ProjectRepository(private val clock: Clock) {
             it[Projects.sourcePath] = old[Projects.sourcePath]
             it[Projects.moduleName] = old[Projects.moduleName]
             it[Projects.debugTask] = old[Projects.debugTask]
+            it[Projects.projectType] = old[Projects.projectType]
             it[Projects.createdAt] = old[Projects.createdAt]
             it[Projects.updatedAt] = clock.nowIso()
             it[Projects.sortOrder] = old[Projects.sortOrder]
@@ -164,5 +169,6 @@ class ProjectRepository(private val clock: Clock) {
         debugTask = this[Projects.debugTask],
         createdAt = this[Projects.createdAt],
         updatedAt = this[Projects.updatedAt],
+        projectType = this[Projects.projectType],
     )
 }

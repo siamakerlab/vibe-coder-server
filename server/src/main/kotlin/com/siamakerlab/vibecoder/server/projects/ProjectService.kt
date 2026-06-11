@@ -9,6 +9,7 @@ import com.siamakerlab.vibecoder.server.repo.ProjectRepository
 import com.siamakerlab.vibecoder.server.repo.ProjectRow
 import com.siamakerlab.vibecoder.server.repo.UploadedFileRepository
 import com.siamakerlab.vibecoder.shared.dto.ProjectDto
+import com.siamakerlab.vibecoder.shared.dto.ProjectTypes
 import com.siamakerlab.vibecoder.shared.dto.RegisterProjectRequestDto
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
@@ -213,6 +214,8 @@ class ProjectService(
             sourcePath = srcRoot.toString(),
             moduleName = moduleNameFinal,
             debugTask = DEFAULT_DEBUG_TASK,
+            // v1.125.0 — 사용자 선택 타입 영속(SSOT). 알 수 없는 값은 kotlin 으로 흡수.
+            projectType = ProjectTypes.normalize(body.projectType),
         )
 
         // v0.18.0 — 템플릿 starter prompt 기록. 같은 turn 에서 사용자가 콘솔로 가면
@@ -615,6 +618,7 @@ class ProjectService(
             lastBuildStatus = lastBuildStatus, hasGitChanges = hasGitChanges,
             updatedAt = updatedAt,
             busy = busy,
+            projectType = projectType,
         )
 
     /**
