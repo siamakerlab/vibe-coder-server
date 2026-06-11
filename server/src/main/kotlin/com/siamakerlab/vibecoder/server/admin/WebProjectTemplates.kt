@@ -1584,12 +1584,15 @@ ${if (embed) "" else contextMeterHtml}
 
 <!-- v1.6.4 — 스크롤 + 우하단 jump-to-bottom 버튼 wrapper. -->
 <div class="console-log-wrap">
-  <!-- v1.129.0 — 최상단 "더보기": 과거 30개씩 추가 로드(oldestTurnIdx>0 일 때만 표시). -->
-  <button type="button" id="console-load-more"
-          style="display:none;width:100%;padding:7px;margin:0 0 6px;font-size:12px;background:#1a1a1a;color:var(--text-dim);border:1px solid #333;border-radius:6px;cursor:pointer">
-    ↑ ${esc(t("console.loadMore"))}
-  </button>
-  <div id="console-log" class="console-log" aria-live="polite"></div>
+  <div id="console-log" class="console-log" aria-live="polite">
+    <!-- v1.129.1 — "더보기"를 콘솔 스크롤 영역의 첫 자식으로. 스크롤 콘텐츠의 일부라 최상단으로
+         올렸을 때만 보이고(아래로 내려가면 화면 밖), 클릭 시 과거 30개를 이 버튼 다음에 prepend.
+         oldestTurnIdx>0(더 과거 있음)일 때만 display. -->
+    <button type="button" id="console-load-more"
+            style="display:none;width:100%;padding:7px;margin:0 0 6px;font-size:12px;background:#1a1a1a;color:var(--text-dim);border:1px solid #333;border-radius:6px;cursor:pointer">
+      ↑ ${esc(t("console.loadMore"))}
+    </button>
+  </div>
   <!--
     v1.7.3 — 서버 재시작 후에도 기존 conversation 이 즉시 보이도록 DB 의 ConversationTurn
     을 inline JSON 으로 embed. WS ring buffer 는 in-memory 이라 재시작 시 휘발 → 이전엔
@@ -2324,7 +2327,8 @@ $quickBarHtml
       if (!res.ok) return;
       var arr = await res.json();
       if (!Array.isArray(arr) || arr.length === 0) { oldestTurnIdx = 0; updateLoadMoreBtn(); return; }
-      var anchor = logEl.firstChild;
+      // v1.129.1 — 더보기 버튼이 첫 자식이므로 그 다음 노드 앞에 prepend(버튼은 최상단 유지).
+      var anchor = (loadMoreBtn && loadMoreBtn.nextSibling) ? loadMoreBtn.nextSibling : logEl.firstChild;
       var prevH = logEl.scrollHeight, prevTop = logEl.scrollTop;
       for (var i = 0; i < arr.length; i++) renderHistoryRow(arr[i], anchor);
       oldestTurnIdx = (arr[0] && arr[0].turnIdx != null) ? arr[0].turnIdx : 0;
