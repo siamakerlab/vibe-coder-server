@@ -497,13 +497,24 @@ fun Routing.webProjectRoutes(
         // v1.104.2 — 진짜 "마지막 200개" 로 회수. 이전엔 offset=0 ASC 라 turn 많은 세션
         // (tally-counter 1000+) 에서 *가장 오래된* 200개만 와, 최근 대화(방금 보낸 프롬프트
         // 포함)가 콘솔 재진입 시 통째로 누락됐다(상단 고정도 당연히 안 됨). offset=total-200.
+        // v1.129.0 — 초기 30개만 로드(과거는 콘솔 최상단 "더보기" 로 페이지네이션). offset=total-30.
+        // 30개 안에 user(현재/마지막 프롬프트)가 없으면(매우 긴 turn) 마지막 user 1개를 맨 앞에
+        // 붙여, 현재 작업 중 프롬프트의 상단 고정(.cur sticky)을 30개 밖이어도 유지한다.
         val history = if (sid != null) {
             runCatching {
                 val f = ConversationTurnRepository.Filter(projectId = id, sessionId = sid)
-                val off = (conversationRepo.count(f) - 200).coerceAtLeast(0)
-                conversationRepo.list(f, limit = 200, offset = off)
+                val off = (conversationRepo.count(f) - 30).coerceAtLeast(0)
+                val rows = conversationRepo.list(f, limit = 30, offset = off)
+                if (rows.none { it.role == "user" }) {
+                    val uf = ConversationTurnRepository.Filter(projectId = id, sessionId = sid, role = "user")
+                    val uoff = (conversationRepo.count(uf) - 1).coerceAtLeast(0)
+                    conversationRepo.list(uf, limit = 1, offset = uoff) + rows
+                } else rows
             }.getOrDefault(emptyList())
         } else emptyList()
+        // v1.129.0 — history(DB·과거) ↔ WS replay(ring·미래) 경계 seq. 클라가 WS 연결 시
+        // since=이 값으로 보내, ring 의 과거 프레임(history 와 중복)을 replay 하지 않게 한다.
+        val initialMaxSeq = hub.consoleCurrentSeq(LogHub.consoleTopic(id))
         call.respondText(
             WebProjectTemplates.consolePage(
                 sess.username, p, sid, alive,
@@ -512,6 +523,7 @@ fun Routing.webProjectRoutes(
                 csrf = sess.csrf,
                 starterPrompt = starterPrompt,
                 initialHistory = history,
+                initialMaxSeq = initialMaxSeq,
                 model = sessionManager.effectiveModel(id),
                 contextTokens = ctxSnap.cacheRead,
                 contextInputTokens = ctxSnap.input,
@@ -524,6 +536,24 @@ fun Routing.webProjectRoutes(
             ),
             ContentType.Text.Html,
         )
+    }
+
+    // v1.129.0 — 콘솔 "더보기": before turnIdx 이전 과거 limit 개(ASC) JSON. 초기 30개 위로 prepend.
+    get("/api/projects/{id}/claude/console/history") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@get
+        val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
+        val before = call.request.queryParameters["before"]?.toIntOrNull()
+        val limit = (call.request.queryParameters["limit"]?.toIntOrNull() ?: 30).coerceIn(1, 100)
+        val sid = sessionManager.currentSessionId(id)
+        val rows = if (sid != null && before != null) {
+            runCatching {
+                val f = ConversationTurnRepository.Filter(projectId = id, sessionId = sid, beforeTurnIdx = before)
+                val off = (conversationRepo.count(f) - limit).coerceAtLeast(0)
+                conversationRepo.list(f, limit = limit, offset = off)
+            }.getOrDefault(emptyList())
+        } else emptyList()
+        call.respondText(WebProjectTemplates.renderInitialHistoryJson(rows), ContentType.Application.Json)
     }
 
     post("/projects/{id}/console/new") {

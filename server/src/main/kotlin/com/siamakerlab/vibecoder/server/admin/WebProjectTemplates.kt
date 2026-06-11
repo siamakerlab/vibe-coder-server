@@ -124,7 +124,7 @@ object WebProjectTemplates {
         return false
     }
 
-    private fun renderInitialHistoryJson(
+    internal fun renderInitialHistoryJson(
         rows: List<com.siamakerlab.vibecoder.server.repo.ConversationTurnRow>,
     ): String {
         if (rows.isEmpty()) return "[]"
@@ -156,6 +156,8 @@ object WebProjectTemplates {
             sb.append(",\"text\":").append(jsLit(text))
             if (row.toolName != null) sb.append(",\"tool\":").append(jsLit(row.toolName))
             if (row.ts.isNotBlank()) sb.append(",\"ts\":").append(jsLit(row.ts))
+            // v1.129.0 — "더보기" 페이지네이션 키(이보다 작은 turnIdx 를 과거로 로드).
+            sb.append(",\"turnIdx\":").append(row.turnIdx)
             sb.append('}')
         }
         sb.append(']')
@@ -1138,6 +1140,9 @@ $errHtml
          * inline JSON 으로 embed 되어 페이지 load 직후 JS 가 prepend.
          */
         initialHistory: List<com.siamakerlab.vibecoder.server.repo.ConversationTurnRow> = emptyList(),
+        /** v1.129.0 — history(DB·과거) ↔ WS(ring·미래) 경계 seq. inline JS 가 WS 연결 `since` 로
+         *  사용해 ring 의 과거 프레임(history 와 중복)을 받지 않게 한다. 0 = 경계 없음(전체 replay). */
+        initialMaxSeq: Long = 0L,
         /**
          * v1.54.0 — ChatGPT 스타일 다중 채팅. non-null 이면 좌측에 채팅 목록 사이드바를
          * 두고 기존 콘솔 본문을 우측 메인 영역으로 감싼다 (isChat 전용).
@@ -1579,6 +1584,11 @@ ${if (embed) "" else contextMeterHtml}
 
 <!-- v1.6.4 — 스크롤 + 우하단 jump-to-bottom 버튼 wrapper. -->
 <div class="console-log-wrap">
+  <!-- v1.129.0 — 최상단 "더보기": 과거 30개씩 추가 로드(oldestTurnIdx>0 일 때만 표시). -->
+  <button type="button" id="console-load-more"
+          style="display:none;width:100%;padding:7px;margin:0 0 6px;font-size:12px;background:#1a1a1a;color:var(--text-dim);border:1px solid #333;border-radius:6px;cursor:pointer">
+    ↑ ${esc(t("console.loadMore"))}
+  </button>
   <div id="console-log" class="console-log" aria-live="polite"></div>
   <!--
     v1.7.3 — 서버 재시작 후에도 기존 conversation 이 즉시 보이도록 DB 의 ConversationTurn
@@ -1689,11 +1699,6 @@ $quickBarHtml
             title="${esc(t("console.filter.title"))}">
       🔍 ${esc(t("console.filter.title"))} <span id="filter-summary" class="dim" style="font-size:11px"></span>
     </button>
-    <label for="autoscroll-toggle" style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-dim);cursor:pointer;user-select:none;margin:0"
-           title="${esc(t("console.autoscroll.tip"))}">
-      <input type="checkbox" id="autoscroll-toggle" style="margin:0">
-      📌 ${esc(t("console.autoscroll"))}
-    </label>
   </div>
 </div>
 
@@ -1790,26 +1795,12 @@ $quickBarHtml
     return logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 12;
   }
 
-  // v1.20.0 — Auto-scroll 모드 토글. ON 시 사용자 스크롤 위치 무시하고 항상 stick.
-  var autoScrollOn = true;
-  try {
-    var saved = localStorage.getItem('vibe.console.autoscroll');
-    autoScrollOn = (saved === null) ? true : (saved === '1');   // default ON
-  } catch (e) {}
-  var autoScrollCb = document.getElementById('autoscroll-toggle');
-  if (autoScrollCb) {
-    autoScrollCb.checked = autoScrollOn;
-    autoScrollCb.addEventListener('change', function () {
-      autoScrollOn = autoScrollCb.checked;
-      try { localStorage.setItem('vibe.console.autoscroll', autoScrollOn ? '1' : '0'); } catch (e) {}
-      if (autoScrollOn) {
-        // 켜는 순간 즉시 최하단으로 jump (사용자 의도 명확).
-        logEl.scrollTop = logEl.scrollHeight;
-      }
-    });
-  }
-  // append() 등이 사용. autoScrollOn 이면 무조건 stick, 아니면 사용자 위치 따라.
-  function shouldStick() { return autoScrollOn || isAtBottom(); }
+  // v1.129.0 — 자동스크롤 토글 제거. "최하단 근처에 있는가"(stickyWanted)만으로 자동 추적:
+  //  최하단이면 새 메시지 따라 내려가고(stick), 스크롤 업 하면 해제(과거 보는 중 화면 고정).
+  //  탭 숨김(display:none) 중엔 scrollHeight=0 이라 isAtBottom 이 부정확 → scroll 이벤트에서
+  //  갱신한 마지막 상태(플래그)를 신뢰한다.
+  var stickyWanted = true;   // 초기 진입은 최하단(최신) 보기.
+  function shouldStick() { return stickyWanted; }
   function setJumpVisible(v) {
     if (!jumpBtn) return;
     if (v) jumpBtn.classList.add('visible');
@@ -1827,6 +1818,7 @@ $quickBarHtml
   }
   function scrollToBottom() {
     logEl.scrollTop = logEl.scrollHeight;
+    stickyWanted = true;   // v1.129.0 — 명시적 최하단 점프 → 자동스크롤 ON.
     setUnread(0);
     setJumpVisible(false);
   }
@@ -1845,42 +1837,29 @@ $quickBarHtml
   var SCROLL_KEY = 'vibe.console.scroll.' + projectId;
   function pinBottomNow() { logEl.scrollTop = logEl.scrollHeight; }
   function applyInitialView() {
-    if (autoScrollOn) {
-      pinBottomNow();
-      var cancelled = false;
-      function stop() { cancelled = true; }
-      logEl.addEventListener('wheel', stop, { passive: true, once: true });
-      logEl.addEventListener('touchstart', stop, { passive: true, once: true });
-      requestAnimationFrame(function () { if (!cancelled) pinBottomNow(); });
-      [0, 50, 150, 350].forEach(function (d) {
-        setTimeout(function () { if (!cancelled) pinBottomNow(); }, d);
-      });
-    } else {
-      var saved = null;
-      try { saved = localStorage.getItem(SCROLL_KEY); } catch (e) {}
-      var v = (saved === null || saved === '') ? NaN : parseInt(saved, 10);
-      if (!isNaN(v)) {
-        var max = logEl.scrollHeight - logEl.clientHeight;
-        logEl.scrollTop = Math.max(0, Math.min(v, max));
-      } else {
-        pinBottomNow();
-      }
-    }
+    // v1.129.0 — 초기 진입은 항상 최하단(최신). reflow 구간 instant 재고정. 사용자가 그 사이
+    // 직접 스크롤(wheel/touch)하면 즉시 중단 + 자동스크롤 해제(stickyWanted=false).
+    pinBottomNow();
+    var cancelled = false;
+    function stop() { cancelled = true; stickyWanted = false; }
+    logEl.addEventListener('wheel', stop, { passive: true, once: true });
+    logEl.addEventListener('touchstart', stop, { passive: true, once: true });
+    requestAnimationFrame(function () { if (!cancelled) pinBottomNow(); });
+    [0, 50, 150, 350].forEach(function (d) {
+      setTimeout(function () { if (!cancelled) pinBottomNow(); }, d);
+    });
   }
 
   var scrollSaveTimer = null;
   logEl.addEventListener('scroll', function(){
-    if (isAtBottom()) {
+    // v1.129.0 — 스크롤 위치로 자동스크롤 상태 갱신: 최하단 근처면 ON, 위로 올리면 OFF.
+    stickyWanted = isAtBottom();
+    if (stickyWanted) {
       setUnread(0);
       setJumpVisible(false);
     } else if (!jumpBtn || !jumpBtn.classList.contains('visible')) {
       setJumpVisible(true);
     }
-    // v1.93.1 — 마지막으로 보던 위치 저장(자동스크롤 OFF 복원용). 디바운스 250ms.
-    if (scrollSaveTimer) clearTimeout(scrollSaveTimer);
-    scrollSaveTimer = setTimeout(function () {
-      try { localStorage.setItem(SCROLL_KEY, String(Math.round(logEl.scrollTop))); } catch (e) {}
-    }, 250);
   });
 
   // v1.99.1 — 탭 전환으로 이 콘솔이 다시 보일 때(display:none→block) 최하단 재고정.
@@ -1912,7 +1891,7 @@ $quickBarHtml
       }).catch(function () {});
       return;
     }
-    if (d.type !== 'pt:tab-visible' || !autoScrollOn) return;
+    if (d.type !== 'pt:tab-visible' || !stickyWanted) return;
     pinBottomNow();
     requestAnimationFrame(pinBottomNow);
     [0, 50, 150].forEach(function (dl) { setTimeout(pinBottomNow, dl); });
@@ -1995,12 +1974,16 @@ $quickBarHtml
     }
     // v1.104.1 — user 프롬프트 상단고정은 "가장 최신" 1개만(.cur). 새 user 가 오면 이전
     //  .cur 를 해제하고 이 row 에 부여. append 는 항상 맨 끝(appendChild)이라 row 가 최신.
-    if (cls === 'user') {
+    // v1.104.1/v1.129.0 — 최신 user 1개만 .cur(sticky). 더보기로 과거를 prepend(beforeNode)할
+    // 땐 .cur 를 건드리지 않는다(최신 user 의 sticky 유지).
+    if (cls === 'user' && !opts.beforeNode) {
       var prevCur = logEl.querySelector('.log-line.user.cur');
       if (prevCur) prevCur.classList.remove('cur');
       row.classList.add('cur');
     }
-    logEl.appendChild(row);
+    // v1.129.0 — opts.beforeNode 면 그 노드 앞에 삽입(더보기 과거 prepend), 아니면 맨 끝.
+    if (opts.beforeNode) logEl.insertBefore(row, opts.beforeNode);
+    else logEl.appendChild(row);
     if ((isAsst || isToolOut) && window.hljs) {
       // v1.85.0 — assistant 마크다운 코드블록 + v1.90.12 tool 결과 코드블록 syntax highlight.
       // tool 결과는 언어 class 가 없어 highlightElement 의 auto-detect 에 맡긴다.
@@ -2287,6 +2270,74 @@ $quickBarHtml
     }
   }
 
+  // v1.129.0 — 콘솔 페이지네이션 + WS since 경계 상태.
+  var initialMaxSeq = ${initialMaxSeq};
+  var lastSeq = initialMaxSeq;     // WS since: 첫 연결=history 경계, 이후 본 최대 seq.
+  var oldestTurnIdx = null;        // 로드된 가장 오래된 turnIdx("더보기" before 키).
+  var loadingMore = false;
+
+  function tryParseJson(s) { try { return JSON.parse(s); } catch (e) { return null; } }
+  // v1.129.0 — DB history row 1개 렌더(초기 30개 + "더보기" 과거 공용). beforeNode 있으면
+  // 그 노드 앞에 prepend(과거를 위쪽에). 라이브 WS 흐름과 동일 변환 사용.
+  function renderHistoryRow(r, beforeNode) {
+    r = r || {};
+    var role = r.role || '', text = r.text || '';
+    var opts = {};
+    if (r.ts) opts.ts = r.ts;
+    if (beforeNode) opts.beforeNode = beforeNode;
+    if (role === 'user') append('user', 'user', text, 'assistant', opts);
+    else if (role === 'assistant') append('assistant', 'assistant', text, 'assistant', opts);
+    else if (role === 'tool_use') {
+      var inp = tryParseJson(text);
+      var ru = renderToolUse(r.tool || 'tool', inp != null ? inp : text);
+      var isTodo = (r.tool === 'TaskCreate' || r.tool === 'TaskUpdate' || r.tool === 'TodoWrite');
+      append('tool', ru.label, ru.body, isTodo ? 'todo' : 'tool_use', opts);
+    } else if (role === 'tool_result' || role === 'tool_result_error') {
+      var parsed = tryParseJson(text);
+      var out = window.VibeConsole.extractToolResult(parsed != null ? parsed : text);
+      opts.raw = out;
+      append(role === 'tool_result_error' ? 'tool-err' : 'tool-out', role === 'tool_result_error' ? 'tool-err' : '✓ result', clip(out, 8000), 'tool_result', opts);
+    } else if (role === 'system') {
+      var sys = tryParseJson(text) || {};
+      if (sys.kind === 'session_started') append('sys', 'session', 'started' + (sys.model ? ' · ' + sys.model : ''), 'session', opts);
+      else if (sys.kind === 'done') append('sys', 'done', sys.reason || 'end_turn', 'done', opts);
+      else if (sys.kind === 'system') append('sys', sys.code || 'system', sys.message || '', 'system', opts);
+      else append('sys', 'system', clip(text, 1000), 'system', opts);
+    } else if (role === 'error') {
+      var er = tryParseJson(text) || {};
+      append('err', 'error', (er.code || '') + ': ' + (er.message || text), 'error', opts);
+    } else if (role === 'unknown') {
+      var u = window.VibeConsole.renderUnknown(text);
+      if (u) append(u.cls, u.label, u.body, u.cat, opts);
+    }
+  }
+  var loadMoreBtn = document.getElementById('console-load-more');
+  function updateLoadMoreBtn() {
+    if (loadMoreBtn) loadMoreBtn.style.display = (oldestTurnIdx != null && oldestTurnIdx > 0) ? 'block' : 'none';
+  }
+  async function loadMoreHistory() {
+    if (loadingMore || oldestTurnIdx == null || oldestTurnIdx <= 0) return;
+    loadingMore = true;
+    if (loadMoreBtn) loadMoreBtn.disabled = true;
+    try {
+      var res = await fetch('/api/projects/' + projectId + '/claude/console/history?before=' + oldestTurnIdx + '&limit=30', { credentials: 'same-origin' });
+      if (!res.ok) return;
+      var arr = await res.json();
+      if (!Array.isArray(arr) || arr.length === 0) { oldestTurnIdx = 0; updateLoadMoreBtn(); return; }
+      var anchor = logEl.firstChild;
+      var prevH = logEl.scrollHeight, prevTop = logEl.scrollTop;
+      for (var i = 0; i < arr.length; i++) renderHistoryRow(arr[i], anchor);
+      oldestTurnIdx = (arr[0] && arr[0].turnIdx != null) ? arr[0].turnIdx : 0;
+      // v1.129.0 — 과거를 위에 추가했으니 추가된 높이만큼 scrollTop 보정 → 보던 위치 유지.
+      logEl.scrollTop = prevTop + (logEl.scrollHeight - prevH);
+      updateLoadMoreBtn();
+    } catch (e) { /* ignore */ } finally {
+      loadingMore = false;
+      if (loadMoreBtn) loadMoreBtn.disabled = false;
+    }
+  }
+  if (loadMoreBtn) loadMoreBtn.addEventListener('click', loadMoreHistory);
+
   // v1.7.3 — 서버 재시작 후에도 기존 conversation 가시. inline JSON (DB 의 ConversationTurn)
   // 을 parse 후 console-log 의 첫 메시지로 prepend. WS connect 보다 먼저 실행되어 ring
   // buffer 의 replay (있다면) 가 그 위에 누적. 서버 재시작 직후 ring 빈 상태에선 history
@@ -2299,53 +2350,11 @@ $quickBarHtml
     var arr;
     try { arr = JSON.parse(raw); } catch (e) { return; }
     if (!Array.isArray(arr) || arr.length === 0) return;
-    append('sys', 'history', '— ' + arr.length + ' previous turn(s) restored —', 'replay');
-    // v1.70.0 — 저장된 content 도 친화적으로 렌더 (이전엔 tool_use input / tool_result 배열 /
-    // system {kind:…} / unknown 이 raw JSON 으로 노출됐음). 라이브 흐름과 동일 변환 사용.
-    function tryParse(s) { try { return JSON.parse(s); } catch (e) { return null; } }
-    for (var i = 0; i < arr.length; i++) {
-      var r = arr[i] || {};
-      var role = r.role || '';
-      var text = r.text || '';
-      var opts = r.ts ? { ts: r.ts } : null;
-      if (role === 'user') {
-        append('user', 'user', text, 'assistant', opts);
-      } else if (role === 'assistant') {
-        append('assistant', 'assistant', text, 'assistant', opts);
-      } else if (role === 'tool_use') {
-        var inp = tryParse(text);
-        var ru = renderToolUse(r.tool || 'tool', inp != null ? inp : text);
-        var isTodoTool = (r.tool === 'TaskCreate' || r.tool === 'TaskUpdate' || r.tool === 'TodoWrite');
-        append('tool', ru.label, ru.body, isTodoTool ? 'todo' : 'tool_use', opts);
-      } else if (role === 'tool_result' || role === 'tool_result_error') {
-        var parsed = tryParse(text);
-        // v1.90.16 — parsed 가 null(clip 된 불완전 JSON 등)이어도 extractToolResult 를 거쳐
-        // unescape(\t/\n)가 적용되게 한다. 이전엔 null 이면 raw text 를 직접 써서 escape 가 남았다.
-        var out = window.VibeConsole.extractToolResult(parsed != null ? parsed : text);
-        var isErr = (role === 'tool_result_error');
-        // v1.90.9 — 복사용 원문 보존(clip 8000 표시).
-        opts.raw = out;
-        append(isErr ? 'tool-err' : 'tool-out', isErr ? 'tool-err' : '✓ result', clip(out, 8000), 'tool_result', opts);
-      } else if (role === 'system') {
-        var sys = tryParse(text) || {};
-        if (sys.kind === 'session_started') {
-          append('sys', 'session', 'started' + (sys.model ? ' · ' + sys.model : ''), 'session', opts);
-        } else if (sys.kind === 'done') {
-          append('sys', 'done', sys.reason || 'end_turn', 'done', opts);
-        } else if (sys.kind === 'system') {
-          append('sys', sys.code || 'system', sys.message || '', 'system', opts);
-        } else {
-          append('sys', 'system', clip(text, 1000), 'system', opts);
-        }
-      } else if (role === 'error') {
-        var er = tryParse(text) || {};
-        append('err', 'error', (er.code || '') + ': ' + (er.message || text), 'error', opts);
-      } else if (role === 'unknown') {
-        var u = window.VibeConsole.renderUnknown(text);
-        if (u) append(u.cls, u.label, u.body, u.cat, opts);
-      }
-    }
-    append('sys', 'history', '— end of history, live frames follow —', 'replay');
+    // v1.129.0 — 가장 오래된 turnIdx 기록("더보기" 페이지네이션 before 키) + 버튼 갱신.
+    oldestTurnIdx = (arr[0] && arr[0].turnIdx != null) ? arr[0].turnIdx : null;
+    updateLoadMoreBtn();
+    // v1.129.0 — 공용 renderHistoryRow 로 위임(초기 30개 + "더보기" 과거가 동일 변환).
+    for (var i = 0; i < arr.length; i++) renderHistoryRow(arr[i]);
     // v1.93.1 — 초기 진입 뷰 결정: ON=최하단(비동기 reflow 구간까지 instant 재고정),
     // OFF=직전에 보던 위치 복원. (이전엔 여기서 scrollTop=scrollHeight 1회만 호출해
     // 비동기 reflow 후 위치가 어긋나 "주르륵" 내려가 보였다.)
@@ -2371,7 +2380,9 @@ $quickBarHtml
   function connect() {
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
     var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    ws = new WebSocket(proto + '//' + location.host + '/ws/projects/' + projectId + '/console/logs');
+    // v1.129.0 — since=lastSeq 로 ring replay 경계 지정. 첫 연결은 initialMaxSeq(=history 경계)
+    // 라 ring 의 과거 프레임(history 와 중복)을 안 받고, 재연결은 마지막으로 본 seq 이후만 받는다.
+    ws = new WebSocket(proto + '//' + location.host + '/ws/projects/' + projectId + '/console/logs?since=' + lastSeq);
 
     ws.onopen = function() {
       // 인증은 WS handshake 의 cookie 헤더로 처리 (vibe_session 은 httpOnly).
@@ -2388,6 +2399,8 @@ $quickBarHtml
         // 실패 시엔 type=error + CloseReason 으로 응답 후 close.
         if (f.type === 'error') { append('err', 'ws', (f.code || '') + ': ' + (f.message || ''), 'error'); return; }
         renderFrame(f);
+        // v1.129.0 — 본 최대 seq 추적(재연결 since). replay 마커 등 seq 없는 프레임은 무시.
+        if (typeof f.seq === 'number' && f.seq > lastSeq) lastSeq = f.seq;
       } catch (e) {
         append('err', 'parse', String(e), 'error');
       }

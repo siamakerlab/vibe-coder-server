@@ -573,6 +573,7 @@ internal object MessagesKo {
         "console.quick.optionTip" to "선택지 %s 로 답합니다",
         // v1.20.0 — 콘솔 auto-scroll 모드.
         "console.autoscroll" to "자동 스크롤",
+        "console.loadMore" to "이전 메시지 더 보기",
         "console.autoscroll.tip" to "새 응답 도착 시 사용자 스크롤 위치 무시하고 항상 최하단. OFF 면 사용자가 하단에 있을 때만 따라감. 사용자 선호는 브라우저에 저장됨.",
         "builds.title" to "빌드",
         "builds.empty" to "아직 빌드가 없습니다. 위 버튼으로 첫 빌드를 시작하세요.",
