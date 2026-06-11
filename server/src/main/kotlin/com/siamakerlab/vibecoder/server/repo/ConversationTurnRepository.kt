@@ -141,6 +141,8 @@ class ConversationTurnRepository(private val clock: Clock) {
         val agentName: String? = null,
         /** v0.61.0 — true = `starred=true` 만, false (기본) = 필터 안 함. */
         val starredOnly: Boolean = false,
+        /** v1.129.0 — 이 turnIdx 미만(과거)만. 콘솔 "더보기" 페이지네이션용. */
+        val beforeTurnIdx: Int? = null,
     )
 
     private fun Filter.toCondition(): Op<Boolean> {
@@ -150,6 +152,7 @@ class ConversationTurnRepository(private val clock: Clock) {
         toolName?.let { c = c and (ConversationTurns.toolName eq it) }
         fromTs?.let { c = c and (ConversationTurns.ts greaterEq it) }
         toTs?.let { c = c and (ConversationTurns.ts lessEq it) }
+        beforeTurnIdx?.let { c = c and (ConversationTurns.turnIdx lessEq (it - 1)) }
         // v0.53.0 — Phase 32 PG tsvector + GIN 풀텍스트 검색.
         // v0.62.0 — Phase 41 한국어 / non-ASCII 포함 query 는 trigram (ILIKE %q%) 으로
         //          자동 분기. simple tsvector 가 한국어 형태소 분석을 안 해서 정확도가

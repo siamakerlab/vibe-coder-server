@@ -596,6 +596,7 @@ internal object MessagesEn {
         "console.quick.optionTip" to "Answer with option %s",
         // v1.20.0 — Console auto-scroll mode.
         "console.autoscroll" to "Auto-scroll",
+        "console.loadMore" to "Load older messages",
         "console.autoscroll.tip" to "Always stick to the bottom on new messages, regardless of where the user is scrolled. When OFF, only stick if the user is already near the bottom. Preference is stored in your browser.",
         "builds.title" to "Builds",
         "builds.empty" to "No builds yet. Start the first one with the button above.",
