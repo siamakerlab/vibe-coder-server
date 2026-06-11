@@ -697,14 +697,26 @@ class ProjectService(
      */
     fun appVersionName(projectId: String, moduleName: String): String? {
         if (isGhost(projectId)) return null
-        val moduleDir = runCatching { workspace.projectRoot(projectId) }.getOrNull()
-            ?.resolve(moduleName) ?: return null
+        val projectRoot = runCatching { workspace.projectRoot(projectId) }.getOrNull() ?: return null
+        // Kotlin: <module>/build.gradle(.kts) 의 versionName = "..."
+        val moduleDir = projectRoot.resolve(moduleName.replace(':', '/'))
         val re = Regex("""versionName\s*=?\s*["']([^"']+)["']""")
         for (g in listOf("build.gradle.kts", "build.gradle")) {
             val gf = moduleDir.resolve(g)
             if (!Files.isRegularFile(gf)) continue
             val text = runCatching { Files.readString(gf) }.getOrNull() ?: continue
             re.find(text)?.let { return it.groupValues[1].take(32) }
+        }
+        // v1.128.6 — Flutter: pubspec.yaml 의 `version: 1.2.3+4` → 1.2.3 (+ 뒤 build number 제외).
+        // Flutter 의 android/app/build.gradle 은 versionName 이 변수(flutterVersionName)라 위
+        // 정규식에 안 잡혀 자연히 여기로 폴백한다.
+        val pubspec = projectRoot.resolve("pubspec.yaml")
+        if (Files.isRegularFile(pubspec)) {
+            runCatching { Files.readString(pubspec) }.getOrNull()?.let { text ->
+                Regex("""(?m)^version:\s*([^\s#]+)""").find(text)?.let {
+                    return it.groupValues[1].substringBefore('+').take(32)
+                }
+            }
         }
         return null
     }
