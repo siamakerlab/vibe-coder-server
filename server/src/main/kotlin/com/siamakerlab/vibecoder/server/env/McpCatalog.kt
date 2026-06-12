@@ -412,11 +412,18 @@ object McpCatalog {
             // v1.95.0 — mobile-next/mobile-mcp. adb(Android) / xcrun(iOS) 위에서 동작하는
             //  zero-config 모바일 UI 자동화. vibe-coder 의 헤드리스 에뮬레이터(빌드환경 >
             //  Emulator, v1.73.0)와 연계해 Claude 가 빌드한 앱을 직접 조작/검증 가능.
+            // v1.137.0 — 기본 설치 지정(운영자 요청). 인증 검토 결과: stdio 모드는 API 키/
+            //  로그인/계정 일절 불요(SSE 서버 모드의 선택적 MOBILEMCP_AUTH Bearer 만 존재 —
+            //  vibe-coder 는 stdio 라 무관). 전제는 adb(빌드환경 Android SDK 포함)뿐.
+            //  upstream README 는 Node v22+ 를 적지만 이미지 Node 20 LTS 에서 운영 실증 동작.
+            //  fast-moving 패키지라 운영자 명시 요청대로 @latest 고정(다른 항목과 달리
+            //  npx 가 매 spawn 최신 버전을 해석).
             id = "mobile-mcp",
             displayName = "Mobile (Mobile-Next)",
             pkg = "@mobilenext/mobile-mcp",
             description = "iOS/Android 모바일 UI 자동화 — accessibility tree 기반 탭/스와이프/타이핑/스크린샷. adb(Android)·xcrun(iOS) 위에서 동작하므로 빌드환경 > Emulator 의 헤드리스 에뮬레이터와 연계해 Claude 가 빌드한 앱을 직접 조작·검증할 수 있다. zero-config (연결된 디바이스/에뮬레이터 자동 감지).",
-            category = Category.BROWSER, trust = Trust.COMMUNITY, recommended = true,
+            category = Category.BROWSER, trust = Trust.COMMUNITY, recommended = true, defaultInstall = true,
+            argsTemplate = listOf("-y", "@PKG@@latest"),
             homepage = "https://github.com/mobile-next/mobile-mcp",
         ))
 
