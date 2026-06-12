@@ -7,8 +7,13 @@ import com.siamakerlab.vibecoder.server.auth.requireDevice
 import com.siamakerlab.vibecoder.server.auth.requireProjectAcl
 import com.siamakerlab.vibecoder.server.env.EnvDiagnostics
 import com.siamakerlab.vibecoder.server.error.ApiException
+import com.siamakerlab.vibecoder.server.core.WorkspacePath
 import com.siamakerlab.vibecoder.server.projects.ProjectService
 import com.siamakerlab.vibecoder.server.ws.LogHub
+import com.siamakerlab.vibecoder.shared.ApiPath
+import com.siamakerlab.vibecoder.shared.dto.BroadcastRejectDto
+import com.siamakerlab.vibecoder.shared.dto.BroadcastSendRequestDto
+import com.siamakerlab.vibecoder.shared.dto.BroadcastSendResponseDto
 import com.siamakerlab.vibecoder.shared.dto.CheckStatus
 import com.siamakerlab.vibecoder.shared.dto.PromptAcceptedDto
 import com.siamakerlab.vibecoder.shared.dto.PromptRequestDto
@@ -24,6 +29,9 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 
 private val log = KotlinLogging.logger {}
+
+/** v1.136.0 — 일괄 전송 1회에 허용하는 최대 프로젝트 수 (운영 단일 사용자 기준 여유값). */
+private const val MAX_BROADCAST_PROJECTS = 100
 
 /**
  * Routes for the persistent Claude console session attached to a project.
@@ -89,6 +97,45 @@ fun Routing.consoleRoutes(
 
             val seq = hub.consoleCurrentSeq(LogHub.consoleTopic(projectId))
             call.respond(HttpStatusCode.Accepted, PromptAcceptedDto(seq = seq))
+        }
+
+        // v1.136.0 — 프롬프트 일괄 전송: 선택한 여러 프로젝트의 메인 콘솔에 같은 프롬프트.
+        // 즉시 202 (accepted/rejected) — 실제 전송은 비동기, 동시 turn 게이트가 순차 처리(큐).
+        post(ApiPath.CLAUDE_BROADCAST) {
+            call.requireApiWrite()
+            val env = envDiagnostics.run()
+            if (env.claude.status != CheckStatus.OK) {
+                throw ApiException.localized(503, "claude_cli_missing", messageKey = "api.console.claudeCliMissing")
+            }
+            if (env.claudeAuth?.status == CheckStatus.ERROR) {
+                throw ApiException.localized(503, "claude_auth_required", messageKey = "api.console.claudeAuthRequired")
+            }
+            val body = call.receive<BroadcastSendRequestDto>()
+            val text = body.prompt.trim()
+            if (text.isEmpty()) throw ApiException.localized(400, "bad_request", messageKey = "api.console.textRequired")
+            val byteSize = text.toByteArray(Charsets.UTF_8).size
+            if (byteSize > ClaudeSessionManager.MAX_PROMPT_BYTES) {
+                throw ApiException.localized(400, "prompt_too_large",
+                    messageKey = "api.console.promptTooLarge",
+                    args = listOf(ClaudeSessionManager.MAX_PROMPT_BYTES, byteSize))
+            }
+            val ids = body.projectIds.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+            if (ids.isEmpty() || ids.size > MAX_BROADCAST_PROJECTS) {
+                throw ApiException.localized(400, "bad_request", messageKey = "api.broadcast.projectsRequired")
+            }
+            val accepted = mutableListOf<String>()
+            val rejected = mutableListOf<BroadcastRejectDto>()
+            for (id in ids) {
+                val exists = !WorkspacePath.isGhostId(id) && runCatching { projects.rowOrThrow(id) }.isSuccess
+                if (exists) {
+                    accepted += id
+                    sessionManager.sendPromptAsync(id, text)
+                } else {
+                    rejected += BroadcastRejectDto(id, "not_found")
+                }
+            }
+            log.info { "broadcast prompt → ${accepted.size} project(s) (rejected=${rejected.size}, bytes=$byteSize)" }
+            call.respond(HttpStatusCode.Accepted, BroadcastSendResponseDto(accepted, rejected))
         }
 
         post("/api/projects/{projectId}/claude/console/new") {
