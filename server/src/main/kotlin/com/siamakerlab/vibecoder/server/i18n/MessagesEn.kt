@@ -576,6 +576,13 @@ internal object MessagesEn {
         "console.input.blockedHint" to "Run the command above, then reload the page.",
         "console.input.hint" to "Send: Enter · Newline: Ctrl+Enter",
         "console.input.send" to "Send",
+        // v1.133.0 — prompt image attachments.
+        "console.image.attach" to "Attach images (paste or pick, up to 4)",
+        "console.image.defaultPrompt" to "Please refer to the attached image(s).",
+        "console.image.limitCount" to "You can attach up to 4 images.",
+        "console.image.limitSize" to "Image is too large (max ~5MB after compression).",
+        "console.image.readFailed" to "Failed to read the image.",
+        "console.image.alt" to "attached image",
         // v1.15.0 — Web Speech API voice input button.
         "console.voice.start" to "Start voice input (microphone permission required)",
         "console.voice.stop" to "Stop voice input",
@@ -1501,6 +1508,8 @@ internal object MessagesEn {
         "api.console.textRequired" to "text is required",
         "api.console.promptTooLarge" to "prompt exceeds %d bytes (got %d)",
         "api.console.sendFailed" to "Claude send failed: %s",
+        // v1.133.0 — prompt image attachments
+        "api.console.imageInvalid" to "Invalid image attachment: %s",
         // PathSafety + others (will reuse api.console.projectIdRequired)
         "api.pathSafety.escapeAttempt" to "Path escapes workspace: %s",
         "api.pathSafety.outsideWorkspace" to "Path is outside workspace: %s",
@@ -1560,6 +1569,7 @@ internal object MessagesEn {
         "console.filter.cat.ws" to "WebSocket connection",
         "console.filter.cat.todo" to "Todos (TaskCreate / TaskUpdate / TodoWrite)",
         "console.filter.cat.thinking" to "Thinking",
+        "console.filter.cat.usage" to "Token usage reports",
         "console.filter.reset" to "Show all",
 
         // ─────────────────────────────────────────────── console todo panel (v1.3.0)

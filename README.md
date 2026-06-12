@@ -599,6 +599,10 @@ Highlights:
 **Claude console & automation**
 - `POST /api/projects/{id}/claude/console/{prompt|new|cancel|interrupt}`, `GET .../claude/status`
   (`interrupt` = stop the running turn and immediately send a new prompt — "interrupt & send")
+  - v1.133.0: `prompt`/`interrupt` body accepts optional `images:[{mediaType,data}]`
+    (base64, ≤4 images, ≤~5MB each) — sent to Claude as vision content blocks
+- `GET /api/projects/{id}/claude/console/image?turn=N&idx=M` — serves an image stored in a
+  conversation turn (tool-result screenshots / user attachments) for console history restore
 - `POST /api/projects/{id}/claude/automation/{start|stop}`, `GET .../status`
 - `GET/POST /api/prompt-automations`, `PUT/DELETE /api/prompt-automations/{presetId}`
 - `GET /api/prompt-templates`

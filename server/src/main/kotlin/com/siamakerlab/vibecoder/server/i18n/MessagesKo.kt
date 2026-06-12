@@ -553,6 +553,13 @@ internal object MessagesKo {
         "console.input.blockedHint" to "위쪽 안내의 명령을 실행한 뒤 페이지를 새로고침하세요.",
         "console.input.hint" to "전송: Enter · 줄바꿈: Ctrl+Enter",
         "console.input.send" to "전송",
+        // v1.133.0 — 프롬프트 이미지 첨부.
+        "console.image.attach" to "이미지 첨부 (붙여넣기 또는 선택, 최대 4장)",
+        "console.image.defaultPrompt" to "첨부한 이미지를 참고해 주세요.",
+        "console.image.limitCount" to "이미지는 최대 4장까지 첨부할 수 있습니다.",
+        "console.image.limitSize" to "이미지가 너무 큽니다 (압축 후 최대 ~5MB).",
+        "console.image.readFailed" to "이미지를 읽지 못했습니다.",
+        "console.image.alt" to "첨부 이미지",
         // v1.15.0 — Web Speech API 음성 입력 버튼.
         "console.voice.start" to "음성 입력 시작 (마이크 권한 필요)",
         "console.voice.stop" to "음성 입력 중지",
@@ -1479,6 +1486,8 @@ internal object MessagesKo {
         "api.console.textRequired" to "텍스트가 필요합니다",
         "api.console.promptTooLarge" to "prompt 가 %d bytes 를 초과합니다 (현재 %d bytes)",
         "api.console.sendFailed" to "Claude 전송 실패: %s",
+        // v1.133.0 — 프롬프트 이미지 첨부
+        "api.console.imageInvalid" to "이미지 첨부가 올바르지 않습니다: %s",
         // PathSafety + others
         "api.pathSafety.escapeAttempt" to "경로가 워크스페이스를 벗어납니다: %s",
         "api.pathSafety.outsideWorkspace" to "경로가 워크스페이스 밖입니다: %s",
@@ -1538,6 +1547,7 @@ internal object MessagesKo {
         "console.filter.cat.ws" to "WebSocket 연결",
         "console.filter.cat.todo" to "할 일 (TaskCreate / TaskUpdate / TodoWrite)",
         "console.filter.cat.thinking" to "사고 과정 (thinking)",
+        "console.filter.cat.usage" to "토큰 사용량 보고",
         "console.filter.reset" to "모두 표시",
 
         // ─────────────────────────────────────────────── console todo panel (v1.3.0)

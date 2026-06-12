@@ -40,6 +40,7 @@ import io.ktor.server.response.header
 import io.ktor.server.response.respondFile
 import io.ktor.server.response.respondOutputStream
 import io.ktor.server.response.respondRedirect
+import io.ktor.server.response.respondBytes
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Routing
 import io.ktor.server.routing.get
@@ -554,6 +555,44 @@ fun Routing.webProjectRoutes(
             }.getOrDefault(emptyList())
         } else emptyList()
         call.respondText(WebProjectTemplates.renderInitialHistoryJson(rows), ContentType.Application.Json)
+    }
+
+    // v1.133.0 — 콘솔 이력 복원용 이미지 서빙. DB row(tool_result 의 base64 이미지 블록 /
+    // user 첨부 raw)에서 idx 번째 이미지를 실제 bytes 로 응답. inline history JSON 에는
+    // base64 를 싣지 않고(페이지 비대 방지) <img src="...console/image?turn=N&idx=M"> 가
+    // 세션 쿠키로 이 endpoint 를 부른다. 현재 세션의 turn 만 (이력 복원 범위와 동일).
+    get("/api/projects/{id}/claude/console/image") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@get
+        val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
+        val turn = call.request.queryParameters["turn"]?.toIntOrNull()
+            ?: return@get call.respond(HttpStatusCode.BadRequest)
+        val idx = (call.request.queryParameters["idx"]?.toIntOrNull() ?: 0).coerceAtLeast(0)
+        val sid = sessionManager.currentSessionId(id)
+            ?: return@get call.respond(HttpStatusCode.NotFound)
+        val rows = runCatching { conversationRepo.byTurnIdx(id, sid, turn) }.getOrDefault(emptyList())
+        for (row in rows) {
+            val images = when {
+                row.role == "user" ->
+                    com.siamakerlab.vibecoder.server.claude.ConsoleImages.fromUserRaw(row.raw)
+                row.role == "tool_result" || row.role == "tool_result_error" ->
+                    com.siamakerlab.vibecoder.server.claude.ConsoleImages.fromToolResultContent(row.content)
+                else -> emptyList()
+            }
+            val img = images.getOrNull(idx) ?: continue
+            // 화이트리스트 밖 mediaType 은 응답 헤더 주입 방지 차원에서 거절.
+            if (img.mediaType !in ClaudeSessionManager.ALLOWED_IMAGE_MEDIA_TYPES) continue
+            val bytes = runCatching {
+                java.util.Base64.getMimeDecoder().decode(img.data)
+            }.getOrNull() ?: continue
+            call.response.header(HttpHeaders.CacheControl, "private, max-age=3600")
+            // /projects/{id}/raw 와 동일한 이중 방어 — Claude tool 출력 유래 콘텐츠라
+            // sniffing/동적 실행을 차단(mediaType 화이트리스트에 SVG 없음 + nosniff + sandbox).
+            call.response.header("X-Content-Type-Options", "nosniff")
+            call.response.header("Content-Security-Policy", "default-src 'none'; sandbox")
+            return@get call.respondBytes(bytes, ContentType.parse(img.mediaType))
+        }
+        call.respond(HttpStatusCode.NotFound)
     }
 
     post("/projects/{id}/console/new") {

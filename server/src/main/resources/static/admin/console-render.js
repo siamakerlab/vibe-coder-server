@@ -196,6 +196,49 @@
     return String(output);
   }
 
+  // v1.133.0 — tool_result 에서 텍스트와 이미지 블록을 분리 추출.
+  // 반환: { text, images:[{mediaType, data}] } — data 는 base64 (live WS frame 의 inline).
+  // history 복원에서 base64 가 서버측 스트립된 블록({type:'image',omitted:true})은 텍스트/
+  // 이미지 양쪽에서 제외한다 — 그 행의 이미지는 row 의 images 메타 + 서빙 endpoint 가 담당.
+  var IMG_MEDIA_RE = /^image\/(png|jpe?g|gif|webp)$/;
+  function extractToolResultRich(output) {
+    var images = [];
+    function imageOf(b) {
+      var src = b && b.source;
+      if (src && src.type === 'base64' && typeof src.data === 'string' && src.data &&
+          typeof src.media_type === 'string' && IMG_MEDIA_RE.test(src.media_type)) {
+        return { mediaType: src.media_type, data: src.data };
+      }
+      return null;
+    }
+    function flat(o) {
+      if (o == null) return '';
+      if (typeof o === 'string') return unescapeJsonString(o);
+      if (Array.isArray(o)) {
+        var parts = [];
+        for (var j = 0; j < o.length; j++) {
+          var b = o[j];
+          if (b == null) continue;
+          if (typeof b === 'string') { parts.push(b); continue; }
+          if (b.type === 'image') { var im = imageOf(b); if (im) images.push(im); continue; }
+          if (b.type === 'text' && typeof b.text === 'string') parts.push(b.text);
+          else if (typeof b.text === 'string') parts.push(b.text);
+          else parts.push(summarizeInput(b));
+        }
+        return parts.join('\n');
+      }
+      if (typeof o === 'object') {
+        if (o.type === 'image') { var im2 = imageOf(o); if (im2) images.push(im2); return ''; }
+        if (typeof o.text === 'string') return o.text;
+        if (typeof o.content === 'string') return o.content;
+        if (o.content != null) return flat(o.content);
+        return summarizeInput(o);
+      }
+      return String(o);
+    }
+    return { text: flat(output), images: images };
+  }
+
   function fmtEpoch(sec) {
     var n = Number(sec);
     if (!isFinite(n)) return String(sec);
@@ -358,6 +401,7 @@
     summarizeInput: summarizeInput,
     renderToolUse: renderToolUse,
     extractToolResult: extractToolResult,
+    extractToolResultRich: extractToolResultRich,
     renderUnknown: renderUnknown,
     renderMarkdown: renderMarkdown,
   };

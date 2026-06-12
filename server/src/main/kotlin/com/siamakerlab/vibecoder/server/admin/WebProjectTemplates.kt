@@ -167,11 +167,29 @@ object WebProjectTemplates {
             // v1.86.0 — 빈 thinking 의 signature(수천 자)는 버리고 경량 마커로 단축. 그대로
             // 두면 maxContent 절단으로 JSON 이 깨져 raw 노출되던 문제 → renderUnknown 이
             // "💭 Thinking…" 뱃지로 렌더할 수 있는 온전한 JSON 만 inline 에 싣는다.
-            val raw = if (row.role == "unknown" &&
-                row.content.contains("\"type\":\"thinking\"") &&
-                row.content.contains("\"thinking\":\"\""))
-                "{\"type\":\"thinking\",\"thinking\":\"\"}"
-            else row.content
+            // v1.133.0 — 이미지 메타: base64 는 inline 에 싣지 않고(페이지 비대 + 절단 깨짐)
+            // mediaType 목록만 emit. 클라이언트가 /claude/console/image?turn=N&idx=M 로 로드.
+            var imageTypes: List<String> = emptyList()
+            val raw = when {
+                row.role == "unknown" &&
+                    row.content.contains("\"type\":\"thinking\"") &&
+                    row.content.contains("\"thinking\":\"\"") ->
+                    "{\"type\":\"thinking\",\"thinking\":\"\"}"
+                (row.role == "tool_result" || row.role == "tool_result_error") &&
+                    com.siamakerlab.vibecoder.server.claude.ConsoleImages.toolResultMayContainImage(row.content) -> {
+                    val (cleaned, types) =
+                        com.siamakerlab.vibecoder.server.claude.ConsoleImages.stripToolResultImages(row.content)
+                    imageTypes = types
+                    cleaned
+                }
+                else -> {
+                    if (row.role == "user") {
+                        imageTypes = com.siamakerlab.vibecoder.server.claude.ConsoleImages
+                            .fromUserRaw(row.raw).map { it.mediaType }
+                    }
+                    row.content
+                }
+            }
             val text = if (raw.length > maxContent) {
                 // surrogate pair(이모지 등) 중간 절단 방지: 경계 char 가 high surrogate 면
                 // 한 칸 당겨 자른다. 짝 없는 surrogate 가 남으면 respondText 의 UTF-8
@@ -186,6 +204,15 @@ object WebProjectTemplates {
             if (row.ts.isNotBlank()) sb.append(",\"ts\":").append(jsLit(row.ts))
             // v1.129.0 — "더보기" 페이지네이션 키(이보다 작은 turnIdx 를 과거로 로드).
             sb.append(",\"turnIdx\":").append(row.turnIdx)
+            // v1.133.0 — 이미지 메타 (mediaType 등장 순서 = 서빙 idx).
+            if (imageTypes.isNotEmpty()) {
+                sb.append(",\"images\":[")
+                imageTypes.forEachIndexed { i, mt ->
+                    if (i > 0) sb.append(',')
+                    sb.append("{\"mediaType\":").append(jsLit(mt)).append('}')
+                }
+                sb.append(']')
+            }
             sb.append('}')
         }
         sb.append(']')
@@ -1527,6 +1554,11 @@ $errHtml
   .log-body.md table.md-table tr:nth-child(even) td { background:rgba(255,255,255,0.02); }
   /* v1.85.0 — assistant 긴 메시지 접기 */
   /* v1.90.5 — 접기/펼치기를 모든 콘솔 메시지에 적용(이전엔 .assistant 한정). */
+  /* v1.133.0 — 콘솔 이미지 썸네일 (tool_result 이미지 / 프롬프트 첨부). 클릭으로 확대 토글. */
+  .log-images { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+  .log-images .log-img { max-height:200px; max-width:min(100%, 360px); border:1px solid #2a2a2a;
+    border-radius:8px; cursor:zoom-in; background:#111; object-fit:contain; }
+  .log-images .log-img.expanded { max-height:none; max-width:100%; cursor:zoom-out; }
   .log-content[data-clampable="1"] { position:relative; cursor:pointer; }
   .log-content.clamped .log-body { max-height:180px; overflow:hidden; }
   .log-content.clamped::after {
@@ -1597,6 +1629,7 @@ $authBannerHtml
         <label style="display:block;padding:2px 0;cursor:pointer"><input type="checkbox" class="filter-cb" data-cat="ws" checked> ${esc(t("console.filter.cat.ws"))}</label>
         <label style="display:block;padding:2px 0;cursor:pointer"><input type="checkbox" class="filter-cb" data-cat="todo" checked> ${esc(t("console.filter.cat.todo"))}</label>
         <label style="display:block;padding:2px 0;cursor:pointer"><input type="checkbox" class="filter-cb" data-cat="thinking" checked> ${esc(t("console.filter.cat.thinking"))}</label>
+        <label style="display:block;padding:2px 0;cursor:pointer"><input type="checkbox" class="filter-cb" data-cat="usage" checked> ${esc(t("console.filter.cat.usage"))}</label>
       </div>
     </div>
     <div style="margin-top:12px;display:flex;justify-content:flex-end;gap:8px">
@@ -1640,6 +1673,8 @@ ${if (embed) "" else contextMeterHtml}
 <form id="prompt-form" class="prompt-form" autocomplete="off">
   <!-- maxlength 는 char 단위라 ASCII 기준 32K. 한국어 등 multi-byte 입력은
        실제 UTF-8 byte 가 32K 를 넘으면 서버에서 prompt_too_large (400) 로 거절. -->
+  <!-- v1.133.0 — 첨부 이미지 미리보기 strip (있을 때만 표시). -->
+  <div id="image-preview" style="display:none;gap:8px;flex-wrap:wrap;margin-bottom:6px"></div>
   <!-- v1.16.1 — textarea + voice/send 버튼을 동일 row 에 가로 배치. send 가
        textarea 의 우측 (사용자 요청). 버튼들은 column flex 로 stack, 하단 정렬. -->
   <div style="display:flex;gap:8px;align-items:stretch">
@@ -1658,6 +1693,12 @@ ${if (embed) "" else contextMeterHtml}
               title="${esc(t("console.voice.start"))}"
               style="width:auto;padding:8px 12px;background:#1a1a1a;color:var(--text);border:1px solid #2a2a2a;border-radius:6px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;line-height:0"
               ${if (blocking) "disabled" else ""}><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg></button>
+      <!-- v1.133.0 — 이미지 첨부 (Lucide 'image' 아이콘 인라인 — 외부 CDN 미사용 §3). -->
+      <button type="button" id="image-btn"
+              title="${esc(t("console.image.attach"))}" aria-label="${esc(t("console.image.attach"))}"
+              style="width:auto;padding:8px 12px;background:#1a1a1a;color:var(--text);border:1px solid #2a2a2a;border-radius:6px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;line-height:0"
+              ${if (blocking) "disabled" else ""}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></button>
+      <input type="file" id="image-file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
       <!-- v1.112.0 — "끼어들기": 응답 중에만 노출(setInFlight 토글). 진행 중 turn 을
            interrupt 로 중단하고 입력창 내용을 즉시 새 prompt 로 보낸다(TUI Esc+입력 동형). -->
       <button type="button" id="interrupt-btn" class="chip chip-danger"
@@ -1739,7 +1780,7 @@ $quickBarHtml
 <link rel="stylesheet" href="/static/highlight-github-dark.min.css">
 <script src="/static/highlight.min.js"></script>
 <!-- v1.70.0 — 콘솔 친화 렌더러 (tool_use/tool_result/unknown). inline 스크립트보다 먼저 동기 로드. -->
-<script src="/static/console-render.js?v=1.90.15"></script>
+<script src="/static/console-render.js?v=1.133.0"></script>
 <script>
   // v1.86.3 — 구 SW 가 console-render.js 를 깨진/구버전(renderMarkdown 부재)으로 박제하면
   // 마크다운/접기가 동작하지 않는다. 감지 시 SW·캐시를 전부 제거하고 1회 reload(sessionStorage
@@ -1786,7 +1827,8 @@ $quickBarHtml
   // append(cls, label, body, cat) → row.dataset.filterCat = cat, 필터 적용.
   var FILTER_KEY = 'vibe-console-filter-' + projectId;
   var MANDATORY_CATS = ['assistant', 'error', 'system'];
-  var OPTIONAL_CATS = ['tool_use', 'tool_result', 'session', 'done', 'replay', 'ws', 'todo', 'thinking'];
+  // v1.133.0 — 'usage'(토큰 소비량 보고) 추가.
+  var OPTIONAL_CATS = ['tool_use', 'tool_result', 'session', 'done', 'replay', 'ws', 'todo', 'thinking', 'usage'];
   var filterState = (function() {
     try {
       var raw = localStorage.getItem(FILTER_KEY);
@@ -1978,6 +2020,33 @@ $quickBarHtml
           '<button type="button" class="log-copy" title="Copy" aria-label="Copy">' + COPY_SVG + '</button>' +
         '</div>' +
       '</div>';
+    // v1.133.0 — 이미지 첨부/결과 썸네일. .log-body 의 형제로 두어 접기(clamp)와 무관하게
+    // 항상 보인다. src 는 data:image base64 또는 same-origin 이력 서빙 endpoint 만 허용.
+    if (opts.images && opts.images.length) {
+      var contentBox = row.querySelector('.log-content');
+      var metaBox = row.querySelector('.log-meta');
+      if (contentBox) {
+        var imgWrap = document.createElement('div');
+        imgWrap.className = 'log-images';
+        for (var ii = 0; ii < opts.images.length; ii++) {
+          var srcv = String((opts.images[ii] && opts.images[ii].src) || '');
+          var okData = /^data:image\/(png|jpe?g|gif|webp);base64,[A-Za-z0-9+/=]+$/.test(srcv);
+          var okUrl = srcv.indexOf('/api/projects/') === 0 && srcv.indexOf('/claude/console/image?') > 0;
+          if (!okData && !okUrl) continue;
+          var imEl = document.createElement('img');
+          imEl.className = 'log-img';
+          imEl.loading = 'lazy';
+          imEl.alt = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.image.alt"))};
+          imEl.src = srcv;
+          imEl.addEventListener('click', function(e) {
+            e.stopPropagation();
+            this.classList.toggle('expanded');
+          });
+          imgWrap.appendChild(imEl);
+        }
+        if (imgWrap.childNodes.length) contentBox.insertBefore(imgWrap, metaBox);
+      }
+    }
     var btn = row.querySelector('.log-copy');
     if (btn) {
       btn.addEventListener('click', function(e) {
@@ -2245,10 +2314,17 @@ $quickBarHtml
       if (isTodoTool) updateTodoStore(f.toolName, f.input);
     } else if (t === 'console_tool_result') {
       // v1.70.0 — content 배열([{type:text,text}]) 을 평문으로 추출 (raw JSON 노출 제거).
-      var out = window.VibeConsole.extractToolResult(f.output);
+      // v1.133.0 — 이미지 블록은 텍스트('[image]')가 아니라 실제 썸네일로 렌더(rich 추출).
+      var rich = window.VibeConsole.extractToolResultRich(f.output);
+      var out = rich.text;
+      var resultImgs = [];
+      for (var ri = 0; ri < rich.images.length; ri++) {
+        resultImgs.push({ src: 'data:' + rich.images[ri].mediaType + ';base64,' + rich.images[ri].data });
+      }
       var resultLabel = f.isError ? 'tool-err' : '✓ result';
       // v1.90.9 — 표시는 clip(8000)이되 복사용 원문(raw)은 전체 보존.
-      append(f.isError ? 'tool-err' : 'tool-out', resultLabel, clip(out, 8000), 'tool_result', { raw: out });
+      append(f.isError ? 'tool-err' : 'tool-out', resultLabel, clip(out, 8000), 'tool_result',
+             { raw: out, images: resultImgs });
       // v1.90.4 — tool 결과(파일 내용/명령 출력)에도 'unauthorized' 등이 정상 등장하므로 감지 제외.
     } else if (t === 'console_error') {
       // v1.108.2 — 사용량/요금 한도 종료(code=usage_limit)는 크래시성 에러가 아니라 '한도' 상태다.
@@ -2268,7 +2344,9 @@ $quickBarHtml
       if (f.code === 'turn_cancelled' || f.code === 'process_crashed' || f.code === 'idle_terminated') {
         setInFlight(false);
       }
-      append('sys', f.code || 'system', f.message || '', 'system');
+      // v1.133.0 — 토큰 소비량 보고(code=usage: "input N · output N · cache-read N …")는
+      // 별도 'usage' 카테고리 → 필터에서 토글 가능(이전엔 mandatory 'system' 에 묶여 항상 노출).
+      append('sys', f.code || 'system', f.message || '', f.code === 'usage' ? 'usage' : 'system');
       detectAuthFailure(f.message);
     } else if (t === 'console_replay_begin') {
       append('sys', 'replay', 'history begin (' + f.fromSeq + ' → ' + f.toSeq + ')', 'replay');
@@ -2316,6 +2394,15 @@ $quickBarHtml
     var opts = {};
     if (r.ts) opts.ts = r.ts;
     if (beforeNode) opts.beforeNode = beforeNode;
+    // v1.133.0 — 이미지 메타(r.images, base64 는 서버가 스트립) → 이력 서빙 endpoint URL.
+    if (r.images && r.images.length && r.turnIdx != null) {
+      var hImgs = [];
+      for (var hi = 0; hi < r.images.length; hi++) {
+        hImgs.push({ src: '/api/projects/' + encodeURIComponent(projectId) +
+                          '/claude/console/image?turn=' + r.turnIdx + '&idx=' + hi });
+      }
+      opts.images = hImgs;
+    }
     if (role === 'user') append('user', 'user', text, 'assistant', opts);
     else if (role === 'assistant') append('assistant', 'assistant', text, 'assistant', opts);
     else if (role === 'tool_use') {
@@ -2325,7 +2412,10 @@ $quickBarHtml
       append('tool', ru.label, ru.body, isTodo ? 'todo' : 'tool_use', opts);
     } else if (role === 'tool_result' || role === 'tool_result_error') {
       var parsed = tryParseJson(text);
-      var out = window.VibeConsole.extractToolResult(parsed != null ? parsed : text);
+      // v1.133.0 — rich 추출: 이미지 블록을 '[image]' 텍스트 대신 제외(위 opts.images 가 썸네일 담당).
+      var out = window.VibeConsole.extractToolResultRich
+        ? window.VibeConsole.extractToolResultRich(parsed != null ? parsed : text).text
+        : window.VibeConsole.extractToolResult(parsed != null ? parsed : text);
       opts.raw = out;
       append(role === 'tool_result_error' ? 'tool-err' : 'tool-out', role === 'tool_result_error' ? 'tool-err' : '✓ result', clip(out, 8000), 'tool_result', opts);
     } else if (role === 'system') {
@@ -2648,9 +2738,148 @@ $quickBarHtml
 
   // v1.112.0 — 끼어들기: 진행 중 turn 을 interrupt 로 중단하고 입력창 내용을 즉시 새 prompt 로
   // 보낸다(TUI Esc+입력 동형). 서버가 interrupt → 정리 → sendPrompt 를 한 endpoint 에서 처리.
+  // ── v1.133.0 — 프롬프트 이미지 첨부 ───────────────────────────────────────
+  // 첨부 경로 3종: 📷 버튼(파일 선택) / 클립보드 붙여넣기 / 드래그&드롭. 최대 4장.
+  // 큰 이미지는 canvas 로 최대 변 1568px 다운스케일(비전 권장 해상도 + 토큰 절약).
+  var MAX_ATTACH_IMAGES = 4;
+  var pendingImages = [];  // [{mediaType, data(base64), dataUrl}]
+  var imageBtn = document.getElementById('image-btn');
+  var imageFile = document.getElementById('image-file');
+  var imagePreview = document.getElementById('image-preview');
+
+  function renderImagePreview() {
+    if (!imagePreview) return;
+    imagePreview.innerHTML = '';
+    for (var i = 0; i < pendingImages.length; i++) {
+      (function(idx) {
+        var box = document.createElement('div');
+        box.style.cssText = 'position:relative;display:inline-block';
+        var im = document.createElement('img');
+        im.src = pendingImages[idx].dataUrl;
+        im.alt = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.image.alt"))};
+        im.style.cssText = 'height:56px;max-width:96px;object-fit:cover;border:1px solid #2a2a2a;border-radius:6px;display:block';
+        var x = document.createElement('button');
+        x.type = 'button';
+        x.textContent = '✕';
+        x.setAttribute('aria-label', 'remove image');
+        x.style.cssText = 'position:absolute;top:-6px;right:-6px;width:18px;height:18px;line-height:15px;padding:0;font-size:10px;border-radius:50%;border:1px solid #444;background:#222;color:#ddd;cursor:pointer';
+        x.addEventListener('click', function() { pendingImages.splice(idx, 1); renderImagePreview(); });
+        box.appendChild(im); box.appendChild(x);
+        imagePreview.appendChild(box);
+      })(i);
+    }
+    imagePreview.style.display = pendingImages.length ? 'flex' : 'none';
+    // 이미지가 있으면 텍스트 없이도 제출 가능(기본 문구 자동 사용) — required 해제.
+    if (input && !input.disabled) input.required = pendingImages.length === 0;
+  }
+
+  // canvas 다운스케일. gif(애니메이션 보존)는 원본 유지. PNG 는 PNG 재인코딩 우선,
+  // 한도 초과 시 JPEG 폴백. 재인코딩이 원본보다 커지면 원본 유지.
+  function downscaleImage(file) {
+    return new Promise(function(resolve) {
+      var fr = new FileReader();
+      fr.onerror = function() { resolve(null); };
+      fr.onload = function() {
+        var dataUrl = String(fr.result || '');
+        var m = dataUrl.match(/^data:(image\/[a-z0-9+.-]+);base64,(.*)$/i);
+        if (!m) { resolve(null); return; }
+        var origType = m[1].toLowerCase(), origData = m[2];
+        var orig = { mediaType: origType, data: origData, dataUrl: dataUrl };
+        if (origType === 'image/gif') { resolve(orig); return; }
+        var img = new Image();
+        img.onerror = function() { resolve(orig); };
+        img.onload = function() {
+          var MAXD = 1568;
+          var w = img.naturalWidth, h = img.naturalHeight;
+          if ((w <= MAXD && h <= MAXD) && dataUrl.length <= 2000000) { resolve(orig); return; }
+          var scale = Math.min(1, MAXD / Math.max(w, h));
+          var cw = Math.max(1, Math.round(w * scale)), ch = Math.max(1, Math.round(h * scale));
+          var cv = document.createElement('canvas');
+          cv.width = cw; cv.height = ch;
+          try {
+            cv.getContext('2d').drawImage(img, 0, 0, cw, ch);
+            var keepPng = origType === 'image/png';
+            var outUrl = keepPng ? cv.toDataURL('image/png') : cv.toDataURL('image/jpeg', 0.85);
+            if (keepPng && outUrl.length > 7000000) outUrl = cv.toDataURL('image/jpeg', 0.85);
+            var m2 = outUrl.match(/^data:(image\/[a-z0-9+.-]+);base64,(.*)$/i);
+            if (!m2 || outUrl.length >= dataUrl.length) resolve(orig);
+            else resolve({ mediaType: m2[1].toLowerCase(), data: m2[2], dataUrl: outUrl });
+          } catch (e) { resolve(orig); }
+        };
+        img.src = dataUrl;
+      };
+      fr.readAsDataURL(file);
+    });
+  }
+
+  function addImageFile(file) {
+    if (!file || !/^image\//.test(file.type)) return;
+    if (pendingImages.length >= MAX_ATTACH_IMAGES) {
+      alert(${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.image.limitCount"))});
+      return;
+    }
+    downscaleImage(file).then(function(res) {
+      if (!res) { alert(${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.image.readFailed"))}); return; }
+      if (res.data.length > 7000000) {
+        alert(${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.image.limitSize"))});
+        return;
+      }
+      if (pendingImages.length >= MAX_ATTACH_IMAGES) return;
+      pendingImages.push(res);
+      renderImagePreview();
+    });
+  }
+
+  if (imageBtn && imageFile) {
+    imageBtn.addEventListener('click', function() { imageFile.click(); });
+    imageFile.addEventListener('change', function() {
+      var fs = imageFile.files || [];
+      for (var i = 0; i < fs.length; i++) addImageFile(fs[i]);
+      imageFile.value = '';
+    });
+  }
+  if (input) {
+    input.addEventListener('paste', function(ev) {
+      var items = (ev.clipboardData && ev.clipboardData.items) || [];
+      var got = false;
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].kind === 'file' && /^image\//.test(items[i].type)) {
+          var f = items[i].getAsFile();
+          if (f) { addImageFile(f); got = true; }
+        }
+      }
+      if (got) ev.preventDefault();
+    });
+    input.addEventListener('dragover', function(ev) { ev.preventDefault(); });
+    input.addEventListener('drop', function(ev) {
+      var fs = (ev.dataTransfer && ev.dataTransfer.files) || [];
+      var got = false;
+      for (var i = 0; i < fs.length; i++) {
+        if (/^image\//.test(fs[i].type)) { addImageFile(fs[i]); got = true; }
+      }
+      if (got) ev.preventDefault();
+    });
+  }
+
+  // 전송 body / 에코 옵션 helpers — sendPrompt 와 interruptSend 공용.
+  function promptBody(text, imgs) {
+    if (!imgs.length) return JSON.stringify({ text: text });
+    return JSON.stringify({
+      text: text,
+      images: imgs.map(function(p) { return { mediaType: p.mediaType, data: p.data }; }),
+    });
+  }
+  function echoOpts(imgs) {
+    if (!imgs.length) return {};
+    return { images: imgs.map(function(p) { return { src: p.dataUrl }; }) };
+  }
+  function clearPendingImages() { pendingImages = []; renderImagePreview(); }
+
   async function interruptSend() {
     var text = input.value.trim();
+    if (!text && pendingImages.length) text = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.image.defaultPrompt"))};
     if (!text) { input.focus(); return; }
+    var imgs = pendingImages.slice();
     if (interruptBtn) interruptBtn.disabled = true;
     sendBtn.disabled = true;
     try {
@@ -2658,15 +2887,16 @@ $quickBarHtml
         method: 'POST',
         credentials: 'same-origin',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({text: text}),
+        body: promptBody(text, imgs),
       });
       if (!res.ok) {
         var msg = await res.text();
         append('err', 'send', res.status + ' ' + msg, 'error');
       } else {
         append('sys', 'interrupt', ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.interrupt.sent"))}, 'system');
-        append('user', 'user', text, 'assistant');
+        append('user', 'user', text, 'assistant', echoOpts(imgs));
         input.value = '';
+        clearPendingImages();
         setInFlight(true);  // 새 turn 시작(서버 console_busy_state 와 수렴).
         scrollToBottom();
         try { window.parent.postMessage({ type: 'vibe:prompt-sent', text: text }, location.origin); } catch (e) {}
@@ -2682,6 +2912,7 @@ $quickBarHtml
   if (interruptBtn) interruptBtn.addEventListener('click', interruptSend);
 
   async function sendPrompt(text) {
+    var imgs = pendingImages.slice();
     sendBtn.disabled = true;
     setInFlight(true);
     try {
@@ -2689,15 +2920,16 @@ $quickBarHtml
         method: 'POST',
         credentials: 'same-origin',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({text: text}),
+        body: promptBody(text, imgs),
       });
       if (!res.ok) {
         var msg = await res.text();
         append('err', 'send', res.status + ' ' + msg, 'error');
         setInFlight(false);
       } else {
-        append('user', 'user', text, 'assistant');
+        append('user', 'user', text, 'assistant', echoOpts(imgs));
         input.value = '';
+        clearPendingImages();
         // v1.20.0 — prompt 전송 직후엔 토글 모드 무관 항상 최하단으로 jump.
         // 사용자가 자기 prompt + 응답을 바로 봐야 함이 명확.
         scrollToBottom();
@@ -2720,6 +2952,8 @@ $quickBarHtml
   form.addEventListener('submit', function(ev) {
     ev.preventDefault();
     var text = input.value.trim();
+    // v1.133.0 — 이미지만 첨부하고 텍스트가 비면 기본 문구로 전송.
+    if (!text && pendingImages.length) text = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.image.defaultPrompt"))};
     if (!text) return;
     // v1.113.0 — 응답 중에도 인위적 큐 없이 바로 전송(TUI 동형). 서버가 진행 중 turn 에
     // follow-up 으로 이어붙이고 CLI 내부 큐가 순차 처리한다(대기열 메시지/상태칩 제거).
