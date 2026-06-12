@@ -105,7 +105,7 @@ internal object ProjectTabsTemplate {
         tokensTotal: Long = 0,
         cacheHitRate: Double? = null,
         promptCount: Long = 0,
-        /** 최신순(latest-first) user 프롬프트 본문 — 최대 7개. */
+        /** 최신순(latest-first) user 프롬프트 본문 — v1.134.0 부터 전체(상한 1000). */
         recentPrompts: List<String> = emptyList(),
         /** v1.108.0 — 자동 /compact ON 여부(기본 ON). 컨텍스트 카드 '자동' 체크박스 초기값. */
         autoCompact: Boolean = true,
@@ -123,15 +123,19 @@ internal object ProjectTabsTemplate {
         else """<span class="pt-ks miss">✗ ${esc(t("tabs.rail.admob.missing"))}</span>"""
         val tokensHtml = fmtTokens(tokensTotal) +
             (cacheHitRate?.let { """ <span class="dim" style="font-size:10px">· ${esc(t("tabs.rail.cacheHit"))} ${"%.0f".format(it)}%</span>""" } ?: "")
+        // v1.134.0 — 전체 프롬프트(최신 위) 스크롤 목록. 항목별 inline opacity 램프 제거 —
+        // "5개 선명 + 2개 페이드아웃" 은 목록 높이(7행) + 하단 마스크 그라데이션(CSS)이 담당.
+        // 한 줄 축약(.pt-hist-item CSS)이라 표시 본문/title 은 절단, 클릭 채움용
+        // data-prompt 만 원문 유지. title = 본문 미리보기 + 클릭 안내.
         val historyHtml = if (recentPrompts.isEmpty())
             """<div class="pt-hist-empty">${esc(t("tabs.rail.history.empty"))}</div>"""
-        else recentPrompts.take(7).mapIndexed { i, content ->
-            // 0~4 = 불투명, 5번째부터 점점 흐리게.
-            val opacity = when (i) { in 0..4 -> "1"; 5 -> "0.55"; else -> "0.32" }
-            """<button type="button" class="pt-hist-item" style="opacity:$opacity"
-                       data-prompt="${esc(content)}" title="${esc(t("tabs.rail.history.hint"))}"
-                >${esc(content)}</button>"""
-        }.joinToString("")
+        else recentPrompts.joinToString("") { content ->
+            val preview = if (content.length > 300) content.take(300) + "…" else content
+            """<button type="button" class="pt-hist-item"
+                       data-prompt="${esc(content)}"
+                       title="${esc(preview + "\n\n" + t("tabs.rail.history.hint"))}"
+                >${esc(preview)}</button>"""
+        }
         val railHtml = """
   <aside class="pt-rail" aria-label="${esc(t("tabs.rail.overview"))}">
     <div class="pt-rail-card" data-card="overview">
@@ -630,9 +634,12 @@ internal object ProjectTabsTemplate {
   #project-tabs-root .pt-rail-card.pt-collapsed > :not(.pt-rail-h) { display: none !important; }
   #project-tabs-root .pt-ctx-head .pt-ctx-actions { margin-left: auto; }
   #project-tabs-root .pt-memo-head .pt-memo-add { margin-left: auto; }
-  /* 프롬프트 히스토리 카드 — 최신 위, 2줄 축약, 5개 밑으로 점점 흐리게(inline opacity).
+  /* 프롬프트 히스토리 카드 — 최신 위, 2줄 축약.
      v1.50.2 — flex:1 제거: 카드를 내용 높이로(이전엔 남는 높이를 채워 하단 빈 여백으로 길어짐).
-     rail 하단 빈 공간은 카드가 아닌 배경. 항목이 많아도 list 자체 max-height 로만 스크롤. */
+     rail 하단 빈 공간은 카드가 아닌 배경. 항목이 많아도 list 자체 max-height 로만 스크롤.
+     v1.134.0 — 7개 제한 → 전체 프롬프트 스크롤 목록. 약 7행 높이로 고정하고 하단 ~2행을
+     마스크 그라데이션으로 페이드아웃(5개 선명 + 2개 흐림). 스크롤이 끝(at-end)이거나
+     스크롤할 내용이 없으면 JS 가 .at-end 를 붙여 페이드 제거. */
   #project-tabs-root .pt-rail { justify-content: flex-start; }
   #project-tabs-root .pt-hist-card { display: flex; flex-direction: column; flex: 0 0 auto; }
   /* v1.106.2/.3 — 우측 rail 컨텍스트 점유율 카드 */
@@ -666,15 +673,22 @@ internal object ProjectTabsTemplate {
   #project-tabs-root .pt-ctx-meter.warn .pt-ctx-sub { color: #ffb86b; }
   #project-tabs-root .pt-ctx-meter.warn .pt-ctx-bar { box-shadow: 0 0 0 1px rgba(255,184,107,.45) inset; }
   #project-tabs-root .pt-hist-list {
-    max-height: 50vh; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;
+    /* 2줄 항목(≈48px) 7개 + gap 6 ≈ 372px — 5개 선명 + 마지막 ~2개는 아래 마스크로 페이드. */
+    max-height: 376px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;
+    -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 104px), transparent 100%);
+    mask-image: linear-gradient(180deg, #000 calc(100% - 104px), transparent 100%);
+  }
+  /* 스크롤 끝이거나 스크롤 불필요(내용 적음) → 페이드 제거(project-tabs.js 가 토글). */
+  #project-tabs-root .pt-hist-list.at-end {
+    -webkit-mask-image: none; mask-image: none;
   }
   #project-tabs-root .pt-hist-item {
     text-align: left; background: #0c0f17; border: 1px solid #1f2330; border-radius: 6px;
     color: var(--text, #ddd); font: inherit; font-size: 12px; line-height: 1.35;
-    padding: 7px 9px; cursor: pointer; width: 100%;
+    padding: 7px 9px; cursor: pointer; width: 100%; flex-shrink: 0;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   }
-  #project-tabs-root .pt-hist-item:hover { background: #1a1f2c; border-color: #2a3145; opacity: 1 !important; }
+  #project-tabs-root .pt-hist-item:hover { background: #1a1f2c; border-color: #2a3145; }
   #project-tabs-root .pt-hist-empty { color: #5a6175; font-size: 12px; padding: 6px 2px; }
   /* v1.109.0 — 프롬프트 자동화 카드(메모 위). 콘솔에서 이동 — 우측 오버뷰 별개 기능. */
   #project-tabs-root .pt-auto-card { display: flex; flex-direction: column; flex: 0 0 auto; gap: 8px; }
@@ -921,7 +935,7 @@ $railHtml
   </div>
 </div>
 
-<script src="/static/project-tabs.js?v=1.131.0" defer></script>
+<script src="/static/project-tabs.js?v=1.134.0" defer></script>
 <!-- v1.56.0 — 콤보박스 상태칩 실시간 동기. 목록 페이지와 동일하게 `/ws/projects`
      (단방향) 의 ProjectBusyChanged 로 responding↔ready patch. -->
 <script>

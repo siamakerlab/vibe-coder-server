@@ -279,6 +279,21 @@
 
       // v1.59.2 — 콘솔 iframe 에서 프롬프트를 보내면 우측 히스토리에 즉시 prepend.
       // (서버 렌더 snapshot 만으론 reload 전까지 stale.) 콘솔이 postMessage 로 통지.
+      // v1.134.0 — 7개 제한/opacity 램프 제거: 전체 프롬프트 스크롤 목록(서버 렌더와 동일).
+      // 하단 페이드(마스크 그라데이션)는 스크롤 위치에 따라 .at-end 클래스로 토글 —
+      // 더 볼 내용이 있을 때만 마지막 ~2개가 흐려진다.
+      function updateHistFade() {
+        var list = root.querySelector('.pt-hist-list');
+        if (!list) return;
+        var atEnd = list.scrollHeight - list.scrollTop - list.clientHeight < 8;
+        list.classList.toggle('at-end', atEnd);
+      }
+      (function initHistFade() {
+        var list = root.querySelector('.pt-hist-list');
+        if (!list) return;
+        list.addEventListener('scroll', updateHistFade, { passive: true });
+        updateHistFade();
+      })();
       function prependHistory(text) {
         text = (text || '').trim();
         if (!text) return;
@@ -289,20 +304,18 @@
         var first = list.querySelector('.pt-hist-item');
         if (first && (first.getAttribute('data-prompt') || '') === text) return;  // 직전과 동일하면 skip
         var hint = list.getAttribute('data-hist-hint') || '';
+        // 표시/title 은 미리보기(2줄 축약 + hover 안내), 클릭 채움용 data-prompt 만 원문.
+        var preview = text.length > 300 ? text.slice(0, 300) + '…' : text;
         var btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'pt-hist-item';
         btn.setAttribute('data-prompt', text);
-        if (hint) btn.setAttribute('title', hint);
-        btn.textContent = text;
+        btn.setAttribute('title', hint ? preview + '\n\n' + hint : preview);
+        btn.textContent = preview;
         list.insertBefore(btn, list.firstChild);
-        // 최대 7개 + opacity ramp (0~4 불투명, 5 흐림, 6+ 더 흐림) — 서버 렌더와 동일 체계.
-        var items = list.querySelectorAll('.pt-hist-item');
-        for (var i = items.length - 1; i >= 7; i--) items[i].parentNode.removeChild(items[i]);
-        items = list.querySelectorAll('.pt-hist-item');
-        for (var j = 0; j < items.length; j++) {
-          items[j].style.opacity = j <= 4 ? '1' : (j === 5 ? '0.55' : '0.32');
-        }
+        // 새 항목이 최신(맨 위)으로 보이게 목록 맨 위로 + 페이드 갱신.
+        list.scrollTop = 0;
+        updateHistFade();
       }
       // v1.106.2 — 우측 rail 컨텍스트 점유율 미터(콘솔 iframe 이 매 turn postMessage).
       function ptCtxFmt(n) {
