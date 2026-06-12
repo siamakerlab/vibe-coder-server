@@ -329,6 +329,20 @@ class ConversationTurnRepository(private val clock: Clock) {
     }
 
     /**
+     * v1.137.2 — 모든 프로젝트의 마지막 turn ts 일괄 조회 (projectId → max(ts)).
+     * 프로젝트 이동 콤보박스의 "최근 활동순" 2차 정렬용 — busy(in-memory) 가 서버
+     * 재시작으로 사라져도 영속 데이터 기반이라 순서가 유지된다. (project_id, ts)
+     * 인덱스로 GROUP BY 한 번에 해석. ts 는 동일 포맷 ISO-8601 이라 문자열 max 로 충분.
+     */
+    fun lastTsByProject(): Map<String, String> = transaction {
+        val agg = ConversationTurns.ts.max()
+        ConversationTurns.select(ConversationTurns.projectId, agg)
+            .groupBy(ConversationTurns.projectId)
+            .mapNotNull { row -> row[agg]?.let { row[ConversationTurns.projectId] to it } }
+            .toMap()
+    }
+
+    /**
      * v1.60.0 — 상태칩 "중지됨" 판정용. 메인 콘솔(agent_name IS NULL)의 **최신 user
      * 프롬프트 이후 완료 row(assistant/usage)가 없으면 true** (= 응답이 시작/완료되지
      * 못하고 끊김: cancel / crash / 서버중단). user 프롬프트가 아예 없으면 false.
