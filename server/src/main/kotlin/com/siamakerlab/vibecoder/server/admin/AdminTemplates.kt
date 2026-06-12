@@ -1001,6 +1001,8 @@ $errHtml
     <label>${esc(t("settings.field.timeoutMin"))} <input name="claude.timeoutMinutes" type="number" value="${settings.claudeTimeoutMin}"></label>
     <label>${esc(t("settings.field.maxConcurrentTurns"))} <input name="claude.maxConcurrentTurns" type="number" min="0" max="20" value="${settings.claudeMaxConcurrent}"></label>
     <p class="hint">${esc(t("settings.field.maxConcurrentTurns.hint"))}</p>
+    <label>${esc(t("settings.field.maxResidentSessions"))} <input name="claude.maxResidentSessions" type="number" min="0" max="64" value="${settings.claudeMaxResident}"></label>
+    <p class="hint">${esc(t("settings.field.maxResidentSessions.hint"))}</p>
   </fieldset>
 
   <fieldset>
@@ -1149,6 +1151,7 @@ $okHtml
         val claudePath: String,
         val claudeTimeoutMin: Int,
         val claudeMaxConcurrent: Int,
+        val claudeMaxResident: Int,
         val buildTimeoutMin: Int,
         val defaultDebugTask: String,
     )

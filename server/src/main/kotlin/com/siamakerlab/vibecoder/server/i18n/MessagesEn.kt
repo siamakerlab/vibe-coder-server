@@ -289,6 +289,8 @@ internal object MessagesEn {
         "settings.field.timeoutMin" to "Timeout (min)",
         "settings.field.maxConcurrentTurns" to "Max concurrent turns",
         "settings.field.maxConcurrentTurns.hint" to "Caps how many Claude turns run at once across all project / sub-agent consoles, preventing same-account+IP bursts that trigger server-side throttling (429). When the cap is hit, new turns queue (they are not rejected). 0 = unlimited. Default 3. <strong>Requires container restart to apply.</strong>",
+        "settings.field.maxResidentSessions" to "Max resident sessions",
+        "settings.field.maxResidentSessions.hint" to "Caps how many live claude sessions (process + MCP sidecar tree, ~900MB each) stay resident across main / sub-agent consoles. When exceeded, the least-recently-used idle session is paused (the next prompt resumes the same conversation). Sessions with a turn in progress are never reaped. 0 = disabled (30-min idle reaper only). Default 6. Applies immediately on save.",
         "settings.field.defaultDebugTask" to "Default debug task",
         "settings.persist.hint" to "Saves to external <code>server.yml</code> atomically (<code>.bak.&lt;ts&gt;</code> rotation, keeps 5). Path: <code>\$VIBECODER_CONFIG_DIR/server.yml</code> or <code>./config/server.yml</code>. <strong>host / port / name require container restart.</strong>",
         // v1.7.14 — Mirror table/common keys.

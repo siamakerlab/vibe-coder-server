@@ -190,6 +190,15 @@ data class ClaudeSection(
      */
     val maxConcurrentTurns: Int = 3,
     /**
+     * v1.135.0 — 메인 콘솔의 **상주 세션 수 상한** (LRU 조기 회수). 세션 1개는 claude CLI
+     * 프로세스 + MCP 사이드카 트리(~900MB)를 통째로 점유하므로, idle timeout(30분)만으로는
+     * 다수 프로젝트를 오가며 작업할 때 메모리가 누적된다. 상한 초과 시 **가장 오래 유휴**
+     * (busy 아님 + spawn 직후 grace 지난) 세션부터 SIGTERM — session-id 는 보존되어 다음
+     * 프롬프트에서 `--resume` 으로 이어진다. **0 이하면 비활성(기존 idle reaper 만)**.
+     * `/settings` 저장 시 즉시 반영.
+     */
+    val maxResidentSessions: Int = 6,
+    /**
      * v1.106.0 / v1.107.2 — 프로젝트별 모델 미설정 시의 전역 기본. `claude --model <model>` 전달.
      * "default"(=CLI 기본, --model 미전달) / "sonnet" / "opus" / "haiku" / 전체 모델 ID.
      * v1.107.2 — 운영 기본을 **"default"(CLI 기본)** 로. 모델은 프로젝트별로 콘솔 콤보박스에서

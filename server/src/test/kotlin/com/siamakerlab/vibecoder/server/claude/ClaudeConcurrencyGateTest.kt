@@ -61,6 +61,24 @@ class ClaudeConcurrencyGateTest {
         zAcquired shouldBe true
     }
 
+    @Test fun `holds reflects permit ownership and waiting registration`(): Unit = runBlocking {
+        // v1.135.0 — 상주 세션 LRU 회수가 "turn 진행 중" 세션을 제외하는 데 쓰는 helper.
+        val gate = ClaudeConcurrencyGate(1)
+        gate.holds("a") shouldBe false
+        gate.acquire("a")
+        gate.holds("a") shouldBe true
+        // 대기 등록 중인 key 도 holds=true (회수 금지 — permit 확보 직후 spawn 할 세션).
+        val job = launch { gate.acquire("b") }
+        delay(100)
+        gate.holds("b") shouldBe true
+        gate.release("a")
+        job.join()
+        gate.holds("a") shouldBe false
+        gate.holds("b") shouldBe true
+        gate.release("b")
+        gate.holds("b") shouldBe false
+    }
+
     @Test fun `same key does not consume two permits`(): Unit = runBlocking {
         val gate = ClaudeConcurrencyGate(1)
         gate.acquire("dup")

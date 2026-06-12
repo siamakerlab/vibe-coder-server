@@ -63,6 +63,12 @@ class SubAgentSessionManager(
     private val history: ConversationHistoryService? = null,
     /** v1.69.0 — 동시 in-flight turn 제한 게이트(메인 콘솔과 공유). 기본 = 무제한(비활성). */
     private val gate: ClaudeConcurrencyGate = ClaudeConcurrencyGate(0),
+    /**
+     * v1.135.0 — 상주 sub-agent 세션 수 상한 provider (0 이하 = 비활성). 메인 콘솔과
+     * 같은 설정값(claude.maxResidentSessions)을 쓰되 풀은 별도로 센다. 매 집행 시점에
+     * 읽으므로 `/settings` 저장 즉시 반영.
+     */
+    private val residentCapProvider: () -> Int = { 0 },
 ) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -85,9 +91,29 @@ class SubAgentSessionManager(
             "prompt too large ($bytes bytes UTF-8 > $MAX_PROMPT_BYTES)"
         }
         val key = AgentKey(projectId, agentName)
-        val session = ensureSession(key)
         // v0.49.0 — user prompt 영구 적재 (sub-agent name 으로 태깅; sub-agent 인지된 채로 history 페이지에 보임).
-        history?.userPrompt(projectId, session.sessionId, text, agentName)
+        // v1.135.0 — spawn 전에 적재(세션이 아직 없으면 저장된 session-id 파일과 동일 값) —
+        // 게이트 대기 중에도 사용자 프롬프트가 이력에 즉시 보인다.
+        history?.userPrompt(projectId, sessions[key]?.sessionId ?: readSessionId(key), text, agentName)
+
+        // v1.69.0 — 메인 콘솔과 공유하는 동시 in-flight 상한. 도달 시 permit 대기(queue).
+        // v1.90.0 — 대기 진입 시 콘솔 안내(다른 작업 종료 시 자동 순차 진행).
+        gate.acquire(key.id) {
+            emitSystem(
+                key, "rate_limit_waiting",
+                "동시 작업 한도(${gate.limit}개)에 도달해 대기 중입니다. 다른 작업이 끝나면 순서대로 자동 진행됩니다.",
+            )
+        }
+        // v1.135.0 — 세션 spawn 을 permit 확보 *후* 로 이동(메인 콘솔 sendPrompt 와 동형).
+        // 종전엔 spawn 후 게이트 대기라 대기 중에도 claude + MCP 사이드카 트리가 통째로
+        // 상주했고, 대기 30분 초과 시 idle reaper 가 대기 중 프로세스를 죽여 프롬프트가
+        // 유실될 수 있었다. spawn 실패 시 확보한 permit 반환(누수 방지).
+        val session = try {
+            ensureSession(key)
+        } catch (t: Throwable) {
+            gate.release(key.id)
+            throw t
+        }
 
         val actualText = if (!session.firstPromptSent) {
             session.firstPromptSent = true
@@ -107,14 +133,6 @@ class SubAgentSessionManager(
             })
         }.toString()
 
-        // v1.69.0 — 메인 콘솔과 공유하는 동시 in-flight 상한. 도달 시 permit 대기(queue).
-        // v1.90.0 — 대기 진입 시 콘솔 안내(다른 작업 종료 시 자동 순차 진행).
-        gate.acquire(key.id) {
-            emitSystem(
-                key, "rate_limit_waiting",
-                "동시 작업 한도(${gate.limit}개)에 도달해 대기 중입니다. 다른 작업이 끝나면 순서대로 자동 진행됩니다.",
-            )
-        }
         session.stdinMutex.withLock {
             try {
                 withContext(Dispatchers.IO) {
@@ -266,6 +284,8 @@ class SubAgentSessionManager(
                 log.debug(e) { "[${key.id}] sub-agent stderr reader ended" }
             }
         }
+        // v1.135.0 — 새 세션이 늘었으니 상주 상한 집행(방금 spawn 한 자신은 제외).
+        enforceResidentCap(excludeKey = key)
         return session
     }
 
@@ -372,6 +392,37 @@ class SubAgentSessionManager(
                 emitSystem(s.key, "idle_terminated", "Sub-agent session went idle and was paused. Send a prompt to resume.")
                 terminateSession(s.key)
             }
+        }
+        // v1.135.0 — 주기 sweep 에서도 상주 상한 집행(설정 축소·spawn 시점 보류분 회수).
+        enforceResidentCap()
+    }
+
+    /**
+     * v1.135.0 — 상주 sub-agent 세션 수 상한(LRU) 집행. [ClaudeSessionManager.enforceResidentCap]
+     * 과 동형 — 진행 중(gate permit 보유) / spawn 직후 grace 세션은 회수하지 않고, session-id
+     * 보존으로 다음 프롬프트에서 `--resume` 이어짐.
+     */
+    private suspend fun enforceResidentCap(excludeKey: AgentKey? = null) {
+        val cap = residentCapProvider()
+        if (cap <= 0) return
+        while (true) {
+            val alive = sessions.values.filter { it.process.isAlive }
+            if (alive.size <= cap) return
+            val victim = alive.asSequence()
+                .filter { it.key != excludeKey }
+                .filter { !gate.holds(it.key.id) }
+                .filter {
+                    Duration.between(it.startedAt, Instant.now()).seconds >=
+                        ClaudeSessionManager.RESIDENT_CAP_SPAWN_GRACE_SECONDS
+                }
+                .minByOrNull { it.lastActivity }
+                ?: return
+            log.info { "[${victim.key.id}] sub-agent resident cap ($cap) exceeded (${alive.size} alive); reaping LRU idle session" }
+            emitSystem(
+                victim.key, "resident_cap_paused",
+                "상주 세션 상한(${cap}개) 초과로 가장 오래 유휴인 이 sub-agent 세션을 일시 중지했습니다. 다음 프롬프트에서 같은 대화로 이어집니다.",
+            )
+            terminateSession(victim.key)
         }
     }
 
