@@ -55,7 +55,9 @@ fun Routing.backupRoutes(
     get("/backup") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
         if (!requireAdminOrRedirect(sess)) return@get
-        val sizes = measureSubdirs(workspace.root)
+        // v1.137.1 — measureSubdirs 는 워크스페이스 전체 walk(운영 실측 cold ~10초)라
+        // 페이지 로드를 막지 않게 캐시 + 백그라운드 측정으로 분리(stale-while-revalidate).
+        val sizes = SubdirSizeCache.getAndRefresh(workspace.root)
         val autoBackups = service.listAutoBackups()
         call.respondText(
             renderPage(
@@ -153,6 +155,38 @@ fun Routing.backupRoutes(
 
 private data class SubdirSize(val name: String, val bytes: Long)
 
+/**
+ * v1.137.1 — 디렉토리 용량 측정 캐시 (TTL 10분, stale-while-revalidate).
+ *
+ * 종전엔 `/backup` GET 마다 [measureSubdirs] 가 워크스페이스 전체를 동기 walk 해
+ * cold ~10초가 걸렸고, 설정 통합 탭이 이 페이지를 iframe 으로 함께 로드해 설정 진입을
+ * 끌어내렸다. 이제 캐시본을 즉시 렌더하고(없으면 "측정 중" 표시 + 자동 새로고침),
+ * 부재/만료 시 백그라운드 스레드 1개만 재측정한다.
+ */
+private object SubdirSizeCache {
+    private const val TTL_MS = 10 * 60_000L
+
+    @Volatile
+    private var snapshot: Pair<Long, List<SubdirSize>>? = null
+    private val computing = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** 현재 캐시(없으면 null) 반환 + 부재/만료 시 백그라운드 재측정 기동(중복 방지). */
+    fun getAndRefresh(root: Path): List<SubdirSize>? {
+        val snap = snapshot
+        val fresh = snap != null && System.currentTimeMillis() - snap.first < TTL_MS
+        if (!fresh && computing.compareAndSet(false, true)) {
+            Thread({
+                try {
+                    snapshot = System.currentTimeMillis() to measureSubdirs(root)
+                } finally {
+                    computing.set(false)
+                }
+            }, "backup-sizes-measure").apply { isDaemon = true }.start()
+        }
+        return snap?.second
+    }
+}
+
 private fun measureSubdirs(root: Path): List<SubdirSize> {
     if (!Files.isDirectory(root)) return emptyList()
     return Files.list(root).use { stream ->
@@ -190,7 +224,7 @@ private fun enc(s: String) = URLEncoder.encode(s, StandardCharsets.UTF_8)
 private fun renderPage(
     username: String,
     csrf: String?,
-    sizes: List<SubdirSize>,
+    sizes: List<SubdirSize>?,
     autoBackups: List<BackupService.AutoBackupEntry> = emptyList(),
     backupCfg: com.siamakerlab.vibecoder.server.config.BackupSection? = null,
     lang: String,
@@ -199,12 +233,16 @@ private fun renderPage(
     embed: Boolean = false,
 ): String {
     val t = { key: String -> Messages.t(lang, key) }
-    val total = sizes.sumOf { it.bytes }
+    // v1.137.1 — sizes == null 이면 백그라운드 측정 중(첫 방문). "측정 중" 표시 + 자동 새로고침.
+    val measuring = sizes == null
+    val total = (sizes ?: emptyList()).sumOf { it.bytes }
     val flash = buildString {
         if (!ok.isNullOrBlank()) append("""<div class="flash ok">${esc(ok)}</div>""")
         if (!err.isNullOrBlank()) append("""<div class="flash err">${esc(err)}</div>""")
     }
-    val rowsHtml = sizes.joinToString("") { s ->
+    val rowsHtml = if (measuring)
+        """<tr><td colspan="2" class="dim">${esc(t("backup.sizes.measuring"))}</td></tr>"""
+    else (sizes ?: emptyList()).joinToString("") { s ->
         val excluded = s.name in setOf("postgres", "dev-tools") || s.name == ".vibecoder"
         val note = when (s.name) {
             "postgres" -> " <small class=\"dim\">${esc(t("backup.row.pgExcluded"))}</small>"
@@ -239,7 +277,8 @@ $flash
 </div>
 
 <div class="card" style="margin-bottom:14px">
-  <h2 style="margin-top:0">${esc(Messages.t(lang, "backup.currentSize", humanBytes(total)))}</h2>
+  <h2 style="margin-top:0">${esc(Messages.t(lang, "backup.currentSize", if (measuring) t("backup.sizes.measuring") else humanBytes(total)))}</h2>
+  ${if (measuring) """<script>setTimeout(function () { location.reload(); }, 2500);</script>""" else ""}
   <table class="devices" style="margin:0">
     <thead><tr><th>${esc(t("backup.col.directory"))}</th><th style="text-align:right">${esc(t("backup.col.size"))}</th></tr></thead>
     <tbody>$rowsHtml</tbody>
