@@ -1750,7 +1750,7 @@ ${if (embed) "" else contextMeterHtml}
   </div>
 </form>
 <script src="/static/voice-input.js" defer></script>
-<script src="/static/prompt-templates.js?v=1.115.0" defer></script>
+<script src="/static/prompt-templates.js?v=1.137.4" defer></script>
 <style>
   /* v1.15.0 — 음성 입력 listening 시각 강조. */
   #voice-btn.listening {
