@@ -542,7 +542,7 @@ internal object MessagesKo {
         "console.stop" to "■ 중지",
         "console.stop.title" to "현재 turn 을 즉시 중단 (같은 세션으로 다음 prompt 가능)",
         "console.interrupt" to "↦ 끼어들기",
-        "console.interrupt.title" to "현재 turn 을 중단하고 이 메시지를 바로 보냅니다 (TUI 에서 Esc 후 입력하는 것과 동일). 세션과 컨텍스트는 유지됩니다.",
+        "console.interrupt.title" to "지금 당장 보냅니다 — 응답 중이면 현재 turn 을 중단 후 즉시 전송하고, 동시 작업 한도가 가득 차 있어도 대기 없이 강제 전송합니다. 세션과 컨텍스트는 유지됩니다.",
         "console.interrupt.sent" to "진행 중인 turn 을 중단하고 메시지를 보냈습니다",
         "console.newSession" to "새 세션",
         "console.newSession.confirm" to "현재 세션을 종료하고 새 대화를 시작할까요?",

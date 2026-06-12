@@ -145,6 +145,12 @@ class ClaudeSessionManager(
         text: String,
         isAutoResume: Boolean = false,
         images: List<com.siamakerlab.vibecoder.shared.dto.PromptImageDto> = emptyList(),
+        /**
+         * v1.139.0 — 동시 turn 게이트 무시(끼어들기 ⚡ 전용). 한도 만석이어도 대기 없이
+         * 즉시 spawn+전송. permit 을 잡지 않으므로 Done 의 release 는 idempotent no-op.
+         * 운영자 명시 액션에만 사용 — 남용 시 같은 계정 burst 로 429 위험은 사용자 책임.
+         */
+        bypassGate: Boolean = false,
     ) {
         require(text.isNotBlank()) { "prompt text is required" }
         // 실제 stdin 으로 흘러갈 UTF-8 byte size 기준으로 검증. v0.12.3 까지는
@@ -215,7 +221,7 @@ class ClaudeSessionManager(
         // v1.113.0 — follow-up 은 진행 중 turn 이 이미 permit 을 보유 중이라 새로 확보하지 않는다
         // (같은 세션은 CLI 가 순차 처리 → 실제 동시성 1). gate.acquire 는 같은 key 면 어차피
         // no-op 이지만, 대기 안내(onWait)까지 띄우지 않도록 아예 건너뛴다.
-        if (!isFollowUp) {
+        if (!isFollowUp && !bypassGate) {
             gate.acquire(projectId) {
                 emitSystem(
                     projectId, "rate_limit_waiting",
@@ -404,6 +410,8 @@ class ClaudeSessionManager(
      * v1.112.0 — 진행 중 turn 을 interrupt 로 중단하고 곧바로 [text] 를 새 prompt 로 보낸다.
      * (TUI 의 Esc → 새 입력과 동형 "끼어들기".) turn 이 중단되어 busy 가 풀릴 때까지 잠깐 기다린
      * 뒤([INTERRUPT_WATCHDOG_MS] 한도) sendPrompt 로 새 turn 을 시작한다. 진행 중이 아니면 곧장 전송.
+     * v1.139.0 — 전송은 **게이트 무시(bypassGate)**: 동시 한도가 만석이어도 대기 없이 강제
+     * 전송한다. ⚡ 의 의미가 "지금 당장" 으로 통일 — busy 면 중단 후 즉시, 만석이면 한도 무시 즉시.
      */
     suspend fun interruptAndSend(
         projectId: String,
@@ -422,7 +430,7 @@ class ClaudeSessionManager(
                 fireInterrupt(projectId, "interrupted")
             }
         }
-        sendPrompt(projectId, text, images = images)
+        sendPrompt(projectId, text, images = images, bypassGate = true)
     }
 
     /**
