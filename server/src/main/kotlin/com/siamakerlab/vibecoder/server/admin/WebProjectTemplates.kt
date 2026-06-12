@@ -1727,10 +1727,11 @@ ${if (embed) "" else contextMeterHtml}
       <!-- admin.css 의 input[type=file]{display:block}(0,1,1)이 [hidden](0,1,0)을 이겨
            파일선택 박스가 노출되던 문제 → inline display:none 으로 확실히 숨김(v1.134.1). -->
       <input type="file" id="image-file" accept="image/png,image/jpeg,image/webp,image/gif" multiple style="display:none">
-      <!-- v1.112.0 — "끼어들기": 응답 중에만 노출(setInFlight 토글). 진행 중 turn 을
-           interrupt 로 중단하고 입력창 내용을 즉시 새 prompt 로 보낸다(TUI Esc+입력 동형). -->
+      <!-- v1.112.0 — "끼어들기": 진행 중 turn 을 interrupt 로 중단하고 입력창 내용을 즉시
+           새 prompt 로 보낸다(TUI Esc+입력 동형).
+           v1.139.0 — 상시 노출 + 게이트 만석 시 한도 무시 강제 전송 겸용("지금 당장"). -->
       <button type="button" id="interrupt-btn" class="chip chip-danger"
-              style="display:none;width:auto;padding:8px 12px;white-space:nowrap;justify-content:center"
+              style="display:inline-flex;width:auto;padding:8px 12px;white-space:nowrap;justify-content:center"
               title="${esc(t("console.interrupt.title"))}"
               ${if (blocking) "disabled" else ""}>${esc(t("console.interrupt"))}</button>
       <button type="submit" class="primary" id="send-btn" style="width:auto;padding:8px 16px;white-space:nowrap" ${if (blocking) "disabled" else ""}>${esc(t("console.input.send"))}</button>
@@ -2744,8 +2745,7 @@ $quickBarHtml
   function setInFlight(on) {
     inFlight = on;
     if (stopBtn) stopBtn.style.display = on ? 'inline-block' : 'none';
-    // v1.112.0 — 끼어들기 버튼은 응답 중일 때만 노출(중지 버튼과 동기).
-    if (interruptBtn) interruptBtn.style.display = on ? 'inline-flex' : 'none';
+    // v1.139.0 — 끼어들기 버튼 상시 노출(게이트 만석 강제 전송 겸용) — display 토글 제거.
     if (spinnerEl) spinnerEl.hidden = !on;
     updateBusyBadge();
   }

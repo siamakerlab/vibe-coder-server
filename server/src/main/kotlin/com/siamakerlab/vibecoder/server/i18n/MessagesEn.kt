@@ -565,7 +565,7 @@ internal object MessagesEn {
         "console.stop" to "■ Stop",
         "console.stop.title" to "Stop the current turn immediately (the session stays alive for the next prompt)",
         "console.interrupt" to "↦ Interrupt",
-        "console.interrupt.title" to "Interrupt the current turn and send this message right away (like pressing Esc then typing in the TUI). The session and context are kept.",
+        "console.interrupt.title" to "Send right now — interrupts the current turn if one is running, and bypasses the concurrent-turn cap if it is full. The session and context are kept.",
         "console.interrupt.sent" to "interrupted the current turn and sent your message",
         "console.newSession" to "New session",
         "console.newSession.confirm" to "End the current session and start a new conversation?",
