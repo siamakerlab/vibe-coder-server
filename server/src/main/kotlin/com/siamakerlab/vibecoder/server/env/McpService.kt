@@ -512,18 +512,40 @@ class McpService(
         }
     }
 
-    private fun isPackageInstalled(pkg: String): Boolean {
-        // `npm ls -g --depth=0 --json` 으로 빠르게 확인. 호출 비용 줄이려면 cache 가능하지만 일단 단순.
-        return try {
-            val pb = ProcessBuilder(listOf("npm", "ls", "-g", "--depth=0", "--json", pkg))
-                .redirectErrorStream(true)
+    /**
+     * v1.137.1 — npm 글로벌 root (`npm root -g`) 1회 해석 캐시.
+     *
+     * 종전 [isPackageInstalled] 는 항목마다 `npm ls -g` 자식 프로세스를 spawn 했는데
+     * npm 1회 기동이 운영 실측 ~500ms 라 카탈로그 65+ 항목 × 직렬 = `/env-setup/mcp`
+     * 페이지가 **33~36초** 걸리는 주범이었다 (설정 통합 탭이 이 페이지를 prerender 해
+     * 설정 진입 전체가 끌려감). 같은 판정을 root 하위 디렉토리 존재 확인으로 하면 ~5ms.
+     */
+    private val npmGlobalRoot = java.util.concurrent.atomic.AtomicReference<Path?>(null)
+
+    private fun npmRoot(): Path? {
+        npmGlobalRoot.get()?.let { return it }
+        val resolved = runCatching {
+            val pb = ProcessBuilder(listOf("npm", "root", "-g")).redirectErrorStream(true)
             val proc = pb.start()
-            val out = proc.inputStream.bufferedReader(Charsets.UTF_8).readText()
-            if (!proc.waitFor(10, TimeUnit.SECONDS)) {
-                proc.destroyForcibly()
-                return false
-            }
-            out.contains("\"$pkg\"")
+            val out = proc.inputStream.bufferedReader(Charsets.UTF_8).readText().trim()
+            if (!proc.waitFor(10, TimeUnit.SECONDS)) { proc.destroyForcibly(); null }
+            else out.lineSequence().lastOrNull { it.startsWith("/") }?.let { Path.of(it) }
+        }.getOrNull()
+            // npm 자체가 죽어 있어도 컨테이너 표준 prefix 로 폴백 (entrypoint 가 고정).
+            ?: System.getProperty("user.home")?.let { Path.of(it, ".local", "lib", "node_modules") }
+        if (resolved != null && Files.isDirectory(resolved)) {
+            npmGlobalRoot.set(resolved)
+            return resolved
+        }
+        return resolved  // 디렉토리 미존재(글로벌 설치 0개)여도 경로 판정엔 사용 가능. 캐시는 안 함.
+    }
+
+    private fun isPackageInstalled(pkg: String): Boolean {
+        // v1.137.1 — npm spawn 없이 글로벌 root 하위 패키지 디렉토리 존재로 판정.
+        // scoped 패키지(@scope/name)도 디렉토리 구조가 그대로라 resolve 로 동일 처리.
+        val root = npmRoot() ?: return false
+        return try {
+            Files.isRegularFile(root.resolve(pkg).resolve("package.json"))
         } catch (_: Throwable) {
             false
         }

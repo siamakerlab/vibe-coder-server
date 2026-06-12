@@ -1299,6 +1299,7 @@ internal object MessagesEn {
         "backup.title" to "Backup / restore",
         "backup.heading" to "Workspace backup",
         "backup.currentSize" to "Current size (total %s)",
+        "backup.sizes.measuring" to "Measuring…",
         "backup.col.directory" to "Directory",
         "backup.col.size" to "Size",
         "backup.download.title" to "Download tar.gz",

@@ -54,9 +54,13 @@ internal object SettingsTabsTemplate {
         val tabPanes = TABS.joinToString("\n") { tab ->
             // v1.72.0 — ?_embed=1: inner page 가 nav/탭바 크롬을 미렌더하도록(서버 분기) 하는
             // 폴백 신호. 주 신호는 브라우저 표준 Sec-Fetch-Dest:iframe(내부 sub-navigation 도 커버).
+            // v1.137.1 — src → data-src (lazy). 종전엔 11개 iframe 이 진입 즉시 전부 fetch 되어
+            // 느린 탭 하나가 설정 진입 전체를 끌어내렸다. project-tabs.js 의 v1.47.0 lazy 기계
+            // (activate→loadFrame 즉시 로드 + 백그라운드 순차 preload)를 그대로 사용 —
+            // 활성 탭만 즉시, 나머지는 한 장씩 워밍.
             """<div class="tab-pane" data-tab="${esc(tab.id)}">
-                <iframe class="tab-frame" src="${esc(tab.src)}?_embed=1" name="${esc(tab.frameName)}"
-                        title="${esc(t(tab.labelKey))}" loading="eager"
+                <iframe class="tab-frame" data-src="${esc(tab.src)}?_embed=1" name="${esc(tab.frameName)}"
+                        title="${esc(t(tab.labelKey))}"
                         referrerpolicy="same-origin"></iframe>
               </div>"""
         }

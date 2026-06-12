@@ -1278,6 +1278,7 @@ internal object MessagesKo {
         "backup.title" to "백업 / 복원",
         "backup.heading" to "워크스페이스 백업",
         "backup.currentSize" to "현재 크기 (총 %s)",
+        "backup.sizes.measuring" to "측정 중…",
         "backup.col.directory" to "디렉토리",
         "backup.col.size" to "크기",
         "backup.download.title" to "tar.gz 다운로드",
