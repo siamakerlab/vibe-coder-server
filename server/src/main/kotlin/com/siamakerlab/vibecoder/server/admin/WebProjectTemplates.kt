@@ -23,8 +23,31 @@ import com.siamakerlab.vibecoder.shared.dto.ProjectState
  */
 object WebProjectTemplates {
 
+    /**
+     * v1.132.1 — 짝 없는 UTF-16 surrogate 를 U+FFFD 로 치환. DB content 절단 등으로
+     * lone surrogate 가 섞인 문자열이 respondText 의 UTF-8 인코딩(엄격/REPORT)을
+     * MalformedInputException 으로 터뜨려 페이지 전체가 500 이 되는 것을 방지하는 방어선.
+     */
+    private fun String.sanitizeSurrogates(): String {
+        if (none { it.isSurrogate() }) return this
+        val sb = StringBuilder(length)
+        var i = 0
+        while (i < length) {
+            val c = this[i]
+            when {
+                c.isHighSurrogate() && i + 1 < length && this[i + 1].isLowSurrogate() -> {
+                    sb.append(c); sb.append(this[i + 1]); i += 2
+                }
+                c.isSurrogate() -> { sb.append('\uFFFD'); i++ }
+                else -> { sb.append(c); i++ }
+            }
+        }
+        return sb.toString()
+    }
+
     private fun esc(s: String?): String =
         s.orEmpty()
+            .sanitizeSurrogates()
             .replace("&", "&amp;")
             .replace("<", "&lt;")
             .replace(">", "&gt;")
@@ -47,8 +70,9 @@ object WebProjectTemplates {
      *   `var x = ${jsLit(value)};`
      * 와 같이 따옴표 없이 박는다.
      */
-    private fun jsLit(s: String?): String {
-        if (s == null) return "null"
+    private fun jsLit(s0: String?): String {
+        if (s0 == null) return "null"
+        val s = s0.sanitizeSurrogates()
         val sb = StringBuilder(s.length + 2)
         sb.append('"')
         for (c in s) {
@@ -148,9 +172,13 @@ object WebProjectTemplates {
                 row.content.contains("\"thinking\":\"\""))
                 "{\"type\":\"thinking\",\"thinking\":\"\"}"
             else row.content
-            val text = if (raw.length > maxContent)
-                raw.substring(0, maxContent) + " …(+${raw.length - maxContent})"
-            else raw
+            val text = if (raw.length > maxContent) {
+                // surrogate pair(이모지 등) 중간 절단 방지: 경계 char 가 high surrogate 면
+                // 한 칸 당겨 자른다. 짝 없는 surrogate 가 남으면 respondText 의 UTF-8
+                // 인코딩이 MalformedInputException 으로 터져 페이지 전체가 500 이 된다.
+                val end = if (Character.isHighSurrogate(raw[maxContent - 1])) maxContent - 1 else maxContent
+                raw.substring(0, end) + " …(+${raw.length - end})"
+            } else raw
             sb.append('{')
             sb.append("\"role\":").append(jsLit(row.role))
             sb.append(",\"text\":").append(jsLit(text))
