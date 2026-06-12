@@ -98,6 +98,11 @@ internal object ProjectTabsTemplate {
          * 각 항목 좌측 상태칩(`.pstat`)에 사용. 누락 시 "idle". 목록 페이지와 동일 체계.
          */
         projectStatuses: Map<String, String> = emptyMap(),
+        /**
+         * v1.137.2 — projectId → 마지막 대화 turn ts (영속). 콤보박스 2차 정렬(최근 활동순).
+         * busy(in-memory)는 서버 재시작 시 사라져 콤보 순서가 리셋되던 문제의 영속 대체 신호.
+         */
+        lastActivityTs: Map<String, String> = emptyMap(),
         /** v1.50.0 — 우측 overview rail 데이터. */
         keystoreReady: Boolean = false,
         /** v1.108.4 — AdMob 준비 상태(`<pkg>-admob.properties` 존재). 개요카드 키스토어 하단 행. */
@@ -301,8 +306,14 @@ internal object ProjectTabsTemplate {
         // v1.60.0 — 사용자 정의 순서(sort_order)를 그대로 — allProjects 는 이미 그 순서.
         // v1.128.3 — 유휴 아닌 busy(responding/waiting) 프로젝트를 상단으로(같은 그룹 내 sort_order
         // 유지 — stable sort). JS patch 가 실시간 상태 변경 시 busy 전환 항목을 추가로 최상단 이동.
+        // v1.137.2 — 2차 키 "최근 콘솔 활동 DESC"(영속) 추가: busy ↓ → 최근 활동 ↓ → sort_order ↑.
+        // busy 만으로는 in-memory 라 서버 재시작 시 누적 순서가 리셋되던 현상 해소 — 재시작 후에도
+        // "최근에 다룬 프로젝트가 위" 순서가 유지된다. 대화 이력 없는 프로젝트는 뒤(sort_order 유지).
         val switcherItems = allProjects
-            .sortedByDescending { ProjectState.fromWire(projectStatuses[it.id])?.busy == true }
+            .sortedWith(
+                compareByDescending<ProjectDto> { ProjectState.fromWire(projectStatuses[it.id])?.busy == true }
+                    .thenByDescending { lastActivityTs[it.id] ?: "" }
+            )
             .joinToString("") { pr ->
                 val active = pr.id == project.id
                 // v1.56.0 — 좌측 상태칩 (목록 페이지와 동일 .pstat / data-state, /ws/projects 로 실시간 patch).

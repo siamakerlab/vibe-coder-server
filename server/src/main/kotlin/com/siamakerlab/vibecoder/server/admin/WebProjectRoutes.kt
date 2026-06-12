@@ -319,6 +319,8 @@ fun Routing.webProjectRoutes(
         val projectStatuses = allProjects.associate { pr ->
             pr.id to projectStatus(pr.id, sessionManager, conversationRepo)
         }
+        // v1.137.2 — 콤보박스 "최근 활동순" 2차 정렬용 (영속 — 재시작 후에도 순서 유지).
+        val lastActivityTs = runCatching { conversationRepo.lastTsByProject() }.getOrDefault(emptyMap())
         // v1.50.0 — 우측 overview rail 데이터.
         // v1.108.4 — keystore/admob 준비 상태를 한 번의 get() 으로 함께 계산(개요카드 행).
         val ksEntry = runCatching { keystoreService.get(p.packageName) }.getOrNull()
@@ -340,6 +342,7 @@ fun Routing.webProjectRoutes(
                 project = p,
                 allProjects = allProjects,
                 projectStatuses = projectStatuses,
+                lastActivityTs = lastActivityTs,
                 keystoreReady = keystoreReady,
                 admobReady = admobReady,
                 tokensTotal = (usage?.let { it.inputTokens + it.outputTokens }) ?: 0L,
