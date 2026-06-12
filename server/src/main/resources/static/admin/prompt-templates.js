@@ -138,7 +138,12 @@
     var picker = pickerEl();
     if (!picker) return;
     // 첫 placeholder option 만 남기고 비움.
-    while (picker.options.length > 1) picker.remove(1);
+    // v1.137.4 — select.options 컬렉션은 <option> 만 포함하고 <optgroup> 은 빠지므로,
+    // 종전 remove(1) 루프는 option 만 지우고 **빈 optgroup(카테고리 라벨)** 을 DOM 에
+    // 남겼다 → 재렌더(관리 다이얼로그 열기/닫기 등)마다 카테고리 헤더 한 벌씩 누적,
+    // 모바일 네이티브 시트에서 General/즐겨찾기/... 가 반복 표시되던 버그.
+    // children 기준으로 placeholder(첫 child option) 외 전부 제거한다.
+    while (picker.children.length > 1) picker.removeChild(picker.lastChild);
 
     var pinned = sortTemplates(cache.filter(function (t) { return t.pinned; }));
     if (pinned.length) appendGroup(picker, '★ 즐겨찾기', pinned);
