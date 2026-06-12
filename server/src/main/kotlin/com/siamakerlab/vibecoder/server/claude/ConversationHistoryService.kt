@@ -38,12 +38,32 @@ class ConversationHistoryService(
         }
     }
 
-    fun userPrompt(projectId: String, sessionId: String?, text: String, agentName: String? = null) = safe {
+    /**
+     * v1.133.0 — [images]: 프롬프트 첨부 이미지. content(평문 텍스트)는 기존 그대로 두고
+     * (검색/추천/내보내기 호환), 이미지는 `raw` 컬럼에 JSON 배열로 보존한다. 콘솔 이력
+     * 복원 시 `/claude/console/image?turn=N&idx=M` 이 이 row 에서 base64 를 꺼내 서빙.
+     */
+    fun userPrompt(
+        projectId: String,
+        sessionId: String?,
+        text: String,
+        agentName: String? = null,
+        images: List<com.siamakerlab.vibecoder.shared.dto.PromptImageDto> = emptyList(),
+    ) = safe {
+        val imagesJson = if (images.isEmpty()) null else buildString {
+            append('[')
+            images.forEachIndexed { i, img ->
+                if (i > 0) append(',')
+                append("""{"mediaType":${jsonStr(img.mediaType)},"data":${jsonStr(img.data)}}""")
+            }
+            append(']')
+        }
         repo.insert(
             projectId = projectId,
             sessionId = sessionId,
             role = "user",
             content = text,
+            raw = imagesJson,
             agentName = agentName,
         )
     }

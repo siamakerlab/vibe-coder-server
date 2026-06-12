@@ -77,9 +77,10 @@ fun Routing.consoleRoutes(
                     messageKey = "api.console.promptTooLarge",
                     args = listOf(ClaudeSessionManager.MAX_PROMPT_BYTES, byteSize))
             }
+            val images = validatedImages(body)
 
             try {
-                sessionManager.sendPrompt(projectId, text)
+                sessionManager.sendPrompt(projectId, text, images = images)
             } catch (e: Exception) {
                 log.warn(e) { "[$projectId] prompt failed" }
                 throw ApiException.localized(500, "claude_send_failed",
@@ -140,9 +141,10 @@ fun Routing.consoleRoutes(
                     messageKey = "api.console.promptTooLarge",
                     args = listOf(ClaudeSessionManager.MAX_PROMPT_BYTES, byteSize))
             }
+            val images = validatedImages(body)
 
             try {
-                sessionManager.interruptAndSend(projectId, text)
+                sessionManager.interruptAndSend(projectId, text, images = images)
             } catch (e: Exception) {
                 log.warn(e) { "[$projectId] interrupt-send failed" }
                 throw ApiException.localized(500, "claude_send_failed",
@@ -216,6 +218,20 @@ fun Routing.consoleRoutes(
             call.respond(buildConsoleSettings(sessionManager, projectId))
         }
     }
+}
+
+/**
+ * v1.133.0 — 프롬프트 첨부 이미지 검증. 형식/한도 위반은 400 (image_invalid) 으로 변환.
+ */
+private fun validatedImages(body: PromptRequestDto): List<com.siamakerlab.vibecoder.shared.dto.PromptImageDto> {
+    val images = body.images.orEmpty()
+    try {
+        ClaudeSessionManager.validateImages(images)
+    } catch (e: IllegalArgumentException) {
+        throw ApiException.localized(400, "image_invalid",
+            messageKey = "api.console.imageInvalid", args = listOf(e.message ?: "invalid image"))
+    }
+    return images
 }
 
 /** v1.120.0 — 콘솔 설정 현재 상태 → DTO. 모델 목록은 알려진 4종(기본 포함). */

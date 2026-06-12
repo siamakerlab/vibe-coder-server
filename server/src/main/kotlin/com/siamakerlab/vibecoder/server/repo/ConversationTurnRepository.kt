@@ -252,6 +252,25 @@ class ConversationTurnRepository(private val clock: Clock) {
         ConversationTurns.selectAll().where { filter.toCondition() }.count()
     }
 
+    /**
+     * v1.133.0 — (projectId, sessionId, turnIdx) 단건 조회. 콘솔 이력 복원 시
+     * `/claude/console/image?turn=N&idx=M` 이 이 row 들에서 이미지 base64 를 꺼내 서빙.
+     * turnIdx 가 race 로 중복될 수 있어(클래스 KDoc 참조) List 반환 — 호출자가
+     * 이미지를 가진 첫 row 를 고른다. agent_name IS NULL(메인 콘솔)만.
+     */
+    fun byTurnIdx(projectId: String, sessionId: String, turnIdx: Int): List<ConversationTurnRow> = transaction {
+        ConversationTurns.selectAll()
+            .where {
+                (ConversationTurns.projectId eq projectId) and
+                    (ConversationTurns.sessionId eq sessionId) and
+                    (ConversationTurns.turnIdx eq turnIdx) and
+                    IsNullOp(ConversationTurns.agentName)
+            }
+            .orderBy(ConversationTurns.ts to SortOrder.ASC)
+            .limit(10)
+            .map { it.toRow() }
+    }
+
     /** Project 내 distinct sessionId 목록 — UI dropdown 채움. */
     fun distinctSessions(projectId: String): List<String> = transaction {
         ConversationTurns

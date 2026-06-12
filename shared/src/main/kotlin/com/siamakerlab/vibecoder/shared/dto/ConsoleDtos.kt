@@ -5,9 +5,29 @@ import kotlinx.serialization.Serializable
 /**
  * Request body for POST /api/projects/{projectId}/claude/console/prompt
  * — `text` is the raw user prompt (≤ 32 KB enforced server-side).
+ *
+ * v1.133.0 — `images`: 프롬프트와 함께 보내는 이미지 첨부 (vision). 각 항목은
+ * base64 인코딩된 이미지 1장. 서버가 stream-json user message 의 image content
+ * block 으로 변환해 텍스트보다 앞에 배치한다. 한도: 최대 4장, 장당 base64
+ * 7,000,000 chars (≈5MB 원본). null/빈 리스트 = 기존과 동일(텍스트만) —
+ * backward compatible.
  */
 @Serializable
-data class PromptRequestDto(val text: String)
+data class PromptRequestDto(
+    val text: String,
+    val images: List<PromptImageDto>? = null,
+)
+
+/**
+ * v1.133.0 — 프롬프트 첨부 이미지 1장.
+ * `mediaType` 은 image/png · image/jpeg · image/gif · image/webp 만 허용.
+ * `data` 는 표준 base64 (data: URL prefix 없이 payload 만).
+ */
+@Serializable
+data class PromptImageDto(
+    val mediaType: String,
+    val data: String,
+)
 
 /**
  * Response body for POST .../prompt. `seq` is the next sequence number the

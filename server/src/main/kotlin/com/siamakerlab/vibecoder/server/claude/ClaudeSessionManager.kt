@@ -130,8 +130,16 @@ class ClaudeSessionManager(
      * Send [text] as a user turn. Spawns the session if necessary.
      * v1.80.0 — [isAutoResume]=true 면 rate-limit 자동 재개(내부 호출): 재시도 카운터를
      * 리셋하지 않고 history 적재도 생략. 사용자 prompt(false)는 진행 중인 자동 재개를 취소.
+     * v1.133.0 — [images]: 프롬프트와 함께 보내는 이미지 첨부(vision). stream-json user
+     * message 의 image content block 으로 텍스트보다 앞에 배치한다(Claude Code TUI 의
+     * 이미지 붙여넣기와 동형). 한도/형식 검증은 [validateImages].
      */
-    suspend fun sendPrompt(projectId: String, text: String, isAutoResume: Boolean = false) {
+    suspend fun sendPrompt(
+        projectId: String,
+        text: String,
+        isAutoResume: Boolean = false,
+        images: List<com.siamakerlab.vibecoder.shared.dto.PromptImageDto> = emptyList(),
+    ) {
         require(text.isNotBlank()) { "prompt text is required" }
         // 실제 stdin 으로 흘러갈 UTF-8 byte size 기준으로 검증. v0.12.3 까지는
         // text.length (char count) 였는데 한국어 등 multi-byte 문자에서는 의도와
@@ -140,6 +148,7 @@ class ClaudeSessionManager(
         require(bytes <= MAX_PROMPT_BYTES) {
             "prompt too large ($bytes bytes UTF-8 > $MAX_PROMPT_BYTES)"
         }
+        validateImages(images)
 
         val session = ensureSession(projectId)
         // v1.113.0 — turn 진행 중(busy)에 사용자가 추가로 보낸 prompt(follow-up). 클라이언트
@@ -159,12 +168,25 @@ class ClaudeSessionManager(
         if (!isFollowUp) session.interruptPending = false
         // v0.16.0 — user prompt 영구 적재 (sendPrompt 시점의 sessionId 사용).
         // 자동 재개 프롬프트는 사용자 입력이 아니므로 history 미적재.
-        if (!isAutoResume) history?.userPrompt(projectId, session.sessionId, text)
+        // v1.133.0 — 이미지 첨부는 raw 컬럼에 JSON 으로 함께 보존(콘솔 이력 복원 시
+        // /claude/console/image 엔드포인트가 이 row 에서 서빙).
+        if (!isAutoResume) history?.userPrompt(projectId, session.sessionId, text, images = images)
         val envelope = buildJsonObject {
             put("type", "user")
             put("message", buildJsonObject {
                 put("role", "user")
                 put("content", buildJsonArray {
+                    // v1.133.0 — 이미지 블록은 텍스트보다 앞에(비전 권장 배치).
+                    for (img in images) {
+                        addJsonObject {
+                            put("type", "image")
+                            put("source", buildJsonObject {
+                                put("type", "base64")
+                                put("media_type", img.mediaType)
+                                put("data", img.data)
+                            })
+                        }
+                    }
                     addJsonObject {
                         put("type", "text")
                         put("text", text)
@@ -345,7 +367,11 @@ class ClaudeSessionManager(
      * (TUI 의 Esc → 새 입력과 동형 "끼어들기".) turn 이 중단되어 busy 가 풀릴 때까지 잠깐 기다린
      * 뒤([INTERRUPT_WATCHDOG_MS] 한도) sendPrompt 로 새 turn 을 시작한다. 진행 중이 아니면 곧장 전송.
      */
-    suspend fun interruptAndSend(projectId: String, text: String) {
+    suspend fun interruptAndSend(
+        projectId: String,
+        text: String,
+        images: List<com.siamakerlab.vibecoder.shared.dto.PromptImageDto> = emptyList(),
+    ) {
         val alive = sessions[projectId]?.process?.isAlive == true
         if (alive && isBusy(projectId)) {
             val sent = interruptTurn(projectId, "interrupted")
@@ -358,7 +384,7 @@ class ClaudeSessionManager(
                 fireInterrupt(projectId, "interrupted")
             }
         }
-        sendPrompt(projectId, text)
+        sendPrompt(projectId, text, images = images)
     }
 
     /**
@@ -1408,6 +1434,32 @@ class ClaudeSessionManager(
     companion object {
         const val MAX_PROMPT_BYTES = 32 * 1024
         const val IDLE_CHECK_INTERVAL_MS = 60_000L
+
+        /** v1.133.0 — 프롬프트 첨부 이미지 한도: 장수 / 장당 base64 길이(≈5MB 원본). */
+        const val MAX_PROMPT_IMAGES = 4
+        const val MAX_IMAGE_BASE64_CHARS = 7_000_000
+        val ALLOWED_IMAGE_MEDIA_TYPES = setOf("image/png", "image/jpeg", "image/gif", "image/webp")
+
+        /**
+         * v1.133.0 — 첨부 이미지 형식/한도 검증. 실패는 require → 호출자(ConsoleRoutes)가
+         * 400 으로 변환. base64 는 표준 알파벳만 허용(stream-json envelope 에 그대로 실리므로
+         * 제어문자/따옴표 주입 차단 — JSON 빌더가 escape 하긴 하지만 방어적 이중화).
+         */
+        fun validateImages(images: List<com.siamakerlab.vibecoder.shared.dto.PromptImageDto>) {
+            require(images.size <= MAX_PROMPT_IMAGES) {
+                "too many images (${images.size} > $MAX_PROMPT_IMAGES)"
+            }
+            val b64 = Regex("^[A-Za-z0-9+/=\\r\\n]+$")
+            for ((i, img) in images.withIndex()) {
+                require(img.mediaType in ALLOWED_IMAGE_MEDIA_TYPES) {
+                    "image[$i] unsupported media type '${img.mediaType}'"
+                }
+                require(img.data.isNotBlank() && img.data.length <= MAX_IMAGE_BASE64_CHARS) {
+                    "image[$i] too large (${img.data.length} chars base64 > $MAX_IMAGE_BASE64_CHARS)"
+                }
+                require(b64.matches(img.data)) { "image[$i] is not valid base64" }
+            }
+        }
 
         /**
          * v1.112.0 — control_request interrupt 전송 후, CLI 가 turn 을 abort 하고
