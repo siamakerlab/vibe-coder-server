@@ -33,6 +33,11 @@ data class HistoryTurnDto(
     val userMemo: String? = null,
     /** v0.61.0+ — ★ 표시 여부. */
     val starred: Boolean = false,
+    /**
+     * v1.138.0 — user turn 의 첨부 이미지 수 (raw 의 image 블록). 0 = 없음. 바이트는
+     * `GET …/claude/console/image?turn=<turnIdx>&idx=<i>` 로 로드. additive default.
+     */
+    val imageCount: Int = 0,
 )
 
 /**

@@ -191,6 +191,9 @@ internal fun ConversationTurnRow.toHistoryTurnDto(): HistoryTurnDto = HistoryTur
     agentName = agentName,
     userMemo = userMemo,
     starred = starred,
+    // v1.138.0 — user turn 첨부 이미지 수(raw 파싱). 클라이언트가 [image] 마커 + 탭 시
+    // /claude/console/image?turn&idx 로 로드. user 외 role 은 0.
+    imageCount = if (role == "user") ConsoleImages.fromUserRaw(raw).size else 0,
 )
 
 /**

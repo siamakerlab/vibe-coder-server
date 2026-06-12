@@ -119,6 +119,11 @@ object ApiPath {
     fun scheduledPrompt(projectId: String, scheduleId: String) =
         "/api/projects/${pathSeg(projectId)}/claude/schedule/${pathSeg(scheduleId)}"
 
+    // v1.133.0 — 대화 turn 에 저장된 이미지 서빙 (user 첨부/tool_result 스크린샷).
+    // query: ?turn=<turnIdx>&idx=<imageIndex>. (v1.138.0 — SSOT 등록 회수)
+    fun claudeConsoleImage(projectId: String) =
+        "/api/projects/${pathSeg(projectId)}/claude/console/image"
+
     // v1.136.0 — 프롬프트 일괄 전송. 선택한 여러 프로젝트에 같은 프롬프트를 한 번에
     // 전송(202 + accepted/rejected). 동시 turn 게이트가 순차 처리(큐)하므로 한도 초과분은
     // 대기 — v1.135.0 게이트 선확보로 대기 중 프로세스/메모리 점유 없음.
