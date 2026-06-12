@@ -327,9 +327,12 @@ fun Routing.webProjectRoutes(
         val usage = runCatching { conversationRepo.usageSummary(id) }.getOrNull()
         val promptFilter = ConversationTurnRepository.Filter(projectId = id, role = "user")
         val promptCount = runCatching { conversationRepo.count(promptFilter) }.getOrDefault(0L)
+        // v1.134.0 — rail 프롬프트 히스토리: 최근 7개 → 전체(스크롤 목록). 페이지 비대 방지
+        // 안전 상한 1000(repo list 상한과 동일) — 사실상 전체.
         val recentPrompts = runCatching {
-            val off = (promptCount - 7).coerceAtLeast(0)
-            conversationRepo.list(promptFilter, limit = 7, offset = off).asReversed().map { it.content }
+            val limit = 1000
+            val off = (promptCount - limit).coerceAtLeast(0)
+            conversationRepo.list(promptFilter, limit = limit, offset = off).asReversed().map { it.content }
         }.getOrDefault(emptyList())
         call.respondText(
             ProjectTabsTemplate.page(
