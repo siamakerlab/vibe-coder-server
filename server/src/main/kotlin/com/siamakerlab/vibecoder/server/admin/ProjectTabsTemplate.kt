@@ -198,7 +198,11 @@ internal object ProjectTabsTemplate {
         <span id="pt-auto-badge" class="pt-auto-badge" data-running="${esc(t("console.automation.running"))}"></span>
       </div>
       <!-- v1.131.0 — 예약 보내기(one-shot). 카드 상단 진입점 → 부모 레이어 모달(pt-sched-modal). -->
-      <button type="button" id="pt-sched-open" class="pt-auto-btn pt-sched-open">⏰ ${esc(t("console.schedule.open"))}</button>
+      <!-- v1.136.0 — 일괄 보내기(broadcast). 우측 버튼 → 공용 모달(vb-bcast-modal, BroadcastModalTemplate). -->
+      <div style="display:flex;gap:6px">
+        <button type="button" id="pt-sched-open" class="pt-auto-btn pt-sched-open">⏰ ${esc(t("console.schedule.open"))}</button>
+        <button type="button" class="pt-auto-btn pt-sched-open vb-bcast-open">📢 ${esc(t("console.broadcast.open"))}</button>
+      </div>
       <div id="pt-auto-running" class="pt-auto-running" hidden>
         <div class="pt-auto-prog"><span class="pt-auto-dot"></span><span id="pt-auto-progress"></span></div>
       </div>
@@ -289,7 +293,8 @@ internal object ProjectTabsTemplate {
         <button type="button" class="pt-memo-btn primary" id="pt-sched-add">${esc(t("console.schedule.add"))}</button>
       </div>
     </div>
-  </div>"""
+  </div>
+  ${BroadcastModalTemplate.render(lang, preselectId = project.id)}"""
 
         // v1.49.0 — 상단 프로젝트명을 <details> 콤보박스로: 클릭 → 다른 프로젝트로 즉시 이동.
         // 현재 프로젝트는 active 표시. 항목이 많으면 상단 필터 input 으로 즉시 검색(project-tabs.js).

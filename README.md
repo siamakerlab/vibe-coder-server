@@ -124,6 +124,10 @@ For per-release history, see [CHANGELOG.md](CHANGELOG.md).
   schedules a single prompt that fires **when the project is idle**: at an
   absolute/relative time, or when the Claude session / weekly quota resets
   (`GET/POST /api/projects/{id}/claude/schedule`, `DELETE .../schedule/{sid}`).
+- **Broadcast prompt** — send one prompt to many projects at once ("📢" next to
+  the schedule button, and on the project-list header): checkbox project picker
+  + prompt, `POST /api/claude/broadcast`. Excess sends queue behind the
+  concurrent-turn gate and proceed in order without holding memory.
 - **Custom agents** — `/agents` CRUD over `~/.claude/agents/*.md` (sanitized
   names, 64 KB body cap, atomic write, audit logged).
 - **Real multi-agent (sub-agent process pool)** — a **separate** Claude child
@@ -625,6 +629,9 @@ Highlights:
 - `GET/POST /api/projects/{id}/claude/schedule`, `DELETE .../schedule/{scheduleId}` —
   one-shot scheduled prompt (`triggerType`: `time` | `session_reset` | `weekly_reset`;
   `atEpochMs` or `delayMinutes` for `time`; fires only when the console is idle)
+- `POST /api/claude/broadcast` — send one prompt to many projects (body
+  `{prompt, projectIds}` → 202 `{accepted, rejected}`; max 100, queued by the
+  concurrent-turn gate)
 - `GET/POST /api/prompt-automations`, `PUT/DELETE /api/prompt-automations/{presetId}`
 - `GET /api/prompt-templates`
 - `GET /api/projects/{id}/claude/prompt-suggestions?prefix=…`

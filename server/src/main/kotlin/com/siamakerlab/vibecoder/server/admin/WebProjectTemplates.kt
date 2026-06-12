@@ -906,6 +906,11 @@ $errHtml
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
       <h2 style="margin:0">${esc(t("projects.list.title"))}</h2>
+      <span style="flex:1"></span>
+      <!-- v1.136.0 — 프롬프트 일괄 보내기 (공용 모달 vb-bcast-modal). '페이지당' 좌측. -->
+      <button type="button" class="vb-bcast-open"
+              style="padding:6px 12px;border-radius:7px;border:1px solid #3a3a3a;background:#222;color:var(--text);cursor:pointer;font-size:13px">
+        📢 ${esc(t("console.broadcast.open"))}</button>
       $sizeCombo
     </div>
     <style>
@@ -936,6 +941,8 @@ $errHtml
     <div style="display:flex;justify-content:flex-end;margin-top:10px">$navHtml</div>
   </div>
 </section>
+
+${BroadcastModalTemplate.render(lang)}
 
 <!-- v1.53.0 — 프로젝트 목록 상태칩 실시간 동기. `/ws/projects` (단방향) 구독 후
      ProjectBusyChanged frame 으로 해당 projectId 칩을 responding↔ready 로 patch.

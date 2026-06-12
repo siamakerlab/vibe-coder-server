@@ -274,6 +274,19 @@ class ClaudeSessionManager(
         }
     }
 
+    /**
+     * v1.136.0 — 일괄 전송용 비동기 전송. [sendPrompt] 는 동시 turn 게이트 대기로 오래
+     * suspend 될 수 있으므로, 일괄 전송 HTTP 핸들러가 N개 프로젝트를 기다리지 않도록
+     * 내부 scope 에서 실행하고 즉시 반환한다. 실패는 sendPrompt 내부의 콘솔 system
+     * 메시지(process_crashed 등)와 로그로만 보고.
+     */
+    fun sendPromptAsync(projectId: String, text: String) {
+        scope.launch {
+            runCatching { sendPrompt(projectId, text) }
+                .onFailure { log.warn(it) { "[$projectId] broadcast prompt failed" } }
+        }
+    }
+
     /** Stop the current process (if any), forget its session-id, clear replay ring. */
     suspend fun startNew(projectId: String) {
         terminateSession(projectId)

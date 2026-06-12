@@ -12,7 +12,8 @@ This file is mounted as `/home/vibe/.claude/CLAUDE.md` inside the container and 
 1. Response language · 2. Required steps after every code change (top priority) · 3. Versioning ·
 4. Debug build package name · 5. Signing keystore · 6. Build environment (tools/Gradle/SDK/env) ·
 7. Design principles · 8. Naming rules · 9. Git · 10. Documentation · 11. Never do · 12. Guiding principles ·
-13. Android Compose UI pitfalls · 14. Emulator run / screenshots — no autonomous execution
+13. Android Compose UI pitfalls · 14. Emulator run / screenshots — no autonomous execution ·
+15. Check official docs via Context7 first
 
 ---
 
@@ -287,3 +288,17 @@ taking & reviewing screenshots** — consumes **a lot of tokens and time.** Ther
   verification recommended" in your response and wait for the user's choice (decided in the next prompt,
   per the non-interactive rule).
 - In a shared emulator environment, contention with other projects makes the cost/benefit low.
+
+---
+
+## 15. ⚠ Check official docs via Context7 first (Compose / Flutter / AdMob / Insets)
+
+- **Before modifying any code involving Compose, Flutter, AdMob, WindowInsets, Scaffold, or
+  SafeArea, always consult the official documentation for the version in use via the Context7
+  MCP, then implement accordingly.**
+- These areas change frequently between versions (deprecations, moves, changed default
+  behavior); implementing from memory re-introduces regressions like the §13 double-inset
+  bugs or ad-SDK policy violations. Confirm the currently recommended pattern in the docs
+  and follow it.
+- If the Context7 MCP is not registered, do not proceed without checking the docs — guide the
+  user to install Context7 from the vibe-coder MCP catalog (`/env-setup/mcp`).
