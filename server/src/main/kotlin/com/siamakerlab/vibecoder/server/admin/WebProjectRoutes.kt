@@ -183,6 +183,9 @@ fun Routing.webProjectRoutes(
     }
 
     // v1.64.0 — 프로젝트 런처 아이콘(raster png/webp). 없으면 404 → 목록이 placeholder 사용.
+    // v1.137.3 — 원본(최대 density / 업로드 원본 수 MB 가능)을 매번 그대로 보내던 것을
+    // 64px 다운스케일 + in-memory 캐시(AppIconCache)로 교체. ETag 304 재검증 +
+    // max-age 1h 로 목록 재방문 시 재전송 자체를 제거. 원본 변경은 mtime/size 로 감지.
     get("/projects/{id}/app-icon") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
         val id = call.parameters["id"]!!
@@ -193,8 +196,18 @@ fun Routing.webProjectRoutes(
             call.respond(HttpStatusCode.NotFound)
             return@get
         }
-        call.response.header(HttpHeaders.CacheControl, "private, max-age=60")
-        call.respondFile(icon.toFile())
+        val entry = com.siamakerlab.vibecoder.server.projects.AppIconCache.get(id, icon)
+        if (entry == null) {
+            call.respond(HttpStatusCode.NotFound)
+            return@get
+        }
+        call.response.header(HttpHeaders.CacheControl, "private, max-age=3600")
+        call.response.header(HttpHeaders.ETag, entry.etag)
+        if (call.request.headers[HttpHeaders.IfNoneMatch] == entry.etag) {
+            call.respond(HttpStatusCode.NotModified)
+            return@get
+        }
+        call.respondBytes(entry.bytes, ContentType.parse(entry.contentType))
     }
 
     post("/projects") {
