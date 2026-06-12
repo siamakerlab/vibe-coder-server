@@ -198,7 +198,12 @@ fun main(args: Array<String>) {
     if (claudeGate.enabled) {
         log.info { "Claude concurrency gate enabled: max ${claudeGate.limit} concurrent turn(s)" }
     }
-    val sessionManager = ClaudeSessionManager(config, workspace, hub, history = conversationHistory, gate = claudeGate)
+    // v1.135.0 — 상주 세션 상한은 매 집행 시 ConfigHolder 를 읽어 /settings 저장 즉시 반영.
+    val residentCap = { com.siamakerlab.vibecoder.server.config.ConfigHolder.current.claude.maxResidentSessions }
+    val sessionManager = ClaudeSessionManager(
+        config, workspace, hub, history = conversationHistory, gate = claudeGate,
+        residentCapProvider = residentCap,
+    )
     // v1.1.0 — ProjectDto.busy 필드를 위해 sessionManager 를 lambda 로 주입.
     // 구성 순서: sessionManager 가 먼저 생성되어야 lambda 가 안전하게 호출 가능.
     // v0.33.0 — Cron 빌드 schedule + webhook secret. v1.43.0 — ProjectService 삭제 cascade
@@ -239,6 +244,7 @@ fun main(args: Array<String>) {
     // (reviewer / frontend / backend / ...) concurrently in the same workspace.
     val subAgentManager = com.siamakerlab.vibecoder.server.claude.SubAgentSessionManager(
         config = config, workspace = workspace, hub = hub, history = conversationHistory, gate = claudeGate,
+        residentCapProvider = residentCap,
     )
     val gradle = GradleBuilder(config)
     val artifacts = ArtifactService(config, workspace, artifactRepo, buildRepo, clock)

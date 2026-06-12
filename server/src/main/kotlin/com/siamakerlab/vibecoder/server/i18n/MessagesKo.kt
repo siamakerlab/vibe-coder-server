@@ -265,6 +265,8 @@ internal object MessagesKo {
         "settings.field.timeoutMin" to "타임아웃 (분)",
         "settings.field.maxConcurrentTurns" to "동시 진행 turn 상한",
         "settings.field.maxConcurrentTurns.hint" to "여러 프로젝트/sub-agent 콘솔에서 동시에 prompt 를 던질 때 같은 계정+IP burst 로 인한 서버측 throttle(429)을 막습니다. 상한 도달 시 새 turn 은 대기(queue). 0 = 무제한. 기본 3. <strong>변경은 컨테이너 재시작 후 적용.</strong>",
+        "settings.field.maxResidentSessions" to "상주 세션 수 상한",
+        "settings.field.maxResidentSessions.hint" to "메인/sub-agent 콘솔에 살아있는 claude 세션(프로세스+MCP 트리, 세션당 약 900MB) 수를 제한합니다. 초과 시 가장 오래 유휴인 세션부터 일시 중지(다음 프롬프트에서 같은 대화로 재개). 진행 중 세션은 회수하지 않습니다. 0 = 비활성(30분 idle 정리만). 기본 6. 저장 즉시 적용.",
         "settings.field.defaultDebugTask" to "기본 디버그 태스크",
         "settings.persist.hint" to "외부 <code>server.yml</code> 에 atomic 저장됨 (<code>.bak.&lt;ts&gt;</code> rotation, 최근 5개 유지). 경로: <code>\$VIBECODER_CONFIG_DIR/server.yml</code> 또는 <code>./config/server.yml</code>. <strong>host / port / name 변경은 컨테이너 재시작 필요.</strong>",
         // v1.7.14 — 테이블 헤더 / 폼 라벨 hardcoded 영어 → 한글.

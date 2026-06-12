@@ -66,6 +66,12 @@ class ClaudeConcurrencyGate(initialLimit: Int) {
     fun inFlight(): Int = heldKeys.size
 
     /**
+     * v1.135.0 — [key] 가 permit 을 보유(또는 acquire 대기 등록) 중인지. 상주 세션 LRU
+     * 회수가 "turn 진행 중인 세션" 을 회수 대상에서 제외하는 데 사용한다.
+     */
+    fun holds(key: String): Boolean = heldKeys.contains(key)
+
+    /**
      * permit 1개를 확보한다. 상한 도달 시 빌 때까지 suspend. 같은 [key] 가 이미 보유 중이면
      * 즉시 반환(추가 확보 안 함). 코루틴 취소 시 permit 을 잡지 않고 예외 전파(누수 없음).
      *

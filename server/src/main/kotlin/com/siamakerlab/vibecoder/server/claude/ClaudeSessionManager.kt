@@ -62,6 +62,12 @@ class ClaudeSessionManager(
     private val history: ConversationHistoryService? = null,
     /** v1.69.0 — 동시 in-flight turn 제한 게이트. 기본값 = 무제한(비활성). */
     private val gate: ClaudeConcurrencyGate = ClaudeConcurrencyGate(0),
+    /**
+     * v1.135.0 — 상주 세션 수 상한 provider (0 이하 = 비활성). 매 집행 시점에 읽으므로
+     * `/settings` 저장(ConfigHolder.update) 즉시 반영된다. 상한 초과 시 가장 오래 유휴인
+     * 세션부터 LRU 회수 — [enforceResidentCap].
+     */
+    private val residentCapProvider: () -> Int = { 0 },
 ) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -150,27 +156,35 @@ class ClaudeSessionManager(
         }
         validateImages(images)
 
-        val session = ensureSession(projectId)
         // v1.113.0 — turn 진행 중(busy)에 사용자가 추가로 보낸 prompt(follow-up). 클라이언트
         // 인위적 큐를 없애고 stream-json CLI 내부 큐에 맡기는 TUI 동형 동작. follow-up 은
         // 새 permit/마크/bg-clear/busy-전이를 하지 않고 Done suspend 카운터만 올린다(아래).
         // 자동 재개(isAutoResume)는 follow-up 이 아니라 같은 turn 의 연속이므로 제외.
+        // v1.135.0 — busy map 기반이라 세션 spawn 전에 판정 가능(아래 gate-선확보 재배치의 전제).
         val isFollowUp = !isAutoResume && isBusy(projectId)
         // v1.80.0 — 사용자 prompt 면 진행 중인 rate-limit 자동 재개를 취소하고 카운터 리셋.
         // follow-up 은 진행 중 turn 의 재개 흐름을 끊으면 안 되므로 retry 상태를 건드리지 않는다.
+        // v1.135.0 — 살아있는 세션이 있을 때만 의미 있는 상태라 nullable 접근으로 변경.
         if (!isAutoResume && !isFollowUp) {
-            session.retryJob?.cancel()
-            session.retryJob = null
-            session.rateLimitRetry = 0
+            sessions[projectId]?.let { s ->
+                s.retryJob?.cancel()
+                s.retryJob = null
+                s.rateLimitRetry = 0
+            }
         }
         // v1.112.0 — 새 prompt 가 흐르면 직전 interrupt 의 미도착 result 표식은 무효(stale 방지).
         // follow-up 은 진행 중 turn 의 표식을 건드리지 않는다.
-        if (!isFollowUp) session.interruptPending = false
-        // v0.16.0 — user prompt 영구 적재 (sendPrompt 시점의 sessionId 사용).
+        if (!isFollowUp) sessions[projectId]?.interruptPending = false
+        // v0.16.0 — user prompt 영구 적재 (sendPrompt 시점의 sessionId 사용 — 세션이 아직
+        // 없으면 저장된 session-id 파일과 동일 값. spawn 전에 적재해야 게이트 대기 중에도
+        // 사용자 프롬프트가 이력/rail 에 즉시 보인다).
         // 자동 재개 프롬프트는 사용자 입력이 아니므로 history 미적재.
         // v1.133.0 — 이미지 첨부는 raw 컬럼에 JSON 으로 함께 보존(콘솔 이력 복원 시
         // /claude/console/image 엔드포인트가 이 row 에서 서빙).
-        if (!isAutoResume) history?.userPrompt(projectId, session.sessionId, text, images = images)
+        if (!isAutoResume) {
+            val sid = sessions[projectId]?.sessionId ?: readSessionId(projectId)
+            history?.userPrompt(projectId, sid, text, images = images)
+        }
         val envelope = buildJsonObject {
             put("type", "user")
             put("message", buildJsonObject {
@@ -208,6 +222,17 @@ class ClaudeSessionManager(
                     "동시 작업 한도(${gate.limit}개)에 도달해 대기 중입니다. 다른 작업이 끝나면 순서대로 자동 진행됩니다.",
                 )
             }
+        }
+        // v1.135.0 — 세션 spawn 을 permit 확보 *후* 로 이동. 종전엔 spawn 후 게이트 대기라
+        // 대기 중인 프로젝트도 claude + MCP 사이드카 트리(~900MB)를 통째로 상주시켰고
+        // (여러 프로젝트 큐 적재 시 메모리 폭발), 대기 30분 초과 시 idle reaper 가 대기 중
+        // 프로세스를 SIGTERM → permit 확보 후 stdin write 실패로 프롬프트가 유실됐다.
+        // spawn 실패 시 확보한 permit 반환(누수 방지).
+        val session = try {
+            ensureSession(projectId)
+        } catch (t: Throwable) {
+            if (!isFollowUp) gate.release(projectId)
+            throw t
         }
         session.stdinMutex.withLock {
             try {
@@ -645,6 +670,8 @@ class ClaudeSessionManager(
                 log.debug(e) { "[$projectId] stderr reader ended" }
             }
         }
+        // v1.135.0 — 새 세션이 늘었으니 상주 상한 집행(방금 spawn 한 자신은 제외).
+        enforceResidentCap(excludeProjectId = projectId)
         return session
     }
 
@@ -1062,6 +1089,44 @@ class ClaudeSessionManager(
                 terminateSession(s.projectId)
             }
         }
+        // v1.135.0 — 주기 sweep 에서도 상주 상한 집행: /settings 에서 상한을 줄였거나, spawn
+        // 시점엔 전부 진행 중이라 회수를 보류했던 초과분을 여기서 회수한다.
+        enforceResidentCap()
+    }
+
+    /**
+     * v1.135.0 — 상주 세션 수 상한(LRU) 집행. 세션 1개는 claude CLI + MCP 사이드카 트리
+     * (운영 실측 ~850-900MB)를 통째로 상주시키므로, 30분 idle reaper 만으로는 다수 프로젝트를
+     * 오가며 작업할 때 메모리가 누적된다. 상한([residentCapProvider], 0 이하 = 비활성) 초과 시
+     * **가장 오래 유휴인** 세션부터 SIGTERM 한다.
+     *
+     * - busy(turn 진행 중) / gate permit 보유·대기 중 세션은 절대 회수하지 않는다 — 전부
+     *   진행 중이면 상한 일시 초과를 허용(진행 중 작업 보호가 우선).
+     * - session-id 파일은 보존되므로 다음 프롬프트에서 `--resume` 으로 같은 대화가 이어진다.
+     * - [excludeProjectId]: 방금 spawn 한 세션은 lastActivity 가 최신이라 LRU 에서 자연히
+     *   밀리지만, 회수 대상에서 명시 제외해 자기 자신을 죽이는 일이 없게 한다.
+     */
+    private suspend fun enforceResidentCap(excludeProjectId: String? = null) {
+        val cap = residentCapProvider()
+        if (cap <= 0) return
+        while (true) {
+            val alive = sessions.values.filter { it.process.isAlive }
+            if (alive.size <= cap) return
+            val victim = alive.asSequence()
+                .filter { it.projectId != excludeProjectId }
+                .filter { !isBusy(it.projectId) && !gate.holds(it.projectId) }
+                // spawn 직후 ~ 첫 stdin write(busy 전이) 사이의 짧은 창. 게이트 비활성(무제한)
+                // 구성에선 gate.holds 가 비어 이 창의 세션이 회수될 수 있다 → grace 로 보호.
+                .filter { Duration.between(it.startedAt, Instant.now()).seconds >= RESIDENT_CAP_SPAWN_GRACE_SECONDS }
+                .minByOrNull { it.lastActivity }
+                ?: return
+            log.info { "[${victim.projectId}] resident session cap ($cap) exceeded (${alive.size} alive); reaping LRU idle session" }
+            emitSystem(
+                victim.projectId, "resident_cap_paused",
+                "상주 세션 상한(${cap}개) 초과로 가장 오래 유휴인 이 세션을 일시 중지했습니다. 다음 프롬프트에서 같은 대화로 이어집니다.",
+            )
+            terminateSession(victim.projectId)
+        }
     }
 
     private suspend fun emitSystem(projectId: String, code: String, message: String) {
@@ -1434,6 +1499,9 @@ class ClaudeSessionManager(
     companion object {
         const val MAX_PROMPT_BYTES = 32 * 1024
         const val IDLE_CHECK_INTERVAL_MS = 60_000L
+
+        /** v1.135.0 — 상주 캡 LRU 회수에서 spawn 직후 세션을 보호하는 grace (초). */
+        const val RESIDENT_CAP_SPAWN_GRACE_SECONDS = 60L
 
         /** v1.133.0 — 프롬프트 첨부 이미지 한도: 장수 / 장당 base64 길이(≈5MB 원본). */
         const val MAX_PROMPT_IMAGES = 4
