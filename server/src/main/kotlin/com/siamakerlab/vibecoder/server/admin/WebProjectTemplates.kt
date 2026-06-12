@@ -1596,13 +1596,14 @@ $authBannerHtml
      로 옮겼다. 필터 모달(#filter-modal)과 그 스타일은 위치 독립적(fixed)이라 그대로 둔다.
      필터 체크박스 로직(.filter-cb / #filter-summary / #filter-reset)도 변동 없음. -->
 <style>
-  #filter-modal { position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.55); padding:16px; }
-  #filter-modal[hidden] { display:none; }
-  #filter-modal .filter-box { background:#15171c; border:1px solid #2a2a2a; border-radius:10px; padding:16px 18px; width:100%; max-width:520px; max-height:85vh; overflow-y:auto; box-shadow:0 12px 40px rgba(0,0,0,0.5); box-sizing:border-box; }
-  #filter-modal .filter-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
-  #filter-modal .filter-head strong { font-size:14px; }
-  #filter-modal .filter-x { background:transparent; border:0; color:var(--text-dim); font-size:16px; cursor:pointer; line-height:1; padding:2px 6px; }
-  #filter-modal .filter-x:hover { color:var(--text); }
+  /* v1.134.1 — #image-modal(이미지 첨부 다이얼로그)도 같은 모달 스타일 공유. */
+  #filter-modal, #image-modal { position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.55); padding:16px; }
+  #filter-modal[hidden], #image-modal[hidden] { display:none; }
+  #filter-modal .filter-box, #image-modal .filter-box { background:#15171c; border:1px solid #2a2a2a; border-radius:10px; padding:16px 18px; width:100%; max-width:520px; max-height:85vh; overflow-y:auto; box-shadow:0 12px 40px rgba(0,0,0,0.5); box-sizing:border-box; }
+  #filter-modal .filter-head, #image-modal .filter-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+  #filter-modal .filter-head strong, #image-modal .filter-head strong { font-size:14px; }
+  #filter-modal .filter-x, #image-modal .filter-x { background:transparent; border:0; color:var(--text-dim); font-size:16px; cursor:pointer; line-height:1; padding:2px 6px; }
+  #filter-modal .filter-x:hover, #image-modal .filter-x:hover { color:var(--text); }
 </style>
 
 <div id="filter-modal" hidden>
@@ -1635,6 +1636,24 @@ $authBannerHtml
     <div style="margin-top:12px;display:flex;justify-content:flex-end;gap:8px">
       <button type="button" id="filter-reset" class="chip chip-link" style="font-size:11px;padding:3px 10px">${esc(t("console.filter.reset"))}</button>
       <button type="button" id="filter-done" class="chip" style="font-size:11px;padding:3px 12px">${esc(t("memos.close"))}</button>
+    </div>
+  </div>
+</div>
+
+<!-- v1.134.1 — 이미지 첨부 다이얼로그. 입력창 우측 아이콘 클릭으로 열림(인라인 파일선택
+     박스/미리보기 strip 제거 → 우측 공간 컴팩트). 미리보기·개별 제거·파일 선택을 여기서. -->
+<div id="image-modal" hidden>
+  <div class="filter-box" role="dialog" aria-modal="true" aria-label="${esc(t("console.image.dialogTitle"))}">
+    <div class="filter-head">
+      <strong>📷 ${esc(t("console.image.dialogTitle"))}</strong>
+      <button type="button" id="image-close" class="filter-x" aria-label="${esc(t("memos.close"))}">✕</button>
+    </div>
+    <p class="hint" style="margin:0 0 10px;font-size:11px">${esc(t("console.image.dialogHint"))}</p>
+    <div id="image-empty" class="dim" style="font-size:12px;padding:4px 0 8px">${esc(t("console.image.empty"))}</div>
+    <div id="image-preview" style="display:none;gap:8px;flex-wrap:wrap;margin-bottom:10px"></div>
+    <div style="display:flex;justify-content:space-between;gap:8px">
+      <button type="button" id="image-pick" class="chip" style="font-size:11px;padding:4px 12px">${esc(t("console.image.pick"))}</button>
+      <button type="button" id="image-done" class="chip" style="font-size:11px;padding:4px 12px">${esc(t("memos.close"))}</button>
     </div>
   </div>
 </div>
@@ -1673,8 +1692,7 @@ ${if (embed) "" else contextMeterHtml}
 <form id="prompt-form" class="prompt-form" autocomplete="off">
   <!-- maxlength 는 char 단위라 ASCII 기준 32K. 한국어 등 multi-byte 입력은
        실제 UTF-8 byte 가 32K 를 넘으면 서버에서 prompt_too_large (400) 로 거절. -->
-  <!-- v1.133.0 — 첨부 이미지 미리보기 strip (있을 때만 표시). -->
-  <div id="image-preview" style="display:none;gap:8px;flex-wrap:wrap;margin-bottom:6px"></div>
+  <!-- v1.134.1 — 첨부 미리보기 strip 은 이미지 다이얼로그(#image-modal) 안으로 이동. -->
   <!-- v1.16.1 — textarea + voice/send 버튼을 동일 row 에 가로 배치. send 가
        textarea 의 우측 (사용자 요청). 버튼들은 column flex 로 stack, 하단 정렬. -->
   <div style="display:flex;gap:8px;align-items:stretch">
@@ -1693,12 +1711,15 @@ ${if (embed) "" else contextMeterHtml}
               title="${esc(t("console.voice.start"))}"
               style="width:auto;padding:8px 12px;background:#1a1a1a;color:var(--text);border:1px solid #2a2a2a;border-radius:6px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;line-height:0"
               ${if (blocking) "disabled" else ""}><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg></button>
-      <!-- v1.133.0 — 이미지 첨부 (Lucide 'image' 아이콘 인라인 — 외부 CDN 미사용 §3). -->
+      <!-- v1.133.0 — 이미지 첨부 (Lucide 'image' 아이콘 인라인 — 외부 CDN 미사용 §3).
+           v1.134.1 — 클릭 시 첨부 다이얼로그(#image-modal). 첨부 수 배지(#image-count). -->
       <button type="button" id="image-btn"
               title="${esc(t("console.image.attach"))}" aria-label="${esc(t("console.image.attach"))}"
-              style="width:auto;padding:8px 12px;background:#1a1a1a;color:var(--text);border:1px solid #2a2a2a;border-radius:6px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;line-height:0"
-              ${if (blocking) "disabled" else ""}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></button>
-      <input type="file" id="image-file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
+              style="position:relative;width:auto;padding:8px 12px;background:#1a1a1a;color:var(--text);border:1px solid #2a2a2a;border-radius:6px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;line-height:0"
+              ${if (blocking) "disabled" else ""}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg><span id="image-count" style="display:none;position:absolute;top:-6px;right:-6px;min-width:16px;height:16px;line-height:16px;padding:0 4px;font-size:10px;font-weight:600;text-align:center;border-radius:8px;background:#1e40af;color:#fff;box-sizing:border-box"></span></button>
+      <!-- admin.css 의 input[type=file]{display:block}(0,1,1)이 [hidden](0,1,0)을 이겨
+           파일선택 박스가 노출되던 문제 → inline display:none 으로 확실히 숨김(v1.134.1). -->
+      <input type="file" id="image-file" accept="image/png,image/jpeg,image/webp,image/gif" multiple style="display:none">
       <!-- v1.112.0 — "끼어들기": 응답 중에만 노출(setInFlight 토글). 진행 중 turn 을
            interrupt 로 중단하고 입력창 내용을 즉시 새 prompt 로 보낸다(TUI Esc+입력 동형). -->
       <button type="button" id="interrupt-btn" class="chip chip-danger"
@@ -2746,8 +2767,18 @@ $quickBarHtml
   var imageBtn = document.getElementById('image-btn');
   var imageFile = document.getElementById('image-file');
   var imagePreview = document.getElementById('image-preview');
+  // v1.134.1 — 첨부 다이얼로그 + 아이콘 배지(첨부 수). 인라인 strip 은 다이얼로그로 이동.
+  var imageModal = document.getElementById('image-modal');
+  var imageEmpty = document.getElementById('image-empty');
+  var imageCount = document.getElementById('image-count');
 
   function renderImagePreview() {
+    if (imageCount) {
+      imageCount.textContent = String(pendingImages.length);
+      imageCount.style.display = pendingImages.length ? 'inline-block' : 'none';
+    }
+    if (imageBtn) imageBtn.style.borderColor = pendingImages.length ? '#1e40af' : '#2a2a2a';
+    if (imageEmpty) imageEmpty.style.display = pendingImages.length ? 'none' : 'block';
     if (!imagePreview) return;
     imagePreview.innerHTML = '';
     for (var i = 0; i < pendingImages.length; i++) {
@@ -2830,8 +2861,21 @@ $quickBarHtml
     });
   }
 
-  if (imageBtn && imageFile) {
-    imageBtn.addEventListener('click', function() { imageFile.click(); });
+  // v1.134.1 — 아이콘 클릭 → 다이얼로그 열기. 파일 선택은 다이얼로그 안 버튼(#image-pick).
+  function openImageModal() { if (imageModal) { renderImagePreview(); imageModal.hidden = false; } }
+  function closeImageModal() { if (imageModal) imageModal.hidden = true; }
+  if (imageBtn) imageBtn.addEventListener('click', openImageModal);
+  var imagePick = document.getElementById('image-pick');
+  if (imagePick && imageFile) imagePick.addEventListener('click', function() { imageFile.click(); });
+  var imageClose = document.getElementById('image-close');
+  var imageDone = document.getElementById('image-done');
+  if (imageClose) imageClose.addEventListener('click', closeImageModal);
+  if (imageDone) imageDone.addEventListener('click', closeImageModal);
+  if (imageModal) imageModal.addEventListener('click', function(e) { if (e.target === imageModal) closeImageModal(); });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && imageModal && !imageModal.hidden) closeImageModal();
+  });
+  if (imageFile) {
     imageFile.addEventListener('change', function() {
       var fs = imageFile.files || [];
       for (var i = 0; i < fs.length; i++) addImageFile(fs[i]);
