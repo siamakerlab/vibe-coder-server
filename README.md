@@ -87,7 +87,16 @@ For per-release history, see [CHANGELOG.md](CHANGELOG.md).
   many turns run at once across **all** project and sub-agent consoles, sharing
   a single coroutine `Semaphore`. Excess prompts **queue** (never rejected),
   avoiding Anthropic's server-side 429 throttle from bursting one account/IP.
-  Set `0` for unlimited.
+  Set `0` for unlimited. A queued prompt does **not** spawn its Claude process
+  until a permit is free (v1.135.0), so stacking prompts across many projects
+  costs no memory while waiting.
+- **Resident session cap** — `claude.maxResidentSessions` (default 6, `0` =
+  disabled) bounds how many Claude child processes stay alive across main and
+  sub-agent consoles — each session tree (CLI + MCP sidecars) holds roughly
+  900 MB. When exceeded, the least-recently-used **idle** session is paused;
+  its session-id is preserved, so the next prompt resumes the same conversation
+  (`--resume`). Sessions with a turn in progress are never reaped. Applies
+  immediately on `/settings` save.
 - **Friendly console rendering** — every stream-json event renders as a
   human-readable line instead of raw JSON: tool results extract their text,
   every tool (including `mcp__*`, `Task`, `ToolSearch`, …) gets a one-line
@@ -111,6 +120,10 @@ For per-release history, see [CHANGELOG.md](CHANGELOG.md).
   fires the next prompt on every turn completion in **repeat** (same prompt × N)
   or **sequence** (list) mode. Runs even with the browser closed; presets are
   workspace-global; run history is persisted and reconciled on boot.
+- **Scheduled one-shot prompts** — the console rail's automation card ("⏰")
+  schedules a single prompt that fires **when the project is idle**: at an
+  absolute/relative time, or when the Claude session / weekly quota resets
+  (`GET/POST /api/projects/{id}/claude/schedule`, `DELETE .../schedule/{sid}`).
 - **Custom agents** — `/agents` CRUD over `~/.claude/agents/*.md` (sanitized
   names, 64 KB body cap, atomic write, audit logged).
 - **Real multi-agent (sub-agent process pool)** — a **separate** Claude child
@@ -214,7 +227,11 @@ For per-release history, see [CHANGELOG.md](CHANGELOG.md).
 - **Register a project** — empty, git clone (public, or private via HTTPS PAT
   or auto-generated ed25519 SSH key), or a built-in template (`empty`,
   `compose-basic`, `compose-mvvm-hilt`, `compose-mvvm-room`, `wear-os`,
-  `android-tv`; each seeds a starter prompt).
+  `android-tv`; each seeds a starter prompt). Project type is **Kotlin or
+  Flutter (Android-only)** — clones auto-detect the type (`pubspec.yaml` →
+  Flutter) with a mismatch-confirmation dialog, and builds route through the
+  matching toolchain (Gradle / `flutter build apk`). Flutter app version and
+  launcher icon are read from `pubspec.yaml` / `android/app/src/main/res`.
 - **Rename name / package / folder** — `/projects/{id}/overview` edits the
   display name (anytime), the `applicationId`, and the folder/project-id (the
   last two require the project to be idle). Renaming the package updates the DB,
@@ -519,7 +536,7 @@ required except `/setup`, `/login`, `/health`. Every SSR POST carries a CSRF
 | Path | Purpose |
 |---|---|
 | `/` | Dashboard (server / environment / activity summary + server-stats card) |
-| `/projects` | Project list + register form; drag-reorder (☰), page size 20/50/100, 3-state status chips |
+| `/projects` | Project list + register form; drag-reorder (☰), page size 20/50/100, 3-state status chips, Kotlin/Flutter type badge |
 | `/projects/{id}` | Project tabs (console / builds / files / git / agents / history / …) |
 | `/projects/{id}/console` | Claude prompt input + live log (WS) + quick-prompt buttons + ▼ template dropdown + ■ stop |
 | `/projects/{id}/builds` | Queue debug build + APK download + history chart + statistics; inline keystore-create form when none is linked |
@@ -559,7 +576,8 @@ required except `/setup`, `/login`, `/health`. Every SSR POST carries a CSRF
 | `/env-setup/tasks/{taskId}` | Live install progress (WS) |
 | `/usage` | Claude `/status` + prompt-cache stats card (admin) |
 | `/metrics` | Prometheus exposition (admin) |
-| `/backup`, `/backup/auto/{name}` | Workspace tar.gz backup + scheduled-file download/delete (admin) |
+| `/backup`, `/backup/auto/{name}` | Workspace tar.gz backup + scheduled-file download/delete + **project-restore upload** (`POST /backup/project-restore`) (admin) |
+| `/projects/{id}/backup` | Portable per-project export — source + keystores + docs + settings as one tar.gz (`…/backup/download`); restore it on any server via the upload form on `/backup` |
 | `/archive` | Archived projects (Tools tab) — compress a project (source + keystore) to tar.gz, remove from the list, restore/download/delete (admin) |
 | `/audit` | Operational audit log (filter / paginate) |
 | `/2fa`, `/webauthn` | Two-factor TOTP / passkey enrollment |
@@ -604,6 +622,9 @@ Highlights:
 - `GET /api/projects/{id}/claude/console/image?turn=N&idx=M` — serves an image stored in a
   conversation turn (tool-result screenshots / user attachments) for console history restore
 - `POST /api/projects/{id}/claude/automation/{start|stop}`, `GET .../status`
+- `GET/POST /api/projects/{id}/claude/schedule`, `DELETE .../schedule/{scheduleId}` —
+  one-shot scheduled prompt (`triggerType`: `time` | `session_reset` | `weekly_reset`;
+  `atEpochMs` or `delayMinutes` for `time`; fires only when the console is idle)
 - `GET/POST /api/prompt-automations`, `PUT/DELETE /api/prompt-automations/{presetId}`
 - `GET /api/prompt-templates`
 - `GET /api/projects/{id}/claude/prompt-suggestions?prefix=…`
