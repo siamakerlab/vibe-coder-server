@@ -37,9 +37,9 @@ have stale bugs — please open a GitHub issue and they'll be fixed quickly.
   <https://github.com/siamakerlab/vibe-coder-server/wiki>
 - **Issues**: <https://github.com/siamakerlab/vibe-coder-server/issues>
 - **Architectures**: `linux/amd64` (multi-arch builds reserved for milestones).
-- **Latest tags**: `0.43.0`, `latest`
+- **Latest tags**: `1.135.0`, `latest`
 - **Base OS**: Ubuntu 26.04 LTS (Resolute Raccoon) since v0.38.0
-- **Image size**: ~600 MB (Android SDK / Gradle / MCP packages live in
+- **Image size**: ~750 MB (Android SDK / Gradle / MCP packages live in
   bind-mounted volumes — see below). v0.14.0+ runs alongside a small
   `postgres:17-alpine` sidecar container.
 - **License**: AGPL-3.0
@@ -70,7 +70,7 @@ docker compose up -d            # boots postgres + vibe-coder-server
 > [CHANGELOG.md](https://github.com/siamakerlab/vibe-coder-server/blob/main/CHANGELOG.md)
 > for the exact steps.
 
-## What's in the box (v0.64.0)
+## What's in the box (v1.135.0)
 
 **Core**
 - **Claude Code CLI orchestration** — one persistent child per project,
@@ -87,12 +87,28 @@ docker compose up -d            # boots postgres + vibe-coder-server
 - **General Chat** (v0.13.0+) — `/chat` page runs a project-less Claude
   session (`__scratch__` workspace) with full multi-turn `--resume`.
 
+**Recent highlights (v1.x)**
+- **Kotlin & Flutter (Android-only) project types** (v1.124–1.128) — type
+  picker on create, `pubspec.yaml` auto-detection for clones, builds via
+  Gradle or `flutter build apk`.
+- **Prompt automation & scheduled prompts** (v1.59 / v1.130) — server-side
+  autopilot (repeat / sequence) plus one-shot sends at a set time or when the
+  Claude quota resets.
+- **Concurrency & memory guards** (v1.69 / v1.135) — concurrent-turn cap
+  (default 3) and resident-session cap (default 6, LRU pause + `--resume`);
+  queued prompts don't spawn Claude processes while waiting.
+- **Portable project backup / restore** (v1.132) — one tar.gz with source +
+  keystores + docs + settings; restore on any server.
+- **Console image attachments** (v1.133) — attach up to 4 images per prompt,
+  sent to Claude as vision content blocks.
+
 **Build & deploy**
 - **MCP catalog with 60+ servers** in 10 categories — checkbox multi-select,
   per-MCP token form, recommended ★ markers, trust tiers.
 - **Build environment one-click installer** — Android SDK / Gradle host
-  binary & dependency cache / Node + Claude CLI / MCP packages, persisted
-  under one host directory. New projects' `CLAUDE.md` is wired to reuse the
+  binary & dependency cache / Node + Claude CLI / MCP packages / optional
+  **Flutter SDK** (Android-only precache), persisted under one host
+  directory. New projects' `CLAUDE.md` is wired to reuse the
   installed Gradle (no double-download via wrapper).
 - **Git clone on project register** — public + private (HTTPS PAT or
   auto-generated ed25519 SSH key).
@@ -474,7 +490,7 @@ container (UID 70 in alpine images). On the host you may need `sudo` to read
 files directly. Either use `tar` with sudo, or do logical `pg_dump` against
 the running container.
 
-## Web UI routes (v0.64.0)
+## Web UI routes (v1.135.0)
 
 All routes sit at the root (no `/admin/*` prefix from v0.4.2+). Bearer
 token or session cookie required except `/setup`, `/login`, `/health`.
@@ -523,7 +539,7 @@ SSR POST forms carry a CSRF token (v0.12.4+).
 | `/metrics` | Prometheus exposition (admin; v0.55.0+) |
 | `/settings`, `/devices`, `/password` | Operations |
 
-## JSON API (v0.64.0 — for clients)
+## JSON API (v1.135.0 — for clients)
 
 Full reference + curl examples in the
 [REST API Reference](https://github.com/siamakerlab/vibe-coder-server/wiki/REST-API-Reference)

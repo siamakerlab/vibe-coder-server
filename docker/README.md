@@ -69,7 +69,7 @@ docker exec -it vibe-coder-server vibe-doctor
 
 | 레이어 | 내용 | 크기 |
 |---|---|---|
-| Ubuntu 24.04 LTS (noble) | base | ~30MB |
+| Ubuntu 26.04 LTS (resolute) | base | ~30MB |
 | OpenJDK 17 (JRE) | vibe-coder 서버 실행 | ~200MB |
 | Node 20 LTS + Claude Code CLI | Claude 자식 프로세스 | ~250MB |
 | git, curl, unzip, jq, tini, gosu 등 | 빌드 도구 최소셋 | ~80MB |
@@ -87,6 +87,7 @@ docker exec -it vibe-coder-server vibe-doctor
 이미지에 **포함되지 않은 것들** (doctor가 볼륨에 다운로드):
 
 - Android SDK (~3~4GB)
+- Flutter SDK (~2GB — 선택, Android APK 빌드 전용으로 precache)
 - Gradle 의존성 캐시 (~1~2GB, 첫 빌드 시)
 - Claude 인증 자격증명 (호스트 ~/.claude 마운트 권장)
 - 선택적 MCP (Playwright Chromium 등)
