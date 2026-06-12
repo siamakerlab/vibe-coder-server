@@ -583,6 +583,11 @@ internal object MessagesEn {
         "console.image.limitSize" to "Image is too large (max ~5MB after compression).",
         "console.image.readFailed" to "Failed to read the image.",
         "console.image.alt" to "attached image",
+        // v1.134.1 — attach dialog (compact icon + modal).
+        "console.image.dialogTitle" to "Attach images",
+        "console.image.dialogHint" to "Up to 4 images · you can also paste (Ctrl+V) or drag & drop onto the prompt box.",
+        "console.image.empty" to "No images attached yet.",
+        "console.image.pick" to "Choose files…",
         // v1.15.0 — Web Speech API voice input button.
         "console.voice.start" to "Start voice input (microphone permission required)",
         "console.voice.stop" to "Stop voice input",

@@ -560,6 +560,11 @@ internal object MessagesKo {
         "console.image.limitSize" to "이미지가 너무 큽니다 (압축 후 최대 ~5MB).",
         "console.image.readFailed" to "이미지를 읽지 못했습니다.",
         "console.image.alt" to "첨부 이미지",
+        // v1.134.1 — 첨부 다이얼로그 (컴팩트 아이콘 + 모달).
+        "console.image.dialogTitle" to "이미지 첨부",
+        "console.image.dialogHint" to "최대 4장 · 입력창에 붙여넣기(Ctrl+V)나 드래그&드롭으로도 첨부됩니다.",
+        "console.image.empty" to "아직 첨부된 이미지가 없습니다.",
+        "console.image.pick" to "파일 선택…",
         // v1.15.0 — Web Speech API 음성 입력 버튼.
         "console.voice.start" to "음성 입력 시작 (마이크 권한 필요)",
         "console.voice.stop" to "음성 입력 중지",
