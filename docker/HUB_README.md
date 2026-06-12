@@ -129,7 +129,7 @@ docker compose up -d            # boots postgres + vibe-coder-server
 
 | Layer | Contents | Size |
 |---|---|---|
-| Ubuntu 24.04 LTS (Noble Numbat) | base | ~30 MB |
+| Ubuntu 26.04 LTS (Resolute Raccoon) | base | ~30 MB |
 | OpenJDK 17 (JRE) | runs the vibe-coder server | ~200 MB |
 | Node 20 LTS + Claude Code CLI | Claude child process | ~250 MB |
 | git, curl, unzip, jq, tini, gosu, util-linux, sudo | minimal tooling | ~80 MB |
