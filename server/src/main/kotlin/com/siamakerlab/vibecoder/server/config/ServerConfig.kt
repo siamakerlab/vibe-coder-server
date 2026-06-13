@@ -200,7 +200,7 @@ data class ClaudeSection(
     val maxResidentSessions: Int = 6,
     /**
      * v1.106.0 / v1.107.2 — 프로젝트별 모델 미설정 시의 전역 기본. `claude --model <model>` 전달.
-     * "default"(=CLI 기본, --model 미전달) / "sonnet" / "opus" / "haiku" / 전체 모델 ID.
+     * "default"(=CLI 기본, --model 미전달) / "sonnet" / "opus" / "fable" / "haiku" / 전체 모델 ID.
      * v1.107.2 — 운영 기본을 **"default"(CLI 기본)** 로. 모델은 프로젝트별로 콘솔 콤보박스에서
      * 개별 관리(.vibecoder/claude-model)하며, 선택값이 그대로 콤보박스에 고정 표시된다.
      * (토큰 절감을 원하면 프로젝트별로 Sonnet 선택, 또는 env VIBECODER_CLAUDE_MODEL=sonnet.)

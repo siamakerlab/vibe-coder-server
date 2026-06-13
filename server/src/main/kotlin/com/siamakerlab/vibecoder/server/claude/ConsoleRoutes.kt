@@ -281,7 +281,7 @@ private fun validatedImages(body: PromptRequestDto): List<com.siamakerlab.vibeco
     return images
 }
 
-/** v1.120.0 — 콘솔 설정 현재 상태 → DTO. 모델 목록은 알려진 4종(기본 포함). */
+/** v1.120.0 — 콘솔 설정 현재 상태 → DTO. 모델 목록은 알려진 5종(기본 포함, v1.140.0 fable 추가). */
 private fun buildConsoleSettings(
     sessionManager: ClaudeSessionManager,
     projectId: String,
@@ -295,6 +295,7 @@ private fun buildConsoleSettings(
             com.siamakerlab.vibecoder.shared.dto.ConsoleModelOptionDto("", "CLI default"),
             com.siamakerlab.vibecoder.shared.dto.ConsoleModelOptionDto("sonnet", "Sonnet"),
             com.siamakerlab.vibecoder.shared.dto.ConsoleModelOptionDto("opus", "Opus"),
+            com.siamakerlab.vibecoder.shared.dto.ConsoleModelOptionDto("fable", "Fable 5"),
             com.siamakerlab.vibecoder.shared.dto.ConsoleModelOptionDto("haiku", "Haiku"),
         ),
     )

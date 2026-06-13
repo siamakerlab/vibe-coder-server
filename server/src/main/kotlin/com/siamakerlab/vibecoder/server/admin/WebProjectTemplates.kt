@@ -1237,7 +1237,12 @@ $errHtml
         }
         // v1.106.0 — 모델 셀렉터(토큰 사용량 레버). 변경 시 즉시 submit → 유휴면 다음 prompt 부터
         // 같은 대화를 새 모델로 resume. 표준 3종 + CLI 기본. 커스텀 ID 면 별도 옵션으로 표시.
-        val knownModels = listOf("sonnet" to "Sonnet (권장·저비용)", "opus" to "Opus (고성능·고비용)", "haiku" to "Haiku (초저비용)")
+        val knownModels = listOf(
+            "sonnet" to "Sonnet (권장·저비용)",
+            "opus" to "Opus (고성능·고비용)",
+            "fable" to "Fable 5 (최상위·Opus 2배 비용)",
+            "haiku" to "Haiku (초저비용)",
+        )
         val isCustomModel = model.isNotBlank() && knownModels.none { it.first.equals(model, ignoreCase = true) }
         val modelOptions = buildString {
             for ((v, label) in knownModels) {

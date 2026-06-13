@@ -2,7 +2,7 @@ server:
   name: Vibe Coder Server
   host: 0.0.0.0
   port: 17880
-  version: 1.139.0
+  version: 1.140.0
 
 workspace:
   # Each project lives at <root>/<projectId>/.
@@ -61,7 +61,8 @@ claude:
   maxResidentSessions: 6
   # v1.106.0 / v1.107.2 — 프로젝트별 모델 미설정 시의 전역 기본. claude --model <model> 전달.
   # "default" = --model 미전달 → CLI 가 자체 설정/계정 기본으로 모델을 직접 선택(기본값).
-  # "sonnet"(Opus 대비 약 1/5 사용량) / "opus" / "haiku" / 전체 모델 ID 도 가능.
+  # "sonnet"(Opus 대비 약 1/5 사용량) / "opus" / "fable"(Claude Fable 5 — 최상위, Opus 2배 비용,
+  # CLI 2.1.17x+ alias) / "haiku" / 전체 모델 ID(claude-fable-5 등) 도 가능.
   # 모델은 프로젝트별로 콘솔 콤보박스에서 개별 관리(.vibecoder/claude-model)되며 선택값이 고정 표시.
   # env VIBECODER_CLAUDE_MODEL 로도 덮어쓸 수 있음.
   model: default
