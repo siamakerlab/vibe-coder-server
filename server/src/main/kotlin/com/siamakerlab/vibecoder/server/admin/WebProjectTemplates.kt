@@ -1756,7 +1756,7 @@ ${if (embed) "" else contextMeterHtml}
   </div>
 </form>
 <script src="/static/voice-input.js" defer></script>
-<script src="/static/prompt-templates.js?v=1.137.4" defer></script>
+<script src="/static/prompt-templates.js?v=1.142.0" defer></script>
 <style>
   /* v1.15.0 — 음성 입력 listening 시각 강조. */
   #voice-btn.listening {
@@ -1966,6 +1966,14 @@ $quickBarHtml
       setJumpVisible(false);
     } else if (!jumpBtn || !jumpBtn.classList.contains('visible')) {
       setJumpVisible(true);
+    }
+    // v1.141.0 — 무한 스크롤: 최상단 근처(≤80px)에 닿으면 과거 30개 자동 로드.
+    //   (loadMoreHistory 는 함수 선언이라 hoist 되고, 스크롤 콜백은 이 시점 이후에만
+    //    실행되므로 아래 정의된 oldestTurnIdx/loadingMore 참조도 안전. "더보기" 버튼은
+    //    수동 폴백 겸 시각 힌트로 유지.)
+    if (logEl.scrollTop <= 80 && typeof loadMoreHistory === 'function' &&
+        !loadingMore && oldestTurnIdx != null && oldestTurnIdx > 0) {
+      loadMoreHistory();
     }
   });
 
