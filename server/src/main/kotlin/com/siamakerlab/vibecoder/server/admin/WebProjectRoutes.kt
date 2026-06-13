@@ -634,7 +634,7 @@ fun Routing.webProjectRoutes(
     }
 
     // v1.106.0 — 프로젝트별 Claude 모델 설정(토큰 사용량 레버). 유휴면 즉시 재시작(세션 유지),
-    // busy 면 다음 turn 부터 적용. 값: sonnet / opus / haiku / default / 전체 모델 ID.
+    // busy 면 다음 turn 부터 적용. 값: sonnet / opus / fable / haiku / default / 전체 모델 ID.
     post("/projects/{id}/console/model") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireWriteAccessOrRedirect(sess)) return@post

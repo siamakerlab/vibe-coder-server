@@ -55,3 +55,6 @@ CLAUDE.md
 docs/
 vibe-coder-icon.png
 Screenshot_*.jpg
+
+# Playwright MCP 세션 산출물
+.playwright-mcp/
