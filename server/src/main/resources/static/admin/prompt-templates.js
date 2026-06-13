@@ -238,6 +238,8 @@
     els.importFile.addEventListener('change', onImport);
     // 다이얼로그 닫히면 picker 도 최신화.
     dlg.addEventListener('close', function () { renderPicker(); });
+    // v1.142.0 — 열린 동안 창 크기 변경 시 rail gutter 재계산(반응형 rail 폭 clamp 대응).
+    window.addEventListener('resize', function () { if (dlg && dlg.open) applyRailGutter(); });
   }
 
   function refreshDialog() {
@@ -381,9 +383,36 @@
     reader.readAsText(file);
   }
 
+  // v1.142.0 — 통합 탭 콘솔은 iframe(풀폭)이고 우측 overview rail 은 부모 레이어(z-index)라,
+  //   showModal 다이얼로그가 iframe 뷰포트 중앙에 뜨면 우측 ~330px 가 rail 뒤로 가린다.
+  //   부모(project-tabs.js)가 inner page .content 에 주입한 padding-right(=rail 폭+24)를 읽어
+  //   다이얼로그를 "가시 영역(뷰포트 - rail 폭)" 안으로 한정·중앙정렬한다. 단독 콘솔 페이지나
+  //   rail 숨김 시엔 패딩이 작아 gutter=0 → 기존 동작.
+  function railGutterPx() {
+    try {
+      var c = document.querySelector('.content');
+      if (!c) return 0;
+      var pr = parseInt(window.getComputedStyle(c).paddingRight, 10) || 0;
+      return pr > 40 ? pr : 0;   // rail 주입(>=~272) 만 gutter 로 취급(단독=32 무시).
+    } catch (e) { return 0; }
+  }
+  function applyRailGutter() {
+    if (!dlg) return;
+    var gutter = railGutterPx();
+    var vw = window.innerWidth || document.documentElement.clientWidth || 0;
+    var avail = Math.max(320, vw - gutter);
+    var w = Math.min(860, avail - 24);
+    dlg.style.left = '0';
+    dlg.style.right = gutter + 'px';
+    dlg.style.margin = 'auto';        // [0, vw-gutter] 밴드 안에서 수평/수직 중앙.
+    dlg.style.width = w + 'px';
+    dlg.style.maxWidth = 'none';
+  }
+
   function open() {
     buildDialog();
     resetForm();
+    applyRailGutter();
     refreshDialog().then(function () { if (!dlg.open) dlg.showModal(); });
     if (!dlg.open) dlg.showModal();
     setTimeout(function () { els.search.focus(); }, 30);
