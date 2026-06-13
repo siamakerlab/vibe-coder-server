@@ -184,8 +184,11 @@ fun Routing.webProjectRoutes(
 
     // v1.64.0 — 프로젝트 런처 아이콘(raster png/webp). 없으면 404 → 목록이 placeholder 사용.
     // v1.137.3 — 원본(최대 density / 업로드 원본 수 MB 가능)을 매번 그대로 보내던 것을
-    // 64px 다운스케일 + in-memory 캐시(AppIconCache)로 교체. ETag 304 재검증 +
-    // max-age 1h 로 목록 재방문 시 재전송 자체를 제거. 원본 변경은 mtime/size 로 감지.
+    // 64px 다운스케일 + in-memory 캐시(AppIconCache)로 교체. 원본 변경은 mtime/size 로 감지.
+    // v1.144.1 — Cache-Control 을 max-age=3600 → no-cache 로. max-age 동안 브라우저가
+    //   재검증 없이 캐시본을 써, 아이콘을 바꿔도 ETag 가 바뀐들 최대 1시간 stale 이 남던 문제.
+    //   no-cache = 저장하되 매 사용 전 ETag(If-None-Match) 재검증 → 변경 없으면 304(거의
+    //   0바이트, 64px 라 본문 자체도 수 KB), 바뀌면 즉시 200 신규본. 즉시성 ↔ 대역폭 균형.
     get("/projects/{id}/app-icon") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
         val id = call.parameters["id"]!!
@@ -201,7 +204,7 @@ fun Routing.webProjectRoutes(
             call.respond(HttpStatusCode.NotFound)
             return@get
         }
-        call.response.header(HttpHeaders.CacheControl, "private, max-age=3600")
+        call.response.header(HttpHeaders.CacheControl, "private, no-cache")
         call.response.header(HttpHeaders.ETag, entry.etag)
         if (call.request.headers[HttpHeaders.IfNoneMatch] == entry.etag) {
             call.respond(HttpStatusCode.NotModified)
