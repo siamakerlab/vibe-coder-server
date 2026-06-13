@@ -1568,9 +1568,17 @@ $errHtml
   /* v1.90.5 — 접기/펼치기를 모든 콘솔 메시지에 적용(이전엔 .assistant 한정). */
   /* v1.133.0 — 콘솔 이미지 썸네일 (tool_result 이미지 / 프롬프트 첨부). 클릭으로 확대 토글. */
   .log-images { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+  .log-images.collapsed { display:none; }
   .log-images .log-img { max-height:200px; max-width:min(100%, 360px); border:1px solid #2a2a2a;
     border-radius:8px; cursor:zoom-in; background:#111; object-fit:contain; }
   .log-images .log-img.expanded { max-height:none; max-width:100%; cursor:zoom-out; }
+  /* v1.143.0 — user 프롬프트 이미지 '[image]' 라벨(기본 접힘, 탭 시 썸네일 펼침). 상단고정(.cur)
+     프롬프트가 썸네일로 상단을 계속 차지하던 것을 회수. */
+  .log-img-toggle { margin-top:8px; padding:2px 9px; font-size:12px; line-height:1.7;
+    color:var(--text-dim,#9aa0ad); background:#16181f; border:1px solid #2a2a2a; border-radius:6px;
+    cursor:pointer; display:inline-flex; align-items:center; gap:5px; }
+  .log-img-toggle:hover { color:var(--text,#ddd); border-color:#3a3f4a; }
+  .log-img-toggle[aria-expanded="true"] { color:var(--text,#ddd); }
   .log-content[data-clampable="1"] { position:relative; cursor:pointer; }
   .log-content.clamped .log-body { max-height:180px; overflow:hidden; }
   .log-content.clamped::after {
@@ -2086,7 +2094,29 @@ $quickBarHtml
           });
           imgWrap.appendChild(imEl);
         }
-        if (imgWrap.childNodes.length) contentBox.insertBefore(imgWrap, metaBox);
+        if (imgWrap.childNodes.length) {
+          // v1.143.0 — user 프롬프트 이미지는 기본 '[image]' 라벨로 접고 탭하면 썸네일을 펼친다.
+          //   (상단고정 .cur 프롬프트가 썸네일로 상단을 계속 차지하던 문제 회수.) tool 결과 등
+          //   비-user 이미지는 기존처럼 썸네일 즉시 표시.
+          if (cls === 'user') {
+            imgWrap.classList.add('collapsed');
+            var imgToggle = document.createElement('button');
+            imgToggle.type = 'button';
+            imgToggle.className = 'log-img-toggle';
+            var imgN = imgWrap.childNodes.length;
+            imgToggle.textContent = imgN > 1 ? ('[image] ×' + imgN) : '[image]';
+            imgToggle.setAttribute('aria-expanded', 'false');
+            imgToggle.addEventListener('click', (function(wrap) {
+              return function(e) {
+                e.stopPropagation();
+                var shown = wrap.classList.toggle('collapsed') === false;
+                this.setAttribute('aria-expanded', shown ? 'true' : 'false');
+              };
+            })(imgWrap));
+            contentBox.insertBefore(imgToggle, metaBox);
+          }
+          contentBox.insertBefore(imgWrap, metaBox);
+        }
       }
     }
     var btn = row.querySelector('.log-copy');
