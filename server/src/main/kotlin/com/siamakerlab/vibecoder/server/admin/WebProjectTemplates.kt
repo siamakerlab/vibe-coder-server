@@ -152,7 +152,6 @@ object WebProjectTemplates {
         rows: List<com.siamakerlab.vibecoder.server.repo.ConversationTurnRow>,
     ): String {
         if (rows.isEmpty()) return "[]"
-        val maxContent = 4000
         val sb = StringBuilder("[")
         var first = true
         for (row in rows) {
@@ -190,13 +189,14 @@ object WebProjectTemplates {
                     row.content
                 }
             }
-            val text = if (raw.length > maxContent) {
-                // surrogate pair(이모지 등) 중간 절단 방지: 경계 char 가 high surrogate 면
-                // 한 칸 당겨 자른다. 짝 없는 surrogate 가 남으면 respondText 의 UTF-8
-                // 인코딩이 MalformedInputException 으로 터져 페이지 전체가 500 이 된다.
-                val end = if (Character.isHighSurrogate(raw[maxContent - 1])) maxContent - 1 else maxContent
-                raw.substring(0, end) + " …(+${raw.length - end})"
-            } else raw
+            // v1.144.0 — 절단 폐기(운영자 요청: 전문 노출). 이전 4000자 raw substring 절단이
+            //   tool_use 입력 JSON(예: 큰 content 의 Write)을 문자열 중간에서 잘라 깨뜨려,
+            //   클라 tryParseJson 실패 → renderToolUse 가 raw JSON 을 그대로 노출시키던 근본
+            //   원인이었다. 이제 전문을 그대로 싣는다 — jsLit 이 `<`/`>`/`&`/제어문자/surrogate 를
+            //   모두 escape 하므로 `</script>` 탈출·UTF-8 MalformedInput·500 위험 없음(짝 없는
+            //   surrogate 도 sanitizeSurrogates 가 처리). 빈 thinking signature/이미지 base64 는
+            //   위에서 이미 마커/스트립되어 전문 대상이 아니다(노이즈 제거는 유지).
+            val text = raw
             sb.append('{')
             sb.append("\"role\":").append(jsLit(row.role))
             sb.append(",\"text\":").append(jsLit(text))
@@ -2394,8 +2394,10 @@ $quickBarHtml
         resultImgs.push({ src: 'data:' + rich.images[ri].mediaType + ';base64,' + rich.images[ri].data });
       }
       var resultLabel = f.isError ? 'tool-err' : '✓ result';
-      // v1.90.9 — 표시는 clip(8000)이되 복사용 원문(raw)은 전체 보존.
-      append(f.isError ? 'tool-err' : 'tool-out', resultLabel, clip(out, 8000), 'tool_result',
+      // v1.144.0 — 절단 폐기(운영자 요청: 전문 표시). 종전 clip(8000)이 긴 tool 결과에
+      //   '…(+N)' 마커를 남겼다. 이제 전문을 본문에 싣되, 모든 메시지 공통 MD_CLAMP_PX
+      //   높이 접기(탭 펼침)로 화면 점유는 제어. raw 는 복사용 원문 보존.
+      append(f.isError ? 'tool-err' : 'tool-out', resultLabel, out, 'tool_result',
              { raw: out, images: resultImgs });
       // v1.90.4 — tool 결과(파일 내용/명령 출력)에도 'unauthorized' 등이 정상 등장하므로 감지 제외.
     } else if (t === 'console_error') {
@@ -2489,7 +2491,8 @@ $quickBarHtml
         ? window.VibeConsole.extractToolResultRich(parsed != null ? parsed : text).text
         : window.VibeConsole.extractToolResult(parsed != null ? parsed : text);
       opts.raw = out;
-      append(role === 'tool_result_error' ? 'tool-err' : 'tool-out', role === 'tool_result_error' ? 'tool-err' : '✓ result', clip(out, 8000), 'tool_result', opts);
+      // v1.144.0 — 이력 복원도 전문 표시(clip 폐기). 높이 접기 + 복사 원문(opts.raw)은 유지.
+      append(role === 'tool_result_error' ? 'tool-err' : 'tool-out', role === 'tool_result_error' ? 'tool-err' : '✓ result', out, 'tool_result', opts);
     } else if (role === 'system') {
       var sys = tryParseJson(text) || {};
       if (sys.kind === 'session_started') append('sys', 'session', 'started' + (sys.model ? ' · ' + sys.model : ''), 'session', opts);
