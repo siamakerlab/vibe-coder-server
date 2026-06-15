@@ -225,6 +225,17 @@ class ClaudeStreamParser(
      */
     private fun isUsageLimitMessage(msg: String): Boolean {
         val m = msg.lowercase()
+        // v1.144.2 — 일시 rate limit 메시지를 사용량 한도로 오판하지 않도록 먼저 배제한다.
+        //  Anthropic 의 rate-limit 안내문은 "(not your usage limit)" 라는 부정 문구를 포함하는데,
+        //  "usage"+"limit" 단순 매칭이 이를 사용량 한도로 오분류했다(사용자 보고: rate limit 인데
+        //  usage_limit 으로 STOPPED + 자동 재시도 안 됨). rate limit 은 별도 경로(rate_limit_event /
+        //  [ClaudeSessionManager.isRateLimitError])가 자동 재시도로 처리하므로, 여기서 false 를
+        //  반환해 원문(code/message)을 보존해야 그 경로가 정상 작동한다.
+        if ("temporarily limiting" in m || "rate limit" in m || "rate-limit" in m ||
+            "rate_limit" in m || "429" in m || "overloaded" in m ||
+            "not your usage limit" in m) {
+            return false
+        }
         return ("limit" in m && ("usage" in m || "spend" in m || "monthly" in m ||
             "weekly" in m || "5-hour" in m || "5 hour" in m || "five-hour" in m)) ||
             "limit reached" in m || "reached your" in m
