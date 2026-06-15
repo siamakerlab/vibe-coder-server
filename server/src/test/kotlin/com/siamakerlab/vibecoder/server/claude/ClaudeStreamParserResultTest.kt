@@ -57,6 +57,22 @@ class ClaudeStreamParserResultTest {
         ev.code shouldBe "error"
     }
 
+    /**
+     * v1.144.2 회귀 — Anthropic rate-limit 원문은 "(not your usage limit)" 라는 부정 문구를
+     * 포함해 "usage"+"limit" 단순 매칭에 오탐됐다(사용자 보고: rate limit 인데 usage_limit 으로
+     * 표시 + 자동 재시도 안 됨). 원문(code/message)이 보존되어야 [ClaudeSessionManager.isRateLimitError]
+     * 가 "temporarily limiting" 을 감지해 자동 재시도 경로로 보낸다.
+     */
+    @Test fun `rate limit text containing not-your-usage-limit phrase is not usage limit`() {
+        val line = """{"type":"result","subtype":"success","is_error":true,""" +
+            """"error":"API Error: Server is temporarily limiting requests (not your usage limit) · Rate limited"}"""
+        val ev = lastOf(line)
+        ev.shouldBeInstanceOf<ClaudeEvent.ErrorEvent>()
+        ev.code shouldBe "error"
+        // 원문이 보존되어야 isRateLimitError 가 "temporarily limiting" 을 감지할 수 있다.
+        ev.message shouldContain "temporarily limiting"
+    }
+
     @Test fun `normal success result yields Done`() {
         val line = """{"type":"result","subtype":"success","is_error":false,""" +
             """"result":"done"}"""
