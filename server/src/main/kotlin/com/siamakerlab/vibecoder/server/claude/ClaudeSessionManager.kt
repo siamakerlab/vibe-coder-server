@@ -538,6 +538,11 @@ class ClaudeSessionManager(
         busy.put(projectId, value)
         val prevState = busyState.put(projectId, state)
         if (prevState == state) return
+        // v1.144.3 — WAITING(백그라운드 대기) 이 아닌 상태로 전이하면 bg watchdog 를 해제한다.
+        // 활동 프레임 재개(RESPONDING)·정상 종료(READY)·중단(STOPPED/ERROR)·세션 종료 모두 커버.
+        if (state != ProjectState.WAITING) {
+            sessions[projectId]?.let { it.bgWatchdogJob?.cancel(); it.bgWatchdogJob = null }
+        }
         // v1.71.0 (정밀점검) — permit release 를 busy 전이에 묶지 않는다. busy=true 는
         // sendPrompt 의 stdin write 직후에야 set 되는데, 그 전에 Done/exit 이 먼저
         // 도달하면 false-전이가 안 일어나 permit 이 영구 leak (풀 wedge) 됐다. release 는
@@ -552,6 +557,43 @@ class ClaudeSessionManager(
         hub.emitConsole(PROJECTS_TOPIC) { seq ->
             WsFrame.ProjectBusyChanged(projectId = projectId, busy = value, seq = seq, state = wire)
         }
+    }
+
+    /**
+     * v1.144.3 — 백그라운드 작업 suspended(WAITING) turn 의 watchdog 를 (재)무장한다.
+     * [BG_SUSPEND_WATCHDOG_MS] 후에도 여전히 WAITING 이면 [finalizeStalledBgTurn] 으로 정상
+     * 종료한다. bg 진행 이벤트가 올 때마다 호출돼 타이머가 리셋(연장)되므로, 진짜 진행 중인
+     * 작업은 죽이지 않고 "완료 통지 누락 후 무활동" 케이스만 회수한다.
+     */
+    private fun armBgWatchdog(projectId: String) {
+        val s = sessions[projectId] ?: return
+        s.bgWatchdogJob?.cancel()
+        s.bgWatchdogJob = scope.launch {
+            delay(BG_SUSPEND_WATCHDOG_MS)
+            finalizeStalledBgTurn(projectId)
+        }
+    }
+
+    /**
+     * v1.144.3 — watchdog 만료. 여전히 WAITING 이면(재개/종료로 빠져나가지 않았으면) turn 을
+     * 정상 완료로 마무리한다 — 보류했던 permit 반환, 미완 마크 해제, busy READY, 자동화 완료
+     * 통지(fireTurnDone). 정상 Done 의 종료 분기와 동형이며, 영구 "대기중" 고착을 끊는다.
+     */
+    private suspend fun finalizeStalledBgTurn(projectId: String) {
+        val s = sessions[projectId] ?: return
+        if (busyState[projectId] != ProjectState.WAITING) return  // 이미 재개/종료됨
+        s.bgWatchdogJob = null  // 자기 분리 (setBusy(READY) 의 cancel 과 무관하게)
+        s.outstandingBgTasks.clear()  // 누락된 완료 통지로 남은 stale taskId 정리
+        gate.release(projectId)
+        clearTurnActive(projectId)
+        if (!s.compacting) s.turnCount++
+        emitSystem(
+            projectId, "bg_task_watchdog",
+            "백그라운드 작업의 완료 통지가 ${BG_SUSPEND_WATCHDOG_MS / 60_000}분간 확인되지 않아 turn 을 종료 처리했습니다.",
+        )
+        setBusy(projectId, ProjectState.READY)
+        fireTurnDone(projectId, "bg_watchdog")
+        maybeSessionCapOrCompact(projectId)
     }
 
     suspend fun shutdown() {
@@ -749,6 +791,10 @@ class ClaudeSessionManager(
                     }
                     s.lastActivity = Instant.now()
                 }
+                // v1.144.3 — WAITING(턴 보류) 중 들어온 bg 진행 이벤트는 watchdog 를 리셋(연장)해
+                // 실제 진행 중인 작업이 watchdog 로 조기 종료되지 않게 한다. 진행 이벤트가 끊기면
+                // (완료 통지 누락 포함) 마지막 이벤트 기준 유예 후 turn 이 정상 종료된다.
+                if (busyState[projectId] == ProjectState.WAITING) armBgWatchdog(projectId)
             }
             // v1.106.0/.1 — usage 토큰 분해로 컨텍스트 점유율 미터 갱신(상시 표시) +
             // 자동재개 가드(P1-b) + 임계 경고. used = input + cache_read + cache_creation.
@@ -842,6 +888,11 @@ class ClaudeSessionManager(
                     // v1.100.0 — busy 는 true 로 유지하되 상태칩을 "대기중"(waiting, 노랑) 으로
                     // 전이. 재개 turn 의 활동 프레임이 오면 위(L484)에서 responding 으로 자연 복귀.
                     setBusy(projectId, ProjectState.WAITING)
+                    // v1.144.3 — 완료 통지 누락 대비 watchdog 무장. stream-json 모드에선 bg task
+                    // 완료 시 CLI 자동 재개도 없고 완료 통지(task_notification/terminal status)마저
+                    // 누락될 수 있어, 정상 Done 인데도 WAITING 에 고착됐다. 무활동이 일정 시간
+                    // 지속되면 turn 을 정상 종료한다(bg 진행 이벤트가 오면 리셋되어 진짜 진행 중은 보호).
+                    armBgWatchdog(projectId)
                     emitSystem(
                         projectId, "bg_task_suspended",
                         "백그라운드 작업이 진행 중이라 turn 을 유지합니다 — 완료되면 자동으로 이어집니다.",
@@ -1074,6 +1125,9 @@ class ClaudeSessionManager(
         // v1.80.0 — 예약된 rate-limit 자동 재개가 있으면 취소(cancel / startNew / idle / shutdown).
         session.retryJob?.cancel()
         session.retryJob = null
+        // v1.144.3 — bg suspended watchdog 도 취소(sessions.remove 후 setBusy 가 못 찾으므로 명시).
+        session.bgWatchdogJob?.cancel()
+        session.bgWatchdogJob = null
         // v1.71.0 — cancel / startNew / idle reap / shutdown / crash 종료 시 permit 반환(idempotent).
         gate.release(projectId)
         // B1 (21차 점검) — SIGTERM 전에 의도된 종료임을 표식. onProcessExit(readerJob
@@ -1469,6 +1523,12 @@ class ClaudeSessionManager(
         /** v1.80.0 — 예약된 자동 재개 Job (사용자 개입 / cancel / 종료 시 취소). */
         @Volatile var retryJob: Job? = null,
         /**
+         * v1.144.3 — 백그라운드 작업 suspended(WAITING) turn 의 watchdog Job. 마지막 bg 진행
+         * 이벤트 이후 무활동이 일정 시간 지속되면 turn 을 정상 종료 처리한다(완료 통지 누락 시
+         * 영구 "대기중" 고착 방지). RESPONDING 등 WAITING 이 아닌 상태로 전이 시/종료 시 취소.
+         */
+        @Volatile var bgWatchdogJob: Job? = null,
+        /**
          * v1.99.2 — 진행 중인 백그라운드 작업(Bash run_in_background / Task) 의 taskId 집합.
          * `task_started` 시 추가, 완료/실패 통지(terminal status / notification) 시 제거.
          * 비어있지 않은 동안 들어온 `result`(Done)은 "turn 종료"가 아니라 "재개 대기"로
@@ -1520,6 +1580,15 @@ class ClaudeSessionManager(
     companion object {
         const val MAX_PROMPT_BYTES = 32 * 1024
         const val IDLE_CHECK_INTERVAL_MS = 60_000L
+
+        /**
+         * v1.144.3 — bg suspended(WAITING) turn 을 자동 종료하기까지의 무활동 유예(ms).
+         * stream-json 모드에선 background task 완료 후 CLI 자동 재개가 없고 완료 통지마저
+         * 누락될 수 있어, claude 가 정상 Done 을 보냈는데도 WAITING 에 고착됐다(idle reap
+         * 30분 전까지). 마지막 bg 진행 이벤트 이후 이 시간 동안 추가 진행/재개가 없으면
+         * turn 을 정상 종료한다. bg 진행 이벤트가 오면 리셋되어 진짜 진행 중 작업은 보호된다.
+         */
+        const val BG_SUSPEND_WATCHDOG_MS = 180_000L
 
         /** v1.135.0 — 상주 캡 LRU 회수에서 spawn 직후 세션을 보호하는 grace (초). */
         const val RESIDENT_CAP_SPAWN_GRACE_SECONDS = 60L
