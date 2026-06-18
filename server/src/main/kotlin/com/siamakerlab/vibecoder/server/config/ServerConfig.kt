@@ -196,8 +196,15 @@ data class ClaudeSection(
      * (busy 아님 + spawn 직후 grace 지난) 세션부터 SIGTERM — session-id 는 보존되어 다음
      * 프롬프트에서 `--resume` 으로 이어진다. **0 이하면 비활성(기존 idle reaper 만)**.
      * `/settings` 저장 시 즉시 반영.
+     *
+     * v1.144.4 — 기본값을 6 → **[maxConcurrentTurns] 와 동일(3)** 로 정렬. vibe-coder 는
+     * 비인터랙티브(프롬프트 송신 → 비동기 응답)라, turn 이 끝난 세션을 warm 으로 길게
+     * 살려둘 실익이 적다(다음 프롬프트는 `--resume` 으로 동일 재개). 상주 = 응답중 으로
+     * 수렴시켜 "응답중 수 이상으로 프로젝트가 활성화되지 않는다"는 직관과 메모리 상한을
+     * 함께 보장한다(운영자 결정 2026-06-18 — 일괄 전송 OOM 사건 후속). 인터랙티브 연속
+     * 작업의 cold start 가 잦으면 `/settings` 에서 키우면 된다.
      */
-    val maxResidentSessions: Int = 6,
+    val maxResidentSessions: Int = 3,
     /**
      * v1.106.0 / v1.107.2 — 프로젝트별 모델 미설정 시의 전역 기본. `claude --model <model>` 전달.
      * "default"(=CLI 기본, --model 미전달) / "sonnet" / "opus" / "fable" / "haiku" / 전체 모델 ID.
