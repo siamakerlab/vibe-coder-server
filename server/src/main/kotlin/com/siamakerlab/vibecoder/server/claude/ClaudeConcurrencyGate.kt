@@ -96,6 +96,37 @@ class ClaudeConcurrencyGate(initialLimit: Int) {
         }
     }
 
+    /**
+     * v1.144.4 — 이미 진행 중인 turn(host stdin 없이 claude 가 자발적으로 재개한 turn)을
+     * 게이트 장부에 **비대기**로 흡수한다. 일반 [acquire] 와 달리 절대 suspend 하지 않는다 —
+     * 이미 claude 가 출력 중인 turn 은 대기시킬 수 없기 때문.
+     *
+     * - 이미 보유/등록([heldKeys]) 중이면 no-op (정상 turn 의 acquire 와 충돌하지 않음).
+     * - permit 이 비어 있으면 즉시 확보, 없으면 한도 초과를 **허용(over-subscribe)** 하되
+     *   [pendingReduce] 를 1 늘려 이 key 의 [release] 가 permit 을 풀에 잘못 돌려주지 않게
+     *   한다(회계 정합성 유지 — 잡지 않은 permit 을 반환해 available 이 limit 을 넘는 누수 방지).
+     *
+     * 핵심 효과: permit 을 못 잡아도 [heldKeys] 에는 등록되므로 [inFlight] 카운트에 포함된다.
+     * 그래야 게이트가 "슬롯이 비었다"고 오판해 새 turn 을 추가로 spawn 하는 것을 막는다.
+     * 이 등록이 없으면 자발적 재개 turn 은 permit 없이 busy=true 로 남아 ① 게이트(turn 동시
+     * 한도)와 ② 상주 캡(busy 세션 회수 제외)을 동시에 우회 → 응답중 세션이 무한 누적되어
+     * OOM 으로 이어졌다(v1.144.4 회수 대상 회귀).
+     */
+    fun adopt(key: String) {
+        if (limit <= 0) return        // 무제한 — 장부 추적 불필요
+        if (!heldKeys.add(key)) return  // 이미 보유/대기 등록 중(정상 acquire 와 중복 방지)
+        synchronized(adjustLock) {
+            if (!semaphore.tryAcquire()) {
+                // permit 부족 → over-subscribe. 이 key 의 release 가 풀에 잘못 반환하지
+                // 않도록 흡수 예약(다음 release 가 pendingReduce-- 로 소비).
+                pendingReduce++
+                log.debug { "gate adopt(over-subscribe) [$key] → inFlight=${heldKeys.size}/$limit (pendingReduce=$pendingReduce)" }
+            } else {
+                log.debug { "gate adopt [$key] → inFlight=${heldKeys.size}/$limit" }
+            }
+        }
+    }
+
     /** [key] 가 보유한 permit 을 반환한다. 보유하고 있지 않으면 no-op (idempotent). */
     fun release(key: String) {
         if (heldKeys.remove(key)) {

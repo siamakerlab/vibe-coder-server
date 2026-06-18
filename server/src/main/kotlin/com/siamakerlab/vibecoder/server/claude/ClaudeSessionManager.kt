@@ -851,7 +851,17 @@ class ClaudeSessionManager(
                 event is ClaudeEvent.ToolUse ||
                 event is ClaudeEvent.ToolResult
             ) {
-                if (busy[projectId] != true) markTurnActive(projectId)
+                if (busy[projectId] != true) {
+                    // v1.144.4 — host stdin 없이 claude 가 자발적으로 turn 을 재개한 경우
+                    // (백그라운드 작업 완료 후 자동 속행 / bg 추적 실패·watchdog 종료 후 지연 재개).
+                    // sendPrompt 를 안 거쳤으므로 게이트 permit 이 없다 → 장부에 흡수 등록(adopt)해
+                    // inFlight 에 포함시킨다. 이 등록이 없으면 이 "유령 turn" 이 busy=true 로 남아
+                    // 게이트(turn 동시 한도)와 상주 캡(busy 세션 회수 제외)을 동시에 우회 → 응답중
+                    // 세션이 한도를 넘어 무한 누적, 각 ~900MB claude+MCP 트리가 쌓여 OOM → PC 셧다운.
+                    // adopt 는 heldKeys 기반이라 sendPrompt.acquire 와 race 해도 중복 등록 안 됨.
+                    markTurnActive(projectId)
+                    gate.adopt(projectId)
+                }
                 setBusy(projectId, ProjectState.RESPONDING)
             }
             hub.emitConsole(topic(projectId)) { seq -> toWsFrame(event, seq) }

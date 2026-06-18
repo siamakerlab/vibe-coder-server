@@ -96,4 +96,60 @@ class ClaudeConcurrencyGateTest {
         job.join()
         otherAcquired shouldBe true
     }
+
+    // v1.144.4 — 자발적 재개 turn 흡수(adopt) 검증.
+
+    @Test fun `adopt registers in-flight and takes a permit when available`(): Unit = runBlocking {
+        val gate = ClaudeConcurrencyGate(2)
+        gate.acquire("p1")
+        gate.adopt("p2") // host stdin 없이 재개된 turn 흡수 — 남은 permit 확보
+        gate.inFlight() shouldBe 2
+        gate.holds("p2") shouldBe true
+        // 이제 만석 → 새 key 는 대기.
+        var thirdAcquired = false
+        val job = launch { gate.acquire("p3"); thirdAcquired = true }
+        delay(100)
+        thirdAcquired shouldBe false
+        gate.release("p2")
+        job.join()
+        thirdAcquired shouldBe true
+    }
+
+    @Test fun `adopt over-subscribes when full and release does not leak a permit`(): Unit = runBlocking {
+        // 핵심 정합성: 만석에서 자발적 재개(유령 turn)를 흡수하면 한도를 일시 초과(over-subscribe)
+        // 하지만, 그 turn 의 release 는 permit 을 풀에 되돌려주면 안 된다(잡지 않았으므로).
+        val gate = ClaudeConcurrencyGate(1)
+        gate.acquire("p1") // 만석 (permit 1/1)
+        gate.adopt("ghost") // permit 없지만 heldKeys 등록 → inFlight 카운트 포함
+        gate.inFlight() shouldBe 2
+        gate.holds("ghost") shouldBe true
+
+        gate.release("ghost") // pendingReduce 로 흡수 — semaphore.release() 안 함
+        gate.inFlight() shouldBe 1
+
+        // permit 이 잘못 반환됐다면 available 이 1로 늘어 새 key 가 즉시 통과해버린다.
+        // 정합성이 맞으면 p1 이 유일 permit 보유자라 새 key 는 대기해야 한다.
+        var otherAcquired = false
+        val job = launch { gate.acquire("other"); otherAcquired = true }
+        delay(100)
+        otherAcquired shouldBe false
+        gate.release("p1")
+        job.join()
+        otherAcquired shouldBe true
+        gate.inFlight() shouldBe 1 // other 만
+    }
+
+    @Test fun `adopt is a no-op for already-held key`(): Unit = runBlocking {
+        val gate = ClaudeConcurrencyGate(2)
+        gate.acquire("a")
+        gate.adopt("a") // 이미 보유 → 중복 등록·확보 안 함 (acquire 와 race 해도 안전)
+        gate.inFlight() shouldBe 1
+    }
+
+    @Test fun `adopt is a no-op when gating disabled`(): Unit = runBlocking {
+        val gate = ClaudeConcurrencyGate(0)
+        gate.adopt("a")
+        gate.inFlight() shouldBe 0
+        gate.release("a") // 예외 없음
+    }
 }

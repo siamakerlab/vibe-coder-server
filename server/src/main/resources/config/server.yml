@@ -2,7 +2,7 @@ server:
   name: Vibe Coder Server
   host: 0.0.0.0
   port: 17880
-  version: 1.144.3
+  version: 1.144.4
 
 workspace:
   # Each project lives at <root>/<projectId>/.
@@ -58,7 +58,10 @@ claude:
   # 트리(~900MB) 상주. 상한 초과 시 가장 오래 유휴인 세션부터 정리(session-id 보존 →
   # 다음 프롬프트에서 --resume 으로 이어짐). 진행 중(busy) 세션은 절대 회수하지 않음.
   # 0 이하 = 비활성(기존 30분 idle reaper 만). /settings 저장 시 즉시 반영.
-  maxResidentSessions: 6
+  # v1.144.4 — 기본을 maxConcurrentTurns 와 동일(3)로 정렬. 비인터랙티브 환경이라 turn 이
+  # 끝난 세션을 warm 으로 길게 살릴 실익이 적고(--resume 으로 동일 재개), 상주=응답중 으로
+  # 수렴시켜 "응답중 수 이상 활성화 없음" + 메모리 상한을 함께 보장(일괄 전송 OOM 사건 후속).
+  maxResidentSessions: 3
   # v1.106.0 / v1.107.2 — 프로젝트별 모델 미설정 시의 전역 기본. claude --model <model> 전달.
   # "default" = --model 미전달 → CLI 가 자체 설정/계정 기본으로 모델을 직접 선택(기본값).
   # "sonnet"(Opus 대비 약 1/5 사용량) / "opus" / "fable"(Claude Fable 5 — 최상위, Opus 2배 비용,
