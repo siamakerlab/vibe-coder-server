@@ -113,7 +113,7 @@ class BuildService(
         val build = buildRepo.create(buildId, projectId, variant.wire, logFile.toString(),
             gitBranch = branch, gitSha = sha)
 
-        val signing = resolveSigning(row, hub, buildId)
+        val signing = resolveSigning(row, hub, buildId, variant)
         queue.submit(
             projectId = projectId, taskId = buildId,
             onStart = { buildRepo.setStatus(buildId, TaskStatus.RUNNING) },
@@ -338,23 +338,29 @@ class BuildService(
     /**
      * v1.8.0 — 빌드 시작 시 프로젝트 packageName 으로 KeystoreService.loadSigning 호출.
      *
-     * 매칭되는 키스토어 (release `.keystore` + `.properties`) 가 있으면 builder 에
-     * 전달해서 Gradle CLI 에 `-Pandroid.injected.signing.*` 4종 inject. WS 빌드 로그에
+     * 매칭되는 키스토어 (`.keystore` + `.properties`) 가 있으면 builder 에 전달해서
+     * Gradle CLI 에 `-Pandroid.injected.signing.*` 4종 inject. WS 빌드 로그에
      * "signing inject" 사실만 한 줄 publish (비밀번호 미포함). null 이면 silent skip
      * (대부분의 프로젝트가 키스토어 없이도 debug 빌드 가능).
+     *
+     * v1.144.5 — [variant] 에 맞는 키스토어를 선택한다: DEBUG 는 `<pkg>-debug.keystore`,
+     * RELEASE/BUNDLE 은 `<pkg>.keystore`. `android.injected.signing.*` 는 빌드되는
+     * variant(debug task 포함)에 그대로 적용되므로, 이전엔 디버그 빌드에도 릴리즈 키가
+     * 주입되던 회귀를 바로잡는다.
      */
     private fun resolveSigning(
         row: com.siamakerlab.vibecoder.server.repo.ProjectRow,
         hub: LogHub,
         buildId: String,
+        variant: BuildVariant,
     ): com.siamakerlab.vibecoder.server.admin.SigningCredentials? {
         val ks = keystores ?: return null
-        val signing = ks.loadSigning(row.packageName) ?: return null
+        val signing = ks.loadSigning(row.packageName, debug = variant == BuildVariant.DEBUG) ?: return null
         // 실제 사용자 가시 빌드 로그는 GradleBuilder.runAssembleDebug 의 logger.info("Signing injected: ...")
         // 가 처리 — 여기선 서버 로그 한 줄로만 흔적 남김 (passwords 미포함).
         log.info {
             "[build $buildId] signing inject candidate: package=${row.packageName} " +
-                "storeFile=${signing.storeFile} keyAlias=${signing.keyAlias}"
+                "variant=${variant.wire} storeFile=${signing.storeFile} keyAlias=${signing.keyAlias}"
         }
         return signing
     }
