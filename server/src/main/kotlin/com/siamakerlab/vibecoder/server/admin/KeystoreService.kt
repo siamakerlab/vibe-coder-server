@@ -115,12 +115,22 @@ class KeystoreService(
      * 우선 `<pkg>-keystore.properties` 의 storeFile / storePassword / keyAlias /
      * keyPassword 를 읽고, storeFile 이 비어있으면 `<pkg>.keystore` 로 fallback.
      * key files 자체가 존재하지 않으면 null — 호출자(BuildService)가 silent skip.
+     *
+     * v1.144.5 — [debug] true 면 **디버그 빌드용**으로 `<pkg>-debug.keystore` 를
+     * 강제 사용한다(properties 의 `storeFile`=릴리즈 경로는 무시). `android.injected.signing.*`
+     * 는 AGP 가 빌드되는 variant(debug task 포함)에 그대로 적용하므로, 이전엔
+     * `assembleDebug` 빌드에도 릴리즈 키(`<pkg>.keystore`)가 주입되던 회귀가 있었다.
+     * 비밀번호/alias 는 release 와 공유한다(`create()` 가 양쪽을 동일 정보로 생성).
+     * debug 키스토어가 없으면(과거 release 만 업로드 등) null → 미주입(AGP 표준 debug 서명).
      */
-    fun loadSigning(packageName: String): SigningCredentials? {
+    fun loadSigning(packageName: String, debug: Boolean = false): SigningCredentials? {
         if (!packageNameRegex.matches(packageName)) return null
         val release = keystoreDir.resolve("$packageName.keystore")
+        val debugKs = keystoreDir.resolve("$packageName-debug.keystore")
         val props = keystoreDir.resolve("$packageName-keystore.properties")
-        if (!Files.exists(release) || !Files.exists(props)) return null
+        // 서명에 쓸 키스토어: debug 빌드면 -debug.keystore, 아니면 release.
+        val targetKeystore = if (debug) debugKs else release
+        if (!Files.exists(targetKeystore) || !Files.exists(props)) return null
         val p = Properties()
         runCatching {
             Files.newBufferedReader(props).use { p.load(it) }
@@ -128,11 +138,17 @@ class KeystoreService(
         val storePassword = p.getProperty("storePassword")?.takeIf { it.isNotBlank() } ?: return null
         val keyAlias = p.getProperty("keyAlias")?.takeIf { it.isNotBlank() } ?: return null
         val keyPassword = p.getProperty("keyPassword")?.takeIf { it.isNotBlank() } ?: storePassword
-        val storeFile = p.getProperty("storeFile")
-            ?.takeIf { it.isNotBlank() }
-            ?.let { Path.of(it) }
-            ?.takeIf { Files.exists(it) }
-            ?: release
+        // debug 빌드는 항상 -debug.keystore 강제 — properties.storeFile 은 릴리즈 경로라 무시.
+        // release 빌드만 properties 의 storeFile(보통 릴리즈 키 경로)을 신뢰, 없으면 fallback.
+        val storeFile = if (debug) {
+            debugKs
+        } else {
+            p.getProperty("storeFile")
+                ?.takeIf { it.isNotBlank() }
+                ?.let { Path.of(it) }
+                ?.takeIf { Files.exists(it) }
+                ?: release
+        }
         return SigningCredentials(
             storeFile = storeFile,
             storePassword = storePassword,

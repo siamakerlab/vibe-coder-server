@@ -19,10 +19,14 @@ class GradleBuilder(private val config: ServerConfig) {
         cancellation: Flow<Unit>,
         /**
          * v1.8.0 — 매칭되는 키스토어가 있으면 `android.injected.signing.*` 4종을
-         * Gradle CLI 에 inject. AGP 의 IDE-injected signing path 를 활용 — release
-         * variant 빌드 시 즉시 효과. debug variant 는 build.gradle.kts 의
-         * `signingConfigs.debug` 가 명시되어 있어야 적용되므로, Phase 2 (Claude
-         * 콘솔의 "Apply signing" 액션) 와 보완 관계.
+         * Gradle CLI 에 inject. AGP 의 IDE-injected signing path 를 활용한다.
+         *
+         * v1.144.5 — injected signing 은 build.gradle.kts 설정과 무관하게 **빌드되는
+         * variant(debug task 포함)에 그대로 서명을 override** 한다. 따라서 어떤 키스토어를
+         * 주입할지는 호출자(BuildService.resolveSigning)가 variant 에 맞춰 결정한다:
+         * debug 빌드는 `<pkg>-debug.keystore`, release/bundle 은 `<pkg>.keystore`.
+         * (이전 주석은 "debug 는 signingConfigs.debug 필요"라 잘못 설명했고, 실제로는
+         * 디버그 빌드에도 릴리즈 키가 주입되던 회귀가 있었다.)
          */
         signing: SigningCredentials? = null,
     ): Int {
@@ -61,7 +65,7 @@ class GradleBuilder(private val config: ServerConfig) {
         if (signing != null) {
             logger.info(
                 "Signing injected: storeFile=${signing.storeFile} keyAlias=${signing.keyAlias} " +
-                    "(release variant 즉시 적용 / debug 는 build.gradle.kts 의 signingConfigs.debug 가 필요)"
+                    "(빌드되는 variant 에 그대로 적용 — 키스토어 선택은 빌드 타입에 맞춰 결정됨)"
             )
         }
 
