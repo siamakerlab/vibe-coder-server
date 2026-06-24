@@ -12,6 +12,12 @@
 //   textContent 스왑이 아니라 .listening 클래스로만 표시한다(SVG 보존). "자동 전송"(발화 종료 시
 //   자동 submit) 옵션도 제거 — 음성 입력은 받아쓰기만 하고 전송은 사용자가 직접 한다.
 //
+// v1.144.6 — 에코잉/중복 누적 수정. ko-KR / 모바일 Chrome 엔진은 같은 발화에 대해 누적
+//   prefix("안녕하세요"/"안녕하세요"/"안녕하세요 음성")를 담은 여러 result item 을 동시에 들고
+//   있는데, v1.94.0 의 전체 재구성이 interim 을 전부 concat(+=) 하는 바람에
+//   "안녕하세요안녕하세요안녕하세요 음성" 처럼 중복됐다. 인접 result 가 prefix 관계면 더 긴
+//   쪽으로 흡수하는 collapsePrefix() 로 final·interim 모두 정규화해 회수.
+//
 // 언어: document.documentElement.lang ("ko" / "en") 으로 ko-KR / en-US 자동 선택.
 
 (function () {
@@ -54,25 +60,45 @@
       btn.title = btn.dataset.titleStart || '';
     }
 
-    // v1.94.0 — 매 onresult 마다 e.results 전체를 처음부터 재구성(idempotent).
-    // 이전 구현은 e.resultIndex 부터 finalText 에 누적(+=)했는데, 일부 엔진
-    // (특히 ko-KR / 모바일 Chrome)이 이미 final 처리된 result 를 resultIndex=0 으로
-    // 재전송하면 같은 조각이 계속 덧붙어("뭔가뭔가뭔가 하다가뭔가…") 보였다.
-    // e.results 는 세션 시작부터의 전체 결과 배열이므로 매번 전부 다시 읽으면
-    // 재전송·인덱스 리셋에도 중복이 생기지 않는다.
+    // 인접한 조각이 prefix 관계면 더 긴 쪽으로 흡수해 하나로 합친다.
+    //  - cur 가 prev 로 시작 → cur 가 prev 의 확장본(엔진이 같은 발화를 더 길게
+    //    재전송) → prev 를 cur 로 대체.
+    //  - prev 가 cur 로 시작 → cur 가 prev 의 짧은 재전송 → cur 버림.
+    //  - 둘 다 아님 → 서로 다른 발화 → 이어붙임(정상 누적).
+    // ko-KR / 모바일 엔진이 같은 발화를 누적 prefix 여러 item 으로 쪼개 보내는
+    // ("안녕하세요"/"안녕하세요"/"안녕하세요 음성") 중복을 흡수한다.
+    function collapsePrefix(parts) {
+      var out = [];
+      for (var k = 0; k < parts.length; k++) {
+        var cur = parts[k];
+        if (!cur) continue;
+        if (out.length) {
+          var prev = out[out.length - 1];
+          if (cur.indexOf(prev) === 0) { out[out.length - 1] = cur; continue; }
+          if (prev.indexOf(cur) === 0) { continue; }
+        }
+        out.push(cur);
+      }
+      return out.join('');
+    }
+
+    // v1.94.0 — 매 onresult 마다 e.results 전체를 처음부터 재구성(idempotent):
+    //   이미 final 처리된 result 를 resultIndex=0 으로 재전송하는 엔진의 누적 중복
+    //   방어. v1.144.6 — 거기에 더해 final·interim 을 collapsePrefix 로 정규화해
+    //   "같은 발화가 누적 prefix 여러 item 으로 동시에 존재"하는 ko-KR interim 중복
+    //   ("안녕하세요안녕하세요안녕하세요 음성")까지 흡수한다. final/interim 경계의
+    //   중복(직전 final 을 interim 이 다시 포함)은 all 통합 collapse 로 표시값에서 제거.
     rec.onresult = function (e) {
-      var finals = '';
-      var interim = '';
+      var finals = [];
+      var all = [];
       for (var i = 0; i < e.results.length; i++) {
         var r = e.results[i];
-        if (r.isFinal) {
-          finals += r[0].transcript;
-        } else {
-          interim += r[0].transcript;
-        }
+        var t = (r[0] && r[0].transcript) || '';
+        all.push(t);
+        if (r.isFinal) finals.push(t);
       }
-      finalText = finals;
-      input.value = basePrefix + finalText + interim;
+      finalText = collapsePrefix(finals);   // onend commit 용 (확정분만)
+      input.value = basePrefix + collapsePrefix(all);
       input.dispatchEvent(new Event('input', { bubbles: true }));
     };
     rec.onend = function () {

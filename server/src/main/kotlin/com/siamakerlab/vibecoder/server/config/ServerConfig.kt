@@ -139,6 +139,21 @@ data class SecuritySection(
      * 외부 노출 환경에서는 server.yml 에서 30~60 같은 양수로 override 권장.
      */
     val sessionIdleTimeoutMinutes: Int = 0,
+    /**
+     * v1.144.7 — 터미널(PTY) 세션 idle reaper 타임아웃 (분). 0 = 무제한(reaper 비활성).
+     *
+     * 다른 화면(메뉴)으로 이동하면 WebSocket 은 끊기지만 PTY bash 프로세스는 서버에
+     * 상주한다. 사용자가 터미널로 돌아오면 `GET /api/terminal/sessions` 로 alive 세션을
+     * 재attach + scrollback replay 로 화면을 복원해 "이어서 작업"이 가능하다. 이 값은
+     * **WS 가 끊긴 세션**이 정리되기까지의 유예(grace) 다. WS 가 하나라도 연결돼 있으면
+     * (= 사용자가 보고 있으면) idle 과 무관하게 절대 회수하지 않는다.
+     *
+     * v1.6.0~v1.144.6 은 30분 하드코딩이었다. 터미널을 떠나 다른 작업(Claude 콘솔 등)을
+     * 30분 이상 하고 돌아오면 세션이 이미 reap 되어 "완전 새 터미널"로 초기화되던 문제
+     * (다른 화면 다녀오면 세션 날아감) 의 직접 원인. default 1440(24h) — LAN 단일 사용자
+     * 도구라 PTY 1개(≈수 MB)를 길게 살려도 메모리 부담이 작다. 완전 무제한은 0.
+     */
+    val terminalIdleTimeoutMinutes: Int = 1440,
     /** v0.56.0 — Phase 35 per-IP rate limit. */
     val rateLimit: RateLimitSection = RateLimitSection(),
     /**
