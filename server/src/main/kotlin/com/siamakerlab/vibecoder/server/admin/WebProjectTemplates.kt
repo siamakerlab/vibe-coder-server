@@ -1763,7 +1763,7 @@ ${if (embed) "" else contextMeterHtml}
     </div>
   </div>
 </form>
-<script src="/static/voice-input.js" defer></script>
+<script src="/static/voice-input.js?v=1.144.6" defer></script>
 <script src="/static/prompt-templates.js?v=1.142.0" defer></script>
 <style>
   /* v1.15.0 — 음성 입력 listening 시각 강조. */

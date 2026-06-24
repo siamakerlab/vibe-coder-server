@@ -21,6 +21,7 @@ import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
 private val log = KotlinLogging.logger {}
@@ -54,6 +55,17 @@ class TerminalSession(
     fun touch() {
         lastActivity.set(Instant.now())
     }
+
+    /**
+     * v1.144.7 — 현재 이 세션에 attach 된 활성 WebSocket 연결 수. 0보다 크면
+     * idle reaper 가 절대 회수하지 않는다(사용자가 보고 있는 터미널을 끊지 않음).
+     * 다중 탭/기기에서 같은 세션을 동시에 보는 경우도 카운트로 안전하게 처리.
+     * WS 핸들러가 attach()/detach() 로 증감(연결 시작/종료 시 1쌍).
+     */
+    private val connections = AtomicInteger(0)
+    fun attach() { connections.incrementAndGet(); touch() }
+    fun detach() { connections.decrementAndGet() }
+    fun hasActiveConnection(): Boolean = connections.get() > 0
 
     /**
      * extraBufferCapacity 256 = 256 frame burst 흡수. 초과 시 [_output.emit] 이
@@ -187,17 +199,28 @@ class TerminalSession(
  *
  * v1.27.0 — lifecycle + 리소스 제어:
  *  - 사용자별 최대 [MAX_SESSIONS_PER_USER] 세션. 초과 시 [SessionLimitException].
- *  - [IDLE_TIMEOUT] (30분) 동안 input/output 무활성 세션은 reaper 가 자동 종료.
- *    수십개 unused PTY 가 영구히 남아 메모리/FD 누수되는 것 차단.
+ *  - [idleTimeout] (기본 24h) 동안 input/output 무활성 + **활성 WS 연결 없는** 세션은
+ *    reaper 가 자동 종료. 수십개 unused PTY 가 영구히 남아 메모리/FD 누수되는 것 차단.
+ *
+ * v1.144.7 — idle 유예가 30분 하드코딩에서 설정값([idleTimeout], 기본 24h)으로. 또한
+ *  WS 가 연결돼 있는 세션은 idle 과 무관하게 보호. "다른 화면 다녀오면 터미널 세션이
+ *  날아감" 문제(30분 reap)의 직접 수정.
  */
 class TerminalSessionManager(
     private val workspaceRoot: String = "/workspace",
+    /**
+     * v1.144.7 — WS 가 끊긴 세션을 회수하기까지의 idle 유예. [Duration.ZERO] 또는 음수면
+     * reaper 비활성(무제한 유지). 활성 WS 연결이 있는 세션은 이 값과 무관하게 유지된다.
+     * [config.security.terminalIdleTimeoutMinutes] 에서 주입(기본 24h).
+     */
+    private val idleTimeout: Duration = IDLE_TIMEOUT_DEFAULT,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val sessions = ConcurrentHashMap<String, TerminalSession>()
 
     init {
-        // v1.27.0 — idle reaper. 1분마다 lastActivityAt 검사, 30분 이상 무활성 종료.
+        // v1.27.0 — idle reaper. 1분마다 lastActivityAt 검사.
+        // v1.144.7 — 활성 WS 연결이 없고 [idleTimeout] 초과한 세션만 회수. timeout 0 이면 비활성.
         scope.launch {
             while (isActive) {
                 delay(REAPER_INTERVAL_MS)
@@ -311,9 +334,15 @@ class TerminalSessionManager(
     }
 
     private fun reapIdle() {
+        // v1.144.7 — 0/음수 timeout = 무제한(reaper 비활성). 세션은 명시적 종료(DELETE),
+        // bash exit, 서버 종료(shutdownAll) 로만 사라진다.
+        if (idleTimeout.isZero || idleTimeout.isNegative) return
         val now = Instant.now()
         val toReap = sessions.values.filter {
-            Duration.between(it.lastActivityAt, now) > IDLE_TIMEOUT
+            // v1.144.7 — 활성 WS 연결이 있으면(사용자가 보고 있으면) 절대 회수 안 함.
+            // WS 가 끊긴(다른 화면으로 이동) 세션만 idle 경과 시 회수 대상.
+            !it.hasActiveConnection() &&
+                Duration.between(it.lastActivityAt, now) > idleTimeout
         }
         if (toReap.isEmpty()) return
         toReap.forEach { sess ->
@@ -329,7 +358,10 @@ class TerminalSessionManager(
     companion object {
         // v1.27.0 — 마법 상수 추출.
         const val MAX_SESSIONS_PER_USER = 4
-        val IDLE_TIMEOUT: Duration = Duration.ofMinutes(30)
+
+        // v1.144.7 — idle reaper 기본 유예 24h (이전 30분 하드코딩). 활성 WS 연결이 없는
+        // 세션이 이 시간 초과 무활성일 때만 회수. config 미지정 시 fallback.
+        val IDLE_TIMEOUT_DEFAULT: Duration = Duration.ofMinutes(1440)
         const val REAPER_INTERVAL_MS = 60_000L  // 1분
     }
 }

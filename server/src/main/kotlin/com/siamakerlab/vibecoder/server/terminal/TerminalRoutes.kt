@@ -196,8 +196,11 @@ fun Routing.terminalRoutes(
         }
 
         sess.touch()   // v1.26.3 C5: WS connect → idle 시계 reset
+        // v1.144.7 — 활성 WS 연결 등록. 연결이 살아있는 동안 idle reaper 가 이 세션을
+        // 회수하지 않는다(사용자가 보고 있는 터미널 보호). finally 에서 반드시 detach.
+        sess.attach()
 
-        coroutineScope {
+        try { coroutineScope {
             // v1.34.0 — 재연결 시 화면이 비어 보이던 문제 해소: scrollback 을 먼저
             // replay 한 뒤 live 스트림 collect. 다른 화면 갔다 와도 직전 출력이 복원됨
             // ("세션 상시 유지"). collect 등록 직전 스냅샷이라 그 사이 microsecond
@@ -251,6 +254,10 @@ fun Routing.terminalRoutes(
                 outJob.cancel()
                 exitJob.cancel()
             }
+        } } finally {
+            // v1.144.7 — WS 종료 → 활성 연결 해제. 연결이 0이 되면 그때부터 idleTimeout
+            // 경과 시 reaper 회수 대상(WS 살아있는 동안은 idle 과 무관하게 보호됨).
+            sess.detach()
         }
     }
 }
@@ -482,7 +489,7 @@ internal object TerminalTemplates {
     requestAnimationFrame(function(){
       try {
         s.fit.fit();
-        if (s.ws.readyState === 1)
+        if (s.ws && s.ws.readyState === 1)
           s.ws.send(JSON.stringify({ type:'terminal_resize', cols:s.term.cols, rows:s.term.rows }));
       } catch(e){}
     });
@@ -503,8 +510,11 @@ internal object TerminalTemplates {
 
   function closeSession(id){
     var s = sessions[id]; if (!s) return;
+    // v1.144.7 — 명시적 종료 표시 → onclose 자동 재연결 억제 + 예약된 재연결 취소.
+    s.closing = true;
+    clearTimeout(s.reconnectTimer);
     try { fetch('/api/terminal/sessions/' + id, { method:'DELETE', credentials:'same-origin' }); } catch(e){}
-    try { s.ws.close(); } catch(e){}
+    try { if (s.ws) s.ws.close(); } catch(e){}
     try { s.term.dispose(); } catch(e){}
     if (s.pane.parentNode) s.pane.parentNode.removeChild(s.pane);
     if (s.tab.parentNode) s.tab.parentNode.removeChild(s.tab);
@@ -516,6 +526,49 @@ internal object TerminalTemplates {
       if (order.length) activate(order[order.length - 1]);
       else { showEmptyState(); setStatus(I18N.disconnected); }
     }
+  }
+
+  // v1.144.7 — WS (재)연결. PTY 는 서버에 상주하므로 WS 가 끊겨도 재연결하면 서버
+  // scrollback replay 로 직전 화면이 복원된다. 비정상 종료(네트워크/프록시 idle/모바일
+  // 백그라운드 등 code≠1000)면 지수 백오프로 자동 재연결, 서버가 정상 종료(세션 없음/
+  // 프로세스 exit, code 1000)로 닫으면 재연결을 멈춘다. attachSession 이 만든 세션
+  // 객체(s) 의 ws 를 매 연결마다 교체하므로 onData/fitAndResize 는 항상 s.ws 를 참조.
+  function connect(sessionId){
+    var s = sessions[sessionId]; if (!s || s.closing) return;
+    var ws = new WebSocket(proto + '//' + location.host + '/ws/terminal/' + sessionId);
+    s.ws = ws;
+    ws.onopen = function(){
+      s.retry = 0;
+      // active(visible) 세션만 fit+resize (숨김 pane 은 clientWidth=0). 비활성 복원
+      // 세션은 activate(클릭) 시 fit. 재연결 시에도 동일.
+      if (activeId === sessionId) { setStatus(I18N.connected + ' ' + sessionId); fitAndResize(s); }
+    };
+    ws.onmessage = function(ev){
+      try {
+        var f = JSON.parse(ev.data);
+        if (f.type === 'terminal_output') s.term.write(f.data);
+        else if (f.type === 'terminal_exit') {
+          s.term.write('\r\n\r\n[process exited code=' + f.exitCode + ']');
+          s.exited = true;   // 프로세스 종료 → 재연결 무의미
+          if (activeId === sessionId) setStatus(I18N.exited);
+        }
+      } catch(e){}
+    };
+    ws.onclose = function(ev){
+      if (s.closing || s.exited) return;
+      // 서버 정상 종료(1000): 세션이 서버에 없거나(reap) 프로세스 exit → 재연결 안 함.
+      if (ev && ev.code === 1000) {
+        s.exited = true;
+        if (activeId === sessionId) setStatus(I18N.exited);
+        return;
+      }
+      // 비정상 종료(1006 등 네트워크성) → 지수 백오프 재연결(1s→최대 10s).
+      if (activeId === sessionId) setStatus(I18N.disconnected);
+      s.retry = Math.min((s.retry || 0) + 1, 6);
+      var delay = Math.min(1000 * Math.pow(2, s.retry - 1), 10000);
+      clearTimeout(s.reconnectTimer);
+      s.reconnectTimer = setTimeout(function(){ connect(sessionId); }, delay);
+    };
   }
 
   function attachSession(sessionId){
@@ -555,32 +608,19 @@ internal object TerminalTemplates {
     tab.addEventListener('click', function(e){ if (e.target === closeBtn) return; activate(sessionId); });
     closeBtn.addEventListener('click', function(e){ e.stopPropagation(); closeSession(sessionId); });
 
-    var ws = new WebSocket(proto + '//' + location.host + '/ws/terminal/' + sessionId);
-    ws.onopen = function(){
-      setStatus(I18N.connected + ' ' + sessionId);
-      // v1.34.0 — active(visible) 세션만 fit+resize (숨김 pane fit 방지). 비활성
-      // 복원 세션은 클릭(activate) 시 fit 됨.
-      if (activeId === sessionId) fitAndResize(sessions[sessionId]);
-    };
-    ws.onmessage = function(ev){
-      try {
-        var f = JSON.parse(ev.data);
-        if (f.type === 'terminal_output') term.write(f.data);
-        else if (f.type === 'terminal_exit') {
-          term.write('\r\n\r\n[process exited code=' + f.exitCode + ']');
-          setStatus(I18N.exited);
-        }
-      } catch(e){}
-    };
-    ws.onclose = function(){ if (activeId === sessionId) setStatus(I18N.disconnected); };
+    // v1.144.7 — 세션 상태. ws 는 connect() 가 채우고 재연결마다 교체. retry/closing/
+    // exited/reconnectTimer 는 자동 재연결 제어 플래그.
+    var s = { term:term, fit:fit, ws:null, tab:tab, pane:pane,
+              retry:0, closing:false, exited:false, reconnectTimer:null };
+    sessions[sessionId] = s;
+    // 입력은 현재 살아있는 ws(재연결로 교체될 수 있음)로 — 항상 s.ws 참조.
     term.onData(function(d){
-      if (ws.readyState === 1) ws.send(JSON.stringify({ type:'terminal_input', data:d }));
+      if (s.ws && s.ws.readyState === 1) s.ws.send(JSON.stringify({ type:'terminal_input', data:d }));
     });
-
-    sessions[sessionId] = { term:term, fit:fit, ws:ws, tab:tab, pane:pane };
     order.push(sessionId);
     updateNewBtn();
     activate(sessionId);
+    connect(sessionId);
   }
 
   function newSession(){
@@ -597,6 +637,17 @@ internal object TerminalTemplates {
   }
 
   newBtn.addEventListener('click', newSession);
+  // v1.144.7 — 화면 복귀(탭 포그라운드)/네트워크 복구 시 끊긴 WS 를 즉시 재연결(백오프
+  // 대기 생략). 페이지는 살아있는데 WS 만 죽은 케이스(모바일 백그라운드 등) 빠른 회복.
+  function reconnectStale(){
+    order.forEach(function(sid){
+      var s = sessions[sid]; if (!s || s.closing || s.exited) return;
+      var st = s.ws ? s.ws.readyState : 3;  // 0 CONNECTING,1 OPEN,2 CLOSING,3 CLOSED
+      if (st === 2 || st === 3) { clearTimeout(s.reconnectTimer); connect(sid); }
+    });
+  }
+  document.addEventListener('visibilitychange', function(){ if (!document.hidden) reconnectStale(); });
+  window.addEventListener('online', reconnectStale);
   window.addEventListener('resize', function(){
     if (activeId) fitAndResize(sessions[activeId]);
   });
@@ -608,8 +659,9 @@ internal object TerminalTemplates {
     }).observe(panesEl);
   }
 
-  // init — 기존 활성 세션이 있으면 탭으로 복원(WS 재연결, 과거 출력은 replay 안 됨),
-  // 없으면 새 세션 1개 자동 생성.
+  // init — 기존 활성(서버 상주) 세션이 있으면 전부 탭으로 복원(WS 재연결 + 서버
+  // scrollback replay 로 직전 화면까지 복원 → "이어서 작업"), 없으면 새 세션 1개 자동 생성.
+  // v1.144.7 — 서버 idle 유예가 24h 로 길어져, 다른 화면을 오래 다녀와도 세션이 살아있다.
   fetch('/api/terminal/sessions', { credentials:'same-origin' })
     .then(function(r){ return r.ok ? r.json() : { sessions: [] }; })
     .then(function(d){

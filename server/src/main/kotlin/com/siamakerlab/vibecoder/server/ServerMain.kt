@@ -488,6 +488,11 @@ fun main(args: Array<String>) {
     // 후크 (Runtime.getRuntime addShutdownHook 안) 에서 shutdownAll() 호출.
     val terminalManager = com.siamakerlab.vibecoder.server.terminal.TerminalSessionManager(
         workspaceRoot = workspaceRoot.toString(),
+        // v1.144.7 — WS 끊긴 세션의 idle 회수 유예(분 → Duration). 0 = 무제한. 활성 WS
+        // 연결 세션은 이 값과 무관하게 유지. 기존 30분 하드코딩 → 설정값(기본 24h).
+        idleTimeout = Duration.ofMinutes(
+            config.security.terminalIdleTimeoutMinutes.toLong().coerceAtLeast(0),
+        ),
     )
     // v1.40.0 — 무선 ADB 기기 logcat (admin). adb 없으면 기능 페이지가 안내.
     val adbService = com.siamakerlab.vibecoder.server.device.AdbService()

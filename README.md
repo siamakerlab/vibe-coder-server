@@ -696,6 +696,14 @@ optional passwordless-only mode rejects password/TOTP for users with a passkey.
 `0` = unlimited); cookie and Bearer both delete the device row past the limit
 and redirect to `/login?err=session_timeout`.
 
+**Terminal session persistence** — workspace terminal (PTY) sessions stay alive
+on the server when you navigate away; returning re-attaches and replays scrollback
+so you can continue where you left off (multiple tabs included). A session is only
+reaped after `security.terminalIdleTimeoutMinutes` (default `1440` = 24h, `0` =
+unlimited) of inactivity **with no live WebSocket** — a connected (visible) terminal
+is never reaped. The browser also auto-reconnects (exponential backoff plus on tab
+foreground / network resume).
+
 **Single-admin model** — this is a single-operator tool, so multi-user, the
 `admin`/`member`/`viewer` roles, the `/users` UI, the `/api/users*` endpoints
 and per-user project ACLs do not exist. There is exactly one admin; every

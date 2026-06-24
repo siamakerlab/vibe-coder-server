@@ -2,7 +2,7 @@ server:
   name: Vibe Coder Server
   host: 0.0.0.0
   port: 17880
-  version: 1.144.5
+  version: 1.144.7
 
 workspace:
   # Each project lives at <root>/<projectId>/.
@@ -36,6 +36,14 @@ security:
   # 자동 로그아웃되던 UX 문제 회수. 0 = 무제한이 default (LAN 단일 사용자
   # 도구 특성상 안전). 외부 노출 시 30~60 분 권장.
   sessionIdleTimeoutMinutes: 0
+  # v1.144.7 — 터미널(PTY) 세션 idle reaper 유예 (분). 0 = 무제한(reaper 비활성).
+  # 다른 화면(메뉴)으로 가면 WebSocket 은 끊겨도 PTY bash 는 서버에 상주 → 돌아오면
+  # 재attach + scrollback replay 로 "이어서 작업". WS 가 하나라도 연결돼 있으면(보고
+  # 있으면) 이 값과 무관하게 절대 회수하지 않는다. WS 가 끊긴 세션만 이 시간 초과 시 정리.
+  # 이전(~v1.144.6)엔 30분 하드코딩이라 다른 작업을 30분 넘게 하고 돌아오면 세션이
+  # 사라져 "완전 새 터미널"로 초기화됐다. 기본 1440(24h). LAN 단일 사용자라 PTY 1개
+  # (≈수 MB)를 길게 살려도 부담 작다. 완전 무제한은 0.
+  terminalIdleTimeoutMinutes: 1440
   # v1.28.0 — 신뢰 리버스 프록시 뒤 배포 시 X-Forwarded-For 로 실제 클라이언트 IP
   # 식별. true 면 XForwardedHeaders 설치 → IP 차단/rate-limit 이 프록시 IP 가 아닌
   # 실제 클라 IP 기준으로 동작. 운영(openresty→localhost:17880)에서는 true 권장.
