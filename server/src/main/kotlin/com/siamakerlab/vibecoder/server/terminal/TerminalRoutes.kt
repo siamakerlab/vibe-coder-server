@@ -37,6 +37,7 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 private val log = KotlinLogging.logger {}
@@ -45,6 +46,30 @@ private val wsJson = Json { ignoreUnknownKeys = true; encodeDefaults = true; cla
 // v1.27.1 Q-6 — WS terminal_input frame 의 data char 상한. 64K = paste 등 정상
 // 시나리오 여유 + 악성 / 실수성 spike 방어.
 private const val MAX_INPUT_CHARS = 64 * 1024
+
+// v1.144.8 — REST 응답 DTO. 이전엔 `mapOf("alive" to Boolean, "sessionId" to String, …)`
+// 처럼 **값 타입이 섞인 Map** 을 그대로 respond 했는데, kotlinx.serialization 은
+// Map<String, Any> 를 직렬화하지 못해 ("Serializing collections of different element
+// types is not yet supported") **GET/POST 가 항상 500** 이었다. 그 결과 클라이언트 init
+// 의 `fetch(...).then(r => r.ok ? … : {sessions:[]})` 가 매번 빈 목록을 받아 항상
+// newSession() → "다른 페이지 다녀오면 완전 새 터미널" 의 진짜 원인. @Serializable DTO 로
+// 직렬화 가능하게 고친다.
+@Serializable
+private data class TerminalSessionView(
+    val sessionId: String,
+    val workdir: String,
+    val createdAt: String,
+    val alive: Boolean,
+)
+
+@Serializable
+private data class TerminalSessionListResponse(val sessions: List<TerminalSessionView>)
+
+@Serializable
+private data class TerminalSessionCreated(val sessionId: String, val workdir: String)
+
+@Serializable
+private data class TerminalSessionLimit(val error: String, val max: Int)
 
 /**
  * v1.6.0 — Workspace terminal routes.
@@ -124,17 +149,14 @@ fun Routing.terminalRoutes(
             if (!requireApiAdminOrFail()) return@post
             try {
                 val s = manager.create(userIdOf())
-                call.respond(mapOf("sessionId" to s.id, "workdir" to s.workdir))
+                call.respond(TerminalSessionCreated(s.id, s.workdir))
             } catch (e: TerminalSessionManager.SessionLimitException) {
                 // v1.27.0 — per-user 한도 초과. 429 + 명시적 에러코드 (Android client
                 // 가 사용자 친화적 메시지로 surface 가능).
                 log.info { "terminal session limit hit: ${e.message}" }
                 call.respond(
                     HttpStatusCode.TooManyRequests,
-                    mapOf(
-                        "error" to "session_limit",
-                        "max" to TerminalSessionManager.MAX_SESSIONS_PER_USER,
-                    ),
+                    TerminalSessionLimit("session_limit", TerminalSessionManager.MAX_SESSIONS_PER_USER),
                 )
             }
         }
@@ -146,14 +168,9 @@ fun Routing.terminalRoutes(
             // sessionId/workdir 누출 + /terminal init 이 타 세션 attach → orphan pane).
             val uid = userIdOf()
             val list = manager.list(uid).map {
-                mapOf(
-                    "sessionId" to it.id,
-                    "workdir" to it.workdir,
-                    "createdAt" to it.createdAt.toString(),
-                    "alive" to it.isAlive(),
-                )
+                TerminalSessionView(it.id, it.workdir, it.createdAt.toString(), it.isAlive())
             }
-            call.respond(mapOf("sessions" to list))
+            call.respond(TerminalSessionListResponse(list))
         }
 
         delete(ApiPath.terminalSession("{id}")) {
