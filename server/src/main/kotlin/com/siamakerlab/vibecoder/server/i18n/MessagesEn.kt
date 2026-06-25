@@ -383,6 +383,9 @@ internal object MessagesEn {
         "env.comp.flutter.name" to "Flutter (Android-only)",
         "env.comp.flutter.desc" to "Flutter SDK for building Android APK/AAB from Dart. Cloned (stable channel) to /home/vibe/.local/flutter with Android-only precache — iOS/web/desktop artifacts are intentionally skipped to save disk. Requires Android SDK + Gradle.",
         "env.size.flutter" to "~2.5 GB (Android-only precache)",
+        "env.comp.codex.name" to "Codex CLI (optional)",
+        "env.comp.codex.desc" to "OpenAI Codex CLI — an agentic coding tool you run in the console/terminal. Installed via npm (@openai/codex) into /home/vibe/.local so it survives image updates. Login/config is stored under CODEX_HOME (the .config volume), so your sign-in persists across redeploys. Requires Node.js (bundled). Run `codex login` after install.",
+        "env.size.codex" to "~50 MB (npm)",
         // v1.7.16 — EnvSetupService probe messages.
         "probe.cmd.missing" to "Not installed: %s failed",
         "probe.claudeAuth.apiKey" to "API key mode (ANTHROPIC_API_KEY)",
@@ -942,6 +945,10 @@ internal object MessagesEn {
         "env.action.flutterLabel.missing" to "Install (Android-only)",
         "env.action.flutterConfirm" to "Clones Flutter stable to /home/vibe/.local/flutter and precaches Android artifacts only (~2.5 GB). iOS/web/desktop are skipped. Continue?",
         "env.action.flutterNote" to "Android app builds only — iOS/web/desktop are disabled to save resources. Requires the Android SDK (install it first). Persisted via bind mount.",
+        "env.action.codexLabel.installed" to "Reinstall / Update",
+        "env.action.codexLabel.missing" to "Install",
+        "env.action.codexConfirm" to "Install the OpenAI Codex CLI from npm (@openai/codex, ~50 MB) into /home/vibe/.local. Continue?",
+        "env.action.codexNote" to "Optional. Persisted to the npm-global volume; login is kept in CODEX_HOME (.config volume) so it survives image updates. After install, run `codex login` in the console/terminal.",
 
         // ── claude flash blurbs ──────────────────────────────────────
         "env.flash.uploaded" to "✓ Claude credentials file is registered. Available in the console immediately.",

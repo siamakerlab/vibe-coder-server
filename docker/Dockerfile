@@ -11,11 +11,11 @@
 #
 #   일반 commit push (amd64-only · v0.6.3+ 기본):
 #     docker buildx build --platform linux/amd64 \
-#         -f docker/Dockerfile -t siamakerlab/vibe-coder-server:1.144.8 --push .
+#         -f docker/Dockerfile -t siamakerlab/vibe-coder-server:1.145.0 --push .
 #
 #   마일스톤 multi-arch push (v0.7.0 / v1.0.0 등):
 #     docker buildx build --platform linux/amd64,linux/arm64 \
-#         -f docker/Dockerfile -t siamakerlab/vibe-coder-server:1.144.8 --push .
+#         -f docker/Dockerfile -t siamakerlab/vibe-coder-server:1.145.0 --push .
 
 # ------------------------------------------------------------------------------
 # Stage 1: 서버 빌드 (Gradle installDist)
@@ -242,6 +242,12 @@ ENV CLAUDE_CONFIG_DIR=/home/vibe/.claude
 # `user.name` / `user.email` 이 유지된다. git 2.32+ 의 GIT_CONFIG_GLOBAL 사용.
 # (자식 git 프로세스 — clone / commit / log 모두 동일 파일을 global config 로 인식)
 ENV GIT_CONFIG_GLOBAL=/home/vibe/.config/git/config
+
+# v1.145.0 — Codex CLI(옵션) 로그인/설정 경로를 영속 위치(/home/vibe/.config/codex)로 강제.
+# `/home/vibe/.config` 는 `dev-tools/config` 볼륨에 영속화돼 있어, codex 를 vibe-doctor 로
+# 설치(.local 볼륨)하고 `codex login` 한 뒤에는 이미지 업데이트 / 컨테이너 재생성 후에도
+# 로그인 상태가 유지된다. Codex CLI 기본은 ~/.codex 이지만 CODEX_HOME 으로 override.
+ENV CODEX_HOME=/home/vibe/.config/codex
 
 # v0.7.0 — vibe 사용자의 npm 글로벌 prefix 를 /home/vibe/.local 로 분리.
 # 이로써 `vibe-doctor mcp` 의 `npm install -g <pkg>` 가 시스템 디렉토리가 아닌

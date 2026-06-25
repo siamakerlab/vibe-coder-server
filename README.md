@@ -191,6 +191,11 @@ For per-release history, see [CHANGELOG.md](CHANGELOG.md).
   **Android artifacts only** (`flutter precache --android --no-ios --no-web …`),
   intentionally skipping iOS/web/desktop engine artifacts to save several GB of
   disk. Optional component — excluded from "Install all".
+- **Codex CLI installer (optional)** — the `/env-setup` "Codex CLI" card installs
+  OpenAI's `@openai/codex` via npm into `/home/vibe/.local` (the npm-global volume),
+  so it survives image updates. Login/config is kept under `CODEX_HOME=/home/vibe/.config/codex`
+  (the `.config` volume), so `codex login` persists across redeploys. Optional —
+  excluded from "Install all"; install via the card or `vibe-doctor codex`.
 - **Pre-installed image tooling** — the runtime image ships ImageMagick,
   Pillow (`python3-pil` + NumPy), `rsvg-convert`, `cwebp`/`dwebp`,
   `poppler-utils`, Ghostscript, and `optipng`/`pngquant`/`jpegoptim` so Claude

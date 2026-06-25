@@ -145,6 +145,7 @@ docker compose up -d --force-recreate</pre>
         SetupComponent.PLATFORM_TOOLS -> 4
         SetupComponent.ANDROID_EMULATOR -> 5
         SetupComponent.MCP_DEFAULTS -> 6
+        SetupComponent.CODEX -> 7            // v1.145.0 — Codex CLI (옵션 도구)
         else -> 9                            // built-in (JDK/Git/Node/Claude CLI)
     }
 
@@ -364,6 +365,25 @@ git config --global user.email "&lt;email&gt;"
                 <p class="hint" style="margin-top:8px;font-size:12px">${esc(t("env.action.flutterNote"))}</p>
                 <details style="margin-top:8px"><summary class="dim" style="cursor:pointer;font-size:12px">${esc(t("env.action.cliHint"))}</summary>
                   <pre class="diff-block" style="margin-top:6px">docker exec -it vibe-coder-server vibe-doctor flutter</pre>
+                </details>"""
+            }
+
+            // v1.145.0 — Codex CLI (OpenAI, 옵션). npm `@openai/codex` 를 /home/vibe/.local 에
+            // 설치(영속). 로그인은 CODEX_HOME(.config bind mount)에 저장 → 이미지 업데이트에도 유지.
+            SetupComponent.CODEX -> {
+                val label = when (status) {
+                    ComponentStatus.INSTALLED -> t("env.action.codexLabel.installed")
+                    else -> t("env.action.codexLabel.missing")
+                }
+                """<form method="post" action="/env-setup/${esc(c.id)}/install" style="margin-top:10px"
+                        onsubmit="return confirm(${jsLit(t("env.action.codexConfirm"))})">
+                  ${CsrfTokens.hiddenInput(csrf)}
+                  <button type="submit" class="primary" style="width:auto;padding:8px 16px">${esc(label)}</button>
+                </form>
+                <p class="hint" style="margin-top:8px;font-size:12px">${esc(t("env.action.codexNote"))}</p>
+                <details style="margin-top:8px"><summary class="dim" style="cursor:pointer;font-size:12px">${esc(t("env.action.cliHint"))}</summary>
+                  <pre class="diff-block" style="margin-top:6px">docker exec -it vibe-coder-server vibe-doctor codex
+docker exec -it vibe-coder-server codex login</pre>
                 </details>"""
             }
         }
