@@ -124,6 +124,17 @@ enum class SetupComponent(
         description = "env.comp.flutter.desc",
         sizeHint = "env.size.flutter",
     ),
+    // v1.145.0 — Codex CLI (OpenAI). doctorCmd="codex" → vibe-doctor codex 가 npm `@openai/codex`
+    // 를 /home/vibe/.local 에 글로벌 설치(이미지 업데이트 후에도 영속). 로그인/설정은 CODEX_HOME
+    // (/home/vibe/.config/codex, .config bind mount)에 영속. 선택적 컴포넌트 — "모두 설치"에서
+    // 제외하고 개별 카드 버튼으로만 설치(Android 빌드 필수 도구가 아님).
+    CODEX(
+        id = "codex",
+        displayName = "env.comp.codex.name",
+        doctorCmd = "codex",
+        description = "env.comp.codex.desc",
+        sizeHint = "env.size.codex",
+    ),
     ;
 
     companion object {
@@ -190,6 +201,7 @@ class EnvSetupService(
         SetupComponent.MCP_DEFAULTS -> probeMcpDefaults(c, lang)
         SetupComponent.GRADLE -> probeGradle(c, lang)
         SetupComponent.FLUTTER -> probeFlutter(c, lang)
+        SetupComponent.CODEX -> probeCmd(c, listOf("codex", "--version"), lang)
     }
 
     private fun t(lang: String, key: String, vararg args: Any?): String =
@@ -478,10 +490,10 @@ class EnvSetupService(
     fun spawnInstallAll(): String {
         val taskId = Ids.taskId()
         val steps = SetupComponent.entries
-            .mapNotNull { c -> c.doctorCmd?.takeIf { c != SetupComponent.CLAUDE_AUTH && c != SetupComponent.FLUTTER }?.let { c to it } }
-        // CLAUDE_AUTH 는 OAuth 라 자동 불가. FLUTTER 는 선택적(Android 빌드 전용, ~2.5GB) —
-        // Kotlin 사용자에겐 불필요하므로 개별 카드 버튼으로만 설치. 나머지 (android / gradle / mcp) 만.
-        SetupComponent.entries.forEach { c -> if (c.doctorCmd != null && c != SetupComponent.FLUTTER) lastTask[c] = taskId }
+            .mapNotNull { c -> c.doctorCmd?.takeIf { c != SetupComponent.CLAUDE_AUTH && c != SetupComponent.FLUTTER && c != SetupComponent.CODEX }?.let { c to it } }
+        // CLAUDE_AUTH 는 OAuth 라 자동 불가. FLUTTER(~2.5GB)·CODEX 는 선택적 도구라 개별 카드
+        // 버튼으로만 설치(Android 빌드 필수 아님). 나머지 (android / gradle / mcp) 만.
+        SetupComponent.entries.forEach { c -> if (c.doctorCmd != null && c != SetupComponent.FLUTTER && c != SetupComponent.CODEX) lastTask[c] = taskId }
         submitDoctor(taskId, label = "모두 설치/업데이트", steps = steps.map { it.second }, displaySteps = steps.map { it.first.displayName })
         return taskId
     }

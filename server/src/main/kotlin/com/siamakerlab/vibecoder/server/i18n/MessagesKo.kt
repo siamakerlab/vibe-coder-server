@@ -360,6 +360,9 @@ internal object MessagesKo {
         "env.comp.flutter.name" to "Flutter (안드로이드 전용)",
         "env.comp.flutter.desc" to "Dart 로 Android APK/AAB 를 빌드하는 Flutter SDK. stable 채널을 /home/vibe/.local/flutter 에 clone + Android 전용 precache — iOS/web/desktop artifact 는 디스크 절약을 위해 의도적으로 받지 않음. Android SDK + Gradle 필요.",
         "env.size.flutter" to "~2.5 GB (Android 전용 precache)",
+        "env.comp.codex.name" to "Codex CLI (옵션)",
+        "env.comp.codex.desc" to "OpenAI Codex CLI — 콘솔/터미널에서 실행하는 에이전트형 코딩 도구. npm(@openai/codex)으로 /home/vibe/.local 에 설치되어 이미지 업데이트 후에도 유지됨. 로그인/설정은 CODEX_HOME(.config 볼륨)에 저장되어 재배포에도 로그인 상태가 유지됨. Node.js 필요(이미지 내장). 설치 후 `codex login` 실행.",
+        "env.size.codex" to "~50 MB (npm)",
         // v1.7.16 — EnvSetupService probe 메시지.
         "probe.cmd.missing" to "미설치: %s 실행 실패",
         "probe.claudeAuth.apiKey" to "API 키 모드 (ANTHROPIC_API_KEY)",
@@ -920,6 +923,10 @@ internal object MessagesKo {
         "env.action.flutterLabel.missing" to "설치 (Android 전용)",
         "env.action.flutterConfirm" to "Flutter stable 을 /home/vibe/.local/flutter 에 clone 하고 Android artifact 만 precache 합니다 (~2.5GB). iOS/web/desktop 은 받지 않습니다. 계속할까요?",
         "env.action.flutterNote" to "Android 앱 빌드 전용 — iOS/web/desktop 은 리소스 절약을 위해 비활성. Android SDK 가 먼저 필요(없으면 먼저 설치). 영구 보존 (bind mount).",
+        "env.action.codexLabel.installed" to "재설치 / 업데이트",
+        "env.action.codexLabel.missing" to "설치",
+        "env.action.codexConfirm" to "OpenAI Codex CLI 를 npm(@openai/codex, ~50 MB)에서 /home/vibe/.local 에 설치합니다. 계속할까요?",
+        "env.action.codexNote" to "옵션. npm-global 볼륨에 영속되고, 로그인은 CODEX_HOME(.config 볼륨)에 저장되어 이미지 업데이트에도 유지됩니다. 설치 후 콘솔/터미널에서 `codex login` 을 실행하세요.",
         // v1.10.0 — 안드로이드 에뮬레이터 카드 액션.
 
         // ── claude flash blurbs ──────────────────────────────────────
