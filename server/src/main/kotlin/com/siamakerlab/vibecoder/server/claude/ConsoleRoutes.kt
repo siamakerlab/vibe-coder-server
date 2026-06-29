@@ -1,6 +1,8 @@
 package com.siamakerlab.vibecoder.server.claude
 
 import com.siamakerlab.vibecoder.server.audit.AuditLogger
+import com.siamakerlab.vibecoder.server.agent.AgentProvider
+import com.siamakerlab.vibecoder.server.agent.AgentRouter
 import com.siamakerlab.vibecoder.server.auth.AUTH_BEARER
 import com.siamakerlab.vibecoder.server.auth.requireApiWrite
 import com.siamakerlab.vibecoder.server.auth.requireDevice
@@ -54,6 +56,7 @@ fun Routing.consoleRoutes(
     audit: AuditLogger,
     /** v0.31.0 — prompt 자동완성. */
     promptSuggestionService: PromptSuggestionService,
+    agentRouter: AgentRouter? = null,
 ) {
     authenticate(AUTH_BEARER) {
         post("/api/projects/{projectId}/claude/console/prompt") {
@@ -66,13 +69,7 @@ fun Routing.consoleRoutes(
 
             // 인증 안 된 상태에서 자식 프로세스를 띄우면 사용자는 의미 없는 stderr 만 보게 된다.
             // 미리 차단하고 명확한 가이드를 응답으로 돌려준다.
-            val env = envDiagnostics.run()
-            if (env.claude.status != CheckStatus.OK) {
-                throw ApiException.localized(503, "claude_cli_missing", messageKey = "api.console.claudeCliMissing")
-            }
-            if (env.claudeAuth?.status == CheckStatus.ERROR) {
-                throw ApiException.localized(503, "claude_auth_required", messageKey = "api.console.claudeAuthRequired")
-            }
+            ensureAgentReady(projectId, agentRouter, envDiagnostics)
 
             val body = call.receive<PromptRequestDto>()
             val text = body.text.trim()
@@ -88,14 +85,15 @@ fun Routing.consoleRoutes(
             val images = validatedImages(body)
 
             try {
-                sessionManager.sendPrompt(projectId, text, images = images)
+                if (agentRouter != null) agentRouter.sendPrompt(projectId, text, images = images)
+                else sessionManager.sendPrompt(projectId, text, images = images)
             } catch (e: Exception) {
                 log.warn(e) { "[$projectId] prompt failed" }
                 throw ApiException.localized(500, "claude_send_failed",
                     messageKey = "api.console.sendFailed", args = listOf(e.message ?: "unknown error"))
             }
 
-            val seq = hub.consoleCurrentSeq(LogHub.consoleTopic(projectId))
+            val seq = hub.consoleCurrentSeq(LogHub.consoleTopic(projectId, selectedProvider(projectId, agentRouter).id))
             call.respond(HttpStatusCode.Accepted, PromptAcceptedDto(seq = seq))
         }
 
@@ -144,7 +142,7 @@ fun Routing.consoleRoutes(
                 ?: throw ApiException.localized(400, "bad_request", messageKey = "api.console.projectIdRequired")
             call.requireProjectAcl(projects, projectId)
             projects.rowOrThrow(projectId)
-            sessionManager.startNew(projectId)
+            if (agentRouter != null) agentRouter.startNew(projectId) else sessionManager.startNew(projectId)
             call.respond(HttpStatusCode.Accepted)
         }
 
@@ -156,7 +154,7 @@ fun Routing.consoleRoutes(
                 ?: throw ApiException.localized(400, "bad_request", messageKey = "api.console.projectIdRequired")
             call.requireProjectAcl(projects, projectId)
             projects.rowOrThrow(projectId)
-            sessionManager.cancelTurn(projectId)
+            if (agentRouter != null) agentRouter.cancelTurn(projectId) else sessionManager.cancelTurn(projectId)
             val device = call.requireDevice().device
             audit.consoleCancel(device.userId, projectId, call.request.origin.remoteHost)
             call.respond(HttpStatusCode.Accepted)
@@ -171,13 +169,7 @@ fun Routing.consoleRoutes(
             call.requireProjectAcl(projects, projectId)
             projects.rowOrThrow(projectId)
 
-            val env = envDiagnostics.run()
-            if (env.claude.status != CheckStatus.OK) {
-                throw ApiException.localized(503, "claude_cli_missing", messageKey = "api.console.claudeCliMissing")
-            }
-            if (env.claudeAuth?.status == CheckStatus.ERROR) {
-                throw ApiException.localized(503, "claude_auth_required", messageKey = "api.console.claudeAuthRequired")
-            }
+            ensureAgentReady(projectId, agentRouter, envDiagnostics)
 
             val body = call.receive<PromptRequestDto>()
             val text = body.text.trim()
@@ -191,7 +183,8 @@ fun Routing.consoleRoutes(
             val images = validatedImages(body)
 
             try {
-                sessionManager.interruptAndSend(projectId, text, images = images)
+                if (agentRouter != null) agentRouter.interruptAndSend(projectId, text, images = images)
+                else sessionManager.interruptAndSend(projectId, text, images = images)
             } catch (e: Exception) {
                 log.warn(e) { "[$projectId] interrupt-send failed" }
                 throw ApiException.localized(500, "claude_send_failed",
@@ -200,7 +193,7 @@ fun Routing.consoleRoutes(
 
             val device = call.requireDevice().device
             audit.consoleCancel(device.userId, projectId, call.request.origin.remoteHost)
-            val seq = hub.consoleCurrentSeq(LogHub.consoleTopic(projectId))
+            val seq = hub.consoleCurrentSeq(LogHub.consoleTopic(projectId, selectedProvider(projectId, agentRouter).id))
             call.respond(HttpStatusCode.Accepted, PromptAcceptedDto(seq = seq))
         }
 
@@ -232,6 +225,33 @@ fun Routing.consoleRoutes(
             call.requireProjectAcl(projects, projectId)
             projects.rowOrThrow(projectId)
             call.respond(buildConsoleSettings(sessionManager, projectId))
+        }
+        get("/api/projects/{projectId}/agent/provider") {
+            val projectId = call.parameters["projectId"]
+                ?: throw ApiException.localized(400, "bad_request", messageKey = "api.console.projectIdRequired")
+            call.requireProjectAcl(projects, projectId)
+            projects.rowOrThrow(projectId)
+            val current = agentRouter?.providerFor(projectId) ?: AgentProvider.CLAUDE
+            val available = agentRouter?.availableProviders() ?: listOf(AgentProvider.CLAUDE)
+            call.respond(
+                mapOf(
+                    "provider" to current.id,
+                    "available" to available.map { mapOf("id" to it.id, "displayName" to it.displayName) },
+                )
+            )
+        }
+        post("/api/projects/{projectId}/agent/provider") {
+            call.requireApiWrite()
+            val projectId = call.parameters["projectId"]
+                ?: throw ApiException.localized(400, "bad_request", messageKey = "api.console.projectIdRequired")
+            call.requireProjectAcl(projects, projectId)
+            projects.rowOrThrow(projectId)
+            val router = agentRouter ?: throw ApiException.localized(400, "agent_provider_unavailable", messageKey = "api.agentProvider.unavailable")
+            val body = call.receive<Map<String, String>>()
+            val provider = AgentProvider.parse(body["provider"])
+                ?: throw ApiException.localized(400, "bad_request", messageKey = "api.agentProvider.invalid")
+            router.setProvider(projectId, provider)
+            call.respond(mapOf("provider" to provider.id))
         }
         post("/api/projects/{projectId}/claude/console/model") {
             call.requireApiWrite()
@@ -266,6 +286,34 @@ fun Routing.consoleRoutes(
         }
     }
 }
+
+private fun ensureAgentReady(projectId: String, router: AgentRouter?, envDiagnostics: EnvDiagnostics) {
+    val provider = selectedProvider(projectId, router)
+    when (provider) {
+        AgentProvider.CLAUDE -> {
+            val env = envDiagnostics.run()
+            if (env.claude.status != CheckStatus.OK) {
+                throw ApiException.localized(503, "claude_cli_missing", messageKey = "api.console.claudeCliMissing")
+            }
+            if (env.claudeAuth?.status == CheckStatus.ERROR) {
+                throw ApiException.localized(503, "claude_auth_required", messageKey = "api.console.claudeAuthRequired")
+            }
+        }
+        AgentProvider.CODEX -> {
+            val ok = runCatching {
+                val cmd = System.getenv("CODEX_CMD")?.takeIf { it.isNotBlank() } ?: "codex"
+                val p = ProcessBuilder(cmd, "--version").redirectErrorStream(true).start()
+                p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS) && p.exitValue() == 0
+            }.getOrDefault(false)
+            if (!ok) throw ApiException.localized(503, "codex_cli_missing", messageKey = "api.console.sendFailed", args = listOf("codex CLI not available"))
+        }
+        AgentProvider.OPENCODE ->
+            throw ApiException.localized(501, "opencode_not_implemented", messageKey = "api.console.sendFailed", args = listOf("OpenCode provider is not implemented yet"))
+    }
+}
+
+private fun selectedProvider(projectId: String, router: AgentRouter?): AgentProvider =
+    router?.providerFor(projectId) ?: AgentProvider.CLAUDE
 
 /**
  * v1.133.0 — 프롬프트 첨부 이미지 검증. 형식/한도 위반은 400 (image_invalid) 으로 변환.

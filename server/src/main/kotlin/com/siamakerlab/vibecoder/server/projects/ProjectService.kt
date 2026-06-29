@@ -212,6 +212,7 @@ class ProjectService(
             )
             Files.writeString(claudeMd, ClaudeMdTemplate.render(info))
         }
+        ProjectScaffolder.ensureAgentsLink(srcRoot)
 
         // v0.7.0 — .claude/settings.json: vibe-coder 비인터랙티브 환경 권장 정책.
         // bypassPermissions + 인터랙티브 도구 deny + 비대화형 env 강제.

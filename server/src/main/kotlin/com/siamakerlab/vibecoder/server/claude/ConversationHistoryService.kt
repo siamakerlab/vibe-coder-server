@@ -49,6 +49,7 @@ class ConversationHistoryService(
         text: String,
         agentName: String? = null,
         images: List<com.siamakerlab.vibecoder.shared.dto.PromptImageDto> = emptyList(),
+        provider: String = ConversationTurnRepository.PROVIDER_CLAUDE,
     ) = safe {
         val imagesJson = if (images.isEmpty()) null else buildString {
             append('[')
@@ -60,6 +61,7 @@ class ConversationHistoryService(
         }
         repo.insert(
             projectId = projectId,
+            provider = provider,
             sessionId = sessionId,
             role = "user",
             content = text,
@@ -72,8 +74,12 @@ class ConversationHistoryService(
      * v1.91.5 — 새 세션 첫 턴에서 sessionId=null 로 저장된 메인 콘솔 turn 을 init 이벤트로
      * 확정된 실제 session_id 로 backfill. 콘솔 복원 시 직전 프롬프트 누락 방지.
      */
-    fun adoptNullSession(projectId: String, sessionId: String) = safe {
-        repo.adoptNullSession(projectId, sessionId)
+    fun adoptNullSession(
+        projectId: String,
+        sessionId: String,
+        provider: String = ConversationTurnRepository.PROVIDER_CLAUDE,
+    ) = safe {
+        repo.adoptNullSession(projectId, sessionId, provider = provider)
     }
 
     /**
@@ -81,10 +87,17 @@ class ConversationHistoryService(
      * 적재. partial assistant chunks 는 skip — 전체 turn 의 final assistant message 만
      * 한 row (스트리밍 중간 token 누적은 LogHub 으로만 흘림).
      */
-    fun event(projectId: String, sessionId: String?, event: ClaudeEvent, agentName: String? = null) = safe {
+    fun event(
+        projectId: String,
+        sessionId: String?,
+        event: ClaudeEvent,
+        agentName: String? = null,
+        provider: String = ConversationTurnRepository.PROVIDER_CLAUDE,
+    ) = safe {
         when (event) {
             is ClaudeEvent.SessionStarted -> repo.insert(
                 projectId = projectId,
+                provider = provider,
                 sessionId = event.sessionId,
                 role = "system",
                 content = """{"kind":"session_started","model":${jsonStr(event.model)},"cwd":${jsonStr(event.cwd)}}""",
@@ -95,6 +108,7 @@ class ConversationHistoryService(
                 if (event.isPartial) return@safe
                 repo.insert(
                     projectId = projectId,
+                    provider = provider,
                     sessionId = sessionId,
                     role = "assistant",
                     content = event.text,
@@ -103,6 +117,7 @@ class ConversationHistoryService(
             }
             is ClaudeEvent.ToolUse -> repo.insert(
                 projectId = projectId,
+                provider = provider,
                 sessionId = sessionId,
                 role = "tool_use",
                 content = jsonString(event.input),
@@ -112,6 +127,7 @@ class ConversationHistoryService(
             )
             is ClaudeEvent.ToolResult -> repo.insert(
                 projectId = projectId,
+                provider = provider,
                 sessionId = sessionId,
                 role = if (event.isError) "tool_result_error" else "tool_result",
                 content = jsonString(event.output),
@@ -120,6 +136,7 @@ class ConversationHistoryService(
             )
             is ClaudeEvent.Done -> repo.insert(
                 projectId = projectId,
+                provider = provider,
                 sessionId = sessionId,
                 role = "system",
                 content = """{"kind":"done","reason":${jsonStr(event.reason)}}""",
@@ -127,6 +144,7 @@ class ConversationHistoryService(
             )
             is ClaudeEvent.ErrorEvent -> repo.insert(
                 projectId = projectId,
+                provider = provider,
                 sessionId = sessionId,
                 role = "error",
                 content = """{"code":${jsonStr(event.code)},"message":${jsonStr(event.message)}}""",
@@ -134,6 +152,7 @@ class ConversationHistoryService(
             )
             is ClaudeEvent.Unknown -> repo.insert(
                 projectId = projectId,
+                provider = provider,
                 sessionId = sessionId,
                 role = "unknown",
                 content = jsonString(event.raw),
@@ -144,6 +163,7 @@ class ConversationHistoryService(
             // /usage 페이지가 SUM 으로 집계 가능. tokens_in/tokens_out 컬럼도 동시에 사용.
             is ClaudeEvent.UsageReport -> repo.insert(
                 projectId = projectId,
+                provider = provider,
                 sessionId = sessionId,
                 role = "usage",
                 content = """{"input":${event.inputTokens ?: 0},"output":${event.outputTokens ?: 0},""" +
@@ -156,6 +176,7 @@ class ConversationHistoryService(
             // 발생 시점을 추적할 수 있게 system role 로 적재.
             is ClaudeEvent.SystemNote -> repo.insert(
                 projectId = projectId,
+                provider = provider,
                 sessionId = sessionId,
                 role = "system",
                 content = """{"kind":"system","code":${jsonStr(event.code)},"message":${jsonStr(event.message)}}""",
@@ -168,9 +189,17 @@ class ConversationHistoryService(
     }
 
     /** Server-emitted system notice (cancel_noop, turn_cancelled, idle_terminated, etc.). */
-    fun systemNotice(projectId: String, sessionId: String?, code: String, message: String, agentName: String? = null) = safe {
+    fun systemNotice(
+        projectId: String,
+        sessionId: String?,
+        code: String,
+        message: String,
+        agentName: String? = null,
+        provider: String = ConversationTurnRepository.PROVIDER_CLAUDE,
+    ) = safe {
         repo.insert(
             projectId = projectId,
+            provider = provider,
             sessionId = sessionId,
             role = "system",
             content = """{"kind":"system","code":${jsonStr(code)},"message":${jsonStr(message)}}""",

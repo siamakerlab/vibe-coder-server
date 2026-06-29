@@ -133,11 +133,16 @@ ${VIBE_DATA_ROOT}/                          컨테이너
 │   ├── npm-global/             →  /home/vibe/.local                  (MCP `npm -g`)
 │   ├── npm-cache/              →  /home/vibe/.npm                    (npx 캐시)
 │   ├── playwright/             →  /home/vibe/.cache/ms-playwright    (선택)
-│   ├── config/                 →  /home/vibe/.config                 (도구 설정)
+│   ├── config/                 →  /home/vibe/.config                 (도구 설정, Codex CODEX_HOME)
 │   ├── ssh/                    →  /home/vibe/.ssh                    (v1.2.0+ SSH 키)
 │   └── keystores/              →  /home/vibe/keystores               (v1.5.0+ Android signing keys ⚠️)
 └── claude/                     →  /home/vibe/.claude                 (OAuth/MCP 등록)
 ```
+
+Codex 전역 지침은 `/home/vibe/.config/codex/AGENTS.md` 이며, 새 설치에서는
+`/home/vibe/.claude/CLAUDE.md` 로 symlink 되어 Claude Code 와 Codex 가 같은
+전역 AI 지침을 공유합니다. 사용자가 이미 일반 파일로 `AGENTS.md` 를 만들었다면
+entrypoint 는 이를 덮어쓰지 않습니다.
 
 `dev-tools/` 안의 8개 디렉토리는 모두 "한 번 다운로드 → 영구 보존" 도구
 캐시입니다. **이미지 업그레이드(`docker compose pull && up -d`) 후에도

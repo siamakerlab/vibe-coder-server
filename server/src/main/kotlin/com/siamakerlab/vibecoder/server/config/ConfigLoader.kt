@@ -123,6 +123,14 @@ object ConfigLoader {
                 current = current.copy(claude = current.claude.copy(sessionTurnCap = it.coerceAtLeast(0)))
             }
 
+        System.getenv("VIBECODER_CODEX_MODEL")?.trim()?.takeIf { it.isNotBlank() }?.let {
+            current = current.copy(codex = current.codex.copy(model = it))
+        }
+        System.getenv("VIBECODER_CODEX_MAX_RESIDENT_SESSIONS")?.takeIf { it.isNotBlank() }
+            ?.toIntOrNull()?.let {
+                current = current.copy(codex = current.codex.copy(maxResidentSessions = it.coerceAtLeast(0)))
+            }
+
         return current
     }
 

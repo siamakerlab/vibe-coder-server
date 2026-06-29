@@ -380,12 +380,54 @@ git config --global user.email "&lt;email&gt;"
                   ${CsrfTokens.hiddenInput(csrf)}
                   <button type="submit" class="primary" style="width:auto;padding:8px 16px">${esc(label)}</button>
                 </form>
+                ${renderCodexLoginAction(status, csrf, lang)}
                 <p class="hint" style="margin-top:8px;font-size:12px">${esc(t("env.action.codexNote"))}</p>
                 <details style="margin-top:8px"><summary class="dim" style="cursor:pointer;font-size:12px">${esc(t("env.action.cliHint"))}</summary>
                   <pre class="diff-block" style="margin-top:6px">docker exec -it vibe-coder-server vibe-doctor codex
-docker exec -it vibe-coder-server codex login</pre>
+docker exec -it vibe-coder-server codex login --device-auth</pre>
                 </details>"""
             }
+        }
+    }
+
+    private fun renderCodexLoginAction(status: ComponentStatus, csrf: String?, lang: String): String {
+        val t = { key: String -> Messages.t(lang, key) }
+        return if (status == ComponentStatus.INSTALLED) {
+            """
+            <form method="post" action="/env-setup/codex-login/start" style="margin-top:8px"
+                    onsubmit="return confirm(${jsLit(t("env.action.codexLoginConfirm"))})">
+              ${CsrfTokens.hiddenInput(csrf)}
+              <button type="submit" class="chip chip-action" style="padding:8px 16px">${esc(t("env.action.codexLogin"))}</button>
+            </form>
+            <details style="margin-top:8px">
+              <summary class="dim" style="cursor:pointer;font-size:12px">${esc(t("env.action.codexAccessTokenTitle"))}</summary>
+              <p class="hint" style="margin:6px 0 8px">${esc(t("env.action.codexAccessTokenDesc"))}</p>
+              <form method="post" action="/env-setup/codex-auth/access-token"
+                    style="display:flex;flex-direction:column;gap:8px"
+                    onsubmit="return confirm(${jsLit(t("env.action.codexAccessTokenConfirm"))})">
+                ${CsrfTokens.hiddenInput(csrf)}
+                <input type="password" name="accessToken" placeholder="codex access token" required
+                       autocomplete="off" spellcheck="false"
+                       style="font-size:13px;padding:6px 8px">
+                <button type="submit" class="primary" style="width:auto;padding:8px 16px;align-self:flex-start">${esc(t("env.action.codexAccessTokenBtn"))}</button>
+              </form>
+            </details>
+            <details style="margin-top:8px">
+              <summary class="dim" style="cursor:pointer;font-size:12px">${esc(t("env.action.codexApiKeyTitle"))}</summary>
+              <p class="hint" style="margin:6px 0 8px">${esc(t("env.action.codexApiKeyDesc"))}</p>
+              <form method="post" action="/env-setup/codex-auth/api-key"
+                    style="display:flex;flex-direction:column;gap:8px"
+                    onsubmit="return confirm(${jsLit(t("env.action.codexApiKeyConfirm"))})">
+                ${CsrfTokens.hiddenInput(csrf)}
+                <input type="password" name="apiKey" placeholder="sk-..." required minlength="20"
+                       autocomplete="off" spellcheck="false"
+                       style="font-size:13px;padding:6px 8px">
+                <button type="submit" class="primary" style="width:auto;padding:8px 16px;align-self:flex-start">${esc(t("env.action.codexApiKeyBtn"))}</button>
+              </form>
+            </details>
+            """
+        } else {
+            """<p class="hint" style="margin-top:8px;font-size:12px">${esc(t("env.action.codexLoginInstallFirst"))}</p>"""
         }
     }
 

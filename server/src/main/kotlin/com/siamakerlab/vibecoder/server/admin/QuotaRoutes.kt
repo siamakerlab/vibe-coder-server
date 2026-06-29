@@ -3,6 +3,7 @@ package com.siamakerlab.vibecoder.server.admin
 import com.siamakerlab.vibecoder.server.auth.AUTH_BEARER
 import com.siamakerlab.vibecoder.server.auth.requireDevice
 import com.siamakerlab.vibecoder.server.claude.ClaudeStatusService
+import com.siamakerlab.vibecoder.server.agent.codex.CodexStatusService
 import com.siamakerlab.vibecoder.server.projects.ProjectService
 import com.siamakerlab.vibecoder.shared.ApiPath
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -33,6 +34,15 @@ fun Routing.quotaRoutes(claudeStatus: ClaudeStatusService) {
             call.requireDevice() // 인증만 강제(단일 admin → 추가 role 불필요)
             // v1.46.0 — 비차단 캐시-온리. 캡처는 백그라운드 ClaudeUsageMonitor 가 수행 → 즉시 반환.
             call.respond(claudeStatus.cachedSnapshot(ProjectService.SCRATCH_ID))
+        }
+    }
+}
+
+fun Routing.codexQuotaRoutes(codexStatus: CodexStatusService) {
+    authenticate(AUTH_BEARER) {
+        get(ApiPath.SERVER_CODEX_QUOTA) {
+            call.requireDevice()
+            call.respond(codexStatus.cachedSnapshot())
         }
     }
 }

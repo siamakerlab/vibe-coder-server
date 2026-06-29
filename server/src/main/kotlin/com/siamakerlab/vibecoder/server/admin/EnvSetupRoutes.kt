@@ -126,6 +126,51 @@ fun Routing.envSetupRoutes(
         call.respondRedirect("/env-setup/tasks/$taskId")
     }
 
+    post("/env-setup/codex-login/start") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireAdminOrRedirect(sess)) return@post
+        requireCsrf()
+        val taskId = setupService.spawnCodexLogin()
+        log.info { "env-setup codex-login: $taskId by ${sess.username}" }
+        call.respondRedirect("/env-setup/tasks/$taskId")
+    }
+
+    post("/env-setup/codex-auth/access-token") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireAdminOrRedirect(sess)) return@post
+        val form = requireCsrf()
+        val token = form["accessToken"].orEmpty()
+        val taskId = runCatching { setupService.spawnCodexLoginWithAccessToken(token) }.getOrElse { e ->
+            val msg = (e as? ApiException)?.message ?: e.message ?: Messages.t(sess.language, "env.error.keyRejected")
+            call.respondText(
+                EnvSetupTemplates.errorBlurb(msg, sess.language),
+                ContentType.Text.Html,
+                HttpStatusCode.BadRequest,
+            )
+            return@post
+        }
+        log.info { "env-setup codex-access-token-login: $taskId by ${sess.username}" }
+        call.respondRedirect("/env-setup/tasks/$taskId")
+    }
+
+    post("/env-setup/codex-auth/api-key") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireAdminOrRedirect(sess)) return@post
+        val form = requireCsrf()
+        val apiKey = form["apiKey"].orEmpty()
+        val taskId = runCatching { setupService.spawnCodexLoginWithApiKey(apiKey) }.getOrElse { e ->
+            val msg = (e as? ApiException)?.message ?: e.message ?: Messages.t(sess.language, "env.error.keyRejected")
+            call.respondText(
+                EnvSetupTemplates.errorBlurb(msg, sess.language),
+                ContentType.Text.Html,
+                HttpStatusCode.BadRequest,
+            )
+            return@post
+        }
+        log.info { "env-setup codex-api-key-login: $taskId by ${sess.username}" }
+        call.respondRedirect("/env-setup/tasks/$taskId")
+    }
+
     get("/env-setup/tasks/{taskId}") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
         if (!requireAdminOrRedirect(sess)) return@get

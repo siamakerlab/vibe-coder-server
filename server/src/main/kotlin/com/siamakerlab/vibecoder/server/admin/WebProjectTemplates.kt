@@ -1,6 +1,7 @@
 package com.siamakerlab.vibecoder.server.admin
 
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens
+import com.siamakerlab.vibecoder.server.agent.AgentProvider
 import com.siamakerlab.vibecoder.server.files.ProjectFileBrowser
 import com.siamakerlab.vibecoder.server.repo.ArtifactRow
 import com.siamakerlab.vibecoder.shared.dto.BuildDto
@@ -1226,6 +1227,8 @@ $errHtml
         contextWarnTokens: Int = 0,
         /** v1.106.0 (P1-a) — MCP 최소화(strict) 활성 여부. */
         mcpStrict: Boolean = false,
+        agentProvider: AgentProvider = AgentProvider.CLAUDE,
+        availableAgentProviders: List<AgentProvider> = listOf(AgentProvider.CLAUDE),
         lang: String,
         embed: Boolean = false,
     ): String {
@@ -1235,31 +1238,53 @@ $errHtml
             sessionId != null -> """<span class="dim">idle (will resume)</span>"""
             else -> """<span class="dim">no session</span>"""
         }
-        // v1.106.0 — 모델 셀렉터(토큰 사용량 레버). 변경 시 즉시 submit → 유휴면 다음 prompt 부터
-        // 같은 대화를 새 모델로 resume. 표준 3종 + CLI 기본. 커스텀 ID 면 별도 옵션으로 표시.
-        val knownModels = listOf(
-            "sonnet" to "Sonnet (권장·저비용)",
-            "opus" to "Opus (고성능·고비용)",
-            "fable" to "Fable 5 (최상위·Opus 2배 비용)",
-            "haiku" to "Haiku (초저비용)",
-        )
-        val isCustomModel = model.isNotBlank() && knownModels.none { it.first.equals(model, ignoreCase = true) }
+        // v1.106.0 — 모델 셀렉터(토큰 사용량 레버). v1.x — 부모 탭 헤더에 주 표시,
+        // standalone console 진입 시에만 하단 도구줄에도 보조 표시. provider별 모델 파일은 분리된다.
+        val normalizedModel = model.ifBlank { "default" }
+        val knownModels = when (agentProvider) {
+            AgentProvider.CLAUDE -> listOf(
+                "sonnet" to "Sonnet (권장·저비용)",
+                "opus" to "Opus (고성능·고비용)",
+                "fable" to "Fable 5",
+                "haiku" to "Haiku",
+            )
+            AgentProvider.CODEX -> listOf(
+                "gpt-5" to "GPT-5",
+                "gpt-5-codex" to "GPT-5 Codex",
+            )
+            AgentProvider.OPENCODE -> emptyList()
+        }
+        val isCustomModel = !normalizedModel.equals("default", ignoreCase = true) &&
+            knownModels.none { it.first.equals(normalizedModel, ignoreCase = true) }
         val modelOptions = buildString {
             for ((v, label) in knownModels) {
-                val selAttr = if (model.equals(v, ignoreCase = true)) " selected" else ""
+                val selAttr = if (normalizedModel.equals(v, ignoreCase = true)) " selected" else ""
                 append("""<option value="$v"$selAttr>${esc(label)}</option>""")
             }
-            val defSel = if (model.isBlank()) " selected" else ""
+            val defSel = if (normalizedModel.equals("default", ignoreCase = true)) " selected" else ""
             append("""<option value="default"$defSel>CLI 기본</option>""")
-            if (isCustomModel) append("""<option value="${esc(model)}" selected>${esc(model)}</option>""")
+            if (isCustomModel) append("""<option value="${esc(normalizedModel)}" selected>${esc(normalizedModel)}</option>""")
         }
-        val modelSelectorHtml = """
+        val modelSelectorHtml = if (embed) "" else """
     <form method="post" action="/projects/${esc(p.id)}/console/model" style="display:inline-flex;align-items:center;margin:0" id="model-form">
       ${CsrfTokens.hiddenInput(csrf)}
-      <select name="model" title="Claude 모델 — Sonnet 가 Opus 대비 토큰 사용량 약 1/5. 변경은 다음 prompt 부터 같은 대화에 적용."
+      <select name="model" title="${esc(agentProvider.displayName)} 모델 — 변경은 다음 prompt 부터 같은 대화에 적용."
               onchange="document.getElementById('model-form').submit()"
               style="font-size:12px;line-height:1.6;padding:4px 8px;height:30px;box-sizing:border-box;vertical-align:middle;background:#1a1a1a;color:var(--text);border:1px solid #333;border-radius:8px;cursor:pointer">
         $modelOptions
+      </select>
+    </form>"""
+        val providerOptions = availableAgentProviders.joinToString("") { provider ->
+            val selected = if (provider == agentProvider) " selected" else ""
+            """<option value="${esc(provider.id)}"$selected>${esc(provider.displayName)}</option>"""
+        }
+        val providerSelectorHtml = if (embed) "" else """
+    <form method="post" action="/projects/${esc(p.id)}/console/provider" style="display:inline-flex;align-items:center;margin:0" id="agent-provider-form">
+      ${CsrfTokens.hiddenInput(csrf)}
+      <select name="provider" title="AI provider — provider 별 세션과 설정은 서로 분리됩니다."
+              onchange="(function(f){if(window.parent!==window){fetch(f.action,{method:'POST',body:new FormData(f),credentials:'same-origin'}).then(function(){window.parent.location.href='/projects/${esc(p.id)}#console';});}else{f.submit();}})(document.getElementById('agent-provider-form'))"
+              style="font-size:12px;line-height:1.6;padding:4px 8px;height:30px;box-sizing:border-box;vertical-align:middle;background:#1a1a1a;color:var(--text);border:1px solid #333;border-radius:8px;cursor:pointer">
+        $providerOptions
       </select>
     </form>"""
         // v1.106.1 — 컨텍스트 점유율 그래픽 미터(프롬프트 히스토리 상단 상시). 직전 turn
@@ -1301,6 +1326,16 @@ $errHtml
                style="cursor:pointer;margin:0;flex:0 0 auto;width:13px;height:13px">MCP 최소화
       </label>
     </form>"""
+        val claudeOnlyToolsHtml = when (agentProvider) {
+            AgentProvider.CLAUDE -> listOf(modelSelectorHtml, mcpStrictHtml)
+                .filter { it.isNotBlank() }
+                .joinToString("\n    ")
+            AgentProvider.CODEX -> modelSelectorHtml.ifBlank {
+                """<span class="dim" style="font-size:11px;white-space:nowrap">provider settings isolated</span>"""
+            }
+            AgentProvider.OPENCODE ->
+                """<span class="dim" style="font-size:11px;white-space:nowrap">provider settings isolated</span>"""
+        }
         // Claude CLI 미설치 또는 인증 누락 시 큰 안내 카드 + 프롬프트 폼 비활성화.
         val cliMissing = claudeCli != null && claudeCli.status != CheckStatus.OK
         val authMissing = claudeAuth != null && claudeAuth.status == CheckStatus.ERROR
@@ -1781,7 +1816,7 @@ ${if (embed) "" else contextMeterHtml}
 $quickBarHtml
 
 <!-- v1.6.3 — 프롬프트 템플릿 + 관리 버튼 (한 줄). 입력창 바로 아래. -->
-<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px">
+<div class="console-template-row" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px">
   <select id="template-picker" style="flex:1;min-width:0;font-size:12px;padding:4px 8px;background:#1a1a1a;color:var(--text);border:1px solid #333">
     <option value="">${esc(t("console.template.placeholder"))}</option>
   </select>
@@ -1789,7 +1824,7 @@ $quickBarHtml
 </div>
 
 <!-- v1.6.3 — Agent dispatch + 관리 버튼 (한 줄). -->
-<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px">
+<div class="console-agent-row" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px">
   <select id="agent-picker" style="flex:1;min-width:0;font-size:12px;padding:4px 8px;background:#1a1a1a;color:var(--text);border:1px solid #333" title="Dispatch a registered sub-agent into the prompt">
     <option value="">${esc(t("console.agent.placeholder"))}</option>
   </select>
@@ -1806,8 +1841,8 @@ $quickBarHtml
   <div class="console-bottom-tools">
     <!-- v1.110.0 — 세션 표시 + 모델 셀렉터 + MCP 최소화(헤더에서 이동). 메시지 필터 버튼 좌측. -->
     <span class="dim" style="font-size:11px;white-space:nowrap">${esc(t("console.session"))} $statusBadge${if (sessionId != null) """ <span class="dim">${esc(sessionId.take(12))}…</span>""" else ""}</span>
-    $modelSelectorHtml
-    $mcpStrictHtml
+    $providerSelectorHtml
+    $claudeOnlyToolsHtml
     <button type="button" id="filter-open" class="chip chip-link"
             style="font-size:11px;padding:4px 11px;display:inline-flex;align-items:center;gap:5px"
             title="${esc(t("console.filter.title"))}">
@@ -1852,10 +1887,36 @@ $quickBarHtml
 <script>
 (function() {
   var projectId = $projectIdJs;
+  var currentProvider = ${jsLit(agentProvider.id)};
   var logEl = document.getElementById('console-log');
   var form = document.getElementById('prompt-form');
   var input = document.getElementById('prompt-input');
   var sendBtn = document.getElementById('send-btn');
+
+  document.body.classList.add('console-page');
+
+  // v1.145.0 — Android Chrome soft keyboard 대응. visualViewport 높이를 layout 높이로
+  // 반영하고, 입력 포커스 중에는 보조 컨트롤을 접어 콘솔+입력창이 실제 보이는 영역 안에
+  // 남도록 한다.
+  function syncVisualViewport() {
+    var vv = window.visualViewport;
+    var h = vv && vv.height ? vv.height : window.innerHeight;
+    if (h > 0) document.documentElement.style.setProperty('--app-viewport-height', Math.round(h) + 'px');
+  }
+  syncVisualViewport();
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', syncVisualViewport);
+    window.visualViewport.addEventListener('scroll', syncVisualViewport);
+  } else {
+    window.addEventListener('resize', syncVisualViewport);
+  }
+  function setKeyboardMode(active) {
+    document.body.classList.toggle('console-keyboard', !!active);
+    syncVisualViewport();
+    setTimeout(function () { if (shouldStick()) scrollToBottom(); }, 60);
+  }
+  input.addEventListener('focus', function () { setKeyboardMode(true); });
+  input.addEventListener('blur', function () { setKeyboardMode(false); });
 
   function escHtml(s) {
     return String(s == null ? '' : s)
@@ -2579,7 +2640,7 @@ $quickBarHtml
     var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     // v1.129.0 — since=lastSeq 로 ring replay 경계 지정. 첫 연결은 initialMaxSeq(=history 경계)
     // 라 ring 의 과거 프레임(history 와 중복)을 안 받고, 재연결은 마지막으로 본 seq 이후만 받는다.
-    ws = new WebSocket(proto + '//' + location.host + '/ws/projects/' + projectId + '/console/logs?since=' + lastSeq);
+    ws = new WebSocket(proto + '//' + location.host + '/ws/projects/' + projectId + '/console/logs?since=' + lastSeq + '&provider=' + encodeURIComponent(currentProvider));
 
     ws.onopen = function() {
       // 인증은 WS handshake 의 cookie 헤더로 처리 (vibe_session 은 httpOnly).
@@ -2726,6 +2787,7 @@ $quickBarHtml
     // 은 부모가 자기 자신이라 무해. 그 후 인라인 미터(비임베드)도 갱신.
     try {
       window.parent.postMessage({ type: 'vibe:context-usage',
+        provider: currentProvider,
         input: Number(input) || 0, cacheRead: Number(cacheRead) || 0,
         cacheCreation: Number(cacheCreation) || 0, limit: Number(limit) || 0 }, location.origin);
     } catch (e) {}
@@ -3010,6 +3072,8 @@ $quickBarHtml
 
   async function sendPrompt(text) {
     var imgs = pendingImages.slice();
+    append('user', 'user', text, 'assistant', echoOpts(imgs));
+    scrollToBottom();
     sendBtn.disabled = true;
     setInFlight(true);
     try {
@@ -3024,7 +3088,6 @@ $quickBarHtml
         append('err', 'send', res.status + ' ' + msg, 'error');
         setInFlight(false);
       } else {
-        append('user', 'user', text, 'assistant', echoOpts(imgs));
         input.value = '';
         clearPendingImages();
         // v1.20.0 — prompt 전송 직후엔 토글 모드 무관 항상 최하단으로 jump.
@@ -4397,4 +4460,3 @@ $bodyHtml
     /** highlight.js 적용 최대 길이 — 그 이상이면 적용 skip (브라우저 freeze 방지). */
     private const val MAX_HL_CHARS = 200_000
 }
-

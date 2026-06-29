@@ -85,3 +85,35 @@ data class ClaudeStatusDto(
     /** v1.0.1 — 주간 quota reset 시각 (free-form, 예: "in 3d 5h"). */
     val weeklyResetAt: String? = null,
 )
+
+/**
+ * Snapshot of Codex CLI usage/status captured from the interactive TUI slash commands.
+ *
+ * Codex documents `/status` for session configuration/token usage and `/usage` for
+ * account token usage/rate-limit reset details. Both are TUI slash commands, so the
+ * server captures them best-effort through a PTY helper and exposes the parsed fields
+ * separately from Claude.
+ */
+@Serializable
+data class CodexUsageDto(
+    /**
+     * Legacy single usage percent. When 5h usage is available, this mirrors
+     * [sessionUsagePercent] so older clients can still render one gauge.
+     */
+    val usagePercent: Int? = null,
+    val contextUsagePercent: Int? = null,
+    val rateLimitResetAt: String? = null,
+    val usageSummary: String? = null,
+    val loginStatus: String? = null,
+    val updatedAt: String,
+    val available: Boolean = false,
+    val raw: String? = null,
+    /** 5-hour Codex limit usage percent. Codex reports "% left", server stores used %. */
+    val sessionUsagePercent: Int? = null,
+    /** Weekly Codex limit usage percent. Codex reports "% left", server stores used %. */
+    val weeklyUsagePercent: Int? = null,
+    /** Free-form 5-hour reset time from `/status`, for example "14:51". */
+    val sessionResetAt: String? = null,
+    /** Free-form weekly reset time from `/status`, for example "11:03 on 30 Jun". */
+    val weeklyResetAt: String? = null,
+)
