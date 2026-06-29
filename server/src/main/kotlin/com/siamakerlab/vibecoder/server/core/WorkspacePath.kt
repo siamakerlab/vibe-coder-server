@@ -10,6 +10,7 @@ import kotlin.io.path.createDirectories
  *   <root>/
  *     <projectId>/                ← user's Android project root (gradlew, settings, app/, ...)
  *     <projectId>/CLAUDE.md       ← auto-written if missing
+ *     <projectId>/AGENTS.md       ← symlink to CLAUDE.md when present
  *     .vibecoder/
  *       <projectId>/
  *         project.yml             ← registration metadata

@@ -2,6 +2,8 @@ package com.siamakerlab.vibecoder.server.ws
 
 import com.siamakerlab.vibecoder.server.actions.ProjectActionRegistry
 import com.siamakerlab.vibecoder.server.actions.ServerActionHandler
+import com.siamakerlab.vibecoder.server.agent.AgentProvider
+import com.siamakerlab.vibecoder.server.agent.AgentRouter
 import com.siamakerlab.vibecoder.server.auth.SESSION_COOKIE
 import com.siamakerlab.vibecoder.server.auth.TokenService
 import com.siamakerlab.vibecoder.server.projects.ProjectService
@@ -55,6 +57,7 @@ fun Routing.wsRoutes(
     userRepo: AdminUserRepository,
     /** v0.51.0 — Project ACL check on console + sub-agent WebSocket handshake. */
     projects: ProjectService,
+    agentRouter: AgentRouter? = null,
 ) {
     // v1.31.1 (A-Q2) — WS path 를 ApiPath SSOT 상수로 (Android client wire drift 방어).
     webSocket(ApiPath.wsBuildLogs("{projectId}", "{buildId}")) {
@@ -75,9 +78,10 @@ fun Routing.wsRoutes(
         val projectId = call.parameters["projectId"]
             ?: return@webSocket close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "missing projectId"))
         val since = call.request.queryParameters["since"]?.toLongOrNull() ?: 0L
+        val provider = AgentProvider.parse(call.request.queryParameters["provider"]) ?: AgentProvider.CLAUDE
         handleConsoleStream(
             hub, deviceRepo, tokens, sessionManager,
-            actionRegistry, actionHandler, projectId, since, userRepo, projects,
+            actionRegistry, actionHandler, projectId, since, provider, userRepo, projects, agentRouter,
         )
     }
     // v1.3.0 — cross-project busy state push (workspaces 목록 / 대시보드 실시간 동기).
@@ -232,15 +236,17 @@ private suspend fun WebSocketServerSession.handleConsoleStream(
     actionHandler: ServerActionHandler,
     projectId: String,
     since: Long,
+    provider: AgentProvider,
     userRepo: AdminUserRepository,
     projects: ProjectService,
+    agentRouter: AgentRouter?,
 ) {
     if (!authenticateFirstFrame(deviceRepo, tokens)) return
 
     // v1.45.0 — 단일 admin 화: role 조회 / viewer 게이트 / Project ACL 검사 제거.
     // 인증(authenticateFirstFrame)만으로 충분 — 모든 프로젝트 접근 + write 허용.
 
-    val topic = LogHub.consoleTopic(projectId)
+    val topic = LogHub.consoleTopic(projectId, provider.id)
     val view = hub.subscribeConsole(topic, since)
 
     // Replay slice (if any). When since=0 (first connection ever) we still replay whatever's in
@@ -274,7 +280,12 @@ private suspend fun WebSocketServerSession.handleConsoleStream(
     // SSOT 를 직접 읽어 정확했던 것과의 불일치. busyStateOrNull 을 권위로 1회 내려보내 ring
     // window 와 무관하게 정확한 turn 상태로 수렴시킨다. null(부팅 직후 turn 이력 없음)이면
     // 클라이언트 기본값 ready 유지. seq=0L — 클라이언트는 busy_state 처리에 seq 를 쓰지 않는다.
-    sessionManager.busyStateOrNull(projectId)?.let { st ->
+    val busyState = if (provider == AgentProvider.CLAUDE) {
+        sessionManager.busyStateOrNull(projectId)
+    } else {
+        agentRouter?.managerFor(provider)?.takeIf { it.isBusy(projectId) }?.let { com.siamakerlab.vibecoder.shared.dto.ProjectState.RESPONDING }
+    }
+    busyState?.let { st ->
         runCatching { sendFrame(WsFrame.ConsoleBusyState(busy = st.busy, seq = 0L, state = st.wire)) }
     }
 
@@ -289,7 +300,11 @@ private suspend fun WebSocketServerSession.handleConsoleStream(
                     .getOrNull() ?: continue
                 when (parsed) {
                     is WsFrame.UserPrompt -> {
-                        runCatching { sessionManager.sendPrompt(projectId, parsed.text) }
+                        runCatching {
+                            if (provider == AgentProvider.CLAUDE) sessionManager.sendPrompt(projectId, parsed.text)
+                            else agentRouter?.managerFor(provider)?.sendPrompt(projectId, parsed.text)
+                                ?: sessionManager.sendPrompt(projectId, parsed.text)
+                        }
                             .onFailure { log.warn(it) { "[$projectId] ws prompt failed" } }
                     }
                     is WsFrame.ActionInvoke -> {

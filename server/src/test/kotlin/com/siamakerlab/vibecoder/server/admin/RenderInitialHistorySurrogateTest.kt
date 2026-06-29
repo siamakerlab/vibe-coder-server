@@ -67,8 +67,9 @@ class RenderInitialHistorySurrogateTest {
         hasLoneSurrogate(json) shouldBe false
         // 엄격 인코딩이 예외 없이 통과해야 한다 (respondText 와 동일 조건).
         encodeStrictUtf8(json).isNotEmpty() shouldBe true
-        // 한 칸 당겨 잘랐으므로 절단 마커는 +1002 (5001 - 3999).
-        json shouldContain "(+1002)"
+        // v1.144.0 이후 inline history 는 절단하지 않고 전문을 싣는다.
+        json.contains("(+") shouldBe false
+        json shouldContain "bbbb"
     }
 
     @Test
@@ -76,6 +77,7 @@ class RenderInitialHistorySurrogateTest {
         val content = "a".repeat(5000)
         val json = WebProjectTemplates.renderInitialHistoryJson(listOf(row(content)))
         hasLoneSurrogate(json) shouldBe false
-        json shouldContain "(+1000)"
+        json.contains("(+") shouldBe false
+        json shouldContain "a".repeat(5000)
     }
 }

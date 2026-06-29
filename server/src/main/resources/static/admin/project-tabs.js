@@ -33,6 +33,19 @@
     const validTabs = panes.map(p => p.dataset.tab);
     const buttons = Array.from(root.querySelectorAll('[data-tab-btn]'));
 
+    function syncVisualViewport() {
+      var vv = window.visualViewport;
+      var h = vv && vv.height ? vv.height : window.innerHeight;
+      if (h > 0) document.documentElement.style.setProperty('--app-viewport-height', Math.round(h) + 'px');
+    }
+    syncVisualViewport();
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', syncVisualViewport);
+      window.visualViewport.addEventListener('scroll', syncVisualViewport);
+    } else {
+      window.addEventListener('resize', syncVisualViewport);
+    }
+
     function frameOf(tab) {
       const pane = panes.find(p => p.dataset.tab === tab);
       return pane ? pane.querySelector('iframe.tab-frame') : null;
@@ -65,7 +78,7 @@
         doc.querySelectorAll('.content').forEach(function (c) {
           c.style.justifySelf = 'start';      // was center → left-align
           c.style.maxWidth = 'none';
-          c.style.paddingRight = (w > 0 ? (w + 24) : 32) + 'px';
+          c.style.paddingRight = (w > 0 ? (w + 24) : 16) + 'px';
         });
       } catch (e) { /* same-origin SSR → unreachable */ }
     }
@@ -329,6 +342,8 @@
         var empty = document.getElementById('pt-ctx-empty');
         var input = Number(d.input) || 0, cacheRead = Number(d.cacheRead) || 0,
             cacheCreation = Number(d.cacheCreation) || 0, limit = Number(d.limit) || 0;
+        var providerEl = document.getElementById('pt-ctx-provider');
+        if (providerEl) providerEl.textContent = d.provider ? '· ' + String(d.provider) : '';
         var used = input + cacheRead + cacheCreation;
         if (limit <= 0 || used <= 0) { el.hidden = true; if (empty) empty.hidden = false; return; }
         el.hidden = false; if (empty) empty.hidden = true;

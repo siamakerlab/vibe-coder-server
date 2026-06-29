@@ -1,6 +1,11 @@
 package com.siamakerlab.vibecoder.server
 
 import com.siamakerlab.vibecoder.server.actions.CapabilityService
+import com.siamakerlab.vibecoder.server.agent.AgentRouter
+import com.siamakerlab.vibecoder.server.agent.ProjectAgentPreferenceStore
+import com.siamakerlab.vibecoder.server.agent.claude.ClaudeAgentSessionManager
+import com.siamakerlab.vibecoder.server.agent.codex.CodexSessionManager
+import com.siamakerlab.vibecoder.server.agent.opencode.OpenCodeSessionManager
 import com.siamakerlab.vibecoder.server.actions.ProjectActionRegistry
 import com.siamakerlab.vibecoder.server.actions.ServerActionHandler
 import com.siamakerlab.vibecoder.server.artifacts.ArtifactService
@@ -200,9 +205,24 @@ fun main(args: Array<String>) {
     }
     // v1.135.0 — 상주 세션 상한은 매 집행 시 ConfigHolder 를 읽어 /settings 저장 즉시 반영.
     val residentCap = { com.siamakerlab.vibecoder.server.config.ConfigHolder.current.claude.maxResidentSessions }
+    val codexResidentCap = { com.siamakerlab.vibecoder.server.config.ConfigHolder.current.codex.maxResidentSessions }
     val sessionManager = ClaudeSessionManager(
         config, workspace, hub, history = conversationHistory, gate = claudeGate,
         residentCapProvider = residentCap,
+    )
+    val codexUsageRecorder = com.siamakerlab.vibecoder.server.agent.codex.CodexUsageRecorder()
+    val codexSessionManager = CodexSessionManager(
+        config, workspace, hub, history = conversationHistory, usageRecorder = codexUsageRecorder,
+        residentCapProvider = codexResidentCap,
+    )
+    val agentProviderStore = ProjectAgentPreferenceStore(workspace)
+    val agentRouter = AgentRouter(
+        store = agentProviderStore,
+        managers = listOf(
+            ClaudeAgentSessionManager(sessionManager),
+            codexSessionManager,
+            OpenCodeSessionManager(hub),
+        ),
     )
     // v1.1.0 — ProjectDto.busy 필드를 위해 sessionManager 를 lambda 로 주입.
     // 구성 순서: sessionManager 가 먼저 생성되어야 lambda 가 안전하게 호출 가능.
@@ -296,6 +316,16 @@ fun main(args: Array<String>) {
         activeProjectsProvider = { projectRepo.list().map { it.id } },
     )
     claudeUsageMonitor.start()
+    val codexStatusService = com.siamakerlab.vibecoder.server.agent.codex.CodexStatusService(
+        config = config,
+        workspace = workspace,
+        usageRecorder = codexUsageRecorder,
+    )
+    val codexUsageMonitor = com.siamakerlab.vibecoder.server.agent.codex.CodexUsageMonitor(
+        statusService = codexStatusService,
+        intervalProvider = { java.time.Duration.ofMinutes(config.claude.usage.pollIntervalMinutes.toLong().coerceAtLeast(1)) },
+    )
+    codexUsageMonitor.start()
     // v1.7.9 — 컨테이너 구동 중 토큰 자동 갱신. workspace.root 를 cwd 로 사용해
     // SCRATCH 디렉토리 유무와 무관하게 동작 보장.
     val claudeTokenRefresher = com.siamakerlab.vibecoder.server.claude.ClaudeTokenRefresher(
@@ -530,6 +560,7 @@ fun main(args: Array<String>) {
         hub = hub,
         projects = projects,
         sessionManager = sessionManager,
+        agentRouter = agentRouter,
         gradle = gradle,
         artifacts = artifacts,
         build = build,
@@ -556,6 +587,8 @@ fun main(args: Array<String>) {
         capabilityService = capabilityService,
         claudeStatusService = claudeStatusService,
         claudeUsageMonitor = claudeUsageMonitor,
+        codexStatusService = codexStatusService,
+        codexUsageMonitor = codexUsageMonitor,
         playPublishService = playPublishService,
         testFlightPublishService = testFlightPublishService,
         apkSignerInspector = apkSignerInspector,
@@ -611,9 +644,11 @@ fun main(args: Array<String>) {
         // raw runBlocking 이라, 예외 시 hook thread 가 중단돼 이후 terminal/queue/hub cleanup 이
         // 전부 누락(PTY/프로세스/코루틴 누수)될 수 있었음.
         runCatching { kotlinx.coroutines.runBlocking { sessionManager.shutdown() } }
+        runCatching { codexSessionManager.shutdown() }
         runCatching { kotlinx.coroutines.runBlocking { subAgentManager.shutdown() } }
         runCatching { kotlinx.coroutines.runBlocking { emulatorService.shutdown() } }
         runCatching { claudeUsageMonitor.shutdown() }
+        runCatching { codexUsageMonitor.shutdown() }
         runCatching { diskMonitor.shutdown() }
         runCatching { kotlinLspService.shutdown() }
         runCatching { buildScheduler.shutdown() }

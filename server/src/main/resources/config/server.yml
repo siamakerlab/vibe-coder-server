@@ -2,7 +2,7 @@ server:
   name: Vibe Coder Server
   host: 0.0.0.0
   port: 17880
-  version: 1.145.0
+  version: 1.145.13
 
 workspace:
   # Each project lives at <root>/<projectId>/.
@@ -106,6 +106,14 @@ claude:
     warnThresholdPercent: 80
     criticalThresholdPercent: 95
     scratchOnly: true
+
+codex:
+  # 프로젝트별 모델 미설정 시 Codex CLI 기본 모델 사용. "default" = --model 미전달.
+  # 프로젝트별 선택값은 .vibecoder/codex-model 에 저장된다.
+  model: default
+  # Codex provider 전용 상주 세션 상한. Claude 상한과 독립적으로 /settings 에서 조정.
+  # Codex exec 는 turn 단위 프로세스라 보통 turn 종료 후 비워진다. 0 이하 = 비활성.
+  maxResidentSessions: 3
 
 build:
   timeoutMinutes: 30

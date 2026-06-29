@@ -1,6 +1,7 @@
 package com.siamakerlab.vibecoder.server
 
 import com.siamakerlab.vibecoder.server.actions.CapabilityService
+import com.siamakerlab.vibecoder.server.agent.AgentRouter
 import com.siamakerlab.vibecoder.server.actions.ProjectActionRegistry
 import com.siamakerlab.vibecoder.server.actions.ServerActionHandler
 import com.siamakerlab.vibecoder.server.actions.projectActionRoutes
@@ -30,6 +31,7 @@ import com.siamakerlab.vibecoder.server.admin.corsSettingsRoutes
 import com.siamakerlab.vibecoder.server.admin.SshKeyService
 import com.siamakerlab.vibecoder.server.admin.sshKeyRoutes
 import com.siamakerlab.vibecoder.server.admin.quotaRoutes
+import com.siamakerlab.vibecoder.server.admin.codexQuotaRoutes
 import com.siamakerlab.vibecoder.server.admin.keystoreRoutes
 import com.siamakerlab.vibecoder.server.admin.KeystoreService
 import com.siamakerlab.vibecoder.server.terminal.terminalRoutes
@@ -152,6 +154,7 @@ data class ServerContext(
     val hub: LogHub,
     val projects: ProjectService,
     val sessionManager: ClaudeSessionManager,
+    val agentRouter: AgentRouter,
     val gradle: GradleBuilder,
     val artifacts: ArtifactService,
     val build: BuildService,
@@ -180,6 +183,8 @@ data class ServerContext(
     val claudeStatusService: ClaudeStatusService,
     /** v0.21.0 — 백그라운드 사용량 폴링 + 임계치 알림. */
     val claudeUsageMonitor: com.siamakerlab.vibecoder.server.claude.ClaudeUsageMonitor,
+    val codexStatusService: com.siamakerlab.vibecoder.server.agent.codex.CodexStatusService,
+    val codexUsageMonitor: com.siamakerlab.vibecoder.server.agent.codex.CodexUsageMonitor,
     /** v0.22.0 — Play Console 업로드 트리거 (MCP google-play-publisher 위임). */
     val playPublishService: com.siamakerlab.vibecoder.server.publish.PlayPublishService,
     /** v0.23.0 — TestFlight 업로드 트리거 (MCP app-store-connect 위임). */
@@ -393,6 +398,7 @@ fun Application.module(ctx: ServerContext) {
             envDiagnostics = ctx.env,
             audit = ctx.auditLogger,
             claudeUsageMonitor = ctx.claudeUsageMonitor,
+            codexUsageMonitor = ctx.codexUsageMonitor,
             diskMonitor = ctx.diskMonitor,
             webauthnService = ctx.webauthnService,
             gitConfig = ctx.gitConfig,
@@ -416,6 +422,7 @@ fun Application.module(ctx: ServerContext) {
         sshKeyRoutes(adminDeps, SshKeyService())
         // v1.3.2 — 전역 (계정 단위) Claude 쿼타 — 사이드바 / Android 헤더용.
         quotaRoutes(ctx.claudeStatusService)
+        codexQuotaRoutes(ctx.codexStatusService)
         // v1.74.0 — 홈 대시보드 "서버 상태" 카드(CPU/RAM/프로세스). 무상태 서비스라 직접 생성.
         systemStatsRoutes(com.siamakerlab.vibecoder.server.metrics.SystemStatsService())
         // v1.5.0 — Android 키스토어 관리 (설정 → Keystores).
@@ -471,12 +478,13 @@ fun Application.module(ctx: ServerContext) {
             keystoreService = ctx.keystoreService,
             subAgentManager = ctx.subAgentManager,
             promptAutomationManager = ctx.promptAutomationManager,
+            agentRouter = ctx.agentRouter,
         )
         // v0.28.0 — /settings/cache 라우트.
         buildCacheRoutes(adminDeps, ctx.buildCacheService)
         envRoutes(ctx.status, ctx.env)
         projectRoutes(ctx.projects)
-        consoleRoutes(ctx.projects, ctx.sessionManager, ctx.hub, ctx.claudeStatusService, ctx.env, ctx.auditLogger, ctx.promptSuggestionService)
+        consoleRoutes(ctx.projects, ctx.sessionManager, ctx.hub, ctx.claudeStatusService, ctx.env, ctx.auditLogger, ctx.promptSuggestionService, ctx.agentRouter)
         projectActionRoutes(ctx.projects, ctx.actionRegistry, ctx.actionHandler, ctx.capabilityService)
         buildRoutes(ctx.build, ctx.hub, ctx.projects, ctx.playPublishService)
         artifactRoutes(ctx.artifactRepo, ctx.workspace, ctx.artifacts, ctx.apkVerifier, ctx.projects)
@@ -582,7 +590,7 @@ fun Application.module(ctx: ServerContext) {
         // v0.55.0 — Phase 34 Prometheus /metrics endpoint.
         metricsRoutes(adminDeps, ctx.metrics)
         wsRoutes(ctx.hub, ctx.deviceRepo, ctx.tokens, ctx.sessionManager,
-            ctx.actionRegistry, ctx.actionHandler, ctx.subAgentManager, ctx.adminUserRepo, ctx.projects)
+            ctx.actionRegistry, ctx.actionHandler, ctx.subAgentManager, ctx.adminUserRepo, ctx.projects, ctx.agentRouter)
     }
 }
 

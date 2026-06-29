@@ -1,9 +1,9 @@
 # vibe-coder-server Container Global Rules
 
-This file is mounted as `/home/vibe/.claude/CLAUDE.md` inside the container and applies globally to every Claude Code session that runs there. The host path is `./vibe-coder-data/claude/CLAUDE.md`.
+This file is mounted as `/home/vibe/.claude/CLAUDE.md` inside the container and applies globally to Claude Code, Codex, and other AI coding sessions that run there. Codex reads the same content through the `/home/vibe/.config/codex/AGENTS.md` symlink. The host path is `./vibe-coder-data/claude/CLAUDE.md`.
 
 > This is the default template auto-seeded on first server start. Feel free to edit it;
-> once it exists the server never overwrites it. (Global CLAUDE.md tab: `/settings/claude-md`)
+> once it exists the server never overwrites it. (Global AI instructions tab: `/settings/claude-md`)
 > Switching the UI language between English/Korean re-seeds this file in that language
 > **only while it is still the unmodified seed** — your own edits are always preserved.
 
@@ -33,15 +33,15 @@ This file is mounted as `/home/vibe/.claude/CLAUDE.md` inside the container and 
 
 **Never skip this sequence.** (The single most important rule.)
 
-## 3. Versioning (delegated to Claude Code)
+## 3. Versioning (delegated to the AI coding agent)
 
-Versioning is **fully automated by Claude Code**. The user does not bump versions manually;
-**on every code change** Claude Code updates the version per the rules below. Apply the update to
+Versioning is **fully automated by Claude Code, Codex, and other AI coding agents**. The user does not bump versions manually;
+**on every code change** the active AI coding agent updates the version per the rules below. Apply the update to
 `versionName`/`versionCode` in `app/build.gradle(.kts)` and include it in the same commit.
 
 ### 3.1 versionName = `major.minor.patch` (SemVer)
 
-Claude Code decides the level by change type:
+The AI coding agent decides the level by change type:
 
 - **MAJOR**: breaking change (public API removal/signature change, incompatible data schema, destructive workflow change, first 0.x→1.0.0 production).
 - **MINOR**: backward-compatible new feature/screen/setting, a meaningful UX revamp.
@@ -202,7 +202,7 @@ PATH=/home/vibe/.local/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/androi
 
 ## 10. Documentation (must update on change)
 
-- On any code/behavior change, **update immediately**: `CHANGELOG.md`, `README.md`, `CLAUDE.md`.
+- On any code/behavior change, **update immediately**: `CHANGELOG.md`, `README.md`, AI instruction files (`CLAUDE.md` / `AGENTS.md`).
 - **Remove legacy docs immediately** — never leave outdated descriptions/examples behind.
 
 ## 11. Never do

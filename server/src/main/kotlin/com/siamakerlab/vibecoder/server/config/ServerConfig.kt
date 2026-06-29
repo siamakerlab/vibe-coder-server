@@ -8,6 +8,7 @@ data class ServerConfig(
     val workspace: WorkspaceSection,
     val security: SecuritySection,
     val claude: ClaudeSection,
+    val codex: CodexSection = CodexSection(),
     val build: BuildSection,
     val git: GitSection,
     val cors: CorsSection = CorsSection(),
@@ -267,6 +268,21 @@ data class ClaudeSection(
     val sessionTurnCap: Int = 0,
     /** v0.21.0 — usage 모니터링 정책. */
     val usage: ClaudeUsageSection = ClaudeUsageSection(),
+)
+
+@Serializable
+data class CodexSection(
+    /**
+     * 프로젝트별 모델 미설정 시의 전역 기본. "default" 면 Codex CLI 기본 모델을 사용해
+     * `--model` 을 전달하지 않는다. 프로젝트별 선택값은 `.vibecoder/codex-model` 에 저장된다.
+     */
+    val model: String = "default",
+    /**
+     * Codex provider 전용 상주 세션 상한. Codex exec 는 turn 단위 프로세스라 보통 turn 종료와
+     * 함께 비워지지만, provider별 설정을 분리해 Claude 상한과 독립적으로 조정할 수 있게 둔다.
+     * 0 이하면 비활성. `/settings` 저장 시 즉시 반영.
+     */
+    val maxResidentSessions: Int = 3,
 )
 
 /**

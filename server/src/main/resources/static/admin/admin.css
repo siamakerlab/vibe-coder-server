@@ -44,6 +44,7 @@ a:hover { color: var(--primary-hover); text-decoration: underline; }
        컨텐츠가 각자 자체 영역에서 스크롤. */
     height: 100vh;
     height: 100dvh;
+    height: var(--app-viewport-height, 100dvh);
     overflow: hidden;
     transition: grid-template-columns 0.18s ease;
 }
@@ -691,6 +692,18 @@ table.devices small.dim { font-size: 11px; }
     margin-bottom: 2px;
 }
 
+body.console-page .content {
+    display: flex;
+    flex-direction: column;
+}
+
+body.console-page .console-log-wrap {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
 .console-log {
     background: #0a0d12;
     border: 1px solid var(--border);
@@ -708,6 +721,12 @@ table.devices small.dim { font-size: 11px; }
     /* v1.6.4 — 명시 scrollbar. firefox + chromium. */
     scrollbar-width: thin;
     scrollbar-color: #3b3b3b transparent;
+}
+
+body.console-page .console-log {
+    flex: 1 1 auto;
+    min-height: 180px;
+    max-height: none;
 }
 .console-log::-webkit-scrollbar { width: 10px; }
 .console-log::-webkit-scrollbar-track { background: transparent; }
@@ -1000,6 +1019,27 @@ table.devices small.dim { font-size: 11px; }
     resize: vertical;
 }
 .prompt-form textarea:focus { outline: none; border-color: var(--primary); }
+
+@media (max-height: 760px), (max-width: 900px) {
+    body.console-keyboard .content {
+        padding-top: 8px;
+        padding-bottom: 8px;
+    }
+    body.console-keyboard .console-log {
+        min-height: 96px;
+    }
+    body.console-keyboard .prompt-form textarea {
+        min-height: 68px;
+        max-height: 112px;
+        resize: none;
+    }
+    body.console-keyboard #quick-prompts,
+    body.console-keyboard .console-template-row,
+    body.console-keyboard .console-agent-row,
+    body.console-keyboard .console-bottom-bar {
+        display: none !important;
+    }
+}
 
 /* ── Chip 버튼 (콘솔 액션, 페이지간 이동) ────────────────────────── */
 

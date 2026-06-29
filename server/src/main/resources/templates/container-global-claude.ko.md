@@ -1,9 +1,9 @@
 # vibe-coder-server 컨테이너 글로벌 규칙
 
-이 파일은 컨테이너 안의 `/home/vibe/.claude/CLAUDE.md` 로 마운트되어, 컨테이너에서 실행되는 모든 Claude Code 세션에 글로벌로 적용된다. 호스트 경로는 `./vibe-coder-data/claude/CLAUDE.md`.
+이 파일은 컨테이너 안의 `/home/vibe/.claude/CLAUDE.md` 로 마운트되어, 컨테이너에서 실행되는 Claude Code 및 Codex 등 AI 코딩 세션에 글로벌로 적용된다. Codex 는 `/home/vibe/.config/codex/AGENTS.md` symlink 를 통해 같은 내용을 읽는다. 호스트 경로는 `./vibe-coder-data/claude/CLAUDE.md`.
 
 > 이 파일은 서버 최초 기동 시 자동 시드된 기본 템플릿이다. 자유롭게 수정해도 되며,
-> 한 번 존재하면 서버가 다시 덮어쓰지 않는다. (전역 CLAUDE.md 탭: `/settings/claude-md`)
+> 한 번 존재하면 서버가 다시 덮어쓰지 않는다. (전역 AI 지침 탭: `/settings/claude-md`)
 > 설정의 언어를 한국어/English 로 바꾸면, **미편집 시드 상태일 때만** 해당 언어 템플릿으로
 > 자동 교체된다(직접 편집한 내용은 보존).
 
@@ -32,15 +32,15 @@
 
 이 순서를 **절대 생략하지 않는다.** (가장 중요한 규칙.)
 
-## 3. 버전 관리 (Claude Code 에 일임)
+## 3. 버전 관리 (AI 코딩 에이전트에 일임)
 
-버전 관리는 **전적으로 Claude Code 가 자동 수행**한다. 사용자가 수동으로 버전을 올리지 않으며,
-**코드를 수정할 때마다** Claude Code 가 아래 규칙으로 버전을 갱신한다. 갱신은
+버전 관리는 **전적으로 Claude Code 및 Codex 등 AI 코딩 에이전트가 자동 수행**한다. 사용자가 수동으로 버전을 올리지 않으며,
+**코드를 수정할 때마다** 현재 작업 중인 AI 코딩 에이전트가 아래 규칙으로 버전을 갱신한다. 갱신은
 `app/build.gradle(.kts)` 의 `versionName`/`versionCode` 에 반영하고 같은 커밋에 포함한다.
 
 ### 3.1 versionName = `메이저.마이너.패치` (SemVer)
 
-변경 내용에 따라 Claude Code 가 자율 결정:
+변경 내용에 따라 AI 코딩 에이전트가 자율 결정:
 
 - **MAJOR**: Breaking change (공개 API 제거/시그니처 변경, 데이터 스키마 비호환, 파괴적 워크플로 변경, 0.x→1.0.0 최초 프로덕션).
 - **MINOR**: 하위호환 신규 기능/화면/설정 추가, 수준 있는 UX 개편.
@@ -200,7 +200,7 @@ PATH=/home/vibe/.local/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/androi
 
 ## 10. 문서 (변경 시 필수 업데이트)
 
-- 코드/동작 변경 시 다음을 **즉시 갱신**: `CHANGELOG.md`, `README.md`, `CLAUDE.md`.
+- 코드/동작 변경 시 다음을 **즉시 갱신**: `CHANGELOG.md`, `README.md`, AI 지침 파일(`CLAUDE.md` / `AGENTS.md`).
 - **레거시 문서는 즉시 제거** — 더 이상 맞지 않는 설명/예시를 방치하지 않는다.
 
 ## 11. 절대 금지

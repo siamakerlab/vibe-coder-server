@@ -2,6 +2,8 @@ package com.siamakerlab.vibecoder.server.admin
 
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens.requireCsrf
+import com.siamakerlab.vibecoder.server.agent.AgentProvider
+import com.siamakerlab.vibecoder.server.agent.AgentRouter
 import com.siamakerlab.vibecoder.server.build.BuildService
 import com.siamakerlab.vibecoder.server.claude.ClaudeSessionManager
 import com.siamakerlab.vibecoder.server.core.WorkspacePath
@@ -142,6 +144,7 @@ fun Routing.webProjectRoutes(
     subAgentManager: com.siamakerlab.vibecoder.server.claude.SubAgentSessionManager,
     /** v1.71.0 (정밀점검 H4) — 폴더/패키지 변경 시 자동화 진행 여부 가드. */
     promptAutomationManager: com.siamakerlab.vibecoder.server.automation.PromptAutomationManager,
+    agentRouter: AgentRouter? = null,
 ) {
 
     // ── 목록 + 등록 폼 ────────────────────────────────────────────────
@@ -337,13 +340,20 @@ fun Routing.webProjectRoutes(
         }
         // v1.137.2 — 콤보박스 "최근 활동순" 2차 정렬용 (영속 — 재시작 후에도 순서 유지).
         val lastActivityTs = runCatching { conversationRepo.lastTsByProject() }.getOrDefault(emptyMap())
+        val agentProvider = agentRouter?.providerFor(id) ?: AgentProvider.CLAUDE
+        val availableAgentProviders = agentRouter?.availableProviders() ?: listOf(AgentProvider.CLAUDE)
+        val selectedModel = if (agentRouter != null) {
+            agentRouter.readProjectModel(id) ?: agentRouter.effectiveModel(id) ?: "default"
+        } else {
+            sessionManager.readProjectModel(id) ?: sessionManager.effectiveModel(id)
+        }
         // v1.50.0 — 우측 overview rail 데이터.
         // v1.108.4 — keystore/admob 준비 상태를 한 번의 get() 으로 함께 계산(개요카드 행).
         val ksEntry = runCatching { keystoreService.get(p.packageName) }.getOrNull()
         val keystoreReady = ksEntry != null
         val admobReady = ksEntry?.admobExists == true
         val usage = runCatching { conversationRepo.usageSummary(id) }.getOrNull()
-        val promptFilter = ConversationTurnRepository.Filter(projectId = id, role = "user")
+        val promptFilter = ConversationTurnRepository.Filter(projectId = id, provider = agentProvider.id, role = "user")
         val promptCount = runCatching { conversationRepo.count(promptFilter) }.getOrDefault(0L)
         // v1.134.0 — rail 프롬프트 히스토리: 최근 7개 → 전체(스크롤 목록). 페이지 비대 방지
         // 안전 상한 1000(repo list 상한과 동일) — 사실상 전체.
@@ -359,6 +369,9 @@ fun Routing.webProjectRoutes(
                 allProjects = allProjects,
                 projectStatuses = projectStatuses,
                 lastActivityTs = lastActivityTs,
+                agentProvider = agentProvider,
+                availableAgentProviders = availableAgentProviders,
+                model = selectedModel,
                 keystoreReady = keystoreReady,
                 admobReady = admobReady,
                 tokensTotal = (usage?.let { it.inputTokens + it.outputTokens }) ?: 0L,
@@ -508,9 +521,19 @@ fun Routing.webProjectRoutes(
             call.respondRedirect("/projects?err=${Messages.t(sess.language, "flash.project.notFound", id).encodeUrl()}")
             return@get
         }
-        val alive = sessionManager.isAlive(id)
-        val sid = sessionManager.currentSessionId(id)
-        val ctxSnap = sessionManager.contextSnapshot(id)  // v1.106.1 — 컨텍스트 미터 초기값
+        val agentProvider = agentRouter?.providerFor(id) ?: AgentProvider.CLAUDE
+        val alive = agentRouter?.isAlive(id) ?: sessionManager.isAlive(id)
+        val sid = agentRouter?.currentSessionId(id) ?: sessionManager.currentSessionId(id)
+        val availableAgentProviders = agentRouter?.availableProviders() ?: listOf(AgentProvider.CLAUDE)
+        val ctxSnap = agentRouter?.contextSnapshot(id)
+            ?: sessionManager.contextSnapshot(id).let {
+                com.siamakerlab.vibecoder.server.agent.AgentContextSnapshot(
+                    input = it.input,
+                    cacheRead = it.cacheRead,
+                    cacheCreation = it.cacheCreation,
+                    limit = it.limit,
+                )
+            }
         // v0.18.0 — 등록 직후 첫 console 진입이면 starter prompt 를 자동 입력 (소비).
         val starterPrompt = projects.consumeStarterPrompt(id)
         // Claude CLI 인증 상태 진단. CLI 자체와 자격증명 파일 둘 다 검사.
@@ -525,11 +548,11 @@ fun Routing.webProjectRoutes(
         // 붙여, 현재 작업 중 프롬프트의 상단 고정(.cur sticky)을 30개 밖이어도 유지한다.
         val history = if (sid != null) {
             runCatching {
-                val f = ConversationTurnRepository.Filter(projectId = id, sessionId = sid)
+                val f = ConversationTurnRepository.Filter(projectId = id, provider = agentProvider.id, sessionId = sid)
                 val off = (conversationRepo.count(f) - 30).coerceAtLeast(0)
                 val rows = conversationRepo.list(f, limit = 30, offset = off)
                 if (rows.none { it.role == "user" }) {
-                    val uf = ConversationTurnRepository.Filter(projectId = id, sessionId = sid, role = "user")
+                    val uf = ConversationTurnRepository.Filter(projectId = id, provider = agentProvider.id, sessionId = sid, role = "user")
                     val uoff = (conversationRepo.count(uf) - 1).coerceAtLeast(0)
                     conversationRepo.list(uf, limit = 1, offset = uoff) + rows
                 } else rows
@@ -537,7 +560,7 @@ fun Routing.webProjectRoutes(
         } else emptyList()
         // v1.129.0 — history(DB·과거) ↔ WS replay(ring·미래) 경계 seq. 클라가 WS 연결 시
         // since=이 값으로 보내, ring 의 과거 프레임(history 와 중복)을 replay 하지 않게 한다.
-        val initialMaxSeq = hub.consoleCurrentSeq(LogHub.consoleTopic(id))
+        val initialMaxSeq = hub.consoleCurrentSeq(LogHub.consoleTopic(id, agentProvider.id))
         call.respondText(
             WebProjectTemplates.consolePage(
                 sess.username, p, sid, alive,
@@ -547,13 +570,19 @@ fun Routing.webProjectRoutes(
                 starterPrompt = starterPrompt,
                 initialHistory = history,
                 initialMaxSeq = initialMaxSeq,
-                model = sessionManager.effectiveModel(id),
+                model = if (agentRouter != null) {
+                    agentRouter.readProjectModel(id) ?: agentRouter.effectiveModel(id) ?: "default"
+                } else {
+                    sessionManager.effectiveModel(id)
+                },
                 contextTokens = ctxSnap.cacheRead,
                 contextInputTokens = ctxSnap.input,
                 contextCacheCreationTokens = ctxSnap.cacheCreation,
                 contextLimit = ctxSnap.limit,
                 contextWarnTokens = sessionManager.contextWarnTokens(),
                 mcpStrict = sessionManager.isMcpStrict(id),
+                agentProvider = agentProvider,
+                availableAgentProviders = availableAgentProviders,
                 lang = sess.language,
                 embed = call.isEmbeddedRequest(),
             ),
@@ -568,10 +597,11 @@ fun Routing.webProjectRoutes(
         requireProjectAccessOrThrow(sess, projects, id)
         val before = call.request.queryParameters["before"]?.toIntOrNull()
         val limit = (call.request.queryParameters["limit"]?.toIntOrNull() ?: 30).coerceIn(1, 100)
-        val sid = sessionManager.currentSessionId(id)
+        val agentProvider = agentRouter?.providerFor(id) ?: AgentProvider.CLAUDE
+        val sid = agentRouter?.currentSessionId(id) ?: sessionManager.currentSessionId(id)
         val rows = if (sid != null && before != null) {
             runCatching {
-                val f = ConversationTurnRepository.Filter(projectId = id, sessionId = sid, beforeTurnIdx = before)
+                val f = ConversationTurnRepository.Filter(projectId = id, provider = agentProvider.id, sessionId = sid, beforeTurnIdx = before)
                 val off = (conversationRepo.count(f) - limit).coerceAtLeast(0)
                 conversationRepo.list(f, limit = limit, offset = off)
             }.getOrDefault(emptyList())
@@ -590,9 +620,10 @@ fun Routing.webProjectRoutes(
         val turn = call.request.queryParameters["turn"]?.toIntOrNull()
             ?: return@get call.respond(HttpStatusCode.BadRequest)
         val idx = (call.request.queryParameters["idx"]?.toIntOrNull() ?: 0).coerceAtLeast(0)
-        val sid = sessionManager.currentSessionId(id)
+        val agentProvider = agentRouter?.providerFor(id) ?: AgentProvider.CLAUDE
+        val sid = agentRouter?.currentSessionId(id) ?: sessionManager.currentSessionId(id)
             ?: return@get call.respond(HttpStatusCode.NotFound)
-        val rows = runCatching { conversationRepo.byTurnIdx(id, sid, turn) }.getOrDefault(emptyList())
+        val rows = runCatching { conversationRepo.byTurnIdx(id, sid, turn, provider = agentProvider.id) }.getOrDefault(emptyList())
         for (row in rows) {
             val images = when {
                 row.role == "user" ->
@@ -636,8 +667,8 @@ fun Routing.webProjectRoutes(
         call.respondRedirect(target)
     }
 
-    // v1.106.0 — 프로젝트별 Claude 모델 설정(토큰 사용량 레버). 유휴면 즉시 재시작(세션 유지),
-    // busy 면 다음 turn 부터 적용. 값: sonnet / opus / fable / haiku / default / 전체 모델 ID.
+    // v1.106.0 — 프로젝트별 모델 설정(토큰 사용량 레버). 유휴면 즉시 재시작(세션 유지),
+    // busy 면 다음 turn 부터 적용. v1.x — 선택된 provider(Claude/Codex)별 파일에 독립 저장.
     post("/projects/{id}/console/model") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireWriteAccessOrRedirect(sess)) return@post
@@ -645,13 +676,17 @@ fun Routing.webProjectRoutes(
         val id = call.parameters["id"]!!
         requireProjectAccessOrThrow(sess, projects, id)
         val model = form["model"]?.trim().orEmpty()
-        runCatching { sessionManager.setProjectModelAndRestart(id, model) }
+        val provider = agentRouter?.providerFor(id) ?: AgentProvider.CLAUDE
+        runCatching {
+            if (agentRouter != null) agentRouter.setProjectModelAndRestart(id, model)
+            else sessionManager.setProjectModelAndRestart(id, model)
+        }
             .onFailure { log.warn(it) { "set model failed for $id" } }
-        log.info { "console model set: $id -> '${model.ifBlank { "default" }}' by ${sess.username}" }
+        log.info { "console model set: $id/${provider.id} -> '${model.ifBlank { "default" }}' by ${sess.username}" }
         val target = when {
             id == ProjectService.SCRATCH_ID -> "/chat"
             ProjectService.isChatGhost(id) -> "/chat?c=${id.encodeUrl()}"
-            else -> "/projects/$id/console"
+            else -> "/projects/$id#console"
         }
         call.respondRedirect(target)
     }
@@ -691,6 +726,27 @@ fun Routing.webProjectRoutes(
             .onFailure { log.warn(it) { "set auto-compact failed for $id" } }
         log.info { "auto-compact set: $id -> $enabled by ${sess.username}" }
         call.respondText("ok", ContentType.Text.Plain)
+    }
+
+    post("/projects/{id}/console/provider") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireWriteAccessOrRedirect(sess)) return@post
+        val form = requireCsrf()
+        val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
+        val router = agentRouter
+        if (router == null) {
+            call.respondRedirect("/projects/$id/console?err=${"agent provider router unavailable".encodeUrl()}")
+            return@post
+        }
+        val provider = AgentProvider.parse(form["provider"])
+        if (provider == null || provider !in router.availableProviders()) {
+            call.respondRedirect("/projects/$id/console?err=${"invalid agent provider".encodeUrl()}")
+            return@post
+        }
+        router.setProvider(id, provider)
+        log.info { "console provider set: $id -> ${provider.id} by ${sess.username}" }
+        call.respondRedirect("/projects/$id#console")
     }
 
     // ── 빌드 ──────────────────────────────────────────────────────────

@@ -1,0 +1,41 @@
+#!/usr/bin/expect -f
+# Codex CLI TUI usage capture.
+#
+# Official Codex docs expose `/status` as the interactive slash command that
+# shows thread ID, context usage, and rate limits. This helper opens the TUI in
+# a PTY, invokes `/status`, and writes the raw screen stream to stdout. The
+# server strips ANSI/control sequences and parses best-effort fields.
+
+set timeout 55
+set cwd [lindex $argv 0]
+if {$cwd eq ""} { set cwd "/workspace" }
+
+log_user 1
+
+if {[catch {cd $cwd} err]} {
+    puts stderr "expect: cd $cwd failed: $err"
+    exit 1
+}
+
+spawn -noecho env COLUMNS=120 LINES=40 codex --no-alt-screen --sandbox danger-full-access --ask-for-approval never
+stty rows 40 columns 120 < $spawn_out(slave,name)
+sleep 22
+
+# Codex shows rotating tips and the usage reset notice during startup. Wait for
+# those to settle, then select the `/status` slash command and execute it. In
+# v0.142.x the first Enter accepts the slash command candidate; the second runs it.
+send "/status"
+sleep 0.6
+send "\r"
+sleep 0.6
+send "\r"
+sleep 10
+
+send "\x1b"
+sleep 0.5
+send "\x04"
+expect {
+    eof {}
+    timeout { catch {close} }
+}
+exit 0

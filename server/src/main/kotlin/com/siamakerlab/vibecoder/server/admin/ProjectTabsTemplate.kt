@@ -1,5 +1,6 @@
 package com.siamakerlab.vibecoder.server.admin
 
+import com.siamakerlab.vibecoder.server.agent.AgentProvider
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens
 import com.siamakerlab.vibecoder.server.i18n.Messages
 import com.siamakerlab.vibecoder.shared.dto.ProjectDto
@@ -103,6 +104,9 @@ internal object ProjectTabsTemplate {
          * busy(in-memory)는 서버 재시작 시 사라져 콤보 순서가 리셋되던 문제의 영속 대체 신호.
          */
         lastActivityTs: Map<String, String> = emptyMap(),
+        agentProvider: AgentProvider = AgentProvider.CLAUDE,
+        availableAgentProviders: List<AgentProvider> = listOf(AgentProvider.CLAUDE),
+        model: String = "",
         /** v1.50.0 — 우측 overview rail 데이터. */
         keystoreReady: Boolean = false,
         /** v1.108.4 — AdMob 준비 상태(`<pkg>-admob.properties` 존재). 개요카드 키스토어 하단 행. */
@@ -158,7 +162,7 @@ internal object ProjectTabsTemplate {
          콘솔 iframe 이 vibe:context-usage postMessage 로 매 turn 미터 갱신(project-tabs.js). -->
     <div class="pt-rail-card pt-ctx-card" data-card="context">
       <div class="pt-rail-h pt-ctx-head">
-        <span>${esc(t("tabs.rail.context"))}</span>
+        <span>${esc(t("tabs.rail.context"))} <span id="pt-ctx-provider" class="dim" style="font-size:11px"></span></span>
         <span class="pt-ctx-actions">
           <button type="button" class="pt-compact-btn" id="pt-compact-btn"
                   title="${esc(t("tabs.rail.compact.hint"))}">/compact</button>
@@ -344,6 +348,60 @@ internal object ProjectTabsTemplate {
         <a href="/projects" class="pt-switch-item pt-switch-all">${esc(t("tabs.switch.all"))}</a>
       </div>
     </details>"""
+        val providerClass = when (agentProvider) {
+            AgentProvider.CLAUDE -> "claude"
+            AgentProvider.CODEX -> "codex"
+            AgentProvider.OPENCODE -> "opencode"
+        }
+        val providerOptions = availableAgentProviders.joinToString("") { provider ->
+            val selected = if (provider == agentProvider) " selected" else ""
+            """<option value="${esc(provider.id)}"$selected>${esc(provider.displayName)}</option>"""
+        }
+        val providerSelector = """
+    <form method="post" action="/projects/${esc(project.id)}/console/provider" class="pt-provider-form" id="pt-provider-form">
+      ${CsrfTokens.hiddenInput(csrf)}
+      <select name="provider" class="pt-provider-select $providerClass"
+              title="AI provider"
+              onchange="document.getElementById('pt-provider-form').submit()">
+        $providerOptions
+      </select>
+    </form>"""
+        val normalizedModel = model.ifBlank { "default" }
+        val knownModels = when (agentProvider) {
+            AgentProvider.CLAUDE -> listOf(
+                "sonnet" to "Sonnet",
+                "opus" to "Opus",
+                "fable" to "Fable 5",
+                "haiku" to "Haiku",
+            )
+            AgentProvider.CODEX -> listOf(
+                "gpt-5" to "GPT-5",
+                "gpt-5-codex" to "GPT-5 Codex",
+            )
+            AgentProvider.OPENCODE -> emptyList()
+        }
+        val customModel = normalizedModel.takeIf { current ->
+            !current.equals("default", ignoreCase = true) &&
+                knownModels.none { it.first.equals(current, ignoreCase = true) }
+        }
+        val modelOptions = buildString {
+            knownModels.forEach { (value, label) ->
+                val selected = if (normalizedModel.equals(value, ignoreCase = true)) " selected" else ""
+                append("""<option value="${esc(value)}"$selected>${esc(label)}</option>""")
+            }
+            val defaultSelected = if (normalizedModel.equals("default", ignoreCase = true)) " selected" else ""
+            append("""<option value="default"$defaultSelected>CLI 기본</option>""")
+            customModel?.let { append("""<option value="${esc(it)}" selected>${esc(it)}</option>""") }
+        }
+        val modelSelector = """
+    <form method="post" action="/projects/${esc(project.id)}/console/model" class="pt-model-form" id="pt-model-form">
+      ${CsrfTokens.hiddenInput(csrf)}
+      <select name="model" class="pt-model-select $providerClass"
+              title="${esc(agentProvider.displayName)} model"
+              onchange="document.getElementById('pt-model-form').submit()">
+        $modelOptions
+      </select>
+    </form>"""
 
         // primary 탭만 상단 탭바에. overflow 는 더보기 드롭다운에 (아래 moreLinks).
         // v1.93.3 — 기본 활성 탭(console)을 서버에서 미리 active 로 마킹 → 첫 페인트부터
@@ -443,6 +501,29 @@ internal object ProjectTabsTemplate {
   #project-tabs-root .pt-switcher > summary:hover { background: #1a1f2c; }
   #project-tabs-root .pt-switcher .pt-caret { color: var(--text-dim, #888); font-size: 11px; }
   #project-tabs-root .pt-switcher[open] > summary { color: var(--accent, #6aa9ff); }
+  #project-tabs-root .pt-provider-form,
+  #project-tabs-root .pt-model-form { display: inline-flex; align-items: center; margin: 0; }
+  #project-tabs-root .pt-provider-select,
+  #project-tabs-root .pt-model-select {
+    height: 30px; max-width: 150px; box-sizing: border-box;
+    padding: 4px 26px 4px 9px; border-radius: 6px;
+    background: #121722; color: var(--text, #ddd);
+    border: 1px solid #2a3145; font: inherit; font-size: 12px;
+    line-height: 1.4; cursor: pointer;
+  }
+  #project-tabs-root .pt-provider-select { max-width: 132px; }
+  #project-tabs-root .pt-provider-select.claude,
+  #project-tabs-root .pt-model-select.claude {
+    border-color: #b45309; color: #fbbf24; background: #1c1510;
+  }
+  #project-tabs-root .pt-provider-select.codex,
+  #project-tabs-root .pt-model-select.codex {
+    border-color: #2563eb; color: #93c5fd; background: #101827;
+  }
+  #project-tabs-root .pt-provider-select.opencode,
+  #project-tabs-root .pt-model-select.opencode {
+    border-color: #475569; color: #cbd5e1;
+  }
   #project-tabs-root .pt-switcher-menu {
     position: absolute; left: 0; top: calc(100% + 6px); z-index: 200;
     background: #131722; border: 1px solid #2a3145; border-radius: 6px;
@@ -902,6 +983,8 @@ internal object ProjectTabsTemplate {
          postMessage(console:busy)로 미러링한다. 어느 탭에 있어도 콘솔 진행 상태 확인. -->
     <span id="console-busy-badge" data-state="ready" title="${esc(t("console.busy.idle"))}">${esc(t("console.busy.idle"))}</span>
     $projectSwitcher
+    $providerSelector
+    $modelSelector
     <span class="spacer"></span>
     <details class="pt-settings">
       <summary>⚙ ${esc(t("tabs.settings.label"))}</summary>
@@ -951,7 +1034,7 @@ $railHtml
   </div>
 </div>
 
-<script src="/static/project-tabs.js?v=1.134.0" defer></script>
+<script src="/static/project-tabs.js?v=1.145.0" defer></script>
 <!-- v1.56.0 — 콤보박스 상태칩 실시간 동기. 목록 페이지와 동일하게 `/ws/projects`
      (단방향) 의 ProjectBusyChanged 로 responding↔ready patch. -->
 <script>

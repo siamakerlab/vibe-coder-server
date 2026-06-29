@@ -36,6 +36,8 @@ data class ConversationTurnRow(
     val tokensIn: Int?,
     val tokensOut: Int?,
     val raw: String?,
+    /** v1.146.0 — main console provider namespace. */
+    val provider: String = ConversationTurnRepository.PROVIDER_CLAUDE,
     /** v0.49.0 — null = main project console; non-null = sub-agent. */
     val agentName: String? = null,
     /** v0.61.0 — user memo on this turn (UI inline editor). */
@@ -71,6 +73,7 @@ class ConversationTurnRepository(private val clock: Clock) {
 
     fun insert(
         projectId: String,
+        provider: String = PROVIDER_CLAUDE,
         sessionId: String?,
         role: String,
         content: String,
@@ -84,10 +87,12 @@ class ConversationTurnRepository(private val clock: Clock) {
     ): ConversationTurnRow = transaction {
         val now = clock.nowIso()
         val id = Ids.taskId()
-        val next = nextTurnIdx(projectId, sessionId)
+        val normalizedProvider = normalizeProvider(provider)
+        val next = nextTurnIdx(projectId, normalizedProvider, sessionId)
         ConversationTurns.insert {
             it[ConversationTurns.id] = id
             it[ConversationTurns.projectId] = projectId
+            it[ConversationTurns.provider] = normalizedProvider
             it[ConversationTurns.sessionId] = sessionId
             it[turnIdx] = next
             it[ts] = now
@@ -101,16 +106,32 @@ class ConversationTurnRepository(private val clock: Clock) {
             it[ConversationTurns.agentName] = agentName
         }
         ConversationTurnRow(
-            id, projectId, sessionId, next, now, role, content,
-            toolName, toolUseId, tokensIn, tokensOut, raw, agentName,
+            id = id,
+            projectId = projectId,
+            sessionId = sessionId,
+            turnIdx = next,
+            ts = now,
+            role = role,
+            content = content,
+            toolName = toolName,
+            toolUseId = toolUseId,
+            tokensIn = tokensIn,
+            tokensOut = tokensOut,
+            raw = raw,
+            provider = normalizedProvider,
+            agentName = agentName,
         )
     }
 
-    private fun nextTurnIdx(projectId: String, sessionId: String?): Int {
+    private fun nextTurnIdx(projectId: String, provider: String, sessionId: String?): Int {
         val cond: Op<Boolean> = if (sessionId == null) {
-            (ConversationTurns.projectId eq projectId) and IsNullOp(ConversationTurns.sessionId)
+            (ConversationTurns.projectId eq projectId) and
+                (ConversationTurns.provider eq provider) and
+                IsNullOp(ConversationTurns.sessionId)
         } else {
-            (ConversationTurns.projectId eq projectId) and (ConversationTurns.sessionId eq sessionId)
+            (ConversationTurns.projectId eq projectId) and
+                (ConversationTurns.provider eq provider) and
+                (ConversationTurns.sessionId eq sessionId)
         }
         val agg = ConversationTurns.turnIdx.max()
         val current = ConversationTurns
@@ -122,6 +143,8 @@ class ConversationTurnRepository(private val clock: Clock) {
 
     data class Filter(
         val projectId: String,
+        /** null = all providers. Console restore passes the selected provider explicitly. */
+        val provider: String? = null,
         val sessionId: String? = null,
         val role: String? = null,
         val toolName: String? = null,
@@ -147,6 +170,7 @@ class ConversationTurnRepository(private val clock: Clock) {
 
     private fun Filter.toCondition(): Op<Boolean> {
         var c: Op<Boolean> = ConversationTurns.projectId eq projectId
+        provider?.let { c = c and (ConversationTurns.provider eq normalizeProvider(it)) }
         sessionId?.let { c = c and (ConversationTurns.sessionId eq it) }
         role?.let { c = c and (ConversationTurns.role eq it) }
         toolName?.let { c = c and (ConversationTurns.toolName eq it) }
@@ -233,6 +257,11 @@ class ConversationTurnRepository(private val clock: Clock) {
     }
 
     companion object {
+        const val PROVIDER_CLAUDE = "claude"
+
+        fun normalizeProvider(provider: String): String =
+            provider.trim().lowercase().ifBlank { PROVIDER_CLAUDE }.take(16)
+
         /** v0.75.0 — mecab 활성화 flag. 부팅 시 한 번만 평가. */
         private val MECAB_ENABLED: Boolean =
             System.getenv("VIBECODER_MECAB_ENABLED")?.lowercase()?.let { it == "true" || it == "1" } == true
@@ -258,10 +287,16 @@ class ConversationTurnRepository(private val clock: Clock) {
      * turnIdx 가 race 로 중복될 수 있어(클래스 KDoc 참조) List 반환 — 호출자가
      * 이미지를 가진 첫 row 를 고른다. agent_name IS NULL(메인 콘솔)만.
      */
-    fun byTurnIdx(projectId: String, sessionId: String, turnIdx: Int): List<ConversationTurnRow> = transaction {
+    fun byTurnIdx(
+        projectId: String,
+        sessionId: String,
+        turnIdx: Int,
+        provider: String = PROVIDER_CLAUDE,
+    ): List<ConversationTurnRow> = transaction {
         ConversationTurns.selectAll()
             .where {
                 (ConversationTurns.projectId eq projectId) and
+                    (ConversationTurns.provider eq normalizeProvider(provider)) and
                     (ConversationTurns.sessionId eq sessionId) and
                     (ConversationTurns.turnIdx eq turnIdx) and
                     IsNullOp(ConversationTurns.agentName)
@@ -374,6 +409,7 @@ class ConversationTurnRepository(private val clock: Clock) {
     private fun ResultRow.toRow() = ConversationTurnRow(
         id = this[ConversationTurns.id],
         projectId = this[ConversationTurns.projectId],
+        provider = this[ConversationTurns.provider],
         sessionId = this[ConversationTurns.sessionId],
         turnIdx = this[ConversationTurns.turnIdx],
         ts = this[ConversationTurns.ts],
@@ -412,9 +448,14 @@ class ConversationTurnRepository(private val clock: Clock) {
      * 페이지 재방문 시 누락됐다("가끔 직전 프롬프트만 안 보임"). agent_name IS NULL 로
      * 메인 콘솔 turn 만 대상(sub-agent turn 불간섭). 반환값은 갱신된 row 수.
      */
-    fun adoptNullSession(projectId: String, sessionId: String): Int = transaction {
+    fun adoptNullSession(
+        projectId: String,
+        sessionId: String,
+        provider: String = PROVIDER_CLAUDE,
+    ): Int = transaction {
         ConversationTurns.update({
             (ConversationTurns.projectId eq projectId) and
+                (ConversationTurns.provider eq normalizeProvider(provider)) and
                 ConversationTurns.sessionId.isNull() and
                 ConversationTurns.agentName.isNull()
         }) {

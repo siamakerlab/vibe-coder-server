@@ -192,8 +192,9 @@ class LogHub(
         const val LEGACY_REAP_INTERVAL_MS = 5 * 60 * 1000L
         const val LEGACY_IDLE_TIMEOUT_MS = 10 * 60 * 1000L
 
-        /** Build a console topic key for a given project id. */
-        fun consoleTopic(projectId: String): String = "console-$projectId"
+        /** Build a provider-scoped console topic key for a given project id. */
+        fun consoleTopic(projectId: String, provider: String = "claude"): String =
+            "console-$projectId-${provider.trim().lowercase().ifBlank { "claude" }}"
 
         /**
          * v0.44.0 — sub-agent console topic. Lives parallel to the main project console so

@@ -72,6 +72,18 @@ object VibeDb {
                     // 등이 16 한도를 넘겨 tool 에러 turn 이 이력에 적재되지 못하던 버그 수정.
                     // 이미 32 이상이면 Postgres no-op → idempotent.
                     exec("ALTER TABLE conversation_turns ALTER COLUMN role TYPE varchar(32)")
+                    // v1.146.0 — Claude/Codex 메인 콘솔 히스토리 분리. 기존 row 는 모두
+                    // Claude 이력이므로 provider='claude' 로 backfill 후 NOT NULL 고정.
+                    exec("ALTER TABLE conversation_turns ADD COLUMN IF NOT EXISTS provider varchar(16)")
+                    exec("UPDATE conversation_turns SET provider = 'claude' WHERE provider IS NULL OR provider = ''")
+                    exec("ALTER TABLE conversation_turns ALTER COLUMN provider SET DEFAULT 'claude'")
+                    exec("ALTER TABLE conversation_turns ALTER COLUMN provider SET NOT NULL")
+                    exec(
+                        """
+                        CREATE INDEX IF NOT EXISTS conversation_turns_project_provider_session_turn_idx
+                          ON conversation_turns(project_id, provider, session_id, turn_idx)
+                        """.trimIndent(),
+                    )
                     // v0.53.0 — Phase 32 풀텍스트 검색 (tsvector + GIN).
                     // Exposed 0.55 의 schema DSL 이 generated column / GIN index 미지원 →
                     // raw SQL 로 idempotent 마이그. `IF NOT EXISTS` 가 두 번째 부팅 부터 no-op.

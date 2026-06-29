@@ -216,10 +216,12 @@ COPY --chown=root:root docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 # v1.4.0 — Claude TUI Usage 탭 PTY capture (expect 스크립트). slash command 가
 # --print 에서 차단되어 quota 를 다른 방식으로 가져올 수 없음.
 COPY --chown=root:root docker/scripts/claude-usage-capture.exp /usr/local/bin/claude-usage-capture.exp
+COPY --chown=root:root docker/scripts/codex-usage-capture.exp /usr/local/bin/codex-usage-capture.exp
 RUN chmod +x /opt/vibe-doctor/vibe-doctor \
     && chmod +x /opt/vibe-doctor/lib/*.sh \
     && chmod +x /usr/local/bin/entrypoint.sh \
     && chmod +x /usr/local/bin/claude-usage-capture.exp \
+    && chmod +x /usr/local/bin/codex-usage-capture.exp \
     && ln -s /opt/vibe-doctor/vibe-doctor /usr/local/bin/vibe-doctor \
     && ln -s /opt/vibe-coder/bin/server /usr/local/bin/vibe-coder-server
 

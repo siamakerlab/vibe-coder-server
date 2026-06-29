@@ -188,11 +188,16 @@ ${VIBE_DATA_ROOT}/                          container
 │   ├── npm-global/             →  /home/vibe/.local                (MCP packages)
 │   ├── npm-cache/              →  /home/vibe/.npm                  (npx cache)
 │   ├── playwright/             →  /home/vibe/.cache/ms-playwright  (optional)
-│   ├── config/                 →  /home/vibe/.config               (tool config)
+│   ├── config/                 →  /home/vibe/.config               (tool config, Codex CODEX_HOME)
 │   ├── ssh/                    →  /home/vibe/.ssh                  (v1.2.0+ SSH key — auto-generated on first boot)
 │   └── keystores/              →  /home/vibe/keystores             (v1.5.0+ Android signing keys ⚠️ back up!)
 └── claude/                     →  /home/vibe/.claude               (OAuth / API key / MCP registrations)
 ```
+
+Codex global instructions live at `/home/vibe/.config/codex/AGENTS.md`. On a new
+install that file is symlinked to `/home/vibe/.claude/CLAUDE.md`, so Claude Code
+and Codex share the same global AI instructions. If you already created a regular
+`AGENTS.md`, the entrypoint preserves it.
 
 > **v1.2.0+ SSH key auto-provisioning.** On first boot the entrypoint generates
 > an ED25519 keypair at `dev-tools/ssh/id_ed25519`. Once present, it is

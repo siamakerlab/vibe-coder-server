@@ -83,6 +83,36 @@ for dir in \
     fi
 done
 
+# v1.145.1 — Codex CLI 로그인/사용량 캡처는 CODEX_HOME 아래에 auth/log/config 파일을 쓴다.
+# 과거에 root docker exec 또는 이전 이미지가 만든 /home/vibe/.config/codex 잔여물이 있으면
+# `codex login --device-auth` 가 log/auth 파일 생성에 실패하므로, 해당 하위 트리만 보정한다.
+CODEX_CFG_DIR="${CODEX_HOME:-/home/vibe/.config/codex}"
+mkdir -p "$CODEX_CFG_DIR" 2>/dev/null || true
+if [[ -d "$CODEX_CFG_DIR" ]]; then
+    bad_codex_owner="$(find "$CODEX_CFG_DIR" -mindepth 0 ! -user vibe -print -quit 2>/dev/null || true)"
+    if [[ -n "$bad_codex_owner" ]]; then
+        warn "$CODEX_CFG_DIR 안 root-owned 잔여물 발견 — chown -R vibe:vibe"
+        chown -R vibe:vibe "$CODEX_CFG_DIR" 2>/dev/null || true
+    else
+        chown vibe:vibe "$CODEX_CFG_DIR" 2>/dev/null || true
+    fi
+    chmod 700 "$CODEX_CFG_DIR" 2>/dev/null || true
+fi
+
+# v1.146.x — Codex 전역 지침은 Claude 전역 지침과 같은 내용을 공유한다.
+# Codex 는 CODEX_HOME/AGENTS.md 를 전역 instruction 으로 읽고, Claude Code 는
+# /home/vibe/.claude/CLAUDE.md 를 읽는다. 새 설치/비어있는 Codex 설정에서는
+# AGENTS.md 를 CLAUDE.md 로 symlink 해서 두 provider 의 전역 규칙을 단일 파일로 관리한다.
+# 사용자가 이미 일반 파일로 AGENTS.md 를 직접 만들었다면 덮어쓰지 않는다.
+CODEX_AGENTS_FILE="$CODEX_CFG_DIR/AGENTS.md"
+SHARED_AI_INSTRUCTIONS="../../.claude/CLAUDE.md"
+if [[ ! -e "$CODEX_AGENTS_FILE" || -L "$CODEX_AGENTS_FILE" ]]; then
+    ln -sfn "$SHARED_AI_INSTRUCTIONS" "$CODEX_AGENTS_FILE" 2>/dev/null || true
+    chown -h vibe:vibe "$CODEX_AGENTS_FILE" 2>/dev/null || true
+else
+    warn "$CODEX_AGENTS_FILE 가 일반 파일로 존재 — Claude 전역 CLAUDE.md symlink 생성을 건너뜁니다."
+fi
+
 # v1.7.23 — 워크스페이스 각 프로젝트의 .gradle / .android 캐시 디렉토리 안에
 # root 소유 잔여물 자동 정리. 이전에 docker exec (default user root) 또는
 # 다른 process 가 그 path 에 쓴 file 이 남으면 vibe 가 Gradle build 시

@@ -498,6 +498,85 @@ class EnvSetupService(
         return taskId
     }
 
+    fun spawnCodexLogin(): String {
+        val taskId = Ids.taskId()
+        var loginUrlAnnounced = false
+        var loginCodeAnnounced = false
+        var deviceExchangeRejected = false
+        queue.submit(
+            projectId = "env-setup",
+            taskId = taskId,
+            onStart = {
+                hub.publisher(taskId).emit(WsFrame.Log(taskId, "INFO", "▶ Codex 로그인 시작", clock.nowIso()))
+                hub.publisher(taskId).emit(WsFrame.Log(taskId, "INFO", "브라우저에서 $CODEX_DEVICE_LOGIN_URL 를 열고, 아래에 표시되는 8~9자리 device code를 입력하세요.", clock.nowIso()))
+                hub.publisher(taskId).emit(WsFrame.Log(taskId, "INFO", "승인 후 이 작업은 Codex CLI가 로그인 완료를 확인할 때까지 대기합니다.", clock.nowIso()))
+            },
+            executor = { _ ->
+                withContext(Dispatchers.IO) {
+                    val exit = runStreamingCommand(
+                        taskId,
+                        codexDeviceAuthCommand(),
+                    ) { line ->
+                        if (!loginUrlAnnounced && line.contains(CODEX_DEVICE_LOGIN_URL, ignoreCase = true)) {
+                            loginUrlAnnounced = true
+                            hub.publisher(taskId).emit(WsFrame.Log(taskId, "INFO", "로그인 페이지: $CODEX_DEVICE_LOGIN_URL", clock.nowIso()))
+                        }
+                        if (!loginCodeAnnounced) {
+                            CODEX_DEVICE_CODE_REGEX.find(line)?.value?.let { code ->
+                                loginCodeAnnounced = true
+                                hub.publisher(taskId).emit(WsFrame.Log(taskId, "INFO", "Codex device code: $code", clock.nowIso()))
+                                hub.publisher(taskId).emit(WsFrame.Log(taskId, "INFO", "$CODEX_DEVICE_LOGIN_URL 에서 위 코드를 승인하세요. 승인 후 자동으로 다음 단계로 진행됩니다.", clock.nowIso()))
+                            }
+                        }
+                        if (line.contains("device code exchange failed", ignoreCase = true) ||
+                            line.contains("token_exchange_user_error", ignoreCase = true)
+                        ) {
+                            deviceExchangeRejected = true
+                        }
+                    }
+                    if (exit != 0) {
+                        if (deviceExchangeRejected) {
+                            hub.publisher(taskId).emit(WsFrame.Log(taskId, "ERROR", "Codex device-code 토큰 교환이 OpenAI 인증 서버에서 거절되었습니다.", clock.nowIso()))
+                            hub.publisher(taskId).emit(WsFrame.Log(taskId, "INFO", "장치 코드 승인까지는 완료됐지만, 승인한 ChatGPT 계정/워크스페이스가 Codex CLI 토큰 발급 조건을 통과하지 못했습니다.", clock.nowIso()))
+                            hub.publisher(taskId).emit(WsFrame.Log(taskId, "INFO", "브라우저가 올바른 계정/워크스페이스로 로그인되어 있는지, Codex Local 권한과 MFA 요건이 충족되어 있는지 확인한 뒤 다시 시도하세요.", clock.nowIso()))
+                        }
+                        throw RuntimeException("codex login --device-auth failed with exit $exit")
+                    }
+                }
+            },
+            onSuccess = {
+                hub.publisher(taskId).emit(WsFrame.Log(taskId, "INFO", "✓ Codex 로그인 완료", clock.nowIso()))
+                hub.publisher(taskId).emit(WsFrame.Done(taskId, "SUCCESS"))
+            },
+            onFailure = { e ->
+                hub.publisher(taskId).emit(WsFrame.Log(taskId, "ERROR", "✗ Codex 로그인 실패: ${e.message}", clock.nowIso()))
+                hub.publisher(taskId).emit(WsFrame.Done(taskId, "FAILED", e.message))
+            },
+            onCancel = {
+                hub.publisher(taskId).emit(WsFrame.Done(taskId, "CANCELED"))
+            },
+        )
+        return taskId
+    }
+
+    fun spawnCodexLoginWithAccessToken(accessToken: String): String =
+        spawnCodexSecretLogin(
+            title = "▶ Codex access token 로그인 시작",
+            confirmation = "✓ Codex access token 로그인 완료",
+            failPrefix = "access token",
+            cmd = listOf(resolveCodexCmd(), "login", "--with-access-token"),
+            secret = accessToken,
+        )
+
+    fun spawnCodexLoginWithApiKey(apiKey: String): String =
+        spawnCodexSecretLogin(
+            title = "▶ Codex API key 로그인 시작",
+            confirmation = "✓ Codex API key 로그인 완료",
+            failPrefix = "API key",
+            cmd = listOf(resolveCodexCmd(), "login", "--with-api-key"),
+            secret = apiKey,
+        )
+
     private fun submitDoctor(
         taskId: String,
         label: String,
@@ -547,15 +626,82 @@ class EnvSetupService(
      */
     private suspend fun runDoctor(taskId: String, sub: String): Int = withContext(Dispatchers.IO) {
         val cmd = listOf(resolveDoctorCmd(), sub)
+        runStreamingCommand(taskId, cmd)
+    }
+
+    private suspend fun runStreamingCommand(
+        taskId: String,
+        cmd: List<String>,
+        stdinPayload: String? = null,
+        onLine: (suspend (String) -> Unit)? = null,
+    ): Int = withContext(Dispatchers.IO) {
         val pb = ProcessBuilder(cmd).redirectErrorStream(true)
+        applyCodexProcessEnv(pb)
         val process = pb.start()
+        if (stdinPayload != null) {
+            process.outputStream.bufferedWriter(Charsets.UTF_8).use { writer ->
+                writer.write(stdinPayload)
+                writer.newLine()
+                writer.flush()
+            }
+        } else {
+            runCatching { process.outputStream.close() }
+        }
         process.inputStream.bufferedReader(Charsets.UTF_8).useLines { lines ->
             for (line in lines) {
-                hub.publisher(taskId).emit(WsFrame.Log(taskId, "STDOUT", line, clock.nowIso()))
+                val cleanLine = stripAnsi(line)
+                hub.publisher(taskId).emit(WsFrame.Log(taskId, "STDOUT", cleanLine, clock.nowIso()))
+                onLine?.invoke(cleanLine)
             }
         }
         process.waitFor()
     }
+
+    private fun spawnCodexSecretLogin(
+        title: String,
+        confirmation: String,
+        failPrefix: String,
+        cmd: List<String>,
+        secret: String,
+    ): String {
+        val taskId = Ids.taskId()
+        val trimmed = secret.trim()
+        if (trimmed.isEmpty()) {
+            throw ApiException.localized(400, "empty", messageKey = "api.codexLogin.secretEmpty")
+        }
+        queue.submit(
+            projectId = "env-setup",
+            taskId = taskId,
+            onStart = {
+                hub.publisher(taskId).emit(WsFrame.Log(taskId, "INFO", title, clock.nowIso()))
+            },
+            executor = { _ ->
+                withContext(Dispatchers.IO) {
+                    val exit = runStreamingCommand(
+                        taskId,
+                        cmd,
+                        stdinPayload = trimmed,
+                    )
+                    if (exit != 0) throw RuntimeException("codex login with $failPrefix failed with exit $exit")
+                }
+            },
+            onSuccess = {
+                hub.publisher(taskId).emit(WsFrame.Log(taskId, "INFO", confirmation, clock.nowIso()))
+                hub.publisher(taskId).emit(WsFrame.Done(taskId, "SUCCESS"))
+            },
+            onFailure = { e ->
+                hub.publisher(taskId).emit(WsFrame.Log(taskId, "ERROR", "✗ Codex $failPrefix 로그인 실패: ${e.message}", clock.nowIso()))
+                hub.publisher(taskId).emit(WsFrame.Done(taskId, "FAILED", e.message))
+            },
+            onCancel = {
+                hub.publisher(taskId).emit(WsFrame.Done(taskId, "CANCELED"))
+            },
+        )
+        return taskId
+    }
+
+    private fun stripAnsi(line: String): String =
+        ANSI_REGEX.replace(line, "")
 
     private fun resolveDoctorCmd(): String {
         // 도커 이미지 안에서는 entrypoint 가 /usr/local/bin/vibe-doctor symlink 를 만든다.
@@ -563,8 +709,37 @@ class EnvSetupService(
         return System.getenv("VIBE_DOCTOR_CMD")?.ifBlank { null } ?: "vibe-doctor"
     }
 
+    private fun resolveCodexCmd(): String =
+        System.getenv("CODEX_CMD")?.ifBlank { null } ?: "codex"
+
+    private fun codexDeviceAuthCommand(): List<String> {
+        if (System.getenv("CODEX_DEVICE_AUTH_USE_PTY")?.equals("0") == true) {
+            return listOf(resolveCodexCmd(), "login", "--device-auth")
+        }
+        return listOf(
+            "script",
+            "-q",
+            "-e",
+            "-c",
+            "${shellQuote(resolveCodexCmd())} login --device-auth",
+            "/dev/null",
+        )
+    }
+
+    private fun shellQuote(value: String): String =
+        "'" + value.replace("'", "'\"'\"'") + "'"
+
+    private fun applyCodexProcessEnv(pb: ProcessBuilder) {
+        pb.environment().putIfAbsent("HOME", "/home/vibe")
+        pb.environment().putIfAbsent("XDG_CONFIG_HOME", "/home/vibe/.config")
+        pb.environment().putIfAbsent("CODEX_HOME", "/home/vibe/.config/codex")
+    }
+
     companion object {
         /** Gradle latest version 캐시 TTL — 30 분. */
         private const val GRADLE_LATEST_TTL_MS = 30L * 60 * 1000
+        private const val CODEX_DEVICE_LOGIN_URL = "https://auth.openai.com/codex/device"
+        private val ANSI_REGEX = Regex("\\u001B\\[[0-?]*[ -/]*[@-~]")
+        private val CODEX_DEVICE_CODE_REGEX = Regex("\\b[A-Z0-9]{4}-[A-Z0-9]{4,5}\\b|\\b[A-Z0-9]{8,9}\\b")
     }
 }

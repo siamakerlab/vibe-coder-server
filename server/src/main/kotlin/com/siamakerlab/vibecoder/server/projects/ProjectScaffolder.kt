@@ -3,6 +3,7 @@ package com.siamakerlab.vibecoder.server.projects
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.FileAlreadyExistsException
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.notExists
@@ -42,6 +43,10 @@ object ProjectScaffolder {
                 log.info { "backfilled CLAUDE.md → $claudeMd" }
             }
 
+            if (ensureAgentsLink(projectRoot)) {
+                created++
+            }
+
             val claudeDir = projectRoot.resolve(".claude")
             if (claudeDir.notExists()) {
                 claudeDir.createDirectories()
@@ -57,5 +62,30 @@ object ProjectScaffolder {
             log.warn(e) { "Claude file backfill failed for $projectRoot: ${e.message}" }
         }
         return created
+    }
+
+    /**
+     * 프로젝트 루트의 `AGENTS.md` 를 같은 폴더의 `CLAUDE.md` 를 가리키는
+     * 심볼릭 링크로 유지한다. 사용자가 직접 만든 일반 파일은 덮어쓰지 않는다.
+     */
+    fun ensureAgentsLink(projectRoot: Path): Boolean {
+        return try {
+            val claudeMd = projectRoot.resolve("CLAUDE.md")
+            if (claudeMd.notExists()) return false
+
+            val agentsMd = projectRoot.resolve("AGENTS.md")
+            if (Files.exists(agentsMd)) return false
+            if (Files.isSymbolicLink(agentsMd)) {
+                Files.deleteIfExists(agentsMd)
+            }
+            Files.createSymbolicLink(agentsMd, Path.of("CLAUDE.md"))
+            log.info { "created AGENTS.md symlink → $agentsMd -> CLAUDE.md" }
+            true
+        } catch (e: FileAlreadyExistsException) {
+            false
+        } catch (e: Throwable) {
+            log.warn(e) { "AGENTS.md symlink backfill failed for $projectRoot: ${e.message}" }
+            false
+        }
     }
 }

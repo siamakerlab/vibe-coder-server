@@ -53,6 +53,9 @@
         var desc = i.description ? ' — ' + i.description : '';
         return { label: '$', body: clip(cmd, 400) + desc };
       }
+      case 'command_execution': {
+        return { label: '$', body: clip(i.command || i.cmd || summarizeInput(i), 400) };
+      }
       case 'Read': {
         var p = i.file_path || i.path || '';
         var range = (i.offset != null || i.limit != null)

@@ -225,6 +225,8 @@ object AuditLog : Table("audit_log") {
 object ConversationTurns : Table("conversation_turns") {
     val id = varchar("id", 64)
     val projectId = varchar("project_id", 64)
+    /** v1.146.0 — main console provider namespace. "claude" | "codex" | future providers. */
+    val provider = varchar("provider", 16).default("claude")
     val sessionId = varchar("session_id", 64).nullable()
     val turnIdx = integer("turn_idx")
     val ts = varchar("ts", 64)

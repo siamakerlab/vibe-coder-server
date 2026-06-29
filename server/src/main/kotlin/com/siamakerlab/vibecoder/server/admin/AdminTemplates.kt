@@ -138,7 +138,7 @@ object AdminTemplates {
     justify-self: start; max-width: none;
     padding-right: calc(clamp(248px, 22vw, 360px) + 24px);
   }
-  @media (max-width: 760px) { body.pt-embed .content:not(.fullbleed) { padding-right: 32px; } }
+  @media (max-width: 760px) { body.pt-embed .content:not(.fullbleed) { padding-right: 16px; } }
   </style>"""
         else ""
         val bodyCls = if (railContext) "pt-embed" else ""
@@ -152,7 +152,7 @@ object AdminTemplates {
   <link rel="icon" type="image/png" href="/static/icon.png">
   <link rel="manifest" href="/static/manifest.json">
   <meta name="theme-color" content="#0b0d12">
-  <link rel="stylesheet" href="/static/admin.css?v=1.104.1">
+  <link rel="stylesheet" href="/static/admin.css?v=1.145.0">
   <script>
     // v1.6.2 — 사이드바 접힘 상태를 first paint 전에 :root data-attribute 로 적용 (FOUC 회피).
     // CSS 의 :root[data-sidebar-collapsed="1"] .layout 가 grid-template-columns 축소.
@@ -287,6 +287,7 @@ object AdminTemplates {
   </a>
   <!-- v1.3.2 — 전역 Claude 쿼타 pill. v1.6.2 — header 에 refresh 버튼 + 타임존 제거. -->
   <div id="quota-pill" class="quota-pill" hidden></div>
+  <div id="codex-quota-pill" class="quota-pill" hidden></div>
   <div class="user-box">
     <form method="post" action="/logout">
       $csrfInput
@@ -313,6 +314,11 @@ object AdminTemplates {
   var weekLabel = '${esc(t("quota.weekly"))}';
   var resetLabel = '${esc(t("quota.resetPrefix"))}';
   var refreshTitle = '${esc(t("quota.refresh"))}';
+  function escHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
   function stripTz(reset) {
     if (!reset) return '';
     // v1.6.2 — "Resets 10:20pm (Asia/Seoul)" → "10:20pm".
@@ -363,6 +369,42 @@ object AdminTemplates {
   }
   tick();
   setInterval(tick, 60000);
+
+  // Codex usage pill — separate endpoint/provider, rendered below Claude.
+  var codexEl = document.getElementById('codex-quota-pill');
+  if (codexEl) {
+    function renderCodex(dto) {
+      if (!dto || !dto.available || (dto.sessionUsagePercent == null && dto.weeklyUsagePercent == null && dto.usagePercent == null && dto.contextUsagePercent == null && !dto.usageSummary)) {
+        codexEl.hidden = true;
+        return;
+      }
+      var rows = '';
+      if (dto.sessionUsagePercent != null) rows += bar(sessLabel, dto.sessionUsagePercent, dto.sessionResetAt);
+      if (dto.weeklyUsagePercent != null) rows += bar(weekLabel, dto.weeklyUsagePercent, dto.weeklyResetAt);
+      if (!rows && dto.usagePercent != null) rows += bar('Usage', dto.usagePercent, dto.rateLimitResetAt);
+      if (dto.contextUsagePercent != null) rows += bar('Context', dto.contextUsagePercent, null);
+      if (!rows && dto.usageSummary) {
+        rows = '<div class="qp-row"><div class="qp-reset">' + escHtml(dto.usageSummary) + '</div></div>';
+      }
+      codexEl.innerHTML = '<div class="qp-header"><span class="qp-h-title">Codex</span>'
+        + '<button type="button" class="qp-refresh" title="' + refreshTitle + '" aria-label="' + refreshTitle + '">↻</button>'
+        + '</div>' + rows;
+      codexEl.hidden = false;
+      var btn = codexEl.querySelector('.qp-refresh');
+      if (btn) btn.addEventListener('click', function(){
+        btn.disabled = true; btn.textContent = '…';
+        codexTick().then(function(){ btn.disabled = false; });
+      });
+    }
+    function codexTick() {
+      return fetch('/api/server/codex-quota', { credentials: 'same-origin' })
+        .then(function(r){ return r.ok ? r.json() : null; })
+        .then(renderCodex)
+        .catch(function(){ codexEl.hidden = true; });
+    }
+    codexTick();
+    setInterval(codexTick, 60000);
+  }
 
   // v1.65.0 — 무선디버깅 pill 폴링. adb 사용 가능 시 노출(연결 0대도 표시), 미설치면 hidden.
   var adbEl = document.getElementById('adb-pill');
@@ -611,6 +653,7 @@ object AdminTemplates {
         runningBuilds: Int,
         claudeAuth: com.siamakerlab.vibecoder.shared.dto.CheckItemDto? = null,
         claudeUsage: com.siamakerlab.vibecoder.shared.dto.ClaudeStatusDto? = null,
+        codexUsage: com.siamakerlab.vibecoder.shared.dto.CodexUsageDto? = null,
         diskSnapshot: com.siamakerlab.vibecoder.server.disk.DiskMonitor.Snapshot? = null,
         /** v1.9.0 — git global identity 미설정 시 dashboard 상단에 yellow banner. */
         gitIdentityMissing: Boolean = false,
@@ -727,6 +770,7 @@ $gitIdentityBanner
   </div>
 
   ${renderClaudeUsageCard(claudeUsage, lang)}
+  ${renderCodexUsageCard(codexUsage, lang)}
   ${renderDiskUsageCard(diskSnapshot, lang)}
 
   <!-- v1.63.0 — 무선 ADB 기기 상태 카드. /api/adb/status 폴링(클라이언트). -->
@@ -848,26 +892,14 @@ $gitIdentityBanner
     private fun renderClaudeUsageCard(snapshot: com.siamakerlab.vibecoder.shared.dto.ClaudeStatusDto?, lang: String): String {
         val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
         if (snapshot == null) {
-            return """
-  <div class="card">
-    <h2>${esc(t("dashboard.claude.title"))}</h2>
-    <p class="hint">${t("dashboard.claude.empty")}</p>
-  </div>"""
+            return ""
         }
         // v1.0.1 — Pro/Max plan 의 세션 (5h) + 주간 (7d) 분리 표시.
         val sessionPct = snapshot.sessionUsagePercent
         val weeklyPct = snapshot.weeklyUsagePercent
         val pct = snapshot.usagePercent
         if (pct == null && sessionPct == null && weeklyPct == null) {
-            return """
-  <div class="card">
-    <h2>${esc(t("dashboard.claude.title"))}</h2>
-    <dl>
-      <dt>${esc(t("dashboard.claude.lastPolled"))}</dt><dd>${esc(fmtTs(snapshot.updatedAt, lang))}</dd>
-      <dt>${esc(t("dashboard.usageQuotaLine"))}</dt><dd><code>${esc(snapshot.quotaRemaining ?: t("dashboard.usageParseFailed"))}</code></dd>
-    </dl>
-    <p class="hint">${t("dashboard.claude.quotaParseFail")}</p>
-  </div>"""
+            return ""
         }
 
         fun barColor(p: Int): String = when {
@@ -920,6 +952,61 @@ $gitIdentityBanner
       <dt>${esc(t("dashboard.claude.model"))}</dt><dd>${esc(snapshot.model ?: "-")}</dd>
     </dl>
     <p class="hint">${t("dashboard.usageEmailHint")} <a href="/settings/email">/settings/email</a></p>
+  </div>"""
+    }
+
+    private fun renderCodexUsageCard(snapshot: com.siamakerlab.vibecoder.shared.dto.CodexUsageDto?, lang: String): String {
+        val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
+        if (snapshot == null) {
+            return ""
+        }
+        fun barColor(p: Int): String = when {
+            p >= 95 -> "#dc2626"
+            p >= 80 -> "#d97706"
+            else -> "#059669"
+        }
+        fun renderBar(p: Int, label: String, resetVal: String? = null): String {
+            val w = p.coerceIn(0, 100)
+            val resetHtml = if (!resetVal.isNullOrBlank()) {
+                """<div class="dim" style="font-size:11px;margin-top:2px">${esc(resetVal)}</div>"""
+            } else ""
+            return """
+      <div style="margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;font-size:12px">
+          <span>${esc(label)}</span>
+          <span class="${if (p >= 80) "warn" else "ok"}">${p}%</span>
+        </div>
+        <div style="background:#e5e7eb;border-radius:4px;height:8px;overflow:hidden;margin-top:3px">
+          <div style="width:${w}%;background:${barColor(p)};height:100%"></div>
+        </div>
+        $resetHtml
+      </div>"""
+        }
+        val sessionBar = snapshot.sessionUsagePercent?.let {
+            renderBar(it, t("dashboard.usage.session"), snapshot.sessionResetAt)
+        } ?: ""
+        val weeklyBar = snapshot.weeklyUsagePercent?.let {
+            renderBar(it, t("dashboard.usage.weekly"), snapshot.weeklyResetAt)
+        } ?: ""
+        val usageBar = if (sessionBar.isBlank() && weeklyBar.isBlank()) {
+            snapshot.usagePercent?.let { renderBar(it, t("dashboard.codex.usage"), snapshot.rateLimitResetAt) } ?: ""
+        } else ""
+        val contextBar = snapshot.contextUsagePercent?.let { renderBar(it, t("dashboard.codex.context")) } ?: ""
+        val summary = snapshot.usageSummary?.takeIf { snapshot.available }?.let {
+            """<p class="hint" style="margin-top:6px">${esc(it)}</p>"""
+        } ?: ""
+        return """
+  <div class="card">
+    <h2>${esc(t("dashboard.codex.title"))}</h2>
+    $sessionBar
+    $weeklyBar
+    $usageBar
+    $contextBar
+    $summary
+    <dl style="margin-top:6px;font-size:12px">
+      <dt>${esc(t("dashboard.claude.lastPolled"))}</dt><dd>${esc(fmtTs(snapshot.updatedAt, lang))}</dd>
+      <dt>${esc(t("dashboard.codex.login"))}</dt><dd>${esc(snapshot.loginStatus ?: "-")}</dd>
+    </dl>
   </div>"""
     }
 
@@ -1003,6 +1090,12 @@ $errHtml
     <p class="hint">${esc(t("settings.field.maxConcurrentTurns.hint"))}</p>
     <label>${esc(t("settings.field.maxResidentSessions"))} <input name="claude.maxResidentSessions" type="number" min="0" max="64" value="${settings.claudeMaxResident}"></label>
     <p class="hint">${esc(t("settings.field.maxResidentSessions.hint"))}</p>
+  </fieldset>
+
+  <fieldset>
+    <legend>${esc(t("settings.legend.codex"))}</legend>
+    <label>${esc(t("settings.field.codexMaxResidentSessions"))} <input name="codex.maxResidentSessions" type="number" min="0" max="64" value="${settings.codexMaxResident}"></label>
+    <p class="hint">${esc(t("settings.field.codexMaxResidentSessions.hint"))}</p>
   </fieldset>
 
   <fieldset>
@@ -1152,6 +1245,7 @@ $okHtml
         val claudeTimeoutMin: Int,
         val claudeMaxConcurrent: Int,
         val claudeMaxResident: Int,
+        val codexMaxResident: Int,
         val buildTimeoutMin: Int,
         val defaultDebugTask: String,
     )
