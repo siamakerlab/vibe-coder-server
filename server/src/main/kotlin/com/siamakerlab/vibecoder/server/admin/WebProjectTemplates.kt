@@ -1918,6 +1918,27 @@ $quickBarHtml
   input.addEventListener('focus', function () { setKeyboardMode(true); });
   input.addEventListener('blur', function () { setKeyboardMode(false); });
 
+  // v1.145.17 — Android Chrome: 입력창 포커스(소프트키보드 표시) 중 전송/액션 버튼을 탭하면
+  // 첫 탭은 키보드만 내려가고 전송이 안 되던 문제 수정(두 번째 탭에야 발사).
+  //  원인: 버튼 탭 → textarea blur → setKeyboardMode(false) 로 접혀있던 보조 컨트롤이
+  //   다시 펼쳐지는 레이아웃 복원 + 소프트키보드 dismiss 가 동시에 reflow 를 일으켜, 버튼이
+  //   손가락 아래에서 벗어난 채 touchend 가 다른 위치에 떨어지면서 click(→form submit)이
+  //   취소된다. 키보드가 이미 내려간 두 번째 탭은 레이아웃이 안정돼 정상 발사.
+  //  해결: 버튼 pointerdown 에서 preventDefault → textarea 포커스 이동을 막아 키보드/레이아웃을
+  //   그대로 유지 → 첫 탭에 click 발사. (preventDefault 는 포커스 이동만 막고 click 은 그대로
+  //   발생 — 리치텍스트 툴바·Radix UI 등의 "포커스 유지" 표준 기법.) 전송 후 키보드 dismiss 는
+  //   기존대로 sendPrompt/interruptSend 의 input.blur() 가 담당.
+  function keepKeyboardOnTap(el) {
+    if (!el) return;
+    el.addEventListener('pointerdown', function (ev) {
+      // 입력창이 포커스(키보드 표시)일 때만 개입. 그 외 상황은 기본 동작 그대로.
+      if (document.activeElement === input) ev.preventDefault();
+    });
+  }
+  ['send-btn', 'interrupt-btn', 'voice-btn', 'image-btn'].forEach(function (id) {
+    keepKeyboardOnTap(document.getElementById(id));
+  });
+
   function escHtml(s) {
     return String(s == null ? '' : s)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
