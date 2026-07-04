@@ -261,7 +261,7 @@ ENV PATH=/home/vibe/.local/bin:${PATH}
 ENV JAVA_OPTS="-Xmx2g -XX:+UseG1GC -Dfile.encoding=UTF-8"
 
 # ---- 포트 / 헬스체크 ---------------------------------------------------------
-EXPOSE 17880
+EXPOSE 17880 2222
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD curl -fsS http://127.0.0.1:17880/health || exit 1

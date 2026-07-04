@@ -30,14 +30,14 @@ import kotlin.io.path.exists
 private val log = KotlinLogging.logger {}
 
 /**
- * MCP 카탈로그 설치/제거 + Claude `.mcp.json` 등록.
+ * MCP 카탈로그 설치/제거 + Claude/Codex MCP 등록.
  *
  * v0.8.0 — 빌드환경 페이지의 MCP UI 가 호출.
  *
  * 설치 메커니즘:
  *  - `npm install -g <pkg>` (vibe 사용자, prefix /home/vibe/.local).
  *    v0.7.0 부터 이 디렉토리가 bind mount 라 이미지 업그레이드 시 보존.
- *  - 설치 완료 후 `~/.claude/.mcp.json` 의 `mcpServers` 에 entry 추가.
+ *  - 설치 완료 후 Claude user-scope 와 Codex config 에 MCP server entry 추가.
  *  - argsTemplate 의 `@PKG@` / `@CONFIG:key@` placeholder 가 실 값으로 치환.
  *  - 사용자 입력 config (TOKEN 등) 는 같은 entry 의 `env` 에 들어감.
  *
@@ -128,7 +128,7 @@ class McpService(
     }
 
     /**
-     * 선택된 MCP 들을 일괄 설치 — npm install -g + .mcp.json 갱신.
+     * 선택된 MCP 들을 일괄 설치 — npm install -g + Claude/Codex MCP 설정 갱신.
      *
      * @param selections id → configValues 맵. configValues 는 ConfigField.key 별
      *   사용자 입력값. 빈 문자열은 무시 (선택 항목).
@@ -174,7 +174,7 @@ class McpService(
             },
             onSuccess = {
                 hub.publisher(taskId).emit(WsFrame.Log(taskId, "INFO",
-                    "✓ MCP 설치 완료 — Claude 콘솔에서 즉시 사용 가능", clock.nowIso()))
+                    "✓ MCP 설치 완료 — Claude/Codex 콘솔에서 즉시 사용 가능", clock.nowIso()))
                 hub.publisher(taskId).emit(WsFrame.Done(taskId, "SUCCESS"))
             },
             onFailure = { e ->
@@ -285,13 +285,14 @@ class McpService(
     }
 
     /**
-     * .mcp.json 의 entry 만 제거 (npm 패키지는 남김).
+     * MCP 설정 entry 만 제거 (npm 패키지는 남김).
      * 완전 삭제하려면 docker exec 로 `npm uninstall -g <pkg>` 직접 실행 안내.
      */
     fun unregister(ids: List<String>) {
         if (ids.isEmpty()) return
         // v1.66.5 — 표준 user-scope 에서 제거(`claude mcp remove -s user`).
         ids.forEach { id -> runClaudeMcp("remove", id, "-s", "user") }
+        ids.forEach { id -> runCodexMcp("remove", id) }
         // 레거시 .mcp.json 에 남아있던 동일 항목도 정리(있으면).
         runCatching {
             val current = readMcpJson()
@@ -339,11 +340,11 @@ class McpService(
                 }
             }
 
-            // 2) v1.66.5 — 표준 user-scope 등록(`claude mcp add-json -s user`). 콘솔/서브에이전트/
-            //    터미널 모두에서 즉시 인식. (과거 .mcp.json 직접 쓰기는 claude 가 안 읽어 안 보였음.)
-            withContext(Dispatchers.IO) { registerUserScope(entry.id, buildServerEntryJson(entry, cfg)) }
+            // 2) 표준 MCP 등록. Claude 는 user-scope, Codex 는 CODEX_HOME/config.toml 에 등록한다.
+            //    둘은 설정 파일을 공유하지 않으므로 설치 시 양쪽에 명시 등록해야 한다.
+            withContext(Dispatchers.IO) { registerMcpServer(entry.id, buildServerEntryJson(entry, cfg)) }
             hub.publisher(taskId).emit(WsFrame.Log(taskId, "INFO",
-                "  ✓ ${entry.displayName} 설치 + user-scope 등록", clock.nowIso()))
+                "  ✓ ${entry.displayName} 설치 + Claude/Codex 등록", clock.nowIso()))
         }
     }
 
@@ -401,12 +402,28 @@ class McpService(
     // ─────────────────────────────────────────────────────────────────
 
     private fun claudeCmd(): String = System.getenv("CLAUDE_CMD")?.takeIf { it.isNotBlank() } ?: "claude"
+    private fun codexCmd(): String = System.getenv("CODEX_CMD")?.takeIf { it.isNotBlank() } ?: "codex"
 
     /** `claude mcp <args...>` 실행 → (exit, output). [cwd] 지정 시 그 디렉토리에서(프로젝트 scope). */
     private fun runClaudeMcp(vararg args: String, cwd: Path? = null, timeoutSec: Long = 30): Pair<Int, String> {
         return try {
             val pb = ProcessBuilder(listOf(claudeCmd(), "mcp", *args)).redirectErrorStream(true)
             if (cwd != null) pb.directory(cwd.toFile())
+            val proc = pb.start()
+            val out = proc.inputStream.bufferedReader(Charsets.UTF_8).readText()
+            if (!proc.waitFor(timeoutSec, TimeUnit.SECONDS)) { proc.destroyForcibly(); return -2 to "timeout" }
+            proc.exitValue() to out
+        } catch (e: Throwable) {
+            -1 to (e.message ?: "exec failed")
+        }
+    }
+
+    private fun runCodexMcp(vararg args: String, timeoutSec: Long = 30): Pair<Int, String> {
+        return try {
+            val pb = ProcessBuilder(listOf(codexCmd(), "mcp", *args)).redirectErrorStream(true)
+            pb.environment().putIfAbsent("HOME", "/home/vibe")
+            pb.environment().putIfAbsent("XDG_CONFIG_HOME", "/home/vibe/.config")
+            pb.environment().putIfAbsent("CODEX_HOME", "/home/vibe/.config/codex")
             val proc = pb.start()
             val out = proc.inputStream.bufferedReader(Charsets.UTF_8).readText()
             if (!proc.waitFor(timeoutSec, TimeUnit.SECONDS)) { proc.destroyForcibly(); return -2 to "timeout" }
@@ -449,6 +466,37 @@ class McpService(
         if (exit != 0) log.warn { "claude mcp add-json $name 실패(exit=$exit): ${out.take(300)}" }
     }
 
+    private fun registerMcpServer(name: String, serverJson: JsonObject) {
+        registerUserScope(name, serverJson)
+        registerCodexScope(name, serverJson)
+    }
+
+    private fun registerCodexScope(name: String, serverJson: JsonObject) {
+        val command = (serverJson["command"] as? JsonPrimitive)?.contentOrNull
+        if (command.isNullOrBlank()) {
+            log.warn { "codex mcp add $name skip: command 없음" }
+            return
+        }
+        val args = (serverJson["args"] as? kotlinx.serialization.json.JsonArray)
+            ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+            .orEmpty()
+        val env = (serverJson["env"] as? JsonObject)
+            ?.mapNotNull { (k, v) -> (v as? JsonPrimitive)?.contentOrNull?.let { k to it } }
+            .orEmpty()
+
+        runCodexMcp("remove", name)  // 멱등 — 없으면 무시
+        val addArgs = buildList {
+            add("add")
+            env.forEach { (k, v) -> add("--env"); add("$k=$v") }
+            add(name)
+            add("--")
+            add(command)
+            addAll(args)
+        }.toTypedArray()
+        val (exit, out) = runCodexMcp(*addArgs)
+        if (exit != 0) log.warn { "codex mcp add $name 실패(exit=$exit): ${out.take(300)}" }
+    }
+
     private fun userConfigPath(): Path = claudeConfigDir().resolve(".claude.json")
 
     /** 표준 user-scope mcpServers (`.claude.json` top-level). */
@@ -473,14 +521,21 @@ class McpService(
             if (userServers.isEmpty() && legacy.isEmpty()) {
                 McpCatalog.defaultInstallIds.forEach { id ->
                     val e = McpCatalog.get(id) ?: return@forEach
-                    registerUserScope(id, buildServerEntryJson(e, emptyMap()))
+                    registerMcpServer(id, buildServerEntryJson(e, emptyMap()))
                 }
                 log.info { "MCP user-scope 기본 등록(first-run): ${McpCatalog.defaultInstallIds}" }
                 return@runCatching
             }
             val migrate = legacy.filterKeys { it !in userServers.keys }
-            migrate.forEach { (name, v) -> (v as? JsonObject)?.let { registerUserScope(name, it) } }
+            migrate.forEach { (name, v) -> (v as? JsonObject)?.let { registerMcpServer(name, it) } }
             if (migrate.isNotEmpty()) log.info { "MCP 레거시 .mcp.json → user-scope 이관: ${migrate.keys}" }
+
+            // Claude user-scope 에 직접 추가된 MCP 도 Codex 에 동기화한다. Codex 는 Claude 설정을
+            // 읽지 않으므로 이 단계가 없으면 Claude 콘솔에서는 보이고 Codex 콘솔에서는 빠진다.
+            val refreshedUserServers = readUserScopeServers()
+            refreshedUserServers.forEach { (name, v) ->
+                (v as? JsonObject)?.let { registerCodexScope(name, it) }
+            }
 
             // v1.68.0 — 카탈로그가 npm → 바이너리로 바뀐 항목(예: gitea: npx @boringstudio → 공식 gitea-mcp)의
             //  stale user-scope 등록 정리. 등록된 command 가 카탈로그 command 와 다르면 제거해

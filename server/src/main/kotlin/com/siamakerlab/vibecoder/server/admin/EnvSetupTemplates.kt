@@ -36,6 +36,8 @@ object EnvSetupTemplates {
             com.siamakerlab.vibecoder.server.env.GitIdentity(null, null),
         /** v1.9.0 — `?git=saved|cleared|err:<code>` flash. */
         gitFlash: String? = null,
+        sshPort: Int = 2222,
+        sshFlash: String? = null,
         csrf: String? = null,
         lang: String,
         embed: Boolean = false,
@@ -50,10 +52,10 @@ object EnvSetupTemplates {
         val ordered = states.sortedBy { priorityRank(it.component) }
             .filterNot { it.component == SetupComponent.MCP_DEFAULTS }
         val (coreStates, builtinStates) = ordered.partition { it.component.doctorCmd != null }
-        val coreCards = coreStates.joinToString("\n") { renderCard(it, csrf, lang) }
-        val builtinCards = builtinStates.joinToString("\n") { renderCard(it, csrf, lang) }
+        val coreCards = coreStates.joinToString("\n") { renderCard(it, csrf, lang, sshPort) }
+        val builtinCards = builtinStates.joinToString("\n") { renderCard(it, csrf, lang, sshPort) }
         val builtinNeedsAttention = builtinStates.any { it.status != ComponentStatus.INSTALLED }
-        val flashHtml = claudeFlashBlurb(claudeFlash, lang) + gitFlashBlurb(gitFlash, lang)
+        val flashHtml = claudeFlashBlurb(claudeFlash, lang) + gitFlashBlurb(gitFlash, lang) + sshFlashBlurb(sshFlash, lang)
         val gitCard = renderGitIdentityCard(gitIdentity, csrf, lang)
         return AdminTemplates.shell(
             title = t("env.heading"),
@@ -146,6 +148,7 @@ docker compose up -d --force-recreate</pre>
         SetupComponent.ANDROID_EMULATOR -> 5
         SetupComponent.MCP_DEFAULTS -> 6
         SetupComponent.CODEX -> 7            // v1.145.0 — Codex CLI (옵션 도구)
+        SetupComponent.SSH_SERVER -> 8        // 원격 접속은 선택 기능 — 명시 설치만
         else -> 9                            // built-in (JDK/Git/Node/Claude CLI)
     }
 
@@ -227,6 +230,20 @@ git config --global user.email "&lt;email&gt;"
         }
     }
 
+    private fun sshFlashBlurb(code: String?, lang: String): String {
+        val t = { key: String -> Messages.t(lang, key) }
+        return when {
+            code == null -> ""
+            code.startsWith("err:") -> {
+                val errCode = code.removePrefix("err:")
+                val key = "api.envSetup.${camelize(errCode)}"
+                val msg = Messages.t(lang, key).takeIf { it != key } ?: errCode
+                blurb("err", "${t("env.ssh.flash.err")}: $msg")
+            }
+            else -> ""
+        }
+    }
+
     private fun camelize(s: String): String {
         // git_failed → gitFailed, name_required → nameRequired
         val parts = s.split("_")
@@ -234,12 +251,12 @@ git config --global user.email "&lt;email&gt;"
         return parts.first() + parts.drop(1).joinToString("") { it.replaceFirstChar { c -> c.uppercase() } }
     }
 
-    private fun renderCard(s: ComponentState, csrf: String?, lang: String): String {
+    private fun renderCard(s: ComponentState, csrf: String?, lang: String, sshPort: Int): String {
         val c = s.component
         // v1.7.16 — c.displayName / sizeHint / description 는 i18n 키 (String).
         // Messages.t 로 lookup. 영어 사용자에 영어, 한국어 사용자에 한글 표시.
         val (badgeCls, badgeText) = badgeFor(c, s.status, lang)
-        val actionHtml = renderAction(c, s.status, csrf, lang)
+        val actionHtml = renderAction(c, s.status, csrf, lang, sshPort)
         val name = Messages.t(lang, c.displayName)
         val size = Messages.t(lang, c.sizeHint)
         val desc = Messages.t(lang, c.description)
@@ -274,7 +291,7 @@ git config --global user.email "&lt;email&gt;"
         }
     }
 
-    private fun renderAction(c: SetupComponent, status: ComponentStatus, csrf: String?, lang: String): String {
+    private fun renderAction(c: SetupComponent, status: ComponentStatus, csrf: String?, lang: String, sshPort: Int): String {
         val t = { key: String -> Messages.t(lang, key) }
         return when (c) {
             // 이미지 내장 — 진단 실패 시에만 경고. 정상이면 액션 없음.
@@ -385,6 +402,30 @@ git config --global user.email "&lt;email&gt;"
                 <details style="margin-top:8px"><summary class="dim" style="cursor:pointer;font-size:12px">${esc(t("env.action.cliHint"))}</summary>
                   <pre class="diff-block" style="margin-top:6px">docker exec -it vibe-coder-server vibe-doctor codex
 docker exec -it vibe-coder-server codex login --device-auth</pre>
+                </details>"""
+            }
+
+            SetupComponent.SSH_SERVER -> {
+                val label = when (status) {
+                    ComponentStatus.INSTALLED -> t("env.action.sshServerLabel.installed")
+                    else -> t("env.action.sshServerLabel.missing")
+                }
+                """<form method="post" action="/env-setup/ssh-server/config" style="margin-top:10px"
+                        onsubmit="return confirm(${jsLit(t("env.action.sshServerConfirm"))})">
+                  ${CsrfTokens.hiddenInput(csrf)}
+                  <label>
+                    <div style="font-size:12px;color:#aaa;margin-bottom:4px">${esc(t("env.action.sshServerPort"))}</div>
+                    <input name="port" type="number" min="1024" max="65535" required value="${esc(sshPort.toString())}"
+                           style="width:140px;padding:8px;font-family:ui-monospace,Menlo,monospace">
+                  </label>
+                  <div style="margin-top:8px">
+                    <button type="submit" class="primary" style="width:auto;padding:8px 16px">${esc(label)}</button>
+                  </div>
+                </form>
+                <p class="hint" style="margin-top:8px;font-size:12px">${esc(t("env.action.sshServerNote"))}</p>
+                <details style="margin-top:8px"><summary class="dim" style="cursor:pointer;font-size:12px">${esc(t("env.action.cliHint"))}</summary>
+                  <pre class="diff-block" style="margin-top:6px">docker exec -it vibe-coder-server vibe-doctor ssh-server
+ssh -p $sshPort vibe@&lt;host&gt;</pre>
                 </details>"""
             }
         }

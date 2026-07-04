@@ -87,6 +87,15 @@ check_workspace() {
     return 0
 }
 
+check_ssh_server() {
+    if command -v sshd >/dev/null 2>&1 || [[ -x /usr/sbin/sshd ]]; then
+        log_ok "OpenSSH 서버: 설치됨"
+        return 0
+    fi
+    log_warn "OpenSSH 서버 미설치 (원격 접속이 필요하면 빌드환경의 SSH 서버 카드 사용)"
+    return 1
+}
+
 check_all() {
     local errors=0
     log_step "환경 진단"
@@ -97,5 +106,6 @@ check_all() {
     check_claude_auth || true  # warning only
     check_workspace  || errors=$((errors+1))
     check_android_sdk || true  # warning only — doctor에서 설치
+    check_ssh_server || true   # optional — 원격 접속용
     return $errors
 }

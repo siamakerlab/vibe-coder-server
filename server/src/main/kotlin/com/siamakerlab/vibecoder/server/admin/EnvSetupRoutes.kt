@@ -52,6 +52,7 @@ fun Routing.envSetupRoutes(
         val states = setupService.detectAll(sess.language)
         val claudeFlash = call.request.queryParameters["claude"]
         val gitFlash = call.request.queryParameters["git"]
+        val sshFlash = call.request.queryParameters["ssh"]
         val gitIdentity = runCatching { gitConfig.get() }
             .getOrDefault(com.siamakerlab.vibecoder.server.env.GitIdentity(null, null))
         call.respondText(
@@ -61,6 +62,8 @@ fun Routing.envSetupRoutes(
                 claudeFlash = claudeFlash,
                 gitIdentity = gitIdentity,
                 gitFlash = gitFlash,
+                sshPort = setupService.sshServerPort(),
+                sshFlash = sshFlash,
                 csrf = sess.csrf,
                 lang = sess.language,
                 embed = call.isEmbeddedRequest(),
@@ -123,6 +126,23 @@ fun Routing.envSetupRoutes(
             return@post
         }
         log.info { "env-setup install: ${comp.id} → task $taskId by ${sess.username}" }
+        call.respondRedirect("/env-setup/tasks/$taskId")
+    }
+
+    post("/env-setup/ssh-server/config") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireAdminOrRedirect(sess)) return@post
+        val form = requireCsrf()
+        val taskId = runCatching {
+            setupService.saveSshServerPort(form["port"].orEmpty())
+            setupService.spawnInstall(SetupComponent.SSH_SERVER)
+        }.getOrElse { e ->
+            log.warn(e) { "ssh server config rejected" }
+            val code = (e as? ApiException)?.code ?: "save_failed"
+            call.respondRedirect("/env-setup?ssh=err:$code")
+            return@post
+        }
+        log.info { "env-setup ssh-server configure/install: task $taskId by ${sess.username}" }
         call.respondRedirect("/env-setup/tasks/$taskId")
     }
 

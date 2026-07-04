@@ -654,7 +654,9 @@ fun Routing.webProjectRoutes(
         requireCsrf()
         val id = call.parameters["id"]!!
         requireProjectAccessOrThrow(sess, projects, id)
-        runCatching { sessionManager.startNew(id) }
+        runCatching {
+            if (agentRouter != null) agentRouter.startNew(id) else sessionManager.startNew(id)
+        }
             .onFailure { log.warn(it) { "console reset failed for $id" } }
         log.info { "console reset: $id by ${sess.username}" }
         authDeps.audit.consoleNew(sess.userId, id, call.request.origin.remoteHost)

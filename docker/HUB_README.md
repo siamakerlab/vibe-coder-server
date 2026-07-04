@@ -108,8 +108,8 @@ docker compose up -d            # boots postgres + vibe-coder-server
 - Cron build schedules + external HMAC-signed build webhooks; Play Console
   and TestFlight upload via MCP delegation.
 - Build environment one-click installer — Android SDK, Gradle, Node + Claude
-  CLI, MCP packages, optional Flutter SDK; everything in bind-mounted
-  volumes.
+  CLI, MCP packages, optional Flutter SDK, and optional OpenSSH server;
+  everything in bind-mounted volumes where possible.
 - MCP catalog with 60+ servers (trust tiers, per-MCP token forms); headless
   Android emulator (KVM) with wireless ADB.
 
@@ -164,6 +164,7 @@ docker compose up -d            # boots postgres + vibe-coder-server
 | `VIBECODER_DB_SSLMODE` | `disable` | `prefer`/`require`/`verify-ca`/`verify-full` |
 | `PUID` / `PGID` | `1000` / `1000` | Match host UID/GID (`id -u` / `id -g`) |
 | `VIBE_PORT` | `17880` | Host port to expose |
+| `VIBE_SSH_PORT` / `VIBECODER_SSH_PORT` | `2222` / `2222` | Optional SSH server host/container port after installing the `/env-setup` card |
 | `VIBE_DATA_ROOT` | `./vibe-coder-data` | **Unified host directory** holding everything persistent |
 | `VIBE_CLAUDE_DIR` | `${VIBE_DATA_ROOT}/claude` | Override to `~/.claude` to share host's Claude auth |
 | `VIBECODER_ADMIN_USERNAME` | (unset) | Auto-create admin on first boot |

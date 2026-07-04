@@ -527,9 +527,26 @@ object ApiPath {
      * `agent` / `projectId` / `turnId` 등 사용자 정의 식별자가 path 에 들어갈 때 사용.
      * form encoding (`+`) 이 아니라 path encoding (`%20`) 이라
      * [java.net.URLEncoder] 결과를 추가 변환한다.
+     *
+     * v1.145.18 — **중괄호(`{`/`}`)는 인코딩하지 않는다(절대 되돌리지 말 것).**
+     * 이 ApiPath fun 들은 §8.A SSOT 규칙상 두 용도로 동시에 쓰인다:
+     *   ① 클라이언트의 실제 URL 빌드 — 예: `promptAutomationStart("caldo")`.
+     *   ② 서버의 Ktor 라우트 템플릿 등록 — 예: `promptAutomationStart("{projectId}")`.
+     * `URLEncoder` 는 `{`→`%7B`, `}`→`%7D` 로 인코딩하는데, Ktor `RoutingPath.parse`
+     * (3.1.x)는 세그먼트에 **리터럴** `{`/`}` 가 있어야만 path parameter 로 인식하고
+     * 없으면 `decodeURLPart` 후 상수(Constant)로 등록한다. 즉 `%7BprojectId%7D` 는
+     * 리터럴 `{projectId}` **고정 문자열** 라우트가 되어 실제 projectId 요청과 영영
+     * 매칭되지 않는다(`route_not_found` 404). 이 결함이 v1.59.0~v1.145.17 동안 automation/
+     * schedule/deps/stats/backup-file/build-webhook/agent-console 등 pathSeg 기반
+     * 라우트를 전부 무력화했다. 중괄호를 보존하면 ②가 올바른 parameter 로 등록되고,
+     * ①은 실제 식별자가 regex(`[a-z0-9][a-z0-9._-]{0,63}` 등)로 검증되어 `{`/`}` 를
+     * 절대 포함하지 않으므로 영향이 없다.
      */
     private fun pathSeg(s: String): String =
-        java.net.URLEncoder.encode(s, "UTF-8").replace("+", "%20")
+        java.net.URLEncoder.encode(s, "UTF-8")
+            .replace("+", "%20")
+            .replace("%7B", "{")
+            .replace("%7D", "}")
 }
 
 object ApiHeader {

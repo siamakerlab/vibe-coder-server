@@ -161,6 +161,49 @@ fi
 [[ -f "$SSH_KEY" ]] && chmod 600 "$SSH_KEY" 2>/dev/null || true
 [[ -f "${SSH_KEY}.pub" ]] && chmod 644 "${SSH_KEY}.pub" 2>/dev/null || true
 
+# ─── 2b-2. OpenSSH 서버 자동 기동 (선택 설치) ───────────────────────────────
+# /env-setup 의 "SSH 서버" 카드 또는 `vibe-doctor ssh-server` 로 openssh-server 가
+# 설치된 컨테이너는 재시작 후에도 지정 포트로 sshd 를 다시 띄운다. 패키지가 없으면
+# 아무 것도 하지 않는다(슬림 이미지 기본 유지).
+ssh_server_port() {
+    local port="${VIBECODER_SSH_PORT:-}"
+    local port_file="${VIBECODER_DATA_DIR:-/data}/ssh-server/port"
+    if [[ -z "$port" && -f "$port_file" ]]; then
+        port="$(tr -dc '0-9' <"$port_file" | head -c 5)"
+    fi
+    port="${port:-2222}"
+    if [[ ! "$port" =~ ^[0-9]+$ ]] || (( port < 1024 || port > 65535 )); then
+        warn "잘못된 SSH 포트($port) — 기본값 2222 사용"
+        port=2222
+    fi
+    printf '%s\n' "$port"
+}
+
+if [[ -x /usr/sbin/sshd ]]; then
+    SSH_SERVER_PORT="$(ssh_server_port)"
+    mkdir -p /run/sshd /etc/ssh/sshd_config.d
+    cat >/etc/ssh/sshd_config.d/vibe-coder.conf <<EOF
+Port $SSH_SERVER_PORT
+ListenAddress 0.0.0.0
+PermitRootLogin no
+PasswordAuthentication no
+PubkeyAuthentication yes
+AuthorizedKeysFile .ssh/authorized_keys
+AllowUsers vibe
+EOF
+    if [[ ! -s "$SSH_DIR/authorized_keys" && -s "${SSH_KEY}.pub" ]]; then
+        cp "${SSH_KEY}.pub" "$SSH_DIR/authorized_keys" 2>/dev/null || true
+        chown vibe:vibe "$SSH_DIR/authorized_keys" 2>/dev/null || true
+        chmod 600 "$SSH_DIR/authorized_keys" 2>/dev/null || true
+    fi
+    if /usr/sbin/sshd -t; then
+        /usr/sbin/sshd
+        ok "OpenSSH 서버 실행 중 (port ${SSH_SERVER_PORT})"
+    else
+        warn "OpenSSH 설정 검증 실패 — sshd 시작을 건너뜁니다."
+    fi
+fi
+
 # v0.7.0 — 빈 .local 볼륨이 마운트된 케이스 대비: .npmrc 가 home 에 있고 .local
 # 이 비어 있으면 prefix 가 무효화될 수 있어, idempotent 재생성.
 if [[ ! -f /home/vibe/.npmrc ]]; then

@@ -196,6 +196,11 @@ For per-release history, see [CHANGELOG.md](CHANGELOG.md).
   so it survives image updates. Login/config is kept under `CODEX_HOME=/home/vibe/.config/codex`
   (the `.config` volume), so `codex login` persists across redeploys. Optional —
   excluded from "Install all"; install via the card or `vibe-doctor codex`.
+- **SSH server installer (optional)** — the `/env-setup` "SSH server" card installs
+  OpenSSH server, applies the selected container port, and starts `sshd` for
+  `ssh -p <port> vibe@<host>`. Compose exposes `${VIBE_SSH_PORT:-2222}` to
+  `${VIBECODER_SSH_PORT:-2222}`; usually set only `VIBE_SSH_PORT`, and set
+  `VIBECODER_SSH_PORT` too only when changing the container port from the card.
 - **Pre-installed image tooling** — the runtime image ships ImageMagick,
   Pillow (`python3-pil` + NumPy), `rsvg-convert`, `cwebp`/`dwebp`,
   `poppler-utils`, Ghostscript, and `optipng`/`pngquant`/`jpegoptim` so Claude
@@ -436,6 +441,8 @@ services:
       # VIBECODER_ADMIN_PASSWORD: "ChangeMe123"
     ports:
       - "17880:17880"
+      # Optional: enabled after the Build environment → "SSH server" card installs sshd.
+      - "2222:2222"
     volumes:
       # All persistent data lives under one host directory — tar it and you've
       # backed up everything (workspace + PG + SDK + Gradle + MCP + Claude auth).

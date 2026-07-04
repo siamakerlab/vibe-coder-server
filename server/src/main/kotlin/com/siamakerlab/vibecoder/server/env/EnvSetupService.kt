@@ -135,6 +135,13 @@ enum class SetupComponent(
         description = "env.comp.codex.desc",
         sizeHint = "env.size.codex",
     ),
+    SSH_SERVER(
+        id = "ssh-server",
+        displayName = "env.comp.sshServer.name",
+        doctorCmd = "ssh-server",
+        description = "env.comp.sshServer.desc",
+        sizeHint = "env.size.sshServer",
+    ),
     ;
 
     companion object {
@@ -202,6 +209,7 @@ class EnvSetupService(
         SetupComponent.GRADLE -> probeGradle(c, lang)
         SetupComponent.FLUTTER -> probeFlutter(c, lang)
         SetupComponent.CODEX -> probeCmd(c, listOf("codex", "--version"), lang)
+        SetupComponent.SSH_SERVER -> probeSshServer(c, lang)
     }
 
     private fun t(lang: String, key: String, vararg args: Any?): String =
@@ -373,12 +381,46 @@ class EnvSetupService(
         }
     }
 
+    private fun probeSshServer(c: SetupComponent, lang: String): ComponentState {
+        val sshd = Path.of("/usr/sbin/sshd")
+        return if (Files.exists(sshd)) {
+            ComponentState(c, ComponentStatus.INSTALLED, t(lang, "probe.sshServer.ok", sshServerPort()))
+        } else {
+            ComponentState(c, ComponentStatus.MISSING, t(lang, "probe.sshServer.missing", sshServerPort()))
+        }
+    }
+
     /** 표준 Flutter 설치 위치 — `<user.home>/.local/flutter/bin/flutter` (lib/flutter.sh 와 동기). */
     private fun flutterBinPath(): Path? {
         val home = System.getProperty("user.home")?.ifBlank { null }
             ?: System.getenv("HOME")?.ifBlank { null }
             ?: return null
         return Path.of(home).resolve(".local/flutter/bin/flutter")
+    }
+
+    fun sshServerPort(): Int {
+        val env = System.getenv("VIBECODER_SSH_PORT")?.trim()?.toIntOrNull()
+        if (env != null && env in SSH_PORT_MIN..SSH_PORT_MAX) return env
+        val file = sshServerPortFile()
+        val saved = runCatching { Files.readString(file).trim().toIntOrNull() }.getOrNull()
+        return saved?.takeIf { it in SSH_PORT_MIN..SSH_PORT_MAX } ?: DEFAULT_SSH_PORT
+    }
+
+    fun saveSshServerPort(port: String): Int {
+        val parsed = port.trim().toIntOrNull()
+            ?: throw ApiException.localized(400, "invalid_ssh_port", messageKey = "api.envSetup.invalidSshPort")
+        if (parsed !in SSH_PORT_MIN..SSH_PORT_MAX) {
+            throw ApiException.localized(400, "invalid_ssh_port", messageKey = "api.envSetup.invalidSshPort")
+        }
+        val file = sshServerPortFile()
+        Files.createDirectories(file.parent)
+        Files.writeString(file, "$parsed\n", Charsets.UTF_8)
+        return parsed
+    }
+
+    private fun sshServerPortFile(): Path {
+        val dataDir = System.getenv("VIBECODER_DATA_DIR")?.ifBlank { null } ?: "/data"
+        return Path.of(dataDir).resolve("ssh-server/port")
     }
 
     /**
@@ -490,10 +532,11 @@ class EnvSetupService(
     fun spawnInstallAll(): String {
         val taskId = Ids.taskId()
         val steps = SetupComponent.entries
-            .mapNotNull { c -> c.doctorCmd?.takeIf { c != SetupComponent.CLAUDE_AUTH && c != SetupComponent.FLUTTER && c != SetupComponent.CODEX }?.let { c to it } }
+            .mapNotNull { c -> c.doctorCmd?.takeIf { c != SetupComponent.CLAUDE_AUTH && c != SetupComponent.FLUTTER && c != SetupComponent.CODEX && c != SetupComponent.SSH_SERVER }?.let { c to it } }
         // CLAUDE_AUTH 는 OAuth 라 자동 불가. FLUTTER(~2.5GB)·CODEX 는 선택적 도구라 개별 카드
-        // 버튼으로만 설치(Android 빌드 필수 아님). 나머지 (android / gradle / mcp) 만.
-        SetupComponent.entries.forEach { c -> if (c.doctorCmd != null && c != SetupComponent.FLUTTER && c != SetupComponent.CODEX) lastTask[c] = taskId }
+        // 버튼으로만 설치(Android 빌드 필수 아님). SSH_SERVER 는 외부 포트 노출/접속 경계가
+        // 열리는 선택 기능이라 개별 카드로만 설치. 나머지 (android / gradle / mcp) 만.
+        SetupComponent.entries.forEach { c -> if (c.doctorCmd != null && c != SetupComponent.FLUTTER && c != SetupComponent.CODEX && c != SetupComponent.SSH_SERVER) lastTask[c] = taskId }
         submitDoctor(taskId, label = "모두 설치/업데이트", steps = steps.map { it.second }, displaySteps = steps.map { it.first.displayName })
         return taskId
     }
@@ -738,6 +781,9 @@ class EnvSetupService(
     companion object {
         /** Gradle latest version 캐시 TTL — 30 분. */
         private const val GRADLE_LATEST_TTL_MS = 30L * 60 * 1000
+        private const val DEFAULT_SSH_PORT = 2222
+        private const val SSH_PORT_MIN = 1024
+        private const val SSH_PORT_MAX = 65535
         private const val CODEX_DEVICE_LOGIN_URL = "https://auth.openai.com/codex/device"
         private val ANSI_REGEX = Regex("\\u001B\\[[0-?]*[ -/]*[@-~]")
         private val CODEX_DEVICE_CODE_REGEX = Regex("\\b[A-Z0-9]{4}-[A-Z0-9]{4,5}\\b|\\b[A-Z0-9]{8,9}\\b")

@@ -110,11 +110,18 @@ services:
       #   server 볼륨(/data)으로 분리 — workspace 밖. (logback.xml 의 LOG_DIR property)
       VIBECODER_LOG_DIR: ${VIBECODER_LOG_DIR:-/data/logs}
 
+      # 선택 기능: SSH 서버 카드가 저장한 포트 파일이 기본값. 이 env를 명시하면
+      # 파일보다 우선한다(컨테이너 포트도 바꾸는 고급 설정).
+      VIBECODER_SSH_PORT: ${VIBECODER_SSH_PORT:-}
+
     # LAN 페어링 / admin 웹 / API 모두 같은 포트
     # v1.40.0 — 무선 ADB(/adb) 자동 탐지(mDNS)가 필요하면 compose.host.yml 오버레이로
     #   HOST 네트워크 사용: docker compose -f compose.yml -f compose.host.yml up -d
     ports:
       - "${VIBE_PORT:-17880}:17880"
+      # 선택 기능: /env-setup "SSH 서버" 카드 설치 후 `ssh -p ${VIBE_SSH_PORT:-2222} vibe@<host>`.
+      # 공개 인터넷에 노출하기 전 방화벽/공유기 접근 제어와 SSH authorized_keys 를 확인할 것.
+      - "${VIBE_SSH_PORT:-2222}:${VIBECODER_SSH_PORT:-2222}"
 
     # ────────────────────────────────────────────────────────────────────
     # 볼륨 — v0.7.0 통합 구조 (v0.14.0 에서 SQLite 경로 제거, PG 는 자체 컨테이너)

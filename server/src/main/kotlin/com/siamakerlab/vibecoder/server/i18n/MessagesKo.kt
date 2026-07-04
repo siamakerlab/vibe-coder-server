@@ -366,6 +366,9 @@ internal object MessagesKo {
         "env.comp.codex.name" to "Codex CLI (옵션)",
         "env.comp.codex.desc" to "OpenAI Codex CLI — 콘솔/터미널에서 실행하는 에이전트형 코딩 도구. npm(@openai/codex)으로 /home/vibe/.local 에 설치되어 이미지 업데이트 후에도 유지됨. 로그인/설정은 CODEX_HOME(.config 볼륨)에 저장되어 재배포에도 로그인 상태가 유지됨. Node.js 필요(이미지 내장).",
         "env.size.codex" to "~50 MB (npm)",
+        "env.comp.sshServer.name" to "SSH 서버 (원격 접속)",
+        "env.comp.sshServer.desc" to "컨테이너의 vibe 사용자로 원격 SSH 접속할 수 있도록 OpenSSH 서버를 설치하고 지정 포트로 실행합니다. 외부 노출은 compose ports 의 VIBE_SSH_PORT 매핑을 사용합니다.",
+        "env.size.sshServer" to "선택적 · 약 10 MB",
         // v1.7.16 — EnvSetupService probe 메시지.
         "probe.cmd.missing" to "미설치: %s 실행 실패",
         "probe.claudeAuth.apiKey" to "API 키 모드 (ANTHROPIC_API_KEY)",
@@ -392,6 +395,8 @@ internal object MessagesKo {
         "probe.gradle.latest" to "%s (최신)",
         "probe.flutter.ok" to "설치됨 — %s",
         "probe.flutter.missing" to "Flutter 미발견. 설치 버튼으로 stable 채널을 clone 합니다 (Android 전용).",
+        "probe.sshServer.ok" to "OpenSSH 서버 설치됨 · 컨테이너 포트 %s",
+        "probe.sshServer.missing" to "OpenSSH 서버 미설치 · 설치 시 컨테이너 포트 %s",
         // v1.7.17 — Claude Auth help text + workspace probe.
         "diag.claudeAuth.help" to "자격증명 파일이 없습니다: %s/.credentials.json\n\n도커 환경 — `--user vibe` 옵션 필수 (root 로 실행하면 /root/.claude 로 저장됨):\n  docker exec -it --user vibe vibe-coder-server claude login\n\n호스트 환경 (compose 가 ~/.claude 를 마운트한 경우 호스트에서 한 번만 해도 됨):\n  claude login\n\n로그인 완료 후 이 페이지를 새로고침하세요. refresh token 으로 access token 은 자동 갱신되므로 한 번만 진행하면 됩니다.",
         "diag.workspace.ok" to "읽기/쓰기 정상",
@@ -941,6 +946,13 @@ internal object MessagesKo {
         "env.action.codexApiKeyConfirm" to "입력한 API key 를 Codex CLI 로그인에 사용합니다. 계속할까요?",
         "env.action.codexApiKeyBtn" to "API key 로그인",
         "env.action.codexNote" to "옵션. npm-global 볼륨에 영속되고, 로그인은 CODEX_HOME(.config 볼륨)에 저장되어 이미지 업데이트에도 유지됩니다. 기본은 device-code, 실패하면 access token/API key 대체 경로를 사용합니다.",
+        "env.action.sshServerLabel.installed" to "포트 적용 / 재시작",
+        "env.action.sshServerLabel.missing" to "SSH 서버 설치",
+        "env.action.sshServerConfirm" to "SSH 서버를 설치하거나 재시작하고 지정 포트를 엽니다. 외부 노출 시 방화벽/공유기 설정을 확인하세요. 계속할까요?",
+        "env.action.sshServerPort" to "컨테이너 SSH 포트",
+        "env.action.sshServerNote" to "Docker compose 는 기본으로 호스트 VIBE_SSH_PORT 를 컨테이너 SSH 포트에 매핑합니다. 보통은 VIBE_SSH_PORT 만 바꾸면 됩니다. 이 카드에서 컨테이너 포트까지 바꾸면 .env 의 VIBECODER_SSH_PORT 도 같은 값으로 맞추고 컨테이너를 재생성하세요.",
+        "env.ssh.flash.err" to "SSH 서버 설정 실패",
+        "api.envSetup.invalidSshPort" to "SSH 포트는 1024~65535 사이 숫자여야 합니다.",
         // v1.10.0 — 안드로이드 에뮬레이터 카드 액션.
 
         // ── claude flash blurbs ──────────────────────────────────────

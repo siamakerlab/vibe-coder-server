@@ -57,6 +57,13 @@ docker compose up -d
 docker exec -it vibe-coder-server vibe-doctor
 ```
 
+선택적으로 원격 SSH 접속이 필요하면 웹 UI 의 **빌드환경 → SSH 서버** 카드에서
+OpenSSH 서버를 설치하세요. 기본 compose 는 `VIBE_SSH_PORT=2222` 를
+컨테이너 `VIBECODER_SSH_PORT=2222` 로 노출하므로 설치 후
+`ssh -p 2222 vibe@<host>` 로 접속할 수 있습니다. 보통 외부 포트만 바꾸면 되므로
+`.env` 의 `VIBE_SSH_PORT` 만 수정하면 됩니다. 카드에서 컨테이너 포트까지 바꾼
+경우에만 `VIBECODER_SSH_PORT` 도 같은 값으로 맞추고 컨테이너를 재생성하세요.
+
 > **v0.13.x → v0.14.0 업그레이드**: SQLite → PostgreSQL 전환으로 fresh start 가
 > 필요합니다 (admin / 프로젝트 재등록). 워크스페이스 파일은 보존됩니다. 절차는
 > 상위 디렉토리의 [CHANGELOG.md](../CHANGELOG.md) v0.14.0 entry 를 참고하세요.

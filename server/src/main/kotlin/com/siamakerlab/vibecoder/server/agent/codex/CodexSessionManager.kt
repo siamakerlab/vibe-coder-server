@@ -43,6 +43,10 @@ import kotlin.io.path.writeText
 
 private val log = KotlinLogging.logger {}
 
+private fun defaultCodexCmd(): String =
+    System.getenv("CODEX_CMD")?.takeIf { it.isNotBlank() }
+        ?: if (OsType.detect() == OsType.WINDOWS) "codex.cmd" else "codex"
+
 class CodexSessionManager(
     private val config: ServerConfig,
     private val workspace: WorkspacePath,
@@ -51,6 +55,7 @@ class CodexSessionManager(
     private val history: ConversationHistoryService? = null,
     private val usageRecorder: CodexUsageRecorder? = null,
     private val residentCapProvider: () -> Int = { config.codex.maxResidentSessions },
+    private val codexCmdProvider: () -> String = { defaultCodexCmd() },
 ) : AgentSessionManager {
     override val provider: AgentProvider = AgentProvider.CODEX
 
@@ -60,6 +65,7 @@ class CodexSessionManager(
     private val locks = ConcurrentHashMap<String, Mutex>()
     private val busy = ConcurrentHashMap<String, Boolean>()
     private val lastTouched = ConcurrentHashMap<String, Instant>()
+    private val pendingPrompts = ConcurrentHashMap<String, ArrayDeque<String>>()
 
     override suspend fun sendPrompt(projectId: String, text: String, images: List<PromptImageDto>) {
         require(text.isNotBlank()) { "prompt text is required" }
@@ -73,80 +79,25 @@ class CodexSessionManager(
         val lock = locks.computeIfAbsent(projectId) { Mutex() }
         lock.withLock {
             if (busy[projectId] == true) {
-                emitSystem(projectId, "codex_busy", "Codex turn is already running for this project.")
-                throw IllegalStateException("Codex turn already running")
+                val size = enqueuePrompt(projectId, text)
+                emitSystem(projectId, "codex_prompt_queued", "Codex turn is already running. Queued prompt #$size.")
+                return
             }
-            val sid = readThreadId(projectId)
-            history?.userPrompt(projectId, sid, text, provider = provider.id)
-            val root = workspace.projectRoot(projectId)
-            if (!root.exists()) throw IllegalStateException("project root not found: $root")
-            val args = buildArgs(projectId, text, sid)
-            log.info { "[$projectId] spawning Codex: ${args.joinToString(" ")} (cwd=$root)" }
-            val proc = withContext(Dispatchers.IO) {
-                ProcessBuilder(args).also { pb ->
-                    pb.directory(root.toFile())
-                    pb.redirectErrorStream(false)
-                    applyCodexProcessEnv(pb)
-                }.start()
-            }
-            runCatching { proc.outputStream.close() }
-            processes[projectId] = proc
-            setBusy(projectId, ProjectState.RESPONDING)
-            reapResidentProcesses(excludeProjectId = projectId)
-            val stdout = BufferedReader(InputStreamReader(proc.inputStream, StandardCharsets.UTF_8))
-            val stderr = BufferedReader(InputStreamReader(proc.errorStream, StandardCharsets.UTF_8))
-            val stderrTail = Collections.synchronizedList(mutableListOf<String>())
-            jobs[projectId] = scope.launch {
-                val stderrJob = launch {
-                    while (true) {
-                        val line = withContext(Dispatchers.IO) { stderr.readLine() } ?: break
-                        if (line.isNotBlank()) {
-                            stderrTail.add(line)
-                            while (stderrTail.size > MAX_STDERR_TAIL_LINES) stderrTail.removeAt(0)
-                            log.debug { "[$projectId][codex stderr] $line" }
-                        }
-                    }
-                }
-                try {
-                    while (true) {
-                        val line = withContext(Dispatchers.IO) { stdout.readLine() } ?: break
-                        handleEvent(projectId, parser.parseLine(line) ?: continue)
-                    }
-                    val ok = withContext(Dispatchers.IO) { proc.waitFor(1, TimeUnit.SECONDS); proc.exitValue() == 0 }
-                    if (busy[projectId] == true) {
-                        setBusy(projectId, if (ok) ProjectState.READY else ProjectState.ERROR)
-                        if (!ok) {
-                            val detail = synchronized(stderrTail) { stderrTail.joinToString("\n").trim() }
-                            val message = buildString {
-                                append("Codex exited with status ${proc.exitValue()}.")
-                                if (detail.isNotBlank()) append("\n").append(detail)
-                            }
-                            log.warn { "[$projectId] $message" }
-                            emitSystem(projectId, "codex_exit", message)
-                        }
-                    }
-                } catch (t: Throwable) {
-                    log.warn(t) { "[$projectId] Codex reader failed" }
-                    emitSystem(projectId, "codex_error", t.message ?: "Codex reader failed")
-                    setBusy(projectId, ProjectState.ERROR)
-                } finally {
-                    stderrJob.cancel()
-                    processes.remove(projectId, proc)
-                    lastTouched.remove(projectId)
-                    jobs.remove(projectId)
-                }
-            }
+            startPromptLocked(projectId, text)
         }
     }
 
     override suspend fun startNew(projectId: String) {
         cancelTurn(projectId)
+        clearQueuedPrompts(projectId)
         runCatching { threadIdFile(projectId).deleteIfExists() }
+        runCatching { contextFile(projectId).deleteIfExists() }
         hub.resetConsole(topic(projectId))
         emitSystem(projectId, "codex_new_session", "Codex thread reset. The next prompt starts a fresh thread.")
     }
 
     override suspend fun cancelTurn(projectId: String) {
+        clearQueuedPrompts(projectId)
         val proc = processes[projectId]
         if (proc?.isAlive == true) {
             proc.destroy()
@@ -210,11 +161,102 @@ class CodexSessionManager(
 
     private fun buildArgs(projectId: String, text: String, threadId: String?): List<String> {
         return buildCodexExecArgs(
-            cmd = resolveCodexCmd(),
+            cmd = codexCmdProvider(),
             text = text,
             threadId = threadId,
             model = effectiveModel(projectId),
         )
+    }
+
+    private fun enqueuePrompt(projectId: String, text: String): Int {
+        val queue = pendingPrompts.computeIfAbsent(projectId) { ArrayDeque() }
+        queue.addLast(text)
+        return queue.size
+    }
+
+    private fun clearQueuedPrompts(projectId: String) {
+        pendingPrompts.remove(projectId)
+    }
+
+    private suspend fun startPromptLocked(projectId: String, text: String) {
+        val sid = readThreadId(projectId)
+        history?.userPrompt(projectId, sid, text, provider = provider.id)
+        val root = workspace.projectRoot(projectId)
+        if (!root.exists()) throw IllegalStateException("project root not found: $root")
+        val args = buildArgs(projectId, text, sid)
+        log.info { "[$projectId] spawning Codex: ${args.joinToString(" ")} (cwd=$root)" }
+        val proc = withContext(Dispatchers.IO) {
+            ProcessBuilder(args).also { pb ->
+                pb.directory(root.toFile())
+                pb.redirectErrorStream(false)
+                applyCodexProcessEnv(pb)
+            }.start()
+        }
+        runCatching { proc.outputStream.close() }
+        processes[projectId] = proc
+        setBusy(projectId, ProjectState.RESPONDING)
+        reapResidentProcesses(excludeProjectId = projectId)
+        val stdout = BufferedReader(InputStreamReader(proc.inputStream, StandardCharsets.UTF_8))
+        val stderr = BufferedReader(InputStreamReader(proc.errorStream, StandardCharsets.UTF_8))
+        val stderrTail = Collections.synchronizedList(mutableListOf<String>())
+        jobs[projectId] = scope.launch {
+            val stderrJob = launch {
+                while (true) {
+                    val line = withContext(Dispatchers.IO) { stderr.readLine() } ?: break
+                    if (line.isNotBlank()) {
+                        stderrTail.add(line)
+                        while (stderrTail.size > MAX_STDERR_TAIL_LINES) stderrTail.removeAt(0)
+                        log.debug { "[$projectId][codex stderr] $line" }
+                    }
+                }
+            }
+            try {
+                while (true) {
+                    val line = withContext(Dispatchers.IO) { stdout.readLine() } ?: break
+                    handleEvent(projectId, parser.parseLine(line) ?: continue)
+                }
+                val ok = withContext(Dispatchers.IO) { proc.waitFor(1, TimeUnit.SECONDS); proc.exitValue() == 0 }
+                if (busy[projectId] == true) {
+                    setBusy(projectId, if (ok) ProjectState.READY else ProjectState.ERROR)
+                    if (!ok) {
+                        val detail = synchronized(stderrTail) { stderrTail.joinToString("\n").trim() }
+                        val message = buildString {
+                            append("Codex exited with status ${proc.exitValue()}.")
+                            if (detail.isNotBlank()) append("\n").append(detail)
+                        }
+                        log.warn { "[$projectId] $message" }
+                        emitSystem(projectId, "codex_exit", message)
+                    }
+                }
+            } catch (t: Throwable) {
+                log.warn(t) { "[$projectId] Codex reader failed" }
+                emitSystem(projectId, "codex_error", t.message ?: "Codex reader failed")
+                setBusy(projectId, ProjectState.ERROR)
+            } finally {
+                stderrJob.cancel()
+                processes.remove(projectId, proc)
+                lastTouched.remove(projectId)
+                jobs.remove(projectId)
+                startNextQueuedPrompt(projectId)
+            }
+        }
+    }
+
+    private suspend fun startNextQueuedPrompt(projectId: String) {
+        val lock = locks.computeIfAbsent(projectId) { Mutex() }
+        lock.withLock {
+            if (busy[projectId] == true || processes[projectId]?.isAlive == true) return
+            val queue = pendingPrompts[projectId] ?: return
+            if (queue.isEmpty()) {
+                pendingPrompts.remove(projectId)
+                return
+            }
+            val next = queue.removeFirst()
+            val remaining = queue.size
+            if (queue.isEmpty()) pendingPrompts.remove(projectId)
+            emitSystem(projectId, "codex_prompt_dequeued", "Running queued Codex prompt. Remaining: $remaining.")
+            startPromptLocked(projectId, next)
+        }
     }
 
     private suspend fun handleEvent(projectId: String, event: CodexEvent) {
@@ -416,10 +458,6 @@ class CodexSessionManager(
                 }.onFailure { log.warn(it) { "[$projectId] Codex resident process reap failed" } }
             }
     }
-
-    private fun resolveCodexCmd(): String =
-        System.getenv("CODEX_CMD")?.takeIf { it.isNotBlank() }
-            ?: if (OsType.detect() == OsType.WINDOWS) "codex.cmd" else "codex"
 
     private fun applyCodexProcessEnv(pb: ProcessBuilder) {
         pb.environment().putIfAbsent("HOME", "/home/vibe")

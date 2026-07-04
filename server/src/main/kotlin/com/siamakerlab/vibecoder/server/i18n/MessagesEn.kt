@@ -389,6 +389,9 @@ internal object MessagesEn {
         "env.comp.codex.name" to "Codex CLI (optional)",
         "env.comp.codex.desc" to "OpenAI Codex CLI — an agentic coding tool you run in the console/terminal. Installed via npm (@openai/codex) into /home/vibe/.local so it survives image updates. Login/config is stored under CODEX_HOME (the .config volume), so your sign-in persists across redeploys. Requires Node.js (bundled).",
         "env.size.codex" to "~50 MB (npm)",
+        "env.comp.sshServer.name" to "SSH server (remote access)",
+        "env.comp.sshServer.desc" to "Installs OpenSSH server and runs it on the selected port so you can SSH into the container as the vibe user. External access uses the VIBE_SSH_PORT mapping in compose ports.",
+        "env.size.sshServer" to "Optional · ~10 MB",
         // v1.7.16 — EnvSetupService probe messages.
         "probe.cmd.missing" to "Not installed: %s failed",
         "probe.claudeAuth.apiKey" to "API key mode (ANTHROPIC_API_KEY)",
@@ -415,6 +418,8 @@ internal object MessagesEn {
         "probe.gradle.latest" to "%s (latest)",
         "probe.flutter.ok" to "Installed — %s",
         "probe.flutter.missing" to "Flutter not found. Click install to clone the stable channel (Android-only).",
+        "probe.sshServer.ok" to "OpenSSH server installed · container port %s",
+        "probe.sshServer.missing" to "OpenSSH server missing · will use container port %s after install",
         // v1.7.17 — Claude Auth help text + workspace probe.
         "diag.claudeAuth.help" to "Credentials file missing: %s/.credentials.json\n\nDocker — `--user vibe` required (root saves to /root/.claude):\n  docker exec -it --user vibe vibe-coder-server claude login\n\nHost — if compose mounts ~/.claude, you can log in on the host once:\n  claude login\n\nReload this page after login. refresh_token auto-renews access_token, so this is a one-time step.",
         "diag.workspace.ok" to "read/write OK",
@@ -963,6 +968,13 @@ internal object MessagesEn {
         "env.action.codexApiKeyConfirm" to "Use the entered API key for Codex CLI login. Continue?",
         "env.action.codexApiKeyBtn" to "Log in with API key",
         "env.action.codexNote" to "Optional. Persisted to the npm-global volume; login is kept in CODEX_HOME (.config volume) so it survives image updates. Device code is the default, with access token / API key fallbacks if needed.",
+        "env.action.sshServerLabel.installed" to "Apply port / restart",
+        "env.action.sshServerLabel.missing" to "Install SSH server",
+        "env.action.sshServerConfirm" to "Install or restart the SSH server and open the selected port. Check firewall/router rules before exposing it externally. Continue?",
+        "env.action.sshServerPort" to "Container SSH port",
+        "env.action.sshServerNote" to "Docker compose maps host VIBE_SSH_PORT to the container SSH port by default. Usually only VIBE_SSH_PORT needs to change. If this card changes the container port too, set VIBECODER_SSH_PORT to the same value in .env and recreate the container.",
+        "env.ssh.flash.err" to "SSH server configuration failed",
+        "api.envSetup.invalidSshPort" to "SSH port must be a number between 1024 and 65535.",
 
         // ── claude flash blurbs ──────────────────────────────────────
         "env.flash.uploaded" to "✓ Claude credentials file is registered. Available in the console immediately.",
