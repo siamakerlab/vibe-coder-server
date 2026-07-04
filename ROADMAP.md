@@ -190,16 +190,26 @@ Claude 와 동일한 `AgentRouter` 기반.)
 
 우선순위 낮지만 사용자 체감 항목.
 
-- [ ] **부팅 reconcile** — 미완 turn 자동 재개 (`ClaudeSessionManager.kt:318`
+- [x] **부팅 reconcile** — 미완 turn 자동 재개 (`ClaudeSessionManager.kt:318`
   패턴). Codex 는 thread-id 기반이라 resume 가능성 높음.
-- [ ] **thinking 블록 렌더링** — Codex 가 reasoning 토큰을 내보내면
+  (`codex-turn-active` 영속 마커 + `reconcileInterruptedTurnsAsync()` + ServerMain 부팅 호출.
+  같은 thread-id 로 BOOT_RESUME_PROMPT resume, MAX_BOOT_RESUME_RETRIES=2.)
+- [x] **thinking 블록 렌더링** — Codex 가 reasoning 토큰을 내보내면
   `ConsoleUnknown` 대신 전용 렌더링.
-- [ ] **빠른 프롬프트**(continue/restart/fixAll/review) Codex provider 에서
+  (전용 렌더링은 형식 미확정으로 보류 — 대신 `CodexJsonParser` Unknown 폴백 제거로 reasoning
+  원시 JSON 노이즈를 제거. 형식 확정 시 `CodexEvent.Reasoning` + 전용 렌더링 추가.)
+- [x] **빠른 프롬프트**(continue/restart/fixAll/review) Codex provider 에서
   의미 있게 동작하도록 프롬프트 prefix 조정 (`WebProjectTemplates.kt:1368`).
-- [ ] (조사) 이미지 지원 — Codex CLI 가 vision 입력을 지원하는지 확인 후,
+  (이미 provider 무관한 자연어 프롬프트("계속 진행해줘" / "Continue." 등)라 Codex 에서도
+  그대로 동작. isChat 제외 분기도 유지.)
+- [~] (조사) 이미지 지원 — Codex CLI 가 vision 입력을 지원하는지 확인 후,
   가능하면 `images` 처리 추가.
+  (Codex CLI `exec` 모드는 명령행 인자 텍스트만 받아 vision 미지원 — CLI 제약. 기존
+  `codex_images_unsupported` 에러 유지.)
 
 **Wire change**: 없음. **Android 영향**: 없음.
+**추가**: M1.2 회귀 수정 — `sawTurnEnd` 플래그로 `TurnFailed`(rate-limit) 후 crash 분기
+중복 처리 차단. `./gradlew clean :server:test` 통과.
 
 ---
 

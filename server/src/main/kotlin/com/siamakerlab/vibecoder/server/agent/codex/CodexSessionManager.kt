@@ -128,6 +128,7 @@ class CodexSessionManager(
 
     override suspend fun cancelTurn(projectId: String) {
         cancelRateLimitRetry(projectId)
+        clearTurnActive(projectId)  // v1.149.0 — 사용자 취소 → 미완 마크 해제
         clearQueuedPrompts(projectId)
         val proc = processes[projectId]
         if (proc?.isAlive == true) {
@@ -202,6 +203,57 @@ class CodexSessionManager(
         scope.cancel()
     }
 
+    /**
+     * v1.149.0 — 서버 부팅 시 1회 호출(비동기). 재시작/크래시로 끊긴 미완 Codex turn
+     * (codex-turn-active 마크 잔존) 프로젝트마다 "이어서 진행" 프롬프트를 자동 전송
+     * (같은 thread-id resume → 멈춘 곳부터). [com.siamakerlab.vibecoder.server.claude.ClaudeSessionManager.reconcileInterruptedTurnsAsync]
+     * 와 동일 패턴. 무거운 codex spawn 이라 부팅을 블로킹하지 않도록 scope 에서 순차 실행(2초 간격).
+     */
+    fun reconcileInterruptedTurnsAsync() {
+        scope.launch {
+            val ids = projectIdsWithTurnMark()
+            if (ids.isEmpty()) return@launch
+            log.info { "재시작으로 끊긴 미완 Codex turn ${ids.size}개 자동 재개 시도: $ids" }
+            for (pid in ids) {
+                val retries = readTurnActiveRetries(pid) ?: continue
+                if (retries >= MAX_BOOT_RESUME_RETRIES) {
+                    clearTurnActive(pid)
+                    log.warn { "[$pid] Codex 재시작 자동 재개 ${MAX_BOOT_RESUME_RETRIES}회 초과 — 포기" }
+                    runCatching {
+                        emitSystem(pid, "codex_turn_resume_giveup",
+                            "서버 재시작 후 Codex 자동 재개가 ${MAX_BOOT_RESUME_RETRIES}회를 초과했습니다. 직접 이어서 진행해 주세요.")
+                    }
+                    continue
+                }
+                runCatching {
+                    // 마커를 (retries+1) 로 갱신 후 isAutoResume=true 로 spawn → startPromptLocked 가
+                    // 마커를 덮어쓰지 않는다 (부팅 재개 횟수 추적 보존).
+                    turnActiveFile(pid).writeText((retries + 1).toString())
+                    emitSystem(pid, "codex_turn_auto_resume",
+                        "서버 재시작으로 중단된 Codex 작업을 자동으로 이어서 진행합니다 (${retries + 1}/$MAX_BOOT_RESUME_RETRIES).")
+                    val lock = locks.computeIfAbsent(pid) { Mutex() }
+                    lock.withLock {
+                        if (busy[pid] != true) startPromptLocked(pid, BOOT_RESUME_PROMPT, isAutoResume = true)
+                    }
+                    log.info { "[$pid] 재시작 끊긴 Codex turn 자동 재개 (${retries + 1}/$MAX_BOOT_RESUME_RETRIES)" }
+                }.onFailure { log.warn(it) { "[$pid] Codex boot resume 실패" } }
+                delay(2_000)  // 순차 spawn 부하 분산
+            }
+        }
+    }
+
+    /** codex-turn-active 마크가 있는 프로젝트 id 목록 (workspace `.vibecoder/<id>/` 스캔). */
+    private fun projectIdsWithTurnMark(): List<String> {
+        val base = turnActiveFile("__probe__").parent?.parent ?: return emptyList()  // .vibecoder 루트
+        return runCatching {
+            Files.list(base).use { stream ->
+                stream.filter { Files.isDirectory(it) && Files.exists(it.resolve("codex-turn-active")) }
+                    .map { it.fileName.toString() }
+                    .toList()
+            }
+        }.getOrElse { emptyList() }
+    }
+
     private fun buildArgs(projectId: String, text: String, threadId: String?): List<String> {
         return buildCodexExecArgs(
             cmd = codexCmdProvider(),
@@ -222,11 +274,16 @@ class CodexSessionManager(
     }
 
     /**
-     * v1.148.0 — rate-limit 자동 재개용 [startPromptLocked] 호출만 [resetRateLimitCounter]=false.
-     * 일반 경로(sendPrompt / 큐 드레인)는 항상 true 로 재시도 카운터를 0 으로 돌린다.
+     * v1.148.0/v1.149.0 — [isAutoResume]=true 면 rate-limit 자동 재개 / 부팅 자동 재개 경로.
+     * ① rate-limit 카운터를 유지 ([scheduleRateLimitRetry] 가 증감 관리).
+     * ② turn-active 마커도 유지 (재개 대기/부팅 재개 중엔 미완 상태를 남겨야 reconcile 이 잡음).
+     * 일반 사용자 prompt (sendPrompt / 큐 드레인) 는 isAutoResume=false 로 둘 다 초기화.
      */
-    private suspend fun startPromptLocked(projectId: String, text: String, resetRateLimitCounter: Boolean = true) {
-        if (resetRateLimitCounter) rateLimitRetries.remove(projectId)
+    private suspend fun startPromptLocked(projectId: String, text: String, isAutoResume: Boolean = false) {
+        if (!isAutoResume) {
+            rateLimitRetries.remove(projectId)
+            markTurnActive(projectId)
+        }
         val sid = readThreadId(projectId)
         history?.userPrompt(projectId, sid, text, provider = provider.id)
         val root = workspace.projectRoot(projectId)
@@ -259,14 +316,23 @@ class CodexSessionManager(
                 }
             }
             try {
+                // v1.149.0 — TurnCompleted/TurnFailed 이벤트를 받았는지 추적. Codex exec 는
+                // turn 단위 프로세스라 TurnFailed(rate-limit 포함) 후에도 프로세스가 exit 하며
+                // 이 while 루프를 빠져나온다. 이때 "이벤트 없이 exit = crash" 분기가 rate-limit
+                // 재개/usage-limit/진짜에러 처리를 덮어쓰는 것을 막는다 (M1.2 회귀 수정).
+                var sawTurnEnd = false
                 while (true) {
                     val line = withContext(Dispatchers.IO) { stdout.readLine() } ?: break
-                    handleEvent(projectId, parser.parseLine(line) ?: continue)
+                    val event = parser.parseLine(line) ?: continue
+                    handleEvent(projectId, event)
+                    if (event is CodexEvent.TurnCompleted || event is CodexEvent.TurnFailed) sawTurnEnd = true
                 }
                 val ok = withContext(Dispatchers.IO) { proc.waitFor(1, TimeUnit.SECONDS); proc.exitValue() == 0 }
-                if (busy[projectId] == true) {
+                // TurnCompleted/TurnFailed 없이 exit 한 경우만 crash (이벤트로 종료 처리됐으면 스킵).
+                if (!sawTurnEnd && busy[projectId] == true) {
                     setBusy(projectId, if (ok) ProjectState.READY else ProjectState.ERROR)
                     if (!ok) {
+                        clearTurnActive(projectId)  // v1.149.0 — crash → 미완 마크 해제
                         val detail = synchronized(stderrTail) { stderrTail.joinToString("\n").trim() }
                         val message = buildString {
                             append("Codex exited with status ${proc.exitValue()}.")
@@ -282,6 +348,7 @@ class CodexSessionManager(
             } catch (t: Throwable) {
                 log.warn(t) { "[$projectId] Codex reader failed" }
                 emitSystem(projectId, "codex_error", t.message ?: "Codex reader failed")
+                clearTurnActive(projectId)  // v1.149.0 — reader exception(crash) → 미완 마크 해제
                 setBusy(projectId, ProjectState.ERROR)
                 fireInterrupt(projectId, "crashed")
             } finally {
@@ -355,7 +422,7 @@ class CodexSessionManager(
             val lock = locks.computeIfAbsent(projectId) { Mutex() }
             lock.withLock {
                 if (busy[projectId] != true) return@withLock  // 도중 cancel/stop 됨.
-                runCatching { startPromptLocked(projectId, RATE_LIMIT_RESUME_PROMPT, resetRateLimitCounter = false) }
+                runCatching { startPromptLocked(projectId, RATE_LIMIT_RESUME_PROMPT, isAutoResume = true) }
                     .onFailure {
                         log.warn(it) { "[$projectId] Codex rate-limit 자동 재개 실패" }
                         cancelRateLimitRetry(projectId)
@@ -453,6 +520,7 @@ class CodexSessionManager(
                 }
                 hub.emitConsole(topic(projectId)) { seq -> WsFrame.ConsoleDone(event.reason, seq) }
                 history?.event(projectId, readThreadId(projectId), ClaudeEvent.Done(event.reason), provider = provider.id)
+                clearTurnActive(projectId)  // v1.149.0 — 정상 완료 → 미완 마크 해제
                 setBusy(projectId, ProjectState.READY)
                 fireTurnDone(projectId, event.reason)
             }
@@ -481,6 +549,7 @@ class CodexSessionManager(
                             provider = provider.id,
                         )
                         cancelRateLimitRetry(projectId)
+                        clearTurnActive(projectId)  // v1.149.0 — 종료 → 미완 마크 해제
                         setBusy(projectId, ProjectState.STOPPED)
                         fireInterrupt(projectId, "usage_limit")
                     }
@@ -493,6 +562,7 @@ class CodexSessionManager(
                             provider = provider.id,
                         )
                         cancelRateLimitRetry(projectId)
+                        clearTurnActive(projectId)  // v1.149.0 — 종료 → 미완 마크 해제
                         setBusy(projectId, ProjectState.ERROR)
                         // turn 실패는 자동화 관점에서 error 성 종료 — [PromptAutomationManager.onTurnDone]
                         // 의 stopOnError(reason.startsWith("error")) 분기가 잡도록 "error" reason 으로 통지.
@@ -530,6 +600,35 @@ class CodexSessionManager(
     private fun topic(projectId: String): String = LogHub.consoleTopic(projectId, provider.id)
 
     private fun threadIdFile(projectId: String) = workspace.vibecoderDir(projectId).resolve("codex-thread.id")
+
+    /**
+     * v1.149.0 — Codex turn-active 영속 마크 (서버 재시작으로 끊긴 미완 turn 자동 재개용).
+     * [com.siamakerlab.vibecoder.server.claude.ClaudeSessionManager] 의 `turn-active` 와 대칭이나
+     * 파일명이 다르다 (`codex-turn-active`) — 같은 프로젝트의 Claude/Codex 마커가 섞이지 않게.
+     * 존재 = "이 프로젝트에 정상 완료되지 않은 Codex turn 이 있음". 파일 내용 = 부팅 자동 재개 횟수.
+     */
+    private fun turnActiveFile(projectId: String): Path =
+        workspace.vibecoderDir(projectId).resolve("codex-turn-active")
+
+    /** 새 사용자 prompt 전송 시 마크 ON (자동 재개 횟수 0 으로 리셋). */
+    private fun markTurnActive(projectId: String) {
+        runCatching {
+            val f = turnActiveFile(projectId)
+            Files.createDirectories(f.parent)
+            f.writeText("0")
+        }.onFailure { log.warn(it) { "[$projectId] codex turn-active 마크 실패" } }
+    }
+
+    /** turn 정상 완료 / 사용자 취소 / 새 세션 / 진짜 에러 시 마크 OFF. rate-limit 재개 대기는 유지. */
+    private fun clearTurnActive(projectId: String) {
+        runCatching { turnActiveFile(projectId).deleteIfExists() }
+    }
+
+    /** 마크가 있으면 자동 재개 횟수, 없으면 null. */
+    private fun readTurnActiveRetries(projectId: String): Int? {
+        val f = turnActiveFile(projectId)
+        return if (f.exists()) f.readText().trim().toIntOrNull() ?: 0 else null
+    }
 
     private fun contextFile(projectId: String): Path =
         workspace.vibecoderDir(projectId).resolve("codex-context-tokens")
@@ -629,6 +728,15 @@ class CodexSessionManager(
         const val RATE_LIMIT_RESUME_PROMPT =
             "Continue from where you left off — the previous turn was interrupted by a temporary " +
                 "rate limit (not a usage limit). Resume the in-progress work; do not restart from scratch."
+        /**
+         * v1.149.0 — 서버 재시작으로 끊긴 미완 Codex turn 자동 재개. 무한 재개 방지로 최대
+         * [MAX_BOOT_RESUME_RETRIES] 회 (재시작이 반복돼도). 초과 시 마크 제거 + 수동 안내.
+         * ClaudeSessionManager 와 동일값.
+         */
+        const val MAX_BOOT_RESUME_RETRIES = 2
+        const val BOOT_RESUME_PROMPT =
+            "Continue from where you left off — the server restarted and the previous Codex turn was interrupted. " +
+                "Resume the in-progress work; do not restart from scratch."
     }
 }
 

@@ -21,9 +21,13 @@ class CodexJsonParser(
             "turn.completed" -> CodexEvent.TurnCompleted(usage = root["usage"] as? JsonObject)
             "turn.failed" -> CodexEvent.TurnFailed(root.string("message") ?: "Codex turn failed")
             "error" -> CodexEvent.Error(root.string("message") ?: root.toString())
-            "item.started" -> parseItem(root["item"], started = true) ?: CodexEvent.Unknown(root)
-            "item.completed" -> parseItem(root["item"], started = false) ?: CodexEvent.Unknown(root)
-            else -> if (type?.startsWith("item.") == true) parseItem(root["item"], started = false) ?: CodexEvent.Unknown(root)
+            // v1.149.0 — item.* 이벤트는 [parseItem] 이 아는 itemType(agent_message/command_execution)
+            // 만 이벤트로 변환. reasoning/thinking 등 모르는 itemType 은 null → 조용히 스킵
+            // (이전엔 Unknown 폴백이 원시 JSON 을 콘솔에 뿌려 reasoning 노이즈가 됐다).
+            // reasoning 형식이 확정되면 별도 CodexEvent.Reasoning + 전용 렌더링 추가.
+            "item.started" -> parseItem(root["item"], started = true)
+            "item.completed" -> parseItem(root["item"], started = false)
+            else -> if (type?.startsWith("item.") == true) parseItem(root["item"], started = false)
             else CodexEvent.Unknown(root)
         }
     }
@@ -42,6 +46,7 @@ class CodexJsonParser(
                 if (started) CodexEvent.CommandStarted(id, cmd)
                 else CodexEvent.CommandCompleted(id, cmd, item["aggregated_output"] ?: item["output"] ?: item["result"])
             }
+            // reasoning/thinking 및 그 외 모르는 itemType → null (스킵). 형식 확정 시 별도 처리.
             else -> null
         }
     }

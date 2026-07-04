@@ -436,6 +436,9 @@ fun main(args: Array<String>) {
     // v1.82.0 — 재시작으로 끊긴 콘솔 미완 turn 자동 재개 (비동기 — claude spawn 무거움).
     runCatching { sessionManager.reconcileInterruptedTurnsAsync() }
         .onFailure { log.warn(it) { "interrupted-turn reconcile 트리거 실패" } }
+    // v1.149.0 — Codex 도 동일하게 미완 turn 자동 재개 (thread-id resume).
+    runCatching { codexSessionManager.reconcileInterruptedTurnsAsync() }
+        .onFailure { log.warn(it) { "codex interrupted-turn reconcile 트리거 실패" } }
     // v0.35.0 — 코드 분석 묶음 (wrapper / stats / search).
     val gradleWrapperService = com.siamakerlab.vibecoder.server.build.GradleWrapperService(workspace)
     val codeStatsService = com.siamakerlab.vibecoder.server.projects.CodeStatsService(workspace)
