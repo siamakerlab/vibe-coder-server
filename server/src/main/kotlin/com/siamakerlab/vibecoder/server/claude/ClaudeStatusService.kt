@@ -1,5 +1,7 @@
 package com.siamakerlab.vibecoder.server.claude
 
+import com.siamakerlab.vibecoder.server.agent.AgentUsageProvider
+import com.siamakerlab.vibecoder.server.agent.AgentUsageSnapshot
 import com.siamakerlab.vibecoder.server.config.ServerConfig
 import com.siamakerlab.vibecoder.server.core.OsType
 import com.siamakerlab.vibecoder.server.core.WorkspacePath
@@ -25,13 +27,24 @@ private val log = KotlinLogging.logger {}
  *
  * Output formats change between Claude releases; we extract best-effort and leave
  * unknowns as null so the UI gracefully degrades.
+ *
+ * v1.146.0 — [AgentUsageProvider] 구현. [com.siamakerlab.vibecoder.server.automation.ScheduledPromptManager]
+ * 가 Claude 구체 타입 없이 session/weekly usage % 만 읽을 수 있도록.
  */
 class ClaudeStatusService(
     private val config: ServerConfig,
     private val workspace: WorkspacePath,
     private val sessionManager: ClaudeSessionManager,
     private val ttl: Duration = Duration.ofSeconds(60),
-) {
+) : AgentUsageProvider {
+
+    override fun usageSnapshot(projectId: String): AgentUsageSnapshot? {
+        val dto = cachedSnapshot(projectId)
+        return AgentUsageSnapshot(
+            sessionUsagePercent = dto.sessionUsagePercent,
+            weeklyUsagePercent = dto.weeklyUsagePercent,
+        )
+    }
 
     private data class Cached(val dto: ClaudeStatusDto, val expiresAt: Instant)
 

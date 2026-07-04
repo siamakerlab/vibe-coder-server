@@ -366,43 +366,48 @@ fun main(args: Array<String>) {
     val promptAutomationPresetStore =
         com.siamakerlab.vibecoder.server.automation.PromptAutomationPresetStore(workspace, clock)
     val promptAutomationManager = com.siamakerlab.vibecoder.server.automation.PromptAutomationManager(
-        sessionManager, promptAutomationRunRepo, hub,
+        agentRouter, promptAutomationRunRepo, hub,
     )
     // v1.130.0 — 프롬프트 예약(one-shot) 스케줄러. 지정 시각 / Claude 한도 해제 시점에 프롬프트
     // 1회 자동 전송(유휴 시). claudeStatusService(usage % 캐시) 는 위에서 이미 생성됨.
+    // v1.146.0 — provider 무관화: AgentRouter 기반 발사 + AgentUsageProvider(ClaudeStatusService) 기반 한도 판정.
     val scheduledPromptManager = com.siamakerlab.vibecoder.server.automation.ScheduledPromptManager(
-        scheduledPromptRepo, sessionManager, claudeStatusService, hub, clock,
+        scheduledPromptRepo, agentRouter, claudeStatusService, hub, clock,
     )
     scheduledPromptManager.start()
     // turn 완료/중단 hook 주입 (순환의존 방지를 위해 생성 후 setter).
     // v1.88.0 — 자동화(PromptAutomationManager) hook 에 더해 알림(NotificationService) emit 합성.
     //   단일 var listener 라 합성 필수(덮어쓰면 자동화 깨짐). 자동화 active 중 turn 완료는
     //   연속이라 알림 과다 → 수동 turn 완료만 알림. ghost(scratch/chat) 프로젝트는 제외.
+    // v1.146.0 — provider 무관화: ClaudeSessionManager 단일 setter → AgentRouter.installTurnListeners
+    //   팬아웃. Claude/Codex/OpenCode 모든 manager 에 동일 합성 리스너가 주입된다.
     val notifyUserIds: () -> List<String?> = {
         runCatching { adminUserRepo.listAll().map { it.id as String? } }.getOrDefault(emptyList())
     }
     fun notifyProjectName(pid: String): String =
         runCatching { projects.get(pid).name }.getOrNull()?.ifBlank { null } ?: pid
-    sessionManager.turnDoneListener = { pid, reason ->
-        val wasAutomation = promptAutomationManager.isActive(pid)
-        promptAutomationManager.onTurnDone(pid, reason)
-        if (!wasAutomation && !com.siamakerlab.vibecoder.server.projects.ProjectService.isGhost(pid)) {
-            runCatching { notificationService.emitClaudeTurnDone(pid, notifyProjectName(pid), notifyUserIds()) }
-                .onFailure { log.warn(it) { "[notify] turn-done emit failed for $pid" } }
-        }
-    }
-    sessionManager.turnInterruptListener = { pid, reason ->
-        promptAutomationManager.onInterrupt(pid, reason)
-        if (!com.siamakerlab.vibecoder.server.projects.ProjectService.isGhost(pid)) {
-            runCatching {
-                when (reason) {
-                    "cancelled" -> notificationService.emitClaudeStopped(pid, notifyProjectName(pid), notifyUserIds())
-                    "crashed" -> notificationService.emitClaudeError(pid, notifyProjectName(pid), null, notifyUserIds())
-                    // "new_session" → 사용자 의도적 세션 리셋, 알림 불필요.
-                }
-            }.onFailure { log.warn(it) { "[notify] interrupt emit failed for $pid ($reason)" } }
-        }
-    }
+    agentRouter.installTurnListeners(
+        done = { pid, reason ->
+            val wasAutomation = promptAutomationManager.isActive(pid)
+            promptAutomationManager.onTurnDone(pid, reason)
+            if (!wasAutomation && !com.siamakerlab.vibecoder.server.projects.ProjectService.isGhost(pid)) {
+                runCatching { notificationService.emitClaudeTurnDone(pid, notifyProjectName(pid), notifyUserIds()) }
+                    .onFailure { log.warn(it) { "[notify] turn-done emit failed for $pid" } }
+            }
+        },
+        interrupt = { pid, reason ->
+            promptAutomationManager.onInterrupt(pid, reason)
+            if (!com.siamakerlab.vibecoder.server.projects.ProjectService.isGhost(pid)) {
+                runCatching {
+                    when (reason) {
+                        "cancelled" -> notificationService.emitClaudeStopped(pid, notifyProjectName(pid), notifyUserIds())
+                        "crashed" -> notificationService.emitClaudeError(pid, notifyProjectName(pid), null, notifyUserIds())
+                        // "new_session" → 사용자 의도적 세션 리셋, 알림 불필요.
+                    }
+                }.onFailure { log.warn(it) { "[notify] interrupt emit failed for $pid ($reason)" } }
+            }
+        },
+    )
     // ─── 부팅 reconcile (규약) ────────────────────────────────────────────────────
     // 규약: "진행중(in-progress) 상태를 갖는 모든 DB 테이블은 여기서 reconcileOrphans() 로
     //   종료 상태로 정리한다." 서버는 빌드·자동화를 in-process 로 돌리므로, 도중에 재시작/

@@ -1,6 +1,6 @@
 package com.siamakerlab.vibecoder.server.automation
 
-import com.siamakerlab.vibecoder.server.claude.ClaudeSessionManager
+import com.siamakerlab.vibecoder.server.agent.AgentRouter
 import com.siamakerlab.vibecoder.server.error.ApiException
 import com.siamakerlab.vibecoder.server.repo.PromptAutomationRunRepository
 import com.siamakerlab.vibecoder.server.ws.LogHub
@@ -19,8 +19,12 @@ private val log = KotlinLogging.logger {}
  * v1.59.0 — 프롬프트 자동화 오케스트레이터 (서버 백그라운드 autopilot).
  *
  * 프로젝트당 active run 1개를 in-memory 로 관리한다. 시작 시 프롬프트 큐를 만들고
- * 첫 프롬프트를 보낸 뒤, [ClaudeSessionManager] 가 turn 완료(Done)를 통지할 때마다
- * ([onTurnDone]) 큐에서 다음 프롬프트를 꺼내 보낸다. 큐가 비면 완료.
+ * 첫 프롬프트를 보낸 뒤, [AgentRouter] 가 선택한 provider 의 manager 가 turn 완료(Done)를
+ * 통지할 때마다 ([onTurnDone]) 큐에서 다음 프롬프트를 꺼내 보낸다. 큐가 비면 완료.
+ *
+ * v1.146.0 — Claude 전용([ClaudeSessionManager])에서 provider 무관([AgentRouter])으로
+ * 전환. Codex/OpenCode provider 로 자동화가 동작한다 (provider 가 turn 완료 리스너를
+ * [AgentSessionManager.turnDoneListener] 에서 구현한 경우).
  *
  * 브라우저가 닫혀도 서버 프로세스 안에서 계속 진행된다(사용자 요구). 진행 상태는
  * [WsFrame.AutomationProgress] 로 console topic 에 broadcast → 웹/Android 콘솔이 뱃지 갱신.
@@ -28,7 +32,7 @@ private val log = KotlinLogging.logger {}
  * 안전장치: 프로젝트당 1개, 총 발사 수 상한([MAX_TOTAL_SENDS]), 에러/cancel/crash 중단.
  */
 class PromptAutomationManager(
-    private val sessionManager: ClaudeSessionManager,
+    private val router: AgentRouter,
     private val runRepo: PromptAutomationRunRepository,
     private val hub: LogHub,
 ) {
@@ -78,7 +82,7 @@ class PromptAutomationManager(
 
         val first = run.queue.removeFirst()
         try {
-            sessionManager.sendPrompt(projectId, first)
+            router.sendPrompt(projectId, first)
             run.sent = 1
             runRepo.updateSent(run.runId, 1)
             emitSystem(projectId, "automation_started", systemMsg("자동화 시작", spec.name, 1, run.total))
@@ -112,7 +116,7 @@ class PromptAutomationManager(
             return@withLock
         }
         try {
-            sessionManager.sendPrompt(projectId, next)
+            router.sendPrompt(projectId, next)
             run.sent += 1
             runRepo.updateSent(run.runId, run.sent)
             emitProgress(run, PromptAutomationStatus.RUNNING, active = true, lastPrompt = next)

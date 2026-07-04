@@ -1,7 +1,7 @@
 package com.siamakerlab.vibecoder.server.automation
 
-import com.siamakerlab.vibecoder.server.claude.ClaudeSessionManager
-import com.siamakerlab.vibecoder.server.claude.ClaudeStatusService
+import com.siamakerlab.vibecoder.server.agent.AgentRouter
+import com.siamakerlab.vibecoder.server.agent.AgentUsageProvider
 import com.siamakerlab.vibecoder.server.core.Clock
 import com.siamakerlab.vibecoder.server.repo.ScheduledPromptRepository
 import com.siamakerlab.vibecoder.server.repo.ScheduledPromptRow
@@ -24,15 +24,18 @@ private val log = KotlinLogging.logger {}
  * v1.130.0 — 프롬프트 예약 전송(one-shot) 스케줄러.
  *
  * [ScheduledPromptRepository] 의 pending 예약을 30초마다 폴링해, 트리거 조건이 충족되고
- * 콘솔이 **유휴**(turn 미진행)일 때 [ClaudeSessionManager.sendPrompt] 로 1회 전송한다.
+ * 콘솔이 **유휴**(turn 미진행)일 때 [AgentRouter.sendPrompt] 로 1회 전송한다.
+ *
+ * v1.146.0 — Claude 전용([ClaudeSessionManager]/[ClaudeStatusService])에서 provider 무관
+ * ([AgentRouter]/[AgentUsageProvider])으로 전환. provider 가 [AgentUsageProvider] 로 usage %
+ * 를 관측할 수 있으면 SESSION_RESET/WEEKLY_RESET 트리거가 동작한다. provider 가 usage 를
+ * 관측 불가(null)면 해당 트리거는 보수적으로 보류된다.
  *
  * 트리거:
  *  - time          : `fireAtEpochMs` 도달.
- *  - session_reset : Claude 세션(5h) 사용 한도 해제 감지.
- *  - weekly_reset  : Claude 주간(7d) 사용 한도 해제 감지.
+ *  - session_reset : 세션(5h) 사용 한도 해제 감지 (usage provider 기반).
+ *  - weekly_reset  : 주간(7d) 사용 한도 해제 감지 (usage provider 기반).
  *
- * 한도 해제 감지는 [ClaudeStatusService.cachedSnapshot] 의 session/weekly UsagePercent 를
- * 사용한다(계정 전역값이라 SCRATCH 캐시로 폴백, 백그라운드 ClaudeUsageMonitor 가 5분 주기 갱신).
  * 예약 시점의 사용량%(baseline)대비 **큰 하락**([RESET_DROP_POINTS]p 이상) 또는 절대 **저점**
  * ([RESET_LOW_PERCENT]% 이하)이면 "리셋됨"으로 판정한다. 관측 불가(null)면 보수적으로 보류.
  *
@@ -40,8 +43,8 @@ private val log = KotlinLogging.logger {}
  */
 class ScheduledPromptManager(
     private val repo: ScheduledPromptRepository,
-    private val sessionManager: ClaudeSessionManager,
-    private val statusService: ClaudeStatusService,
+    private val router: AgentRouter,
+    private val usageProvider: AgentUsageProvider?,
     private val hub: LogHub,
     private val clock: Clock,
 ) {
@@ -74,7 +77,7 @@ class ScheduledPromptManager(
         for (row in pending) {
             if (!shouldFire(row, nowMs)) continue
             // 유휴일 때만 발사 — busy 면 다음 tick 으로 보류(깔끔한 새 turn 보장).
-            if (sessionManager.isBusy(row.projectId)) continue
+            if (router.isBusy(row.projectId)) continue
             fire(row)
         }
     }
@@ -90,11 +93,11 @@ class ScheduledPromptManager(
     }
 
     /**
-     * Claude 세션/주간 사용 한도가 "해제됨"으로 볼 수 있는지.
-     * 관측값이 없으면(false) 보수적으로 보류한다.
+     * provider 의 세션/주간 사용 한도가 "해제됨"으로 볼 수 있는지.
+     * [AgentUsageProvider] 가 null 이거나 관측값이 없으면(false) 보수적으로 보류한다.
      */
     private fun isLimitReleased(projectId: String, session: Boolean, baseline: Int?): Boolean {
-        val snap = statusService.cachedSnapshot(projectId)
+        val snap = usageProvider?.usageSnapshot(projectId) ?: return false
         val cur = (if (session) snap.sessionUsagePercent else snap.weeklyUsagePercent) ?: return false
         if (baseline != null && baseline - cur >= RESET_DROP_POINTS) return true
         return cur <= RESET_LOW_PERCENT
@@ -103,7 +106,7 @@ class ScheduledPromptManager(
     private suspend fun fire(row: ScheduledPromptRow) {
         val label = row.triggerLabel ?: row.triggerType
         try {
-            sessionManager.sendPrompt(row.projectId, row.prompt)
+            router.sendPrompt(row.projectId, row.prompt)
             repo.markSent(row.id)
             log.info { "scheduled prompt fired: ${row.projectId} (${row.triggerType})" }
             emitSystem(row.projectId, "schedule_sent", "⏰ 예약 프롬프트 전송 — $label")

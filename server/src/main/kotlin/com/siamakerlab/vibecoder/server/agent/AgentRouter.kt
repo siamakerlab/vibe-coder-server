@@ -44,6 +44,26 @@ class AgentRouter(
 
     fun managerFor(provider: AgentProvider): AgentSessionManager? = byProvider[provider]
 
+    /**
+     * v1.146.0 — turn 관찰 listener 를 등록된 **모든** manager 에 일괄 주입한다.
+     * [com.siamakerlab.vibecoder.server.ServerMain] 이 자동화(PromptAutomationManager) +
+     * 알림(NotificationService) 합성 리스너를 provider 무관하게 깔기 위해 사용.
+     * 이전에는 ClaudeSessionManager 에만 setter 주입했으므로 Codex/OpenCode turn 완료가
+     * 자동화/알림에 닿지 않았다.
+     */
+    fun installTurnListeners(
+        done: suspend (projectId: String, reason: String) -> Unit,
+        interrupt: suspend (projectId: String, reason: String) -> Unit,
+    ) {
+        byProvider.values.forEach { mgr ->
+            mgr.turnDoneListener = done
+            mgr.turnInterruptListener = interrupt
+        }
+    }
+
+    /** v1.146.0 — 등록된 모든 manager (테스트/점검용). */
+    fun allManagers(): Collection<AgentSessionManager> = byProvider.values
+
     private fun manager(projectId: String): AgentSessionManager =
         byProvider[providerFor(projectId)] ?: byProvider.getValue(AgentProvider.CLAUDE)
 }

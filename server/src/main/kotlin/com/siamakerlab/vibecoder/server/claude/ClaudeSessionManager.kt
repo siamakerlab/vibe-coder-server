@@ -100,6 +100,10 @@ class ClaudeSessionManager(
      * v1.59.0 — turn 완료(정상 Done) 리스너. 프롬프트 자동화
      * ([com.siamakerlab.vibecoder.server.automation.PromptAutomationManager])가 등록해
      * "작업 완료마다 다음 프롬프트"를 구현. 순환의존 방지를 위해 setter 주입.
+     * v1.146.0 — provider 무관화. [com.siamakerlab.vibecoder.server.agent.AgentRouter.installTurnListeners]
+     * 가 이 필드에 래퍼([com.siamakerlab.vibecoder.server.agent.claude.ClaudeAgentSessionManager])
+     * 를 경유해 주입한다. ClaudeSessionManager 자체는 [AgentSessionManager] 인터페이스를
+     * 직접 구현하지 않으므로 `override` 없이 일반 `var` 로 유지한다.
      * reason = `ClaudeEvent.Done.subtype` (예: "success", "error_max_turns").
      */
     @Volatile

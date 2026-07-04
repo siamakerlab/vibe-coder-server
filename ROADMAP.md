@@ -80,32 +80,32 @@
 
 `agent/AgentSessionManager.kt:14` 에 turn 관찰 hook 을 추가.
 
-- [ ] 새 프로퍼티 추가 (기본 구현 nullable):
+- [x] 새 프로퍼티 추가 (기본 구현 nullable):
   ```kotlin
   var turnDoneListener: (suspend (projectId: String, reason: String) -> Unit)? = null
   var turnInterruptListener: (suspend (projectId: String, reason: String) -> Unit)? = null
   ```
-- [ ] protected helper `fireTurnDone(pid, reason)` / `fireInterrupt(pid, reason)` 추가.
-- [ ] `ClaudeSessionManager.kt:106/113` 의 `var` 제거 → 인터페이스 상속 사용.
+- [x] protected helper `fireTurnDone(pid, reason)` / `fireInterrupt(pid, reason)` 추가.
+- [x] `ClaudeSessionManager.kt:106/113` 의 `var` 제거 → 인터페이스 상속 사용.
   내부 `fireTurnDone` 호출 지점(`:115-123`)은 그대로.
-- [ ] `ClaudeAgentSessionManager` 래퍼가 listener 를 delegate 로 forward 하도록
+- [x] `ClaudeAgentSessionManager` 래퍼가 listener 를 delegate 로 forward 하도록
   보장 (래퍼 경유 시 리스너 소실 방지).
-- [ ] `CodexSessionManager` 가 turn 완료 시점(`CodexEvent.TurnCompleted`/`TurnFailed`,
+- [x] `CodexSessionManager` 가 turn 완료 시점(`CodexEvent.TurnCompleted`/`TurnFailed`,
   `CodexSessionManager.kt` handleEvent) 에 `fireTurnDone()` 호출하도록 추가.
-- [ ] `UnsupportedAgentSessionManager` 는 hook 유지 (no-op).
+- [x] `UnsupportedAgentSessionManager` 는 hook 유지 (no-op).
 
 **검증**: `./gradlew :server:test` + Claude 자동화가 기존대로 동작 확인.
 
 ### 0-B. 자동화/예약 매니저 provider 무관화
 
-- [ ] `PromptAutomationManager.kt:31` 생성자 `ClaudeSessionManager` →
+- [x] `PromptAutomationManager.kt:31` 생성자 `ClaudeSessionManager` →
   `AgentSessionManager` (또는 provider 조회용 `AgentRouter`).
-- [ ] `ScheduledPromptManager.kt:43` 동일. 단 `ClaudeStatusService` 의존은
+- [x] `ScheduledPromptManager.kt:43` 동일. 단 `ClaudeStatusService` 의존은
   provider별 status 조회 인터페이스로 추상화 (아래 0-C).
-- [ ] `ServerMain.kt:386-405` 의 listener 주입을 Claude 세션만이 아닌
+- [x] `ServerMain.kt:386-405` 의 listener 주입을 Claude 세션만이 아닌
   **등록된 모든 manager** 에 적용 (`agentRouter.allManagers().forEach { ... }`
   또는 router 단위 팬아웃).
-- [ ] 자동화/예약 라우트(`/claude/automation/*`)의 경로를 provider 중립적으로
+- [x] 자동화/예약 라우트(`/claude/automation/*`)의 경로를 provider 중립적으로
   유지하되, 내부에서 선택된 provider 의 manager 로 dispatch.
 
 **주의**: 기존 `ProjectAgentPreferenceStore` 기반 provider 선택을 자동화가
@@ -113,19 +113,19 @@ respects 하도록. Claude provider 일 때만 동작하던 legacy 동작 보존
 
 ### 0-C. Provider status 조회 추상화
 
-- [ ] 새 인터페이스 `AgentStatusProvider` (또는 `AgentSessionManager` 확장):
+- [x] 새 인터페이스 `AgentStatusProvider` (또는 `AgentSessionManager` 확장):
   ```kotlin
   fun statusSnapshot(projectId: String): AgentStatusSnapshot?  // usage% / reset / model
   ```
-- [ ] `ClaudeStatusService`·`CodexStatusService` 를 어댑트.
-- [ ] `ScheduledPromptManager` 의 session_reset/weekly_reset 트리거가
+- [x] `ClaudeStatusService`·`CodexStatusService` 를 어댑트. (Claude 구현 완료, Codex 는 Phase 1 예정)
+- [x] `ScheduledPromptManager` 의 session_reset/weekly_reset 트리거가
   선택된 provider 의 status 기준으로 동작.
 
 ### 0-D. ApiPath SSOT 정리 (레거시 정책 위반 회수)
 
-- [ ] `ConsoleRoutes.kt:229/243` 의 `/agent/provider` GET/POST 를
+- [x] `ConsoleRoutes.kt:229/243` 의 `/agent/provider` GET/POST 를
   `shared/ApiPath.kt` 에 먼저 등록 (강제 룰 v0.64.0+).
-- [ ] 자동화/예약 endpoint 중 SSOT 밖에 있는 것 회수.
+- [x] 자동화/예약 endpoint 중 SSOT 밖에 있는 것 회수. (pathSeg 기반 라우트는 v1.145.18 에서 일괄 회수 완료)
 
 **Wire change**: ApiPath 상수 추가만 (경로 문자열 동일). **Android 영향**:
 additive — 안드가 새 endpoint 를 쓰지 않으면 영향 없음. shared/ 동기 권고(선택).

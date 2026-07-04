@@ -226,7 +226,7 @@ fun Routing.consoleRoutes(
             projects.rowOrThrow(projectId)
             call.respond(buildConsoleSettings(sessionManager, projectId))
         }
-        get("/api/projects/{projectId}/agent/provider") {
+        get(ApiPath.projectAgentProvider("{projectId}")) {
             val projectId = call.parameters["projectId"]
                 ?: throw ApiException.localized(400, "bad_request", messageKey = "api.console.projectIdRequired")
             call.requireProjectAcl(projects, projectId)
@@ -240,7 +240,7 @@ fun Routing.consoleRoutes(
                 )
             )
         }
-        post("/api/projects/{projectId}/agent/provider") {
+        post(ApiPath.projectAgentProvider("{projectId}")) {
             call.requireApiWrite()
             val projectId = call.parameters["projectId"]
                 ?: throw ApiException.localized(400, "bad_request", messageKey = "api.console.projectIdRequired")

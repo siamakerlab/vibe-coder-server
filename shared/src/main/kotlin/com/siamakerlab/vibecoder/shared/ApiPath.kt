@@ -100,6 +100,15 @@ object ApiPath {
     fun claudeStatus(projectId: String) =
         "/api/projects/$projectId/claude/status"
 
+    /**
+     * v1.146.0 — 프로젝트 AI provider 조회(GET)/변경(POST). SSOT 회수 — 이전에는
+     * [com.siamakerlab.vibecoder.server.claude.ConsoleRoutes] 가 hardcoded path 로
+     * 단독 운영했다 (v0.64.0+ 강제 룰 위반 사례).
+     * Body(POST): `{"provider": "claude"|"codex"|"opencode"}`.
+     */
+    fun projectAgentProvider(projectId: String) =
+        "/api/projects/${pathSeg(projectId)}/agent/provider"
+
     // v1.59.0 — 프롬프트 자동화 (서버 백그라운드 autopilot). turn 완료마다 다음
     // 프롬프트 자동 전송. 실행 제어는 프로젝트별, 프리셋은 workspace 전역.
     fun promptAutomationStart(projectId: String) =

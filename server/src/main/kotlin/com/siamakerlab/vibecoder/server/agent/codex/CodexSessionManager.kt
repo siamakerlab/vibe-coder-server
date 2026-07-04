@@ -59,6 +59,27 @@ class CodexSessionManager(
 ) : AgentSessionManager {
     override val provider: AgentProvider = AgentProvider.CODEX
 
+    /**
+     * v1.146.0 — turn 관찰 hook (provider 무관화). [AgentRouter.installTurnListeners] 가
+     * Claude/Codex/OpenCode 모든 manager 에 동일 리스너를 주입한다. Codex 는 turn 단위
+     * exec 프로세스라 [handleEvent] 의 TurnCompleted/TurnFailed 시점에 [fireTurnDone] 호출.
+     */
+    @Volatile
+    override var turnDoneListener: (suspend (projectId: String, reason: String) -> Unit)? = null
+
+    @Volatile
+    override var turnInterruptListener: (suspend (projectId: String, reason: String) -> Unit)? = null
+
+    private fun fireTurnDone(projectId: String, reason: String) {
+        val l = turnDoneListener ?: return
+        scope.launch { runCatching { l(projectId, reason) }.onFailure { log.warn(it) { "[$projectId] codex turnDoneListener failed" } } }
+    }
+
+    private fun fireInterrupt(projectId: String, reason: String) {
+        val l = turnInterruptListener ?: return
+        scope.launch { runCatching { l(projectId, reason) }.onFailure { log.warn(it) { "[$projectId] codex turnInterruptListener failed" } } }
+    }
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val jobs = ConcurrentHashMap<String, Job>()
     private val processes = ConcurrentHashMap<String, Process>()
@@ -226,12 +247,16 @@ class CodexSessionManager(
                         }
                         log.warn { "[$projectId] $message" }
                         emitSystem(projectId, "codex_exit", message)
+                        // 프로세스가 TurnCompleted/TurnFailed 이벤트 없이 죽음 → crash 로 간주해
+                        // 진행 중 자동화를 중단시킨다.
+                        fireInterrupt(projectId, "crashed")
                     }
                 }
             } catch (t: Throwable) {
                 log.warn(t) { "[$projectId] Codex reader failed" }
                 emitSystem(projectId, "codex_error", t.message ?: "Codex reader failed")
                 setBusy(projectId, ProjectState.ERROR)
+                fireInterrupt(projectId, "crashed")
             } finally {
                 stderrJob.cancel()
                 processes.remove(projectId, proc)
@@ -338,6 +363,7 @@ class CodexSessionManager(
                 hub.emitConsole(topic(projectId)) { seq -> WsFrame.ConsoleDone(event.reason, seq) }
                 history?.event(projectId, readThreadId(projectId), ClaudeEvent.Done(event.reason), provider = provider.id)
                 setBusy(projectId, ProjectState.READY)
+                fireTurnDone(projectId, event.reason)
             }
             is CodexEvent.TurnFailed -> {
                 hub.emitConsole(topic(projectId)) { seq -> WsFrame.ConsoleError("codex_turn_failed", event.message, seq) }
@@ -348,6 +374,9 @@ class CodexSessionManager(
                     provider = provider.id,
                 )
                 setBusy(projectId, ProjectState.ERROR)
+                // turn 실패는 자동화 관점에서 error 성 종료 — [PromptAutomationManager.onTurnDone]
+                // 의 stopOnError(reason.startsWith("error")) 분기가 잡도록 "error" reason 으로 통지.
+                fireTurnDone(projectId, "error")
             }
             is CodexEvent.Error -> {
                 hub.emitConsole(topic(projectId)) { seq -> WsFrame.ConsoleError("codex_error", event.message, seq) }

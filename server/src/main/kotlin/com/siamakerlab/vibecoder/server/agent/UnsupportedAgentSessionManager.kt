@@ -9,6 +9,14 @@ open class UnsupportedAgentSessionManager(
     override val provider: AgentProvider,
     private val hub: LogHub,
 ) : AgentSessionManager {
+    // v1.146.0 — hook 유지 (no-op). installTurnListeners 가 모든 manager 에 주입해도
+    // 미구현 provider 에서는 fire 경로가 없어 안전하게 무시된다.
+    @Volatile
+    override var turnDoneListener: (suspend (projectId: String, reason: String) -> Unit)? = null
+
+    @Volatile
+    override var turnInterruptListener: (suspend (projectId: String, reason: String) -> Unit)? = null
+
     override suspend fun sendPrompt(projectId: String, text: String, images: List<PromptImageDto>) {
         emit(projectId, "${provider.displayName} provider is registered but not implemented yet.")
         throw UnsupportedOperationException("${provider.id} provider is not implemented yet")
