@@ -21,6 +21,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -87,6 +88,14 @@ class CodexSessionManager(
     private val busy = ConcurrentHashMap<String, Boolean>()
     private val lastTouched = ConcurrentHashMap<String, Instant>()
     private val pendingPrompts = ConcurrentHashMap<String, ArrayDeque<String>>()
+    /**
+     * v1.148.0 — rate-limit 자동 재개 카운터. 같은 thread-id 에서 연속 rate-limit 시
+     * [MAX_RATE_LIMIT_RETRIES] 까지 지수 백오프로 "이어서 진행" 프롬프트를 재전송.
+     * 성공 turn / 사용자 prompt / cancel / startNew 시 0 으로 리셋.
+     */
+    private val rateLimitRetries = ConcurrentHashMap<String, Int>()
+    /** v1.148.0 — rate-limit 자동 재개 대기 코루틴. cancel/startNew/사용자 prompt 시 취소. */
+    private val retryJobs = ConcurrentHashMap<String, Job>()
 
     override suspend fun sendPrompt(projectId: String, text: String, images: List<PromptImageDto>) {
         require(text.isNotBlank()) { "prompt text is required" }
@@ -118,6 +127,7 @@ class CodexSessionManager(
     }
 
     override suspend fun cancelTurn(projectId: String) {
+        cancelRateLimitRetry(projectId)
         clearQueuedPrompts(projectId)
         val proc = processes[projectId]
         if (proc?.isAlive == true) {
@@ -127,6 +137,18 @@ class CodexSessionManager(
         }
         jobs[projectId]?.cancel()
         setBusy(projectId, ProjectState.STOPPED)
+    }
+
+    /**
+     * v1.148.0 — 진행 중 Codex turn 을 끊고 새 프롬프트를 시작. Codex exec 는 turn 단위
+     * 프로세스라 stdin interrupt 가 의미 없다 — destroy 후 새 turn 시작이 자연스럽다.
+     * rate-limit 자동 재개 대기 중이면 취소하고 사용자 의도(새 프롬프트)를 우선.
+     */
+    override suspend fun interruptAndSend(projectId: String, text: String, images: List<PromptImageDto>) {
+        cancelRateLimitRetry(projectId)
+        emitSystem(projectId, "codex_interrupt_send", "진행 중 Codex turn을 중단하고 새 프롬프트를 시작합니다.")
+        cancelTurn(projectId)
+        sendPrompt(projectId, text, images)
     }
 
     override fun isAlive(projectId: String): Boolean = processes[projectId]?.isAlive == true
@@ -199,7 +221,12 @@ class CodexSessionManager(
         pendingPrompts.remove(projectId)
     }
 
-    private suspend fun startPromptLocked(projectId: String, text: String) {
+    /**
+     * v1.148.0 — rate-limit 자동 재개용 [startPromptLocked] 호출만 [resetRateLimitCounter]=false.
+     * 일반 경로(sendPrompt / 큐 드레인)는 항상 true 로 재시도 카운터를 0 으로 돌린다.
+     */
+    private suspend fun startPromptLocked(projectId: String, text: String, resetRateLimitCounter: Boolean = true) {
+        if (resetRateLimitCounter) rateLimitRetries.remove(projectId)
         val sid = readThreadId(projectId)
         history?.userPrompt(projectId, sid, text, provider = provider.id)
         val root = workspace.projectRoot(projectId)
@@ -284,6 +311,70 @@ class CodexSessionManager(
         }
     }
 
+    /**
+     * v1.148.0 — 일시 rate-limit 시 지수 백오프(30/60/120/240/300초)로 같은 thread 에
+     * "이어서 진행" 프롬프트를 재전송. 최대 [MAX_RATE_LIMIT_RETRIES] 회. 초과 시 STOPPED.
+     *
+     * 재개 대기 동안 busy(RESPONDING) 를 유지해 자동화가 빈 슬롯에 폭주하는 것을 막는다
+     * (fireTurnDone 을 호출하지 않음 — Claude v1.99.0 동일 정책: rate-limit 은 turn "종료"가
+     * 아니라 "일시중단 → 재개 대기"다).
+     */
+    private suspend fun scheduleRateLimitRetry(projectId: String) {
+        val attempt = (rateLimitRetries[projectId] ?: 0) + 1
+        if (attempt > MAX_RATE_LIMIT_RETRIES) {
+            cancelRateLimitRetry(projectId)
+            setBusy(projectId, ProjectState.STOPPED)
+            fireInterrupt(projectId, "rate_limit_giveup")
+            emitSystem(
+                projectId, "rate_limit_giveup",
+                "Codex rate limit 이 ${MAX_RATE_LIMIT_RETRIES}회 자동 재개 후에도 지속됩니다. " +
+                    "자동 재개를 중지합니다 — 잠시 후 직접 이어서 진행해 주세요.",
+            )
+            return
+        }
+        rateLimitRetries[projectId] = attempt
+        val delayMs = RATE_LIMIT_BASE_BACKOFF_MS shl (attempt - 1)  // 30/60/120/240/300 초
+        retryJobs[projectId]?.cancel()
+        // 재개 대기 동안 busy 유지(응답 중 표시) — 사용자에게 진행 예정 안내.
+        setBusy(projectId, ProjectState.RESPONDING)
+        emitSystem(
+            projectId, "rate_limit_retry",
+            "Codex 일시 rate limit (사용량 한도 아님). ${delayMs / 1000}초 후 자동으로 이어서 진행합니다 " +
+                "($attempt/$MAX_RATE_LIMIT_RETRIES).",
+        )
+        retryJobs[projectId] = scope.launch {
+            try {
+                delay(delayMs)
+            } catch (_: kotlinx.coroutines.CancellationException) {
+                return@launch
+            }
+            retryJobs.remove(projectId)
+            // 같은 thread-id 로 resume — startPromptLocked(resetRateLimitCounter=false) 로
+            // 재시도 카운터를 보존한 채 새 exec 프로세스를 spawn. busy 는 이미 RESPONDING 이라
+            // sendPrompt 를 쓰면 큐잉 분기로 빠지므로 직접 startPromptLocked 호출.
+            val lock = locks.computeIfAbsent(projectId) { Mutex() }
+            lock.withLock {
+                if (busy[projectId] != true) return@withLock  // 도중 cancel/stop 됨.
+                runCatching { startPromptLocked(projectId, RATE_LIMIT_RESUME_PROMPT, resetRateLimitCounter = false) }
+                    .onFailure {
+                        log.warn(it) { "[$projectId] Codex rate-limit 자동 재개 실패" }
+                        cancelRateLimitRetry(projectId)
+                        scope.launch {
+                            setBusy(projectId, ProjectState.STOPPED)
+                            fireInterrupt(projectId, "rate_limit_resume_failed")
+                        }
+                    }
+            }
+        }
+    }
+
+    /** v1.148.0 — rate-limit 자동 재개 상태(카운터 + 대기 코루틴) 초기화. */
+    private fun cancelRateLimitRetry(projectId: String) {
+        rateLimitRetries.remove(projectId)
+        retryJobs[projectId]?.cancel()
+        retryJobs.remove(projectId)
+    }
+
     private suspend fun handleEvent(projectId: String, event: CodexEvent) {
         when (event) {
             is CodexEvent.ThreadStarted -> {
@@ -366,17 +457,48 @@ class CodexSessionManager(
                 fireTurnDone(projectId, event.reason)
             }
             is CodexEvent.TurnFailed -> {
-                hub.emitConsole(topic(projectId)) { seq -> WsFrame.ConsoleError("codex_turn_failed", event.message, seq) }
-                history?.event(
-                    projectId,
-                    readThreadId(projectId),
-                    ClaudeEvent.ErrorEvent("codex_turn_failed", event.message),
-                    provider = provider.id,
-                )
-                setBusy(projectId, ProjectState.ERROR)
-                // turn 실패는 자동화 관점에서 error 성 종료 — [PromptAutomationManager.onTurnDone]
-                // 의 stopOnError(reason.startsWith("error")) 분기가 잡도록 "error" reason 으로 통지.
-                fireTurnDone(projectId, "error")
+                // v1.148.0 — TurnFailed 메시지를 3가지 종료 경로로 분기.
+                //   ① rate-limit   → 일시중단 → 백오프 후 같은 thread 자동 재개 (fireTurnDone 안 함)
+                //   ② usage-limit  → 재시도 无효 → STOPPED + interrupt (자동화 다음 프롬프트 차단)
+                //   ③ 진짜 에러     → ERROR + fireTurnDone("error") (자동화 stopOnError 분기)
+                val msg = event.message
+                when {
+                    isCodexRateLimitMessage(msg) -> {
+                        history?.event(
+                            projectId,
+                            readThreadId(projectId),
+                            ClaudeEvent.ErrorEvent("codex_rate_limit", msg),
+                            provider = provider.id,
+                        )
+                        scheduleRateLimitRetry(projectId)
+                    }
+                    isCodexUsageLimitMessage(msg) -> {
+                        hub.emitConsole(topic(projectId)) { seq -> WsFrame.ConsoleError("codex_usage_limit", msg, seq) }
+                        history?.event(
+                            projectId,
+                            readThreadId(projectId),
+                            ClaudeEvent.ErrorEvent("codex_usage_limit", msg),
+                            provider = provider.id,
+                        )
+                        cancelRateLimitRetry(projectId)
+                        setBusy(projectId, ProjectState.STOPPED)
+                        fireInterrupt(projectId, "usage_limit")
+                    }
+                    else -> {
+                        hub.emitConsole(topic(projectId)) { seq -> WsFrame.ConsoleError("codex_turn_failed", msg, seq) }
+                        history?.event(
+                            projectId,
+                            readThreadId(projectId),
+                            ClaudeEvent.ErrorEvent("codex_turn_failed", msg),
+                            provider = provider.id,
+                        )
+                        cancelRateLimitRetry(projectId)
+                        setBusy(projectId, ProjectState.ERROR)
+                        // turn 실패는 자동화 관점에서 error 성 종료 — [PromptAutomationManager.onTurnDone]
+                        // 의 stopOnError(reason.startsWith("error")) 분기가 잡도록 "error" reason 으로 통지.
+                        fireTurnDone(projectId, "error")
+                    }
+                }
             }
             is CodexEvent.Error -> {
                 hub.emitConsole(topic(projectId)) { seq -> WsFrame.ConsoleError("codex_error", event.message, seq) }
@@ -497,6 +619,16 @@ class CodexSessionManager(
     companion object {
         const val MAX_PROMPT_BYTES = 32 * 1024
         private const val MAX_STDERR_TAIL_LINES = 12
+        /**
+         * v1.148.0 — Codex 일시 rate-limit 자동 재개. [RATE_LIMIT_BASE_BACKOFF_MS] 지수 백오프로
+         * 최대 [MAX_RATE_LIMIT_RETRIES] 회 같은 thread 에 "이어서 진행" 프롬프트를 재전송.
+         * ClaudeSessionManager 와 동일 정책/상숫값이나 독립 상수로 provider 별 조정 허용.
+         */
+        const val MAX_RATE_LIMIT_RETRIES = 5
+        const val RATE_LIMIT_BASE_BACKOFF_MS = 30_000L
+        const val RATE_LIMIT_RESUME_PROMPT =
+            "Continue from where you left off — the previous turn was interrupted by a temporary " +
+                "rate limit (not a usage limit). Resume the in-progress work; do not restart from scratch."
     }
 }
 

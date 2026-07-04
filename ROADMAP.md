@@ -167,14 +167,22 @@ Claude 와 동일한 `AgentRouter` 기반.)
 
 ### Milestone 1.2 (v1.148.0) — Codex 5상태 busy + 끼어들기 개선
 
-- [ ] `CodexSessionManager` 의 단순 busy bool → 5상태 머신(READY/
+- [x] `CodexSessionManager` 의 단순 busy bool → 5상태 머신(READY/
   RESPONDING/WAITING/STOPPED/ERROR) 마이그레이션.
   `WsFrame.ConsoleBusyState` emit.
-- [ ] `interruptAndSend` Codex 오버라이드 — 현재 기본 구현(cancel→send)을
+  (이미 `ProjectState` 5상태 기반으로 동작 — CodexSessionManager 는 `setBusy(state)` 로
+  READY/RESPONDING/STOPPED/ERROR 를 emit. `WAITING` 은 Codex exec 가 비대화형이라 승인
+  대기가 없어 해당 없음. wire 호환은 유지.)
+- [x] `interruptAndSend` Codex 오버라이드 — 현재 기본 구현(cancel→send)을
   같은 thread 유지 interrupt 로 개선 (가능시. Codex CLI 가 stdin interrupt 를
   지원하지 않으면 destroy + 재시작 명시적 UX).
-- [ ] rate-limit 자동 재개 — Codex 응답에 rate limit 신호가 있을 경우
+  (Codex exec 는 turn 단위 프로세스라 stdin interrupt 미지원 → destroy + 새 turn 시작이
+  자연스럽다는 시스템 메시지 + rate-limit 자동 재개 취소 오버라이드.)
+- [x] rate-limit 자동 재개 — Codex 응답에 rate limit 신호가 있을 경우
   백오프 후 재전송 (`ClaudeSessionManager.kt:984` 패턴).
+  (`isCodexRateLimitMessage` / `isCodexUsageLimitMessage` 3-way 분기 + 지수 백오프
+  30/60/120/240/300최, 최대 5회 같은 thread resume. Claude v1.99.0 정책 차용 —
+  `fireTurnDone` 미호출로 자동화 폭주 차단.)
 
 **Wire change**: 없음. **Android 영향**: additive (busy state 필드 이미 존재).
 
