@@ -142,17 +142,28 @@ additive — 안드가 새 endpoint 를 쓰지 않으면 영향 없음. shared/ 
 
 Phase 0 의 추상화 결과를 Codex 에 적용.
 
-- [ ] `CodexSessionManager` turn 완료 → `fireTurnDone()` 호출 (Phase 0-A 에서
+- [x] `CodexSessionManager` turn 완료 → `fireTurnDone()` 호출 (Phase 0-A 에서
   일부 구현, 여기서 검증).
-- [ ] **Codex 프롬프트 자동화 활성화** — provider 가 CODEX 인 프로젝트에서
-  자동화 시작/연속 동작 확인.
-- [ ] **Codex 예약 프롬프트 활성화** — `CodexStatusService` 기반 한도 트리거.
-- [ ] 자동화 UI(`WebProjectTemplates.kt:1409`) 가 provider 무관하게 동작 확인.
-- [ ] 사용량 알림 — `CodexUsageMonitor` 에 임계치 이메일 발송 추가
-  (`ClaudeUsageMonitor` 패턴 차용).
+- [x] **Codex 프롬프트 자동화 활성화** — provider 가 CODEX 인 프로젝트에서
+  자동화 시작/연속 동작 확인. (Phase 0 provider 무관화로 이미 동작 — `PromptAutomationManager`
+  가 `AgentRouter.sendPrompt` 로 발사하고 `AgentRouter.installTurnListeners` 가 Codex
+  manager 에도 turn 완료 리스너를 주입.)
+- [x] **Codex 예약 프롬프트 활성화** — `CodexStatusService` 기반 한도 트리거.
+  (`CodexStatusService` → `AgentUsageProvider` 구현 + `ScheduledPromptManager` 가
+  provider별 `Map<AgentProvider, AgentUsageProvider>` 로 판정 + `createSchedule` baseline
+  도 provider별 측정.)
+- [x] 자동화 UI(`WebProjectTemplates.kt:1409`) 가 provider 무관하게 동작 확인.
+  (자동화 UI 는 Phase 0 이전부터 REST `/claude/automation/*` 계약 기반으로 provider
+  무관했음 — `PromptAutomationManager` → `AgentRouter.sendPrompt` 경로 확인.)
+- [x] 사용량 알림 — `CodexUsageMonitor` 에 임계치 이메일 발송 추가
+  (`ClaudeUsageMonitor` 패턴 차용). (`Notifiers.codexUsageWarn` + `CodexUsageSection`
+  config + transition 기반 warn/critical 알림, 10분 cooldown.)
 
 **Wire change**: 없음 (기존 WsFrame 재사용). **Android 영향**: 없음.
-**검증**: Codex provider 로 자동화 시퀀스 3회 연속 실행 E2E.
+**검증**: `./gradlew clean :server:test` 통과 + `CodexStatusServiceTest` /
+`ScheduledPromptLimitReleasedTest` 단위 테스트로 transition/한도-해제 판정 검증.
+(Codex provider 자동화 E2E 3회 연속은 운영 환경에서 수동 확인 필요 — 코드 경로는
+Claude 와 동일한 `AgentRouter` 기반.)
 
 ### Milestone 1.2 (v1.148.0) — Codex 5상태 busy + 끼어들기 개선
 

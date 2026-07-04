@@ -130,6 +130,19 @@ object ConfigLoader {
             ?.toIntOrNull()?.let {
                 current = current.copy(codex = current.codex.copy(maxResidentSessions = it.coerceAtLeast(0)))
             }
+        // v1.147.0 — Codex usage 모니터링 env override (Claude usage 와 대칭).
+        System.getenv("VIBECODER_CODEX_USAGE_ENABLED")?.takeIf { it.isNotBlank() }?.let {
+            current = current.copy(codex = current.codex.copy(usage = current.codex.usage.copy(enabled = it.equals("true", true))))
+        }
+        System.getenv("VIBECODER_CODEX_USAGE_POLL_MINUTES")?.takeIf { it.isNotBlank() }?.toIntOrNull()?.let {
+            current = current.copy(codex = current.codex.copy(usage = current.codex.usage.copy(pollIntervalMinutes = it.coerceAtLeast(1))))
+        }
+        System.getenv("VIBECODER_CODEX_USAGE_WARN_PERCENT")?.takeIf { it.isNotBlank() }?.toIntOrNull()?.let {
+            current = current.copy(codex = current.codex.copy(usage = current.codex.usage.copy(warnThresholdPercent = it.coerceIn(1, 100))))
+        }
+        System.getenv("VIBECODER_CODEX_USAGE_CRITICAL_PERCENT")?.takeIf { it.isNotBlank() }?.toIntOrNull()?.let {
+            current = current.copy(codex = current.codex.copy(usage = current.codex.usage.copy(criticalThresholdPercent = it.coerceIn(1, 100))))
+        }
 
         return current
     }

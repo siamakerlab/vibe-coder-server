@@ -2,7 +2,7 @@ server:
   name: Vibe Coder Server
   host: 0.0.0.0
   port: 17880
-  version: 1.146.0
+  version: 1.147.0
 
 workspace:
   # Each project lives at <root>/<projectId>/.
@@ -114,6 +114,14 @@ codex:
   # Codex provider 전용 상주 세션 상한. Claude 상한과 독립적으로 /settings 에서 조정.
   # Codex exec 는 turn 단위 프로세스라 보통 turn 종료 후 비워진다. 0 이하 = 비활성.
   maxResidentSessions: 3
+  # v1.147.0 — 사용량 모니터링 + 임계치 알림 (claude.usage 와 대칭).
+  # Codex usage 는 session(5h)/weekly(7d) 두 게이지로 오며, 임계치 판정은 둘 중 큰 값 기준.
+  # warnThresholdPercent 도달 시 1회 + critical 도달 시 1회 transition 기반 발송 (10분 cooldown).
+  usage:
+    enabled: true
+    pollIntervalMinutes: 5
+    warnThresholdPercent: 80
+    criticalThresholdPercent: 95
 
 build:
   timeoutMinutes: 30

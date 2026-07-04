@@ -1,6 +1,10 @@
 package com.siamakerlab.vibecoder.server.agent.codex
 
+import com.siamakerlab.vibecoder.server.agent.AgentUsageSnapshot
+import com.siamakerlab.vibecoder.server.config.CodexUsageSection
+import com.siamakerlab.vibecoder.shared.dto.CodexUsageDto
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.types.shouldBeInstanceOf
 import org.junit.Test
 
 class CodexStatusServiceTest {
@@ -79,5 +83,94 @@ class CodexStatusServiceTest {
         dto.sessionUsagePercent shouldBe 68
         dto.weeklyUsagePercent shouldBe 48
         dto.usageSummary shouldBe null
+    }
+
+    // ── v1.147.0 — AgentUsageProvider / 임계치 transition 순수 함수 ────────────────
+
+    private fun dto(
+        session: Int? = null,
+        weekly: Int? = null,
+        legacy: Int? = null,
+    ) = CodexUsageDto(
+        updatedAt = "2026-07-05T00:00:00Z",
+        usagePercent = legacy,
+        sessionUsagePercent = session,
+        weeklyUsagePercent = weekly,
+    )
+
+    @Test
+    fun `effective percent prefers the larger of session and weekly`() {
+        codexUsageEffectivePercent(dto(session = 42, weekly = 60)) shouldBe 60
+        codexUsageEffectivePercent(dto(session = 70, weekly = 44)) shouldBe 70
+    }
+
+    @Test
+    fun `effective percent falls back to legacy usagePercent when session and weekly are null`() {
+        codexUsageEffectivePercent(dto(legacy = 33)) shouldBe 33
+    }
+
+    @Test
+    fun `effective percent returns null when no gauge is observed`() {
+        codexUsageEffectivePercent(dto()) shouldBe null
+    }
+
+    @Test
+    fun `usage snapshot forwards observed session and weekly percents`() {
+        val snap = codexUsageSnapshotFromDto(dto(session = 42, weekly = 60))
+        snap shouldBe AgentUsageSnapshot(sessionUsagePercent = 42, weeklyUsagePercent = 60)
+    }
+
+    @Test
+    fun `usage snapshot falls back to legacy gauge when session and weekly are absent`() {
+        val snap = codexUsageSnapshotFromDto(dto(legacy = 33))
+        snap shouldBe AgentUsageSnapshot(sessionUsagePercent = 33, weeklyUsagePercent = 33)
+    }
+
+    @Test
+    fun `usage snapshot returns null when nothing is observed yet`() {
+        codexUsageSnapshotFromDto(dto()) shouldBe null
+    }
+
+    private val cfg = CodexUsageSection(warnThresholdPercent = 80, criticalThresholdPercent = 95)
+
+    @Test
+    fun `alert transition is BelowThreshold when usage is under warn`() {
+        codexUsageAlertTransition(70, prior = null, cfg) shouldBe
+            CodexUsageAlertDecision.BelowThreshold
+    }
+
+    @Test
+    fun `alert transition fires warn on first threshold entry`() {
+        val decision = codexUsageAlertTransition(82, prior = null, cfg)
+        decision.shouldBeInstanceOf<CodexUsageAlertDecision.Fire>()
+        decision.level shouldBe "warn"
+    }
+
+    @Test
+    fun `alert transition fires critical when escalating from warn`() {
+        val decision = codexUsageAlertTransition(96, prior = "warn", cfg)
+        decision.shouldBeInstanceOf<CodexUsageAlertDecision.Fire>()
+        decision.level shouldBe "critical"
+    }
+
+    @Test
+    fun `alert transition does not re-fire on the same level`() {
+        val decision = codexUsageAlertTransition(85, prior = "warn", cfg)
+        decision.shouldBeInstanceOf<CodexUsageAlertDecision.NoFire>()
+        decision.level shouldBe "warn"
+    }
+
+    @Test
+    fun `alert transition does not re-fire critical once already at critical`() {
+        val decision = codexUsageAlertTransition(97, prior = "critical", cfg)
+        decision.shouldBeInstanceOf<CodexUsageAlertDecision.NoFire>()
+        decision.level shouldBe "critical"
+    }
+
+    @Test
+    fun `alert transition drops below threshold after a prior alert`() {
+        // prior=warm 인 상태에서 usage 가 warn 미만으로 떨어지면 BelowThreshold → 모니터가 reset.
+        codexUsageAlertTransition(60, prior = "warn", cfg) shouldBe
+            CodexUsageAlertDecision.BelowThreshold
     }
 }

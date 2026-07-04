@@ -283,6 +283,27 @@ data class CodexSection(
      * 0 이하면 비활성. `/settings` 저장 시 즉시 반영.
      */
     val maxResidentSessions: Int = 3,
+    /** v1.147.0 — Codex 사용량 모니터링 + 임계치 알림 (ClaudeUsageSection 대칭). */
+    val usage: CodexUsageSection = CodexUsageSection(),
+)
+
+/**
+ * v1.147.0 — Codex 사용량 모니터링 + 임계치 알림.
+ *
+ * [ClaudeUsageSection] 과 동일한 transition 기반 정책. Codex usage 는 session(5h)/weekly(7d)
+ * 두 게이지로 오는데, 임계치 판정은 **둘 중 큰 값**을 기준으로 한다(더 보수적으로 알림).
+ *
+ * - [enabled]                : 폴링 + 임계치 트리거 활성화. 비활성 시 모든 알림 no-op.
+ * - [pollIntervalMinutes]    : 백그라운드 폴링 주기 (기본 5분). codex TUI 캡처 비용 고려.
+ * - [warnThresholdPercent]   : usage 가 이 값 이상으로 transition 할 때 1회 알림. 기본 80.
+ * - [criticalThresholdPercent]: 더 강한 임계치. 기본 95.
+ */
+@Serializable
+data class CodexUsageSection(
+    val enabled: Boolean = true,
+    val pollIntervalMinutes: Int = 5,
+    val warnThresholdPercent: Int = 80,
+    val criticalThresholdPercent: Int = 95,
 )
 
 /**

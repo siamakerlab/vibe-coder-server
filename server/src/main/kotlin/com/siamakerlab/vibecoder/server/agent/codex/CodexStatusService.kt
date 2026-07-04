@@ -1,12 +1,20 @@
 package com.siamakerlab.vibecoder.server.agent.codex
 
+import com.siamakerlab.vibecoder.server.agent.AgentUsageProvider
+import com.siamakerlab.vibecoder.server.agent.AgentUsageSnapshot
+import com.siamakerlab.vibecoder.server.config.CodexUsageSection
 import com.siamakerlab.vibecoder.server.config.ServerConfig
 import com.siamakerlab.vibecoder.server.core.OsType
 import com.siamakerlab.vibecoder.server.core.WorkspacePath
+import com.siamakerlab.vibecoder.server.notify.Notifiers
 import com.siamakerlab.vibecoder.shared.dto.CodexUsageDto
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -23,7 +31,17 @@ class CodexStatusService(
     private val config: ServerConfig,
     private val workspace: WorkspacePath,
     private val usageRecorder: CodexUsageRecorder,
-) {
+) : AgentUsageProvider {
+
+    /**
+     * v1.147.0 — [AgentUsageProvider] 구현. Codex 는 계정 전역 quota 를 공유(단일 사용자 가정)
+     * 하므로 [cachedSnapshot] 의 session/weekly % 를 projectId 와 무관하게 반환한다. provider 가
+     * usage % 를 아직 관측하지 않은(캡처 전) 상태면 양쪽 다 null → [ScheduledPromptManager] 가
+     * SESSION_RESET/WEEKLY_RESET 트리거를 보수적으로 보류한다.
+     */
+    override fun usageSnapshot(projectId: String): AgentUsageSnapshot? =
+        codexUsageSnapshotFromDto(cachedSnapshot())
+
     private val latest = AtomicReference<CodexUsageDto?>(null)
 
     fun cachedSnapshot(): CodexUsageDto =
@@ -264,29 +282,146 @@ private fun restoreCodexUsagePhrases(text: String): String {
     return restored
 }
 
+/**
+ * v1.123.0 — Codex usage 백그라운드 폴링. v1.147.0 — 임계치 transition 기반 알림 추가
+ * ([ClaudeUsageMonitor] 패턴 차용). Codex usage 는 session(5h)/weekly(7d) 두 게이지로 오며,
+ * 임계치 판정은 **둘 중 큰 값**(둘 다 없으면 legacy usagePercent)을 기준으로 한다.
+ *
+ * 알림 정책 (transition 기반):
+ *   - usage 가 `warnThresholdPercent` 이상으로 처음 올라간 순간 1회 발송.
+ *   - 더 올라가서 `criticalThresholdPercent` 이상에 처음 도달했을 때 1회 발송.
+ *   - 다시 아래로 내려가면(= reset 이후) 마지막 발송 상태 초기화 — 다음 cycle 재발송 가능.
+ *   - 같은 transition 직후 재발송은 10분 cooldown 으로 차단.
+ *
+ * 단일 admin 가정 (CLAUDE.md §1). Codex 는 계정 전역 quota 공유이므로 projectId 무관.
+ */
 class CodexUsageMonitor(
     private val statusService: CodexStatusService,
+    private val notifiers: Notifiers,
+    private val configProvider: () -> CodexUsageSection,
     private val intervalProvider: () -> Duration = { Duration.ofMinutes(5) },
 ) {
-    private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
-    private var job: kotlinx.coroutines.Job? = null
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var job: Job? = null
+
+    /** "warn" / "critical" / null (아직 임계치 미도달 또는 reset 이후). */
+    private val lastAlertLevel = AtomicReference<String?>(null)
+    /** 마지막 알림 발송 시점. 같은 임계치 transition 직후 재발송을 안전하게 차단. */
+    private val lastAlertAt = AtomicReference<Instant?>(null)
+
+    /** v1.147.0 — 마지막 폴링 결과 (UI 대시보드가 즉시 보여줄 수 있도록 캐시). */
+    @Volatile
+    private var lastSnapshot: CodexUsageDto? = null
 
     fun start() {
         if (job != null) return
         job = scope.launch {
+            codexStatusLog.info { "Codex usage monitor started" }
             while (isActive) {
-                runCatching { statusService.snapshot() }
+                runCatching { tick() }
                     .onFailure { codexStatusLog.debug(it) { "Codex usage monitor tick failed: ${it.message}" } }
                 kotlinx.coroutines.delay(intervalProvider().toMillis().coerceAtLeast(60_000L))
             }
         }
     }
 
-    fun snapshot(): CodexUsageDto = statusService.cachedSnapshot()
+    private suspend fun tick() {
+        // 캡처는 항상 수행 (cached snapshot 갱신 + UI 표시용). 알림은 cfg.enabled 일 때만.
+        runCatching { statusService.snapshot() }
+            .onFailure { codexStatusLog.debug(it) { "Codex usage snapshot tick failed: ${it.message}" } }
+
+        val cfg = configProvider()
+        if (!cfg.enabled) return
+
+        val dto = statusService.cachedSnapshot()
+        lastSnapshot = dto
+
+        // session/weekly 중 큰 값; 둘 다 null 이면 legacy usagePercent; 그것도 null 이면 skip.
+        val pct = codexUsageEffectivePercent(dto) ?: return
+        val session = dto.sessionUsagePercent
+        val weekly = dto.weeklyUsagePercent
+
+        // 임계치 transition 판정 (ClaudeUsageMonitor 와 동일 정책) — 순수 함수로 위임.
+        when (val t = codexUsageAlertTransition(pct, lastAlertLevel.get(), cfg)) {
+            is CodexUsageAlertDecision.BelowThreshold -> {
+                if (lastAlertLevel.get() != null) {
+                    codexStatusLog.info { "Codex usage dropped below thresholds ($pct%). Reset alert state." }
+                    lastAlertLevel.set(null)
+                    lastAlertAt.set(null)
+                }
+            }
+            is CodexUsageAlertDecision.NoFire -> Unit
+            is CodexUsageAlertDecision.Fire -> {
+                // 너무 잦은 재발송 방지 — 최소 10분 간격.
+                val now = Instant.now()
+                val last = lastAlertAt.get()
+                if (last != null && Duration.between(last, now).toMinutes() < 10) return
+
+                codexStatusLog.info { "Codex usage threshold transition → ${t.level} (usage=$pct%). Firing notifications." }
+                val reset = dto.sessionResetAt ?: dto.weeklyResetAt ?: dto.rateLimitResetAt
+                notifiers.codexUsageWarn(pct, session, weekly, reset)
+                lastAlertLevel.set(t.level)
+                lastAlertAt.set(now)
+            }
+        }
+    }
+
+    fun snapshot(): CodexUsageDto = lastSnapshot ?: statusService.cachedSnapshot()
 
     fun shutdown() {
         job?.cancel()
         job = null
         scope.cancel()
     }
+}
+
+/**
+ * v1.147.0 — [CodexUsageDto] 에서 임계치 판정에 쓸 대표 usage % 추출.
+ * session(5h)/weekly(7d) 중 큰 값; 둘 다 null 이면 legacy usagePercent; 그것도 null 이면 null.
+ */
+internal fun codexUsageEffectivePercent(dto: CodexUsageDto): Int? =
+    listOfNotNull(dto.sessionUsagePercent, dto.weeklyUsagePercent, dto.usagePercent).maxOrNull()
+
+/**
+ * v1.147.0 — [CodexStatusService.usageSnapshot] 이 [CodexUsageDto] → [AgentUsageSnapshot] 변환에 사용.
+ * session/weekly 가 둘 다 null 이면 null 반환 (관측 불가 → [ScheduledPromptManager] 보류).
+ */
+internal fun codexUsageSnapshotFromDto(dto: CodexUsageDto): AgentUsageSnapshot? {
+    val session = dto.sessionUsagePercent ?: dto.usagePercent
+    val weekly = dto.weeklyUsagePercent ?: dto.usagePercent
+    if (session == null && weekly == null) return null
+    return AgentUsageSnapshot(sessionUsagePercent = session, weeklyUsagePercent = weekly)
+}
+
+/**
+ * v1.147.0 — 임계치 transition 판정 (순수 함수, 단위 테스트 가능).
+ * [ClaudeUsageMonitor] 와 동일 정책: 처음 임계치 진입 시 발사, warn→critical 승격 시 발사,
+ * 같은 레벨 유지 시 미발사, 임계치 이탈 시 reset 신호.
+ */
+internal sealed interface CodexUsageAlertDecision {
+    /** usage 가 임계치 아래 (이전 알림 상태가 있으면 reset). */
+    data object BelowThreshold : CodexUsageAlertDecision
+    /** 같은 레벨 유지 중 — 발사 안 함. [level] 은 현재 도달한 임계치 ("warn"/"critical"). */
+    data class NoFire(val level: String) : CodexUsageAlertDecision
+    /** transition 발생 — 발사. [level] 은 새로 도달한 임계치. */
+    data class Fire(val level: String) : CodexUsageAlertDecision
+}
+
+internal fun codexUsageAlertTransition(
+    usedPercent: Int,
+    prior: String?,
+    cfg: CodexUsageSection,
+): CodexUsageAlertDecision {
+    val current = when {
+        usedPercent >= cfg.criticalThresholdPercent -> "critical"
+        usedPercent >= cfg.warnThresholdPercent -> "warn"
+        else -> null
+    } ?: return CodexUsageAlertDecision.BelowThreshold
+    val shouldFire = when {
+        prior == null -> true
+        prior == "warn" && current == "critical" -> true
+        else -> false
+    }
+    return if (shouldFire) CodexUsageAlertDecision.Fire(current)
+    else CodexUsageAlertDecision.NoFire(current)
 }

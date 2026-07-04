@@ -1,5 +1,6 @@
 package com.siamakerlab.vibecoder.server.automation
 
+import com.siamakerlab.vibecoder.server.agent.AgentProvider
 import com.siamakerlab.vibecoder.server.agent.AgentRouter
 import com.siamakerlab.vibecoder.server.agent.AgentUsageProvider
 import com.siamakerlab.vibecoder.server.core.Clock
@@ -31,6 +32,11 @@ private val log = KotlinLogging.logger {}
  * 를 관측할 수 있으면 SESSION_RESET/WEEKLY_RESET 트리거가 동작한다. provider 가 usage 를
  * 관측 불가(null)면 해당 트리거는 보수적으로 보류된다.
  *
+ * v1.147.0 — 단일 [AgentUsageProvider] 에서 **provider별 맵**([usageProviders])으로 확장.
+ * projectId 의 현재 provider([AgentRouter.providerFor]) 를 조회해 그 provider 의 usage 게이지로
+ * 한도 해제를 판정한다. Claude 프로젝트는 ClaudeStatusService, Codex 프로젝트는
+ * CodexStatusService 가 각각 등록된다. 맵에 없는 provider 는 보수적으로 보류.
+ *
  * 트리거:
  *  - time          : `fireAtEpochMs` 도달.
  *  - session_reset : 세션(5h) 사용 한도 해제 감지 (usage provider 기반).
@@ -44,7 +50,11 @@ private val log = KotlinLogging.logger {}
 class ScheduledPromptManager(
     private val repo: ScheduledPromptRepository,
     private val router: AgentRouter,
-    private val usageProvider: AgentUsageProvider?,
+    /**
+     * v1.147.0 — provider별 usage provider 맵. [AgentRouter.providerFor] 로 조회한 현재
+     * provider 의 [AgentUsageProvider] 로 SESSION_RESET/WEEKLY_RESET 을 판정한다.
+     */
+    private val usageProviders: Map<AgentProvider, AgentUsageProvider> = emptyMap(),
     private val hub: LogHub,
     private val clock: Clock,
 ) {
@@ -94,13 +104,15 @@ class ScheduledPromptManager(
 
     /**
      * provider 의 세션/주간 사용 한도가 "해제됨"으로 볼 수 있는지.
-     * [AgentUsageProvider] 가 null 이거나 관측값이 없으면(false) 보수적으로 보류한다.
+     * v1.147.0 — projectId 의 현재 provider 의 [AgentUsageProvider] 로 판정.
+     * provider 가 맵에 없거나 관측값이 없으면(false) 보수적으로 보류한다.
      */
     private fun isLimitReleased(projectId: String, session: Boolean, baseline: Int?): Boolean {
-        val snap = usageProvider?.usageSnapshot(projectId) ?: return false
+        val provider = router.providerFor(projectId)
+        val usageProvider = usageProviders[provider] ?: return false
+        val snap = usageProvider.usageSnapshot(projectId) ?: return false
         val cur = (if (session) snap.sessionUsagePercent else snap.weeklyUsagePercent) ?: return false
-        if (baseline != null && baseline - cur >= RESET_DROP_POINTS) return true
-        return cur <= RESET_LOW_PERCENT
+        return isLimitReleasedAgainstBaseline(cur, baseline)
     }
 
     private suspend fun fire(row: ScheduledPromptRow) {
@@ -130,4 +142,20 @@ class ScheduledPromptManager(
         /** 절대 사용량이 이 % 이하면 한도 여유 충분 = 해제로 간주. */
         const val RESET_LOW_PERCENT = 15
     }
+}
+
+/**
+ * v1.147.0 — 한도-해제 판정 순수 함수 (단위 테스트 가능).
+ * baseline 대비 [RESET_DROP_POINTS]p 이상 하락했거나, 절대 사용량이 [RESET_LOW_PERCENT]%
+ * 이하면 "한도 해제됨"으로 본다. provider 무관 — [ScheduledPromptManager.isLimitReleased] 가
+ * provider 조회 후 이 함수로 판정을 위임한다.
+ */
+internal fun isLimitReleasedAgainstBaseline(
+    currentPercent: Int,
+    baselinePercent: Int?,
+    dropPoints: Int = ScheduledPromptManager.RESET_DROP_POINTS,
+    lowPercent: Int = ScheduledPromptManager.RESET_LOW_PERCENT,
+): Boolean {
+    if (baselinePercent != null && baselinePercent - currentPercent >= dropPoints) return true
+    return currentPercent <= lowPercent
 }

@@ -323,7 +323,10 @@ fun main(args: Array<String>) {
     )
     val codexUsageMonitor = com.siamakerlab.vibecoder.server.agent.codex.CodexUsageMonitor(
         statusService = codexStatusService,
-        intervalProvider = { java.time.Duration.ofMinutes(config.claude.usage.pollIntervalMinutes.toLong().coerceAtLeast(1)) },
+        notifiers = notifiers,
+        configProvider = { config.codex.usage },
+        // v1.147.0 — codex.usage.pollIntervalMinutes 독립값 (이전: claude.usage 차용).
+        intervalProvider = { java.time.Duration.ofMinutes(config.codex.usage.pollIntervalMinutes.toLong().coerceAtLeast(1)) },
     )
     codexUsageMonitor.start()
     // v1.7.9 — 컨테이너 구동 중 토큰 자동 갱신. workspace.root 를 cwd 로 사용해
@@ -371,8 +374,14 @@ fun main(args: Array<String>) {
     // v1.130.0 — 프롬프트 예약(one-shot) 스케줄러. 지정 시각 / Claude 한도 해제 시점에 프롬프트
     // 1회 자동 전송(유휴 시). claudeStatusService(usage % 캐시) 는 위에서 이미 생성됨.
     // v1.146.0 — provider 무관화: AgentRouter 기반 발사 + AgentUsageProvider(ClaudeStatusService) 기반 한도 판정.
+    // v1.147.0 — provider별 usage provider 맵. Claude/Codex 각각의 statusService 를 등록해
+    //   Codex provider 프로젝트에서도 SESSION_RESET/WEEKLY_RESET 예약이 동작한다.
+    val scheduledUsageProviders: Map<com.siamakerlab.vibecoder.server.agent.AgentProvider, com.siamakerlab.vibecoder.server.agent.AgentUsageProvider> = buildMap {
+        put(com.siamakerlab.vibecoder.server.agent.AgentProvider.CLAUDE, claudeStatusService)
+        put(com.siamakerlab.vibecoder.server.agent.AgentProvider.CODEX, codexStatusService)
+    }
     val scheduledPromptManager = com.siamakerlab.vibecoder.server.automation.ScheduledPromptManager(
-        scheduledPromptRepo, agentRouter, claudeStatusService, hub, clock,
+        scheduledPromptRepo, agentRouter, scheduledUsageProviders, hub, clock,
     )
     scheduledPromptManager.start()
     // turn 완료/중단 hook 주입 (순환의존 방지를 위해 생성 후 setter).

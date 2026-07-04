@@ -77,6 +77,32 @@ class Notifiers(
         metrics?.inc("vibe_claude_usage_warn_total", "Claude usage threshold alerts")
     }
 
+    /**
+     * v1.147.0 — Codex 사용량 임계치 알림. [claudeUsageWarn] 과 같은 facade 패턴이나,
+     * Codex 는 session(5h)/weekly(7d) 두 게이지를 가져 [usedPercent] (둘 중 큰 값) 와 함께
+     * 분 breakdown 을 넘긴다.
+     */
+    fun codexUsageWarn(usedPercent: Int, sessionPercent: Int?, weeklyPercent: Int?, resetAt: String?) {
+        email?.codexUsageWarn(usedPercent, sessionPercent, weeklyPercent, resetAt)
+        webhook?.codexUsageWarn(usedPercent, sessionPercent, weeklyPercent, resetAt)
+        webPush?.broadcast(
+            title = "Codex 사용량 임계치",
+            body = "사용량 ${usedPercent}% (리셋 ${resetAt ?: "예정 미상"})",
+            url = "/usage",
+        )
+        notifications?.let { svc ->
+            val uids = userIdsProvider?.invoke() ?: emptyList()
+            svc.emit(
+                kind = com.siamakerlab.vibecoder.shared.dto.NotificationKind.USAGE_THRESHOLD,
+                title = "Codex 사용량 ${usedPercent}%",
+                body = "리셋 ${resetAt ?: "예정 미상"}",
+                deepLink = "usage",
+                userIds = uids,
+            )
+        }
+        metrics?.inc("vibe_codex_usage_warn_total", "Codex usage threshold alerts")
+    }
+
     fun diskUsageWarn(usedPercent: Int, freeGb: Double) {
         email?.diskUsageWarn(usedPercent, freeGb)
         webhook?.diskUsageWarn(usedPercent, freeGb)

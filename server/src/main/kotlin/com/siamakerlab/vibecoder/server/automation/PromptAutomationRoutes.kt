@@ -6,12 +6,14 @@ import com.siamakerlab.vibecoder.server.admin.isEmbeddedRequest
 import com.siamakerlab.vibecoder.server.admin.requireProjectAccessOrThrow
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireWriteAccessOrRedirect
+import com.siamakerlab.vibecoder.server.agent.AgentProvider
+import com.siamakerlab.vibecoder.server.agent.AgentRouter
+import com.siamakerlab.vibecoder.server.agent.AgentUsageProvider
 import com.siamakerlab.vibecoder.server.auth.AUTH_BEARER
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens.requireCsrf
 import com.siamakerlab.vibecoder.server.auth.requireApiWrite
 import com.siamakerlab.vibecoder.server.auth.requireProjectAcl
-import com.siamakerlab.vibecoder.server.claude.ClaudeStatusService
 import com.siamakerlab.vibecoder.server.core.Clock
 import com.siamakerlab.vibecoder.server.error.ApiException
 import com.siamakerlab.vibecoder.server.projects.ProjectService
@@ -53,12 +55,17 @@ private val log = KotlinLogging.logger {}
  *   POST  promptAutomationStop(projectId)    — 중지
  *   GET   promptAutomationStatus(projectId)  — 현재/마지막 진행
  *   GET   PROMPT_AUTOMATION_PRESETS          — 프리셋 목록 (workspace 전역)
- *   POST  PROMPT_AUTOMATION_PRESETS          — 프리셋 생성
+ *   POST   PROMPT_AUTOMATION_PRESETS          — 프리셋 생성
  *   PUT   promptAutomationPreset(presetId)   — 프리셋 수정
  *   DELETE promptAutomationPreset(presetId)  — 프리셋 삭제
  *
  * SSR (cookie 세션 + CSRF) — `/projects/{id}/automation/prompts`:
  *   프리셋 관리 + 즉석/프리셋 시작 + 중지 + 최근 실행 이력.
+ *
+ * v1.147.0 — provider별 usage provider 맵 도입. SESSION_RESET/WEEKLY_RESET 예약 생성 시
+ * baseline % 측정이 [AgentRouter.providerFor] 로 조회한 현재 provider 의 [AgentUsageProvider]
+ * 로 이루어진다 (이전: ClaudeStatusService 하드 바인딩). Codex provider 프로젝트에서도
+ * CodexStatusService 기반 한도 예약이 동작한다.
  */
 fun Routing.promptAutomationRoutes(
     authDeps: AdminRoutesDeps,
@@ -67,7 +74,8 @@ fun Routing.promptAutomationRoutes(
     presetStore: PromptAutomationPresetStore,
     runRepo: PromptAutomationRunRepository,
     schedRepo: ScheduledPromptRepository,
-    statusService: ClaudeStatusService,
+    router: AgentRouter,
+    usageProviders: Map<AgentProvider, AgentUsageProvider>,
     clock: Clock,
 ) {
     // ── JSON API ──────────────────────────────────────────────────────
@@ -135,7 +143,7 @@ fun Routing.promptAutomationRoutes(
             call.requireProjectAcl(projects, projectId)
             projects.rowOrThrow(projectId)
             val req = call.receive<ScheduleSendRequestDto>()
-            val row = createSchedule(projectId, req, schedRepo, statusService, clock, lang = "ko")
+            val row = createSchedule(projectId, req, schedRepo, router, usageProviders, clock, lang = "ko")
             call.respond(HttpStatusCode.Created, row.toDto())
         }
 
@@ -289,12 +297,17 @@ private const val MAX_SCHEDULE_PROMPT_BYTES = 32 * 1024
 /**
  * v1.130.0 — 예약 생성 공통 로직. trigger 별 fireAtEpochMs / baselinePercent / 표시 라벨을
  * 계산해 [ScheduledPromptRepository.create] 로 저장한다. (JSON · SSR 양쪽에서 호출)
+ *
+ * v1.147.0 — baseline % 측정이 provider별 [AgentUsageProvider] 로 이루어진다.
+ * projectId 의 현재 provider 가 맵에 없거나 관측값이 없으면 baseline=null (이후
+ * [ScheduledPromptManager.isLimitReleased] 가 절대 low-percent 기준으로만 판정).
  */
 private fun createSchedule(
     projectId: String,
     req: ScheduleSendRequestDto,
     schedRepo: ScheduledPromptRepository,
-    statusService: ClaudeStatusService,
+    router: AgentRouter,
+    usageProviders: Map<AgentProvider, AgentUsageProvider>,
     clock: Clock,
     lang: String,
 ): ScheduledPromptRow {
@@ -318,17 +331,24 @@ private fun createSchedule(
             else delayLabel(req.delayMinutes ?: 0L)
         }
         ScheduledPromptTriggers.SESSION_RESET -> {
-            baseline = statusService.cachedSnapshot(projectId).sessionUsagePercent
+            baseline = usageSnapshotFor(router, usageProviders, projectId)?.sessionUsagePercent
             label = "세션 한도 해제 후"
         }
         ScheduledPromptTriggers.WEEKLY_RESET -> {
-            baseline = statusService.cachedSnapshot(projectId).weeklyUsagePercent
+            baseline = usageSnapshotFor(router, usageProviders, projectId)?.weeklyUsagePercent
             label = "주간 한도 해제 후"
         }
         else -> throw ApiException(400, "invalid_trigger", "알 수 없는 트리거입니다.")
     }
     return schedRepo.create(projectId, prompt, triggerType, fireAt, label, baseline)
 }
+
+/** v1.147.0 — projectId 의 현재 provider 의 usage 스냅샷 조회 (맵에 없으면 null). */
+private fun usageSnapshotFor(
+    router: AgentRouter,
+    usageProviders: Map<AgentProvider, AgentUsageProvider>,
+    projectId: String,
+) = usageProviders[router.providerFor(projectId)]?.usageSnapshot(projectId)
 
 private fun delayLabel(minutes: Long): String = when {
     minutes <= 0 -> "곧"

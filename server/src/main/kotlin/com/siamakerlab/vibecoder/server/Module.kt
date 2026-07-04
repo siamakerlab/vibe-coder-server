@@ -534,10 +534,20 @@ fun Application.module(ctx: ServerContext) {
             ctx.build, ctx.hub, ctx.clock,
         )
         // v1.59.0 — 프롬프트 자동화 (서버 백그라운드 autopilot): JSON + SSR.
+        // v1.147.0 — provider별 usage provider 맵. ClaudeStatusService + CodexStatusService 각각 등록.
+        val agentUsageProviders: Map<com.siamakerlab.vibecoder.server.agent.AgentProvider, com.siamakerlab.vibecoder.server.agent.AgentUsageProvider> =
+            buildMap {
+                ctx.claudeStatusService.let { it as? com.siamakerlab.vibecoder.server.agent.AgentUsageProvider }?.let {
+                    put(com.siamakerlab.vibecoder.server.agent.AgentProvider.CLAUDE, it)
+                }
+                ctx.codexStatusService.let { it as? com.siamakerlab.vibecoder.server.agent.AgentUsageProvider }?.let {
+                    put(com.siamakerlab.vibecoder.server.agent.AgentProvider.CODEX, it)
+                }
+            }
         promptAutomationRoutes(
             adminDeps, ctx.projects, ctx.promptAutomationManager,
             ctx.promptAutomationPresetStore, ctx.promptAutomationRunRepo,
-            ctx.scheduledPromptRepo, ctx.claudeStatusService, ctx.clock,
+            ctx.scheduledPromptRepo, ctx.agentRouter, agentUsageProviders, ctx.clock,
         )
         // v0.34.0 — 백업 / 복원 UI. v1.132.0 — archiveService 가 필요해 위 archive run 블록에서 등록.
         // v0.35.0 — 코드 분석 묶음 (wrapper / stats / search).

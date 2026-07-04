@@ -150,6 +150,20 @@ class EmailNotifier(
         send(subject, body)
     }
 
+    /** v1.147.0 — Codex 사용량 임계치 (session/weekly breakdown 포함). */
+    fun codexUsageWarn(usedPercent: Int, sessionPercent: Int?, weeklyPercent: Int?, resetAt: String?) {
+        val subject = "Codex usage warning: ${usedPercent}% used"
+        val body = buildString {
+            appendLine("Codex usage is at ${usedPercent}%.")
+            sessionPercent?.let { appendLine("Session (5h): $it%") }
+            weeklyPercent?.let { appendLine("Weekly (7d): $it%") }
+            if (resetAt != null) appendLine("Reset at: $resetAt")
+            appendLine()
+            appendLine("Check: /  (dashboard)")
+        }
+        send(subject, body)
+    }
+
     fun diskUsageWarn(usedPercent: Int, freeGb: Double) {
         val subject = "Disk usage warning: ${usedPercent}% used"
         val body = "Disk is at ${usedPercent}% (free=${"%.1f".format(freeGb)} GB)."

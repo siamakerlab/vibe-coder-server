@@ -157,6 +157,18 @@ class WebhookNotifier(
         send(title, body)
     }
 
+    /** v1.147.0 — Codex 사용량 임계치 (session/weekly breakdown 포함). */
+    fun codexUsageWarn(usedPercent: Int, sessionPercent: Int?, weeklyPercent: Int?, resetAt: String?) {
+        val title = "Codex usage warning"
+        val body = buildString {
+            append("Usage at ").append(usedPercent).append("%.")
+            sessionPercent?.let { append(" Session(5h) ").append(it).append("%.") }
+            weeklyPercent?.let { append(" Weekly(7d) ").append(it).append("%.") }
+            if (resetAt != null) append("\nReset: ").append(resetAt)
+        }
+        send(title, body)
+    }
+
     fun diskUsageWarn(usedPercent: Int, freeGb: Double) {
         send("Disk usage warning", "Disk at ${usedPercent}% used. Free=${"%.1f".format(freeGb)} GB.")
     }
