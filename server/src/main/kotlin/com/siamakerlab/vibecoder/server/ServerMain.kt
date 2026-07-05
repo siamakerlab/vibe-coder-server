@@ -221,6 +221,11 @@ fun main(args: Array<String>) {
         config, workspace, hub, history = conversationHistory,
         residentCapProvider = opencodeResidentCap,
     )
+    // v1.153.0 — z.ai coding plan 강제 모드 부팅 audit. 활성 시 OpenCode provider 가
+    // z.ai 구독 경로만 사용함을 로그로 명시 (위반 감지는 effectiveModel/spawn 이 자동 차단).
+    if (config.opencode.zai.enforceCodingPlan) {
+        log.info { "z.ai coding plan 강제 모드 활성화 — OpenCode provider 는 zai-coding-plan/* 모델만 사용, 커스텀 provider 는 격리 config 로 무시됨" }
+    }
     val agentProviderStore = ProjectAgentPreferenceStore(workspace)
     val agentRouter = AgentRouter(
         store = agentProviderStore,

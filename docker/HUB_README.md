@@ -171,6 +171,20 @@ docker compose up -d            # boots postgres + vibe-coder-server
 | `VIBECODER_ADMIN_PASSWORD` | (unset) | Pair with above. Change via `/password` immediately |
 | `JAVA_OPTS` | `-Xmx2g …` | JVM heap — tune to host RAM |
 
+### AI providers (v1.150.0+)
+
+The server ships three first-class agent providers, selectable per-project from the console:
+
+- **Claude** (default) — Anthropic Claude Code CLI. OAuth or API key auth.
+- **Codex** (optional) — OpenAI Codex CLI. Device-code / access-token / API-key auth via the `/env-setup` page.
+- **OpenCode** (v1.150.0+) — [opencode](https://opencode.ai) CLI. Log in via the `/env-setup` → "OpenCode (z.ai)" card (`opencode providers login`). Credential persists to `${VIBE_DATA_ROOT}/.../opencode/auth.json` and survives image updates.
+
+| Env | Default | Notes |
+|---|---|---|
+| `VIBECODER_OPENCODE_MODEL` | `default` | Default model (`provider/model`, e.g. `zai-coding-plan/glm-5.2`) |
+| `VIBECODER_OPENCODE_CMD` | `opencode` | Override the CLI path |
+| `VIBECODER_ZAI_ENFORCE_CODING_PLAN` | `false` | **Lock OpenCode to the z.ai coding plan subscription only** (v1.153.0+). When `true`, the server isolates `OPENCODE_CONFIG_HOME` to a z.ai-only config and rejects non-`zai-coding-plan/*` models — custom providers in the user's `opencode.jsonc` are ignored. Set `true` for subscription-billing isolation. |
+
 ### Volume layout (v0.7.0+ — unified)
 
 All persistent data lives in **one host directory** (`./vibe-coder-data/`).

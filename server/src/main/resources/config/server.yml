@@ -2,7 +2,7 @@ server:
   name: Vibe Coder Server
   host: 0.0.0.0
   port: 17880
-  version: 1.152.0
+  version: 1.153.0
 
 workspace:
   # Each project lives at <root>/<projectId>/.
@@ -126,7 +126,10 @@ codex:
 # v1.150.0 — Phase 2 OpenCode provider. `opencode run --format json` 1회성 exec 모델 (Codex 와 동일).
 # model: 프로젝트별 미설정 시 기본. "default" = -m 미전달. "zai-coding-plan/glm-5.2" 형식 권장.
 # configHome: OPENCODE_CONFIG_HOME override. "default" = ~/.config/opencode.
-# zai.enforceCodingPlan: Phase 3.1 에서 true 운용 (현재 false — 모든 provider 허용).
+# zai.enforceCodingPlan (v1.153.0): true 면 OpenCode provider 를 z.ai coding plan 구독 경로로 고정.
+#   OPENCODE_CONFIG_HOME 을 서버 통제 격리 디렉토리로 설정 → z.ai-only config 노출.
+#   커스텀 provider 무시 + zai-coding-plan/* 외 모델은 FALLBACK_ZAI_MODEL(glm-5.2) 로 대체.
+#   env VIBECODER_ZAI_ENFORCE_CODING_PLAN=true 로도 활성화.
 opencode:
   model: default
   configHome: default

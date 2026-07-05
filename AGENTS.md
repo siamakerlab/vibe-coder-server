@@ -109,6 +109,22 @@ commit message 한 줄로 넘기지 말 것. 알림에 포함:
 - Claude 전용 기능을 다른 provider에 연결할 때는 동일 동작을 가정하지 말고, 해당 CLI
   공식 동작과 로컬 CLI 출력으로 직접 검증한다.
 
+### z.ai coding plan 강제 모드 (v1.153.0+, Phase 3.1)
+
+- `opencode.zai.enforceCodingPlan: true` 시 OpenCode provider 는 **항상 z.ai coding plan
+  구독 경로만 허용**. opencode 의 다른 provider(anthropic/openai/자체 LLM) 로의 우회 차단.
+- 구현: `OpenCodeSessionManager` 가 spawn 시 `OPENCODE_CONFIG_HOME` 을 서버 통제 격리
+  디렉토리(`<workspace>/.opencode-zai-enforced`)로 설정 → z.ai-only `opencode.jsonc`
+  (provider 블록 비움) 노출. 사용자 원본 config 의 커스텀 provider 가 무시됨.
+- 모델 whitelist: `-m zai-coding-plan/*` 외 모델은 `effectiveModel` 가 `FALLBACK_ZAI_MODEL`
+  (`zai-coding-plan/glm-5.2`) 로 대체. 프로젝트별 모델 설정도 zai 외이면 fallback.
+- auth.json(`~/.local/share/opencode/auth.json`) credential 은 XDG_DATA_HOME 에 있어
+  격리 config 적용 시에도 유지 — z.ai coding plan 토큰이 그대로 동작.
+- 부팅 audit: `enforceCodingPlan=true` 면 서버 시작 시 로그로 명시. runtime 토글 UI 는
+  추후 확정 — 현재는 `server.yml` 또는 `VIBECODER_ZAI_ENFORCE_CODING_PLAN` env 로 제어.
+- token 자동 갱신(refresh): opencode CLI 가 만료 감지/갱신을 자체 처리하지 않아, credential
+  만료 시 `opencode providers login` 재실행 안내. 자동 refresh 는 향후 z.ai API 직접 연동 시 추가.
+
 ## Wire Change 규칙
 
 다음 변경은 Android 호환성 영향 검토가 필수다.

@@ -135,4 +135,25 @@ class OpenCodeParsingTest {
         updated.available shouldBe false
         updated.provider shouldBe null
     }
+
+    // ── isZaiCodingPlanModel (v1.153.0 z.ai 강제 모드) ──────────────────────────
+
+    @Test
+    fun `zai coding plan model prefix is recognized`() {
+        isZaiCodingPlanModel("zai-coding-plan/glm-5.2") shouldBe true
+        isZaiCodingPlanModel("zai-coding-plan/glm-4.5-air") shouldBe true
+    }
+
+    @Test
+    fun `zai coding plan check is case-insensitive`() {
+        isZaiCodingPlanModel("ZAI-CODING-PLAN/glm-5.2") shouldBe true
+    }
+
+    @Test
+    fun `non-zai models are rejected`() {
+        isZaiCodingPlanModel("vllm-gemma4/cyankiwi/gemma-4-26B") shouldBe false
+        isZaiCodingPlanModel("gpt-5") shouldBe false
+        isZaiCodingPlanModel("default") shouldBe false
+        isZaiCodingPlanModel("") shouldBe false
+    }
 }

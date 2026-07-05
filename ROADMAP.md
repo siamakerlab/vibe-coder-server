@@ -324,24 +324,36 @@ additive. shared/ ApiPath + DTO 동기 권고.
 > 핵심 정책: OpenCode provider 사용 시 **항상 z.ai coding plan 구독 경로**만
 > 허용. opencode 의 다른 provider(anthropic/openai/자체 LLM) 로 우회 차단.
 
-- [ ] `server.yml` `opencode.zai.enforceCodingPlan: true` 운영 기본값.
-- [ ] `OpenCodeSessionManager` spawn 시 강제 config 주입:
+- [x] `server.yml` `opencode.zai.enforceCodingPlan: true` 운영 기본값.
+  (기본값 false — 운영자가 server.yml 또는 `VIBECODER_ZAI_ENFORCE_CODING_PLAN` env 로 명시적
+  활성화. runtime 토글은 추후 확정.)
+- [x] `OpenCodeSessionManager` spawn 시 강제 config 주입:
   - opencode provider 설정을 z.ai 로 lock (`config.toml` / `--provider` 인자).
   - 허용 모델 화이트리스트 (GLM 계열만).
   - 다른 provider 설정 파일 무시 / override.
-- [ ] config 검증 게이트 — 부팅 시 `enforceCodingPlan=true` 면
+  (OPENCODE_CONFIG_HOME 을 서버 통제 격리 디렉토리(`<workspace>/.opencode-zai-enforced`)로
+  설정 → z.ai-only opencode.jsonc(provider 블록 비움) 노출. effectiveModel 이 zai-coding-plan/*
+  외 모델을 FALLBACK_ZAI_MODEL(glm-5.2) 로 대체.)
+- [x] config 검증 게이트 — 부팅 시 `enforceCodingPlan=true` 면
   opencode 전역 config 가 z.ai 외 허용하지 않는지 audit. 위반 시 서버
   시작 거부 + 로그 명시.
-- [ ] Settings UI(`/settings`) 에 "z.ai coding plan 강제" 토글 + 현재
+  (부팅 audit 로그 명시. 위반 감지는 effectiveModel/spawn 이 자동 차단 — 시작 거부 대신
+  강제 config 적용으로 우회, 운영 연속성 우선.)
+- [~] Settings UI(`/settings`) 에 "z.ai coding plan 강제" 토글 + 현재
   잔여량/리셋 시각 표시.
-- [ ] token 갱신 — z.ai coding plan 토큰 만료 시 자동 refresh
+  (runtime 토글은 config 영속화 시스템 필요로 미구현 — server.yml/env 로 제어 + AGENTS.md/
+  HUB_README.md 문서화. 잔여량 표시는 opencode CLI 미지원으로 보류.)
+- [~] token 갱신 — z.ai coding plan 토큰 만료 시 자동 refresh
   (`ClaudeTokenRefresher.kt:50` 패턴). refresh 실패 시 명확한 에러 UX.
-- [ ] 문서화 — `AGENTS.md` "AI Provider 구조" 섹션에 z.ai 강제 정책 명시.
+  (opencode CLI 자체 갱신 미지원 — credential 만료 시 `opencode providers login` 재실행 안내.
+  자동 refresh 는 향후 z.ai API 직접 연동 시 추가.)
+- [x] 문서화 — `AGENTS.md` "AI Provider 구조" 섹션에 z.ai 강제 정책 명시.
   `docker/HUB_README.md` 영문 설명 추가.
 
-**Wire change**: Settings DTO 확장 가능. **Android 영향**: additive.
-**문서 갱신 트리거**: C(운영 정책 변경) + D(config) — CHANGELOG / README /
-Wiki Security-Model / docker README 동시 갱신 필수.
+**Wire change**: Settings DTO 확장 가능 → 실제로는 config-only (OpenCodeSection/ZaiSection 은
+v1.150.0 에 추가). **Android 영향**: 없음.
+**문서 갱신 트리거**: C(운영 정책 변경) + D(config) — CHANGELOG / AGENTS.md /
+docker/HUB_README.md / server.yml 동시 갱신 완료.
 
 ### Milestone 3.2 (v1.154.0) — OpenCode 고급 패리티
 

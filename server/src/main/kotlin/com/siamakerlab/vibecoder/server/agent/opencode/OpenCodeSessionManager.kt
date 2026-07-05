@@ -160,7 +160,14 @@ class OpenCodeSessionManager(
 
     override fun effectiveModel(projectId: String): String? {
         val raw = readProjectModel(projectId) ?: config.opencode.model
-        return raw.trim().takeIf { it.isNotBlank() && !it.equals("default", ignoreCase = true) }
+        val resolved = raw.trim().takeIf { it.isNotBlank() && !it.equals("default", ignoreCase = true) }
+        // v1.153.0 — z.ai coding plan 강제 모드: zai-coding-plan/* 외 모델은 거부하고
+        // 기본 zai 모델로 fallback (config 의 model 도 zai 가 아니면 FALLBACK_ZAI_MODEL 사용).
+        return if (config.opencode.zai.enforceCodingPlan) {
+            resolved?.takeIf { isZaiCodingPlanModel(it) } ?: FALLBACK_ZAI_MODEL
+        } else {
+            resolved
+        }
     }
 
     fun setProjectModel(projectId: String, model: String?) {
@@ -536,10 +543,46 @@ class OpenCodeSessionManager(
     private fun applyOpenCodeProcessEnv(pb: ProcessBuilder) {
         pb.environment().putIfAbsent("HOME", "/home/vibe")
         pb.environment().putIfAbsent("XDG_CONFIG_HOME", "/home/vibe/.config")
-        val ch = config.opencode.configHome
-        if (ch != "default" && ch.isNotBlank()) {
-            pb.environment()["OPENCODE_CONFIG_HOME"] = ch
+        // v1.153.0 — z.ai coding plan 강제 모드: OPENCODE_CONFIG_HOME 을 서버 통제 격리
+        // 디렉토리로 설정. 사용자 원본 config(~/.config/opencode/opencode.jsonc) 의 커스텀
+        // provider(vllm-gemma4 등) 가 무시되고 z.ai-only config 만 노출된다. auth.json 은
+        // XDG_DATA_HOME(~/.local/share/opencode) 에 그대로 — credential 은 영향받지 않음.
+        if (config.opencode.zai.enforceCodingPlan) {
+            val enforcedDir = ensureZaiEnforcedConfig()
+            pb.environment()["OPENCODE_CONFIG_HOME"] = enforcedDir.toString()
+        } else {
+            val ch = config.opencode.configHome
+            if (ch != "default" && ch.isNotBlank()) {
+                pb.environment()["OPENCODE_CONFIG_HOME"] = ch
+            }
         }
+    }
+
+    /**
+     * v1.153.0 — z.ai-only config 디렉토리 생성/유지. provider 블록을 비워 커스텀 provider 를
+     * 숨기고, model 을 zai-coding-plan 으로 고정. 매 spawn 전 호출 — config 가 손상되면 자동 복구.
+     */
+    private fun ensureZaiEnforcedConfig(): Path {
+        val dir = workspace.root.resolve(".opencode-zai-enforced")
+        Files.createDirectories(dir)
+        val configFile = dir.resolve("opencode.jsonc")
+        val zaiModel = config.opencode.model
+            .takeIf { isZaiCodingPlanModel(it) }
+            ?: (effectiveModel("__enforced__") ?: FALLBACK_ZAI_MODEL)
+        val configContent = buildString {
+            appendLine("{")
+            appendLine("  \"${'$'}schema\": \"https://opencode.ai/config.json\",")
+            appendLine("  \"model\": \"$zaiModel\",")
+            appendLine("  \"provider\": {}")
+            append("}")
+        }
+        runCatching {
+            val exists = Files.exists(configFile)
+            if (!exists || configFile.readText() != configContent) {
+                configFile.writeText(configContent)
+            }
+        }.onFailure { log.warn(it) { "z.ai 강제 config 생성 실패: ${configFile}" } }
+        return dir
     }
 
     companion object {
@@ -549,8 +592,14 @@ class OpenCodeSessionManager(
         const val BOOT_RESUME_PROMPT =
             "Continue from where you left off — the server restarted and the previous OpenCode turn was interrupted. " +
                 "Resume the in-progress work; do not restart from scratch."
+        /** v1.153.0 — z.ai 강제 모드에서 비-zai 모델을 대체할 기본 zai-coding-plan 모델. */
+        const val FALLBACK_ZAI_MODEL = "zai-coding-plan/glm-5.2"
     }
 }
+
+/** v1.153.0 — 모델 문자열이 z.ai coding plan provider 경로인지 판정 (순수 함수, 단위 테스트 가능). */
+internal fun isZaiCodingPlanModel(model: String): Boolean =
+    model.startsWith("zai-coding-plan/", ignoreCase = true)
 
 /** v1.150.0 — opencode CLI exec 인자 빌더 (`opencode run --format json --auto ...`). */
 internal fun buildOpenCodeExecArgs(
