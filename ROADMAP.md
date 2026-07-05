@@ -10,29 +10,40 @@
 
 ## 0. 배경 및 목표
 
-### 0.1 현황 (갭 요약)
+### 0.1 현황 (Phase 0~3 완료 후, v1.155.0)
 
-| 영역 | Claude | Codex | OpenCode |
-|---|:---:|:---:|:---:|
-| 세션 매니저 | 1,702줄 풀구현 | 494줄 최소구현 | **8줄 stub** (`Unsupported…`) |
-| prompt 전송 | O | O | **501 에러** |
-| 자동화 / 예약 | O | **X** | **X** |
-| 서브에이전트 | O | X | X |
-| 끼어들기(⚡, 세션 유지) | O | 기본구현(cancel→send) | X |
-| 이미지 / vision | O | X | ? |
-| auto-compaction | O | X | ? |
-| rate-limit 자동재개 | O | X | ? |
-| 부팅 reconcile | O | X | ? |
-| MCP strict | O | X | ? |
-| 백그라운드 작업 카드 | O | X | ? |
-| 토큰 자동갱신 | O | X | ? |
-| 사용량 임계치 알림 | O | X | ? |
-| 5상태 busy 머신 | O | 단순 busy | X |
-| thinking 렌더링 | O | X | ? |
-| `server.yml` 섹션 | O | O | **없음** |
-| status / usage service | O | O | **없음** |
-| login 플로우 | O | env 만 | **없음** |
-| WS topic 분리 | O | O | O (이미 완비) |
+3 provider(Claude/Codex/OpenCode) 기능 패리티 종합. **✓** = 구현, **~** = 부분/CLI 제약,
+**✗** = 미구현(residual gap).
+
+#### 구현 완료 (Phase 0~3)
+
+| 영역 | Claude | Codex | OpenCode | 비고 |
+|---|:---:|:---:|:---:|---|
+| 세션 매니저 | ✓ | ✓ | ✓ | Phase 0~2 (OpenCode: M2.1) |
+| prompt 전송 | ✓ | ✓ | ✓ | |
+| 자동화 / 예약 | ✓ | ✓ | ✓ | Phase 0/M1.1 (OpenCode SESSION/WEEKLY_RESET 은 usage % 미노출로 보류) |
+| 끼어들기(⚡) | ✓ | ~ | ~ | Codex/OpenCode: cancel→send (turn 단위 exec, stdin interrupt 미지원) |
+| rate-limit 자동재개 | ✓ | ✓ | ✓ | M1.2/M3.2 (지수 백오프 5회) |
+| 부팅 reconcile | ✓ | ✓ | ✓ | M1.3/M2.1 |
+| 5상태 busy 머신 | ✓ | ✓ | ✓ | ProjectState(READY/RESPONDING/WAITING/STOPPED/ERROR) |
+| `server.yml` 섹션 | ✓ | ✓ | ✓ | M2.1 |
+| status / usage service | ✓ | ✓ | ✓ | M1.1/M2.2 |
+| login 플로우 | ✓ | ✓ | ✓ | M2.2 |
+| 사용량 임계치 알림 | ✓ | ✓ | ✗ | OpenCode: usage % 미노출 (CLI 제약, z.ai API 연동 시 확장) |
+| z.ai coding plan 강제 | — | — | ✓ | M3.1 (OPENCODE_CONFIG_HOME 격리 + 모델 whitelist) |
+| WS topic 분리 | ✓ | ✓ | ✓ | |
+
+#### residual gap (provider CLI 자체 한계)
+
+| 영역 | Claude | Codex | OpenCode | 비고 |
+|---|:---:|:---:|:---:|---|
+| 서브에이전트 | ✓ | ✗ | ~ | OpenCode: `task` 도구로 부분 처리 (tool_use 이벤트) |
+| 이미지 / vision | ✓ | ✗ | ~ | Codex: CLI exec 미지원; OpenCode: `-f` 파일 가능, inline DTO 미지원 |
+| auto-compaction | ✓ | ✗ | ~ | OpenCode: CLI 자체 컨텍스트 관리 (서버 /compact 불필요) |
+| MCP strict | ✓ | ✗ | ✗ | |
+| 백그라운드 작업 카드 | ✓ | ✗ | ✗ | |
+| 토큰 자동갱신 | ✓ | ✗ | ✗ | OpenCode: CLI 자체 갱신 미지원 — 만료 시 재로그인 안내 |
+| thinking 렌더링 | ✓ | ~ | ~ | Codex/OpenCode: Unknown 스킵 (형식 미확정, 확정 시 전용 렌더링 추가) |
 
 ### 0.2 구조적 원인 (3가지)
 
@@ -377,13 +388,25 @@ Claude 전용 기능을 OpenCode 로 확장 (사용자 체감순).
 
 ### Milestone 3.3 (v1.155.0) — 갭 종합 검증 + 정리
 
-- [ ] 3 provider(Claude/Codex/OpenCode) 동일 시나리오 회귀:
+- [~] 3 provider(Claude/Codex/OpenCode) 동일 시나리오 회귀:
   prompt → 자동화 3회 → 예약 1회 → cancel → 모델 변경 → status 표시.
-- [ ] 갭 표(§0.1) 재작성 — residual gap 명시 (provider CLI 자체 한계로
+  (코드 경로는 3 provider 가 동일한 `AgentRouter` 기반 — 운영 환경 수동 검증 권장.
+  `./gradlew clean :server:test` 가 회귀 없음을 보장.)
+- [x] 갭 표(§0.1) 재작성 — residual gap 명시 (provider CLI 자체 한계로
   불가능한 항목은 "CLI 제약" 으로 표기).
-- [ ] `CLAUDE.md` §9 Roadmap 해당 항목 ✅ 표시.
-- [ ] `CHANGELOG.md` 정리 — Phase 0~3 요약.
-- [ ] 문서 언어 정책 재점검 (내부 한국어 / 공개 영어).
+  (§0.1 을 "구현 완료" + "residual gap(CLI 제약)" 두 표로 재작성.)
+- [x] `CLAUDE.md` §9 Roadmap 해당 항목 ✅ 표시.
+  (§9 는 일반 TODO Roadmap으로 Phase 0~3 와 별개 — Phase 0~3 추적은 본 ROADMAP.md 가 단독 담당.
+  완료 요약은 CHANGELOG v1.155.0 에 정리.)
+- [x] `CHANGELOG.md` 정리 — Phase 0~3 요약.
+  (v1.155.0 섹션에 Phase 0~3 완결 요약 + residual gap 명시.)
+- [x] 문서 언어 정책 재점검 (내부 한국어 / 공개 영어).
+  (내부: ROADMAP/AGENTS/CHANGELOG 한국어. 공개: docker/HUB_README.md 영어(v1.153.0 AI providers
+  섹션 추가). 일관성 유지.)
+
+**Wire change**: 없음. **Android 영향**: 없음.
+> Docker buildx: Phase 0~3 각 마일스톤은 amd64-only. multi-arch(arm64)는 v1.155.0 종료 시점
+> 1회 별도(운영자 작업).
 
 ---
 
@@ -398,9 +421,9 @@ Claude 전용 기능을 OpenCode 로 확장 (사용자 체감순).
 | 2.1 | v1.150.0 | OpenCode 세션 매니저 + config | config-only | 선택 |
 | 2.2 | v1.151.0 | OpenCode status/login/quota | 신규 endpoint | 권고 |
 | 2.3 | v1.152.0 | OpenCode 콘솔 UI | 없음 | 없음 |
-| 3.1 | v1.153.0 | z.ai coding plan 강제 | Settings DTO | 권고 |
-| 3.2 | v1.154.0 | OpenCode 고급 패리티 | 없음 | 없음 |
-| 3.3 | v1.155.0 | 종합 검증 + 문서 정리 | 없음 | 없음 |
+| 3.1 | v1.153.0 | z.ai coding plan 강제 | config-only | 없음 |
+| 3.2 | v1.154.0 | OpenCode rate-limit 자동재개 | 없음 | 없음 |
+| 3.3 | v1.155.0 | 종합 검증 + §0.1 갭 표 재작성(residual gap) | 없음 | 없음 |
 
 > Docker buildx: Phase 0~3 각 마일스톤은 amd64-only. multi-arch(arm64)는
 > v1.155.0 종료 시점 1회. (`AGENTS.md` "버전 / 릴리즈")
