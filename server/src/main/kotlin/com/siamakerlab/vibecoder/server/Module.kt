@@ -32,6 +32,7 @@ import com.siamakerlab.vibecoder.server.admin.SshKeyService
 import com.siamakerlab.vibecoder.server.admin.sshKeyRoutes
 import com.siamakerlab.vibecoder.server.admin.quotaRoutes
 import com.siamakerlab.vibecoder.server.admin.codexQuotaRoutes
+import com.siamakerlab.vibecoder.server.admin.opencodeQuotaRoutes
 import com.siamakerlab.vibecoder.server.admin.keystoreRoutes
 import com.siamakerlab.vibecoder.server.admin.KeystoreService
 import com.siamakerlab.vibecoder.server.terminal.terminalRoutes
@@ -185,6 +186,9 @@ data class ServerContext(
     val claudeUsageMonitor: com.siamakerlab.vibecoder.server.claude.ClaudeUsageMonitor,
     val codexStatusService: com.siamakerlab.vibecoder.server.agent.codex.CodexStatusService,
     val codexUsageMonitor: com.siamakerlab.vibecoder.server.agent.codex.CodexUsageMonitor,
+    /** v1.151.0 — Phase 2 OpenCode status/quota. */
+    val opencodeStatusService: com.siamakerlab.vibecoder.server.agent.opencode.OpenCodeStatusService,
+    val opencodeUsageMonitor: com.siamakerlab.vibecoder.server.agent.opencode.OpenCodeUsageMonitor,
     /** v0.22.0 — Play Console 업로드 트리거 (MCP google-play-publisher 위임). */
     val playPublishService: com.siamakerlab.vibecoder.server.publish.PlayPublishService,
     /** v0.23.0 — TestFlight 업로드 트리거 (MCP app-store-connect 위임). */
@@ -423,6 +427,7 @@ fun Application.module(ctx: ServerContext) {
         // v1.3.2 — 전역 (계정 단위) Claude 쿼타 — 사이드바 / Android 헤더용.
         quotaRoutes(ctx.claudeStatusService)
         codexQuotaRoutes(ctx.codexStatusService)
+        opencodeQuotaRoutes(ctx.opencodeStatusService)
         // v1.74.0 — 홈 대시보드 "서버 상태" 카드(CPU/RAM/프로세스). 무상태 서비스라 직접 생성.
         systemStatsRoutes(com.siamakerlab.vibecoder.server.metrics.SystemStatsService())
         // v1.5.0 — Android 키스토어 관리 (설정 → Keystores).

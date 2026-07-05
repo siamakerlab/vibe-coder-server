@@ -4,6 +4,7 @@ import com.siamakerlab.vibecoder.server.auth.AUTH_BEARER
 import com.siamakerlab.vibecoder.server.auth.requireDevice
 import com.siamakerlab.vibecoder.server.claude.ClaudeStatusService
 import com.siamakerlab.vibecoder.server.agent.codex.CodexStatusService
+import com.siamakerlab.vibecoder.server.agent.opencode.OpenCodeStatusService
 import com.siamakerlab.vibecoder.server.projects.ProjectService
 import com.siamakerlab.vibecoder.shared.ApiPath
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -43,6 +44,19 @@ fun Routing.codexQuotaRoutes(codexStatus: CodexStatusService) {
         get(ApiPath.SERVER_CODEX_QUOTA) {
             call.requireDevice()
             call.respond(codexStatus.cachedSnapshot())
+        }
+    }
+}
+
+/**
+ * v1.151.0 — OpenCode CLI credential/usage snapshot. Codex quota 와 동일 인증/형태.
+ * 임계치 usage % 는 opencode CLI 미지원이라 credential 상태 + 토큰 사용량만 반환.
+ */
+fun Routing.opencodeQuotaRoutes(opencodeStatus: OpenCodeStatusService) {
+    authenticate(AUTH_BEARER) {
+        get(ApiPath.SERVER_OPENCODE_QUOTA) {
+            call.requireDevice()
+            call.respond(opencodeStatus.cachedSnapshot())
         }
     }
 }

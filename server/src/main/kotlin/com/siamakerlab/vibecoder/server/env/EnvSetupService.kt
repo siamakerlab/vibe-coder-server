@@ -620,6 +620,49 @@ class EnvSetupService(
             secret = apiKey,
         )
 
+    /**
+     * v1.151.0 — OpenCode provider 로그인. `opencode providers login` 을 spawn 하고 출력을
+     * 스트리밍. opencode login 은 provider/credential 종류에 따라 브라우저/device 흐름이 달라
+     * 서버가 흐름을 가정하지 않고 CLI 안내문을 그대로 로그로 전달한다(z.ai coding plan 은
+     * `opencode providers login` 시 auth.json 에 API key 저장 — 사전 조사 확인).
+     */
+    fun spawnOpenCodeLogin(): String {
+        val taskId = Ids.taskId()
+        queue.submit(
+            projectId = "env-setup",
+            taskId = taskId,
+            onStart = {
+                hub.publisher(taskId).emit(WsFrame.Log(taskId, "INFO", "▶ OpenCode 로그인 시작", clock.nowIso()))
+                hub.publisher(taskId).emit(WsFrame.Log(taskId, "INFO", "opencode providers login 실행 — 브라우저/터미널 안내에 따라 진행하세요.", clock.nowIso()))
+            },
+            executor = { _ ->
+                withContext(Dispatchers.IO) {
+                    val exit = runStreamingCommand(taskId, listOf(resolveOpenCodeCmd(), "providers", "login"))
+                    if (exit != 0) {
+                        hub.publisher(taskId).emit(WsFrame.Log(taskId, "WARN",
+                            "opencode login 이 종료코드 $exit 를 반환했습니다. 이미 로그인되었거나 컨테이너에서 직접 실행이 필요할 수 있습니다.", clock.nowIso()))
+                    }
+                }
+            },
+            onSuccess = {
+                hub.publisher(taskId).emit(WsFrame.Log(taskId, "INFO", "✓ OpenCode 로그인 완료", clock.nowIso()))
+                hub.publisher(taskId).emit(WsFrame.Done(taskId, "SUCCESS"))
+            },
+            onFailure = { e ->
+                hub.publisher(taskId).emit(WsFrame.Log(taskId, "ERROR", "✗ OpenCode 로그인 실패: ${e.message}", clock.nowIso()))
+                hub.publisher(taskId).emit(WsFrame.Done(taskId, "FAILED", e.message))
+            },
+            onCancel = {
+                hub.publisher(taskId).emit(WsFrame.Done(taskId, "CANCELED"))
+            },
+        )
+        return taskId
+    }
+
+    private fun resolveOpenCodeCmd(): String =
+        System.getenv("OPENCODE_CMD")?.takeIf { it.isNotBlank() }
+            ?: if (com.siamakerlab.vibecoder.server.core.OsType.detect() == com.siamakerlab.vibecoder.server.core.OsType.WINDOWS) "opencode.cmd" else "opencode"
+
     private fun submitDoctor(
         taskId: String,
         label: String,

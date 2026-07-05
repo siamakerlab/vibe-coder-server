@@ -155,6 +155,16 @@ fun Routing.envSetupRoutes(
         call.respondRedirect("/env-setup/tasks/$taskId")
     }
 
+    // v1.151.0 — Phase 2 OpenCode provider 로그인 (opencode providers login spawn).
+    post("/env-setup/opencode-login/start") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireAdminOrRedirect(sess)) return@post
+        requireCsrf()
+        val taskId = setupService.spawnOpenCodeLogin()
+        log.info { "env-setup opencode-login: $taskId by ${sess.username}" }
+        call.respondRedirect("/env-setup/tasks/$taskId")
+    }
+
     post("/env-setup/codex-auth/access-token") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireAdminOrRedirect(sess)) return@post

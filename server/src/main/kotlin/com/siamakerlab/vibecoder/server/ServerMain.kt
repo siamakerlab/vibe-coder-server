@@ -335,6 +335,14 @@ fun main(args: Array<String>) {
         intervalProvider = { java.time.Duration.ofMinutes(config.codex.usage.pollIntervalMinutes.toLong().coerceAtLeast(1)) },
     )
     codexUsageMonitor.start()
+    // v1.151.0 — Phase 2 M2.2 OpenCode status/login/quota.
+    val opencodeAuthService = com.siamakerlab.vibecoder.server.agent.opencode.OpenCodeAuthService()
+    val opencodeStatusService = com.siamakerlab.vibecoder.server.agent.opencode.OpenCodeStatusService(opencodeAuthService)
+    val opencodeUsageMonitor = com.siamakerlab.vibecoder.server.agent.opencode.OpenCodeUsageMonitor(
+        statusService = opencodeStatusService,
+        intervalProvider = { java.time.Duration.ofMinutes(5) },
+    )
+    opencodeUsageMonitor.start()
     // v1.7.9 — 컨테이너 구동 중 토큰 자동 갱신. workspace.root 를 cwd 로 사용해
     // SCRATCH 디렉토리 유무와 무관하게 동작 보장.
     val claudeTokenRefresher = com.siamakerlab.vibecoder.server.claude.ClaudeTokenRefresher(
@@ -615,6 +623,8 @@ fun main(args: Array<String>) {
         claudeUsageMonitor = claudeUsageMonitor,
         codexStatusService = codexStatusService,
         codexUsageMonitor = codexUsageMonitor,
+        opencodeStatusService = opencodeStatusService,
+        opencodeUsageMonitor = opencodeUsageMonitor,
         playPublishService = playPublishService,
         testFlightPublishService = testFlightPublishService,
         apkSignerInspector = apkSignerInspector,
@@ -676,6 +686,7 @@ fun main(args: Array<String>) {
         runCatching { kotlinx.coroutines.runBlocking { emulatorService.shutdown() } }
         runCatching { claudeUsageMonitor.shutdown() }
         runCatching { codexUsageMonitor.shutdown() }
+        runCatching { opencodeUsageMonitor.shutdown() }
         runCatching { diskMonitor.shutdown() }
         runCatching { kotlinLspService.shutdown() }
         runCatching { buildScheduler.shutdown() }

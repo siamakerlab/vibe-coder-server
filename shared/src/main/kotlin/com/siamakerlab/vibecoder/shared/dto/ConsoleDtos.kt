@@ -117,3 +117,29 @@ data class CodexUsageDto(
     /** Free-form weekly reset time from `/status`, for example "11:03 on 30 Jun". */
     val weeklyResetAt: String? = null,
 )
+
+/**
+ * v1.151.0 — OpenCode provider usage/credential snapshot. `opencode providers list` +
+ * `opencode stats` (ANSI) 캡처 결과. [CodexUsageDto] 와 대칭이나, opencode CLI 가 usage %
+ * 게이지를 직접 노출하지 않아 session/weekly % 대신 토큰 사용량/credential 상태를 담는다.
+ *
+ * z.ai coding plan 잔여량은 opencode CLI 로 조회 불가 → 추후 z.ai API 직접 연동(Phase 3.1) 시 확장.
+ */
+@Serializable
+data class OpenCodeUsageDto(
+    val updatedAt: String,
+    val available: Boolean = false,
+    /** credential 존재 여부 (`opencode providers list` 결과). */
+    val loggedIn: Boolean = false,
+    /** 등록된 provider 표시명 (예: "Z.AI Coding Plan"). */
+    val provider: String? = null,
+    /** credential 종류 (예: "api"). */
+    val credentialType: String? = null,
+    val usageSummary: String? = null,
+    val totalCost: String? = null,
+    val totalTokens: Long? = null,
+    val inputTokens: Long? = null,
+    val outputTokens: Long? = null,
+    val cacheReadTokens: Long? = null,
+    val raw: String? = null,
+)

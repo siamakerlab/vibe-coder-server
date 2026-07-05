@@ -36,6 +36,8 @@ object ApiPath {
     const val SERVER_QUOTA = "/api/server/quota"
     // Codex CLI usage/status snapshot. Separate from Claude quota so providers stay isolated.
     const val SERVER_CODEX_QUOTA = "/api/server/codex-quota"
+    // v1.151.0 — OpenCode CLI credential/usage snapshot. Same shape as Codex quota (provider isolation).
+    const val SERVER_OPENCODE_QUOTA = "/api/server/opencode-quota"
 
     // v1.74.0 — 홈 대시보드 "서버 상태" 카드(CPU/RAM/프로세스 점유). admin 페이지 폴링,
     // server-internal (Android client 미사용). 저민감(리소스 사용률) → quota 와 동일 무인증.

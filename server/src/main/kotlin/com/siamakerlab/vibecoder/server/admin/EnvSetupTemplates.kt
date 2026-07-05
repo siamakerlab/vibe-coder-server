@@ -398,6 +398,7 @@ git config --global user.email "&lt;email&gt;"
                   <button type="submit" class="primary" style="width:auto;padding:8px 16px">${esc(label)}</button>
                 </form>
                 ${renderCodexLoginAction(status, csrf, lang)}
+                ${renderOpenCodeLoginAction(csrf, lang)}
                 <p class="hint" style="margin-top:8px;font-size:12px">${esc(t("env.action.codexNote"))}</p>
                 <details style="margin-top:8px"><summary class="dim" style="cursor:pointer;font-size:12px">${esc(t("env.action.cliHint"))}</summary>
                   <pre class="diff-block" style="margin-top:6px">docker exec -it vibe-coder-server vibe-doctor codex
@@ -470,6 +471,27 @@ ssh -p $sshPort vibe@&lt;host&gt;</pre>
         } else {
             """<p class="hint" style="margin-top:8px;font-size:12px">${esc(t("env.action.codexLoginInstallFirst"))}</p>"""
         }
+    }
+
+    /**
+     * v1.151.0 — OpenCode(z.ai coding plan) 로그인 카드. SetupComponent.OPENCODE 가 별도로
+     * 없으므로 Codex 카드 하단에 구분선+제목으로 노출. 정식 카드 분리는 M2.3 콘솔 UI 완성 시 검토.
+     */
+    private fun renderOpenCodeLoginAction(csrf: String?, lang: String): String {
+        val t = { key: String -> Messages.t(lang, key) }
+        return """
+        <hr style="margin:14px 0;border:none;border-top:1px solid #333">
+        <div style="font-size:13px;font-weight:600;margin-bottom:4px">OpenCode (z.ai coding plan)</div>
+        <form method="post" action="/env-setup/opencode-login/start" style="margin-top:6px"
+                onsubmit="return confirm(${jsLit(t("env.action.opencodeLoginConfirm"))})">
+          ${CsrfTokens.hiddenInput(csrf)}
+          <button type="submit" class="chip chip-action" style="padding:8px 16px">${esc(t("env.action.opencodeLogin"))}</button>
+        </form>
+        <p class="hint" style="margin-top:6px;font-size:12px">${esc(t("env.action.opencodeNote"))}</p>
+        <details style="margin-top:6px"><summary class="dim" style="cursor:pointer;font-size:12px">${esc(t("env.action.cliHint"))}</summary>
+          <pre class="diff-block" style="margin-top:6px">docker exec -it vibe-coder-server opencode providers login</pre>
+        </details>
+        """
     }
 
     // ────────────────────────────────────────────────────────────────────
