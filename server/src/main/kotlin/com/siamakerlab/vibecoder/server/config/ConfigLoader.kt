@@ -143,6 +143,23 @@ object ConfigLoader {
         System.getenv("VIBECODER_CODEX_USAGE_CRITICAL_PERCENT")?.takeIf { it.isNotBlank() }?.toIntOrNull()?.let {
             current = current.copy(codex = current.codex.copy(usage = current.codex.usage.copy(criticalThresholdPercent = it.coerceIn(1, 100))))
         }
+        // v1.150.0 — OpenCode provider env override.
+        System.getenv("VIBECODER_OPENCODE_MODEL")?.trim()?.takeIf { it.isNotBlank() }?.let {
+            current = current.copy(opencode = current.opencode.copy(model = it))
+        }
+        System.getenv("VIBECODER_OPENCODE_CONFIG_HOME")?.trim()?.takeIf { it.isNotBlank() }?.let {
+            current = current.copy(opencode = current.opencode.copy(configHome = it))
+        }
+        System.getenv("VIBECODER_OPENCODE_MAX_RESIDENT_SESSIONS")?.takeIf { it.isNotBlank() }
+            ?.toIntOrNull()?.let {
+                current = current.copy(opencode = current.opencode.copy(maxResidentSessions = it.coerceAtLeast(0)))
+            }
+        System.getenv("VIBECODER_OPENCODE_CMD")?.trim()?.takeIf { it.isNotBlank() }?.let {
+            current = current.copy(opencode = current.opencode.copy(cmd = it))
+        }
+        System.getenv("VIBECODER_ZAI_ENFORCE_CODING_PLAN")?.takeIf { it.isNotBlank() }?.let {
+            current = current.copy(opencode = current.opencode.copy(zai = current.opencode.zai.copy(enforceCodingPlan = it.equals("true", true))))
+        }
 
         return current
     }

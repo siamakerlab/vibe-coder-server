@@ -215,13 +215,19 @@ fun main(args: Array<String>) {
         config, workspace, hub, history = conversationHistory, usageRecorder = codexUsageRecorder,
         residentCapProvider = codexResidentCap,
     )
+    // v1.150.0 — Phase 2 OpenCode provider (1등 시민 승격).
+    val opencodeResidentCap = { com.siamakerlab.vibecoder.server.config.ConfigHolder.current.opencode.maxResidentSessions }
+    val opencodeSessionManager = com.siamakerlab.vibecoder.server.agent.opencode.OpenCodeSessionManager(
+        config, workspace, hub, history = conversationHistory,
+        residentCapProvider = opencodeResidentCap,
+    )
     val agentProviderStore = ProjectAgentPreferenceStore(workspace)
     val agentRouter = AgentRouter(
         store = agentProviderStore,
         managers = listOf(
             ClaudeAgentSessionManager(sessionManager),
             codexSessionManager,
-            OpenCodeSessionManager(hub),
+            opencodeSessionManager,
         ),
     )
     // v1.1.0 — ProjectDto.busy 필드를 위해 sessionManager 를 lambda 로 주입.
@@ -439,6 +445,9 @@ fun main(args: Array<String>) {
     // v1.149.0 — Codex 도 동일하게 미완 turn 자동 재개 (thread-id resume).
     runCatching { codexSessionManager.reconcileInterruptedTurnsAsync() }
         .onFailure { log.warn(it) { "codex interrupted-turn reconcile 트리거 실패" } }
+    // v1.150.0 — OpenCode 도 동일하게 미완 turn 자동 재개 (sessionID resume).
+    runCatching { opencodeSessionManager.reconcileInterruptedTurnsAsync() }
+        .onFailure { log.warn(it) { "opencode interrupted-turn reconcile 트리거 실패" } }
     // v0.35.0 — 코드 분석 묶음 (wrapper / stats / search).
     val gradleWrapperService = com.siamakerlab.vibecoder.server.build.GradleWrapperService(workspace)
     val codeStatsService = com.siamakerlab.vibecoder.server.projects.CodeStatsService(workspace)
@@ -662,6 +671,7 @@ fun main(args: Array<String>) {
         // 전부 누락(PTY/프로세스/코루틴 누수)될 수 있었음.
         runCatching { kotlinx.coroutines.runBlocking { sessionManager.shutdown() } }
         runCatching { codexSessionManager.shutdown() }
+        runCatching { opencodeSessionManager.shutdown() }
         runCatching { kotlinx.coroutines.runBlocking { subAgentManager.shutdown() } }
         runCatching { kotlinx.coroutines.runBlocking { emulatorService.shutdown() } }
         runCatching { claudeUsageMonitor.shutdown() }

@@ -307,8 +307,15 @@ private fun ensureAgentReady(projectId: String, router: AgentRouter?, envDiagnos
             }.getOrDefault(false)
             if (!ok) throw ApiException.localized(503, "codex_cli_missing", messageKey = "api.console.sendFailed", args = listOf("codex CLI not available"))
         }
-        AgentProvider.OPENCODE ->
-            throw ApiException.localized(501, "opencode_not_implemented", messageKey = "api.console.sendFailed", args = listOf("OpenCode provider is not implemented yet"))
+        AgentProvider.OPENCODE -> {
+            // v1.150.0 — Phase 2 OpenCode provider 활성화. opencode CLI 존재만 검증 (auth 는 M2.2).
+            val ok = runCatching {
+                val cmd = System.getenv("OPENCODE_CMD")?.takeIf { it.isNotBlank() } ?: "opencode"
+                val p = ProcessBuilder(cmd, "--version").redirectErrorStream(true).start()
+                p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS) && p.exitValue() == 0
+            }.getOrDefault(false)
+            if (!ok) throw ApiException.localized(503, "opencode_cli_missing", messageKey = "api.console.sendFailed", args = listOf("opencode CLI not available"))
+        }
     }
 }
 

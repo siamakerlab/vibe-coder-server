@@ -221,45 +221,51 @@ Claude 와 동일한 `AgentRouter` 기반.)
 
 ### 사전 조사 (구현 착수 전 필수)
 
-- [ ] **opencode CLI 동작 검증** — 로컬 컨테이너에 `opencode` 설치 후:
+- [x] **opencode CLI 동작 검증** — 로컬 컨테이너에 `opencode` 설치 후:
   - 실행 모델 확인: 상주 TUI vs `exec` 1회성 vs stream-json 입력.
+    → `opencode run --format json` 1회성 exec 모드 (Codex 와 동일 패턴).
   - 출력 형식: NDJSON / SSE / 커스텀. `--json` 유무.
+    → NDJSON, 각 줄 `{type, timestamp, sessionID, part:{...}}`. `--format json` 옵션.
   - config 파일 위치: `~/.config/opencode/`? `OPENCODE_CONFIG_HOME` env?
+    → `~/.config/opencode/opencode.jsonc`, `OPENCODE_CONFIG_HOME` env override 가능.
   - 인증: `auth.json`? env(`OPENCODE_API_KEY`)? z.ai 전용 토큰?
+    → `~/.local/share/opencode/auth.json`. z.ai coding plan 은 빌트인 provider.
   - 모델 지정: `--model` 인자? config 의 `model` 키?
-- [ ] **z.ai coding plan 연동 검증** — opencode 의 provider 설정에서 z.ai
-  endpoint / GLM 모델 지정 방법. coding plan 토큰 획득 절차.
-- [ ] 산출물: `docs/opencode-cli-reference.md` (한국어, internal).
+    → `-m provider/model` (예: `zai-coding-plan/glm-5.2`).
+- [x] **z.ai coding plan 연동 검증** — opencode 의 provider 설정에서 z.ai endpoint / GLM
+  모델 지정 방법. coding plan 토큰 획득 절차.
+  → `zai-coding-plan` 빌트인 provider. `opencode providers list` 로 credential 확인.
+  사용 모델: glm-4.5-air/glm-4.7/glm-5-turbo/glm-5.1/glm-5.2/glm-5v-turbo(vision).
+- [x] 산출물: `docs/opencode-cli-reference.md` (한국어, internal).
 
 ### Milestone 2.1 (v1.150.0) — OpenCode 세션 매니저 + config
 
-- [ ] `server.yml` 에 `opencode:` 섹션 추가 (`codex:` 섹션 `:110` 패턴):
+- [x] `server.yml` 에 `opencode:` 섹션 추가 (`codex:` 섹션 패턴):
   ```yaml
   opencode:
-    model: default            # glm-4.6 / glm-4.5 / ...
-    configHome: default       # /home/vibe/.config/opencode
+    model: default
+    configHome: default
     maxResidentSessions: 3
-    cmd: auto                 # OPENCODE_CMD env override
+    cmd: auto
     zai:
-      enforceCodingPlan: false   # Phase 3 에서 true 운용
+      enforceCodingPlan: false
       baseUrl: default
   ```
-- [ ] `config/ServerConfig.kt` 에 `OpenCodeSection` + `ZaiSection` 추가.
+- [x] `config/ServerConfig.kt` 에 `OpenCodeSection` + `ZaiSection` 추가.
   `ConfigLoader.kt` env override 로직.
-- [ ] `agent/opencode/OpenCodeSessionManager.kt` 재작성 —
+- [x] `agent/opencode/OpenCodeSessionManager.kt` 재작성 —
   `UnsupportedAgentSessionManager` 상속 제거, `AgentSessionManager` 직접 구현.
   `CodexSessionManager` 구조 차용(독립 구현).
-- [ ] opencode CLI spawn — `buildOpenCodeExecArgs()` (실행 모델에 따라
-  exec / stream 분기).
-- [ ] `OpenCodeJsonParser` + `OpenCodeEvent` sealed (조사 결과 기반).
-- [ ] `applyOpenCodeProcessEnv()` — `OPENCODE_CONFIG_HOME` / `HOME` /
+- [x] opencode CLI spawn — `buildOpenCodeExecArgs()` (1회성 exec 모드).
+- [x] `OpenCodeJsonParser` + `OpenCodeEvent` sealed (조사 결과 기반).
+- [x] `applyOpenCodeProcessEnv()` — `OPENCODE_CONFIG_HOME` / `HOME` /
   z.ai 토큰 env 주입.
-- [ ] `ServerMain.kt:224` wiring — `OpenCodeSessionManager(hub)` →
-  `(config, workspace, hub, history, ...)`.
+- [x] `ServerMain.kt:224` wiring — `OpenCodeSessionManager(config, workspace, hub, history, ...)`.
+  부팅 reconcile + shutdown 추가.
 
-**Wire change**: `server.yml` 스키마 확장 (config-only). provider 선택값
-"opencode" 은 이미 wire 에 존재. **Android 영향**: additive — provider 선택
-자체는 안드 변경 없이 동작. 단 status DTO 추가 시 shared/ 동기 필요.
+**Wire change**: `server.yml` 스키마 확장 (config-only). provider 선택값 "opencode" 은 이미
+wire 에 존재. **Android 영향**: additive — provider 선택 자체는 안드 변경 없이 동작. 단 status DTO
+추가(M2.2) 시 shared/ 동기 필요.
 
 ### Milestone 2.2 (v1.151.0) — OpenCode status / login
 

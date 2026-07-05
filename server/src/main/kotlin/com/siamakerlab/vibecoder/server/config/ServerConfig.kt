@@ -9,6 +9,8 @@ data class ServerConfig(
     val security: SecuritySection,
     val claude: ClaudeSection,
     val codex: CodexSection = CodexSection(),
+    /** v1.150.0 — Phase 2 OpenCode provider 설정. */
+    val opencode: OpenCodeSection = OpenCodeSection(),
     val build: BuildSection,
     val git: GitSection,
     val cors: CorsSection = CorsSection(),
@@ -304,6 +306,45 @@ data class CodexUsageSection(
     val pollIntervalMinutes: Int = 5,
     val warnThresholdPercent: Int = 80,
     val criticalThresholdPercent: Int = 95,
+)
+
+/**
+ * v1.150.0 — Phase 2 OpenCode provider 설정.
+ *
+ * opencode CLI 를 3번째 1등 시민 provider 로 운용. `opencode run --format json` 1회성 exec
+ * 모델 (Codex 와 동일 패턴). [CodexSection] 과 대칭 구조.
+ *
+ * - [model]              : 프로젝트별 모델 미설정 시 기본. "default" 면 opencode CLI 기본값
+ *                          사용해 `-m` 을 전달하지 않는다. "provider/model" 형식 권장
+ *                          (예: `zai-coding-plan/glm-5.2`).
+ * - [configHome]         : `OPENCODE_CONFIG_HOME` override. "default" 면 홈 디렉토리 기본값
+ *                          (`~/.config/opencode`) 사용.
+ * - [maxResidentSessions]: OpenCode 전용 상주 세션 상한. turn 단위 프로세스라 보통 turn 종료
+ *                          후 비워진다. 0 이하 = 비활성.
+ * - [cmd]                : opencode 실행 경로. "auto" 면 `OPENCODE_CMD` env → `opencode`.
+ * - [zai]                : z.ai coding plan 강제 정책 (Phase 3.1 운용).
+ */
+@Serializable
+data class OpenCodeSection(
+    val model: String = "default",
+    val configHome: String = "default",
+    val maxResidentSessions: Int = 3,
+    val cmd: String = "auto",
+    val zai: ZaiSection = ZaiSection(),
+)
+
+/**
+ * v1.150.0 — z.ai coding plan 강제 정책 (Phase 3.1 에서 운영 활성화).
+ *
+ * Phase 2(v1.150.0~v1.152.0) 에선 기본 `false` — opencode 의 모든 provider 선택 허용.
+ * Phase 3.1(v1.153.0) 에서 `true` 로 운영 전환 → OpenCode provider 사용 시 항상
+ * z.ai coding plan 구독 경로만 허용 (다른 provider 우회 차단).
+ */
+@Serializable
+data class ZaiSection(
+    val enforceCodingPlan: Boolean = false,
+    /** z.ai API base URL. "default" 면 opencode 빌트인 zai-coding-plan endpoint 사용. */
+    val baseUrl: String = "default",
 )
 
 /**

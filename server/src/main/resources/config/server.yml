@@ -2,7 +2,7 @@ server:
   name: Vibe Coder Server
   host: 0.0.0.0
   port: 17880
-  version: 1.149.0
+  version: 1.150.0
 
 workspace:
   # Each project lives at <root>/<projectId>/.
@@ -122,6 +122,19 @@ codex:
     pollIntervalMinutes: 5
     warnThresholdPercent: 80
     criticalThresholdPercent: 95
+
+# v1.150.0 — Phase 2 OpenCode provider. `opencode run --format json` 1회성 exec 모델 (Codex 와 동일).
+# model: 프로젝트별 미설정 시 기본. "default" = -m 미전달. "zai-coding-plan/glm-5.2" 형식 권장.
+# configHome: OPENCODE_CONFIG_HOME override. "default" = ~/.config/opencode.
+# zai.enforceCodingPlan: Phase 3.1 에서 true 운용 (현재 false — 모든 provider 허용).
+opencode:
+  model: default
+  configHome: default
+  maxResidentSessions: 3
+  cmd: auto
+  zai:
+    enforceCodingPlan: false
+    baseUrl: default
 
 build:
   timeoutMinutes: 30
