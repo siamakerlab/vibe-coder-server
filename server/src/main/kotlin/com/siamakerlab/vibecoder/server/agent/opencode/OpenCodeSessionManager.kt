@@ -24,9 +24,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -193,6 +195,30 @@ class OpenCodeSessionManager(
         }.onFailure { log.warn(it) { "[$projectId] opencode-model 저장 실패" } }
     }
 
+    /**
+     * v1.156.0 — opencode reasoning effort(`--variant`). "high" / "max" / "minimal".
+     * 프로젝트별 값이 없으면 [OpenCodeSection.variant](기본 "max") fallback. "default" 면 미전달.
+     */
+    fun effectiveVariant(projectId: String): String? {
+        val raw = runCatching { variantFile(projectId).takeIf { it.exists() }?.readText()?.trim() }.getOrNull()
+        val resolved = raw?.takeIf { it.isNotBlank() && !it.equals("default", ignoreCase = true) }
+            ?: config.opencode.variant.takeIf { it.isNotBlank() && !it.equals("default", ignoreCase = true) }
+        return resolved?.takeIf { it in VALID_VARIANTS }
+    }
+
+    fun setProjectVariant(projectId: String, variant: String?) {
+        val f = variantFile(projectId)
+        val v = variant?.trim().orEmpty()
+        runCatching {
+            if (v.isBlank() || v.equals("default", ignoreCase = true)) {
+                f.deleteIfExists()
+            } else {
+                Files.createDirectories(f.parent)
+                f.writeText(v)
+            }
+        }.onFailure { log.warn(it) { "[$projectId] opencode-variant 저장 실패" } }
+    }
+
     override suspend fun setProjectModelAndRestart(projectId: String, model: String?) {
         setProjectModel(projectId, model)
         if (isAlive(projectId) && !isBusy(projectId)) {
@@ -219,6 +245,7 @@ class OpenCodeSessionManager(
             text = text,
             sessionId = sessionId,
             model = effectiveModel(projectId),
+            variant = effectiveVariant(projectId),
         )
 
     private fun enqueuePrompt(projectId: String, text: String): Int {
@@ -432,24 +459,29 @@ class OpenCodeSessionManager(
                 }
             }
             is OpenCodeEvent.ToolStarted -> {
-                val input = event.input ?: buildJsonObject { put("tool", event.tool) }
+                // v1.157.0 — 도구 이름(소문자→파스칼케이스) + input(camelCase→snake_case) 정규화.
+                val toolName = normalizeOpenCodeToolName(event.tool)
+                val input = normalizeOpenCodeToolInput(event.input) ?: buildJsonObject { put("tool", event.tool) }
                 history?.event(
                     projectId,
                     readSessionId(projectId),
-                    ClaudeEvent.ToolUse(event.tool, input, event.callId),
+                    ClaudeEvent.ToolUse(toolName, input, event.callId),
                     provider = provider.id,
                 )
-                hub.emitConsole(topic(projectId)) { seq -> WsFrame.ConsoleToolUse(event.tool, input, event.callId, seq) }
+                hub.emitConsole(topic(projectId)) { seq -> WsFrame.ConsoleToolUse(toolName, input, event.callId, seq) }
             }
             is OpenCodeEvent.ToolCompleted -> {
-                val input = event.input ?: buildJsonObject { put("tool", event.tool) }
+                // v1.159.0 (M4.3) — 도구 결과는 output 을 전달 (이전까지 input 을 잘못 전달).
+                val output = event.output
+                    ?: normalizeOpenCodeToolInput(event.input)
+                    ?: buildJsonObject { put("tool", event.tool) }
                 history?.event(
                     projectId,
                     readSessionId(projectId),
-                    ClaudeEvent.ToolResult(event.callId, input, isError = false),
+                    ClaudeEvent.ToolResult(event.callId, output, isError = false),
                     provider = provider.id,
                 )
-                hub.emitConsole(topic(projectId)) { seq -> WsFrame.ConsoleToolResult(event.callId, input, isError = false, seq) }
+                hub.emitConsole(topic(projectId)) { seq -> WsFrame.ConsoleToolResult(event.callId, output, isError = false, seq) }
             }
             is OpenCodeEvent.StepFinish -> {
                 event.tokens?.let {
@@ -494,6 +526,10 @@ class OpenCodeSessionManager(
 
     private fun modelFile(projectId: String): Path =
         workspace.vibecoderDir(projectId).resolve("opencode-model")
+
+    /** v1.156.0 — 프로젝트별 reasoning effort(--variant) 선택값. */
+    private fun variantFile(projectId: String): Path =
+        workspace.vibecoderDir(projectId).resolve("opencode-variant")
 
     private fun turnActiveFile(projectId: String): Path =
         workspace.vibecoderDir(projectId).resolve("opencode-turn-active")
@@ -686,6 +722,8 @@ class OpenCodeSessionManager(
                 "Resume the in-progress work; do not restart from scratch."
         /** v1.153.0 — z.ai 강제 모드에서 비-zai 모델을 대체할 기본 zai-coding-plan 모델. */
         const val FALLBACK_ZAI_MODEL = "zai-coding-plan/glm-5.2"
+        /** v1.156.0 — opencode --variant(reasoning effort) 허용값. */
+        val VALID_VARIANTS = setOf("high", "max", "minimal")
         /**
          * v1.154.0 — OpenCode 일시 rate-limit 자동 재개. [RATE_LIMIT_BASE_BACKOFF_MS] 지수 백오프로
          * 최대 [MAX_RATE_LIMIT_RETRIES] 회 같은 sessionID 에 "이어서 진행" 프롬프트 재전송.
@@ -709,14 +747,65 @@ internal fun buildOpenCodeExecArgs(
     text: String,
     sessionId: String?,
     model: String?,
+    variant: String? = null,
 ): List<String> = buildList {
     add(cmd)
     add("run")
     add("--format"); add("json")
     add("--auto")
     model?.let { add("-m"); add(it) }
+    // v1.156.0 — reasoning effort (opencode --variant). high/max/minimal.
+    variant?.let { add("--variant"); add(it) }
     if (sessionId != null) {
         add("-s"); add(sessionId)
     }
     add(text)
 }
+
+/**
+ * v1.157.0 (Phase 4 M4.1) — opencode 소문자 도구 이름을 Claude 파스칼케이스로 정규화.
+ * `console-render.js` 의 `renderToolUse` switch 가 파스칼케이스(`Read`/`Bash`/`Edit`...)로
+ * 매칭되므로, GLM 콘솔에서 도구 호출이 친화적으로 렌더링되려면 이름을 맞춘다.
+ */
+internal fun normalizeOpenCodeToolName(name: String): String {
+    val lower = name.lowercase()
+    return when (lower) {
+        "read" -> "Read"
+        "write" -> "Write"
+        "edit" -> "Edit"
+        "multiedit" -> "MultiEdit"
+        "bash" -> "Bash"
+        "grep" -> "Grep"
+        "glob" -> "Glob"
+        "todowrite" -> "TodoWrite"
+        "todoread" -> "TaskList"
+        "task" -> "Task"
+        "subagent" -> "Task"
+        "webfetch" -> "WebFetch"
+        "websearch" -> "WebSearch"
+        "list", "ls" -> "Glob"
+        "remove", "rm" -> "Bash"
+        else -> name.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+    }
+}
+
+/**
+ * v1.157.0 (Phase 4 M4.1) — opencode camelCase input 키를 Claude snake_case 로 변환.
+ * `renderToolUse` 가 `file_path`/`old_string`/`new_string` 등 snake_case 필드를 조회하므로,
+ * opencode 의 `filePath`/`oldString` 을 맞춘다. 이미 snake_case 면 무변경.
+ */
+internal fun normalizeOpenCodeToolInput(input: JsonElement?): JsonElement? {
+    val obj = input?.let { runCatching { it.jsonObject }.getOrNull() } ?: return input
+    if (obj.isEmpty()) return input
+    return buildJsonObject {
+        for ((k, v) in obj) {
+            put(camelToSnakeKey(k), v)
+        }
+    }
+}
+
+/** camelCase → snake_case (단일/중첩 대문자 처리). filePath→file_path, oldString→old_string. */
+internal fun camelToSnakeKey(key: String): String =
+    key.replace(Regex("([a-z0-9])([A-Z])")) { m -> "${m.groupValues[1]}_${m.groupValues[2]}" }
+        .replace(Regex("([A-Z]+)([A-Z][a-z])")) { m -> "${m.groupValues[1]}_${m.groupValues[2]}" }
+        .lowercase()

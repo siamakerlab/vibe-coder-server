@@ -330,6 +330,11 @@ data class OpenCodeSection(
     val configHome: String = "default",
     val maxResidentSessions: Int = 3,
     val cmd: String = "auto",
+    /**
+     * v1.156.0 — opencode `--variant` (reasoning effort) 기본값. "high" / "max" / "minimal".
+     * 프로젝트별 선택값은 `.vibode/opencode-variant` 에 저장. "default" 면 --variant 미전달.
+     */
+    val variant: String = "max",
     val zai: ZaiSection = ZaiSection(),
 )
 

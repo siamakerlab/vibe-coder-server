@@ -294,6 +294,7 @@ fun Routing.adminRoutes(deps: AdminRoutesDeps) {
             claudeMaxConcurrent = cfg.claude.maxConcurrentTurns,
             claudeMaxResident = cfg.claude.maxResidentSessions,
             codexMaxResident = cfg.codex.maxResidentSessions,
+            opencodeMaxResident = cfg.opencode.maxResidentSessions,
             buildTimeoutMin = cfg.build.timeoutMinutes,
             defaultDebugTask = cfg.build.defaultDebugTask,
         )
@@ -378,6 +379,11 @@ fun Routing.adminRoutes(deps: AdminRoutesDeps) {
                     maxResidentSessions = params["codex.maxResidentSessions"]?.toIntOrNull()?.also {
                         require(it in 0..64) { "codex.maxResidentSessions must be in 0..64 (got $it)" }
                     } ?: cur.codex.maxResidentSessions,
+                ),
+                opencode = cur.opencode.copy(
+                    maxResidentSessions = params["opencode.maxResidentSessions"]?.toIntOrNull()?.also {
+                        require(it in 0..64) { "opencode.maxResidentSessions must be in 0..64 (got $it)" }
+                    } ?: cur.opencode.maxResidentSessions,
                 ),
                 build = cur.build.copy(
                     timeoutMinutes = params["build.timeoutMinutes"]?.toIntOrNull()?.also {

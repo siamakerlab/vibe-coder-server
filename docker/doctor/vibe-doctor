@@ -30,6 +30,8 @@ source "$DOCTOR_HOME/lib/gradle.sh"
 source "$DOCTOR_HOME/lib/flutter.sh"
 # shellcheck source=lib/codex.sh
 source "$DOCTOR_HOME/lib/codex.sh"
+# shellcheck source=lib/opencode.sh
+source "$DOCTOR_HOME/lib/opencode.sh"
 # shellcheck source=lib/ssh-server.sh
 source "$DOCTOR_HOME/lib/ssh-server.sh"
 
@@ -58,6 +60,7 @@ usage() {
   gradle [ver] Gradle 설치/업데이트 (생략 시 latest stable 자동 조회)
   flutter [ref] Flutter SDK 설치/업데이트 (Android 전용; 생략 시 manifest/stable)
   codex [ver]  Codex CLI 설치/업데이트 (옵션; npm @openai/codex, 생략 시 latest)
+  opencode     opencode CLI 설치 (옵션; z.ai coding plan provider, 공식 install 스크립트)
   ssh-server   OpenSSH 서버 설치/포트 적용 (기본 포트 2222)
   --help, -h  이 도움말
 
@@ -108,6 +111,11 @@ case "$cmd" in
         # 위치 인자(version) 또는 CODEX_VERSION env — 없으면 latest. 옵션 도구(npm @openai/codex).
         shift || true
         install_codex "${1:-}"
+        ;;
+    opencode)
+        # 옵션 도구(opencode CLI, z.ai coding plan provider). 공식 install 스크립트로 latest.
+        shift || true
+        install_opencode "${1:-}"
         ;;
     ssh-server)
         install_ssh_server

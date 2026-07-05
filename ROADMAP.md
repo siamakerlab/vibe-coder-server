@@ -45,6 +45,24 @@
 | 토큰 자동갱신 | ✓ | ✗ | ✗ | OpenCode: CLI 자체 갱신 미지원 — 만료 시 재로그인 안내 |
 | thinking 렌더링 | ✓ | ~ | ~ | Codex/OpenCode: Unknown 스킵 (형식 미확정, 확정 시 전용 렌더링 추가) |
 
+#### 구현 가능한 UX 갭 — 콘솔 메시지 표현 (v1.156.0 분석, Phase 4 대상)
+
+residual gap(CLI 자체 한계)과 달리 **서버/클라이언트 수정으로 해결 가능**한 갭. 분석 기준:
+`console-render.js` 의 `renderToolUse(name, input)` switch 가 도구 이름+필드명으로 매칭.
+
+| 항목 | Claude | Codex | OpenCode | 원인/비고 |
+|---|:---:|:---:|:---:|---|
+| 도구 이름 매칭 | ✓ 파스칼케이스 | ✓ `command_execution` | **✗ 소문자** | OpenCode 도구(`read`/`write`/`edit`/`bash`/`grep`/`glob`/`todowrite`/`task`)가 switch 에 없어 기본 fallback 라벨만 표시 |
+| 도구 input 필드명 | ✓ snake_case | ✓ | **✗ camelCase** | OpenCode: `filePath`/`command`/`pattern` vs Claude: `file_path`/`old_string`. 매칭돼도 필드 추출 실패 |
+| thinking/reasoning 렌더링 | ✓ 전용 | ~ Unknown 스킵 | ~ Unknown 스킵 | OpenCode `--thinking` / Codex reasoning 이벤트 형식 미확정 |
+| assistant 스트리밍 | ✓ `isPartial` | ✗ 완성 메시지 | ✗ 완성 메시지 | exec/run 모델이 완성 텍스트만 내보냄 (CLI 출력 구조) |
+| 도구 결과 포맷 | ✓ 정규화됨 | ✓ | ~ JSON 문자열 | OpenCode output 이 JsonElement — `extractToolResultRich` 매핑 검증 필요 |
+| 이미지 `[image]` 마커 | ✓ | ✗ | ✗ | inline DTO 미지원 (residual gap 과 겹침) |
+
+**핵심 갭**: OpenCode 도구 이름(소문자)+ input 필드명(camelCase)이 Claude 파스칼케이스+
+snake_case 기반 `renderToolUse` 에 매칭되지 않아, GLM 콘솔에서 도구 호출이 친화적으로
+렌더링되지 않는다. Phase 4 M4.1 에서 정규화로 해결.
+
 ### 0.2 구조적 원인 (3가지)
 
 1. **`turnDoneListener` / `turnInterruptListener` 가 인터페이스 밖** —
@@ -410,6 +428,102 @@ Claude 전용 기능을 OpenCode 로 확장 (사용자 체감순).
 
 ---
 
+## Phase 4 — 콘솔 UX 패리티 (메시지 표현 갭 최소화)
+
+> **목표 버전**: v1.157.0 ~ v1.159.0 (3 마일스톤, 제안).
+> **성격**: 클라이언트/서버 렌더링 개선 + provider 특성 UI 정합성. wire change 최소.
+> Phase 0~3 이 오케스트레이션 패리티를 달성했으나, (1) **콘솔 메시지 표현**(도구/assistant/
+> thinking 렌더링, M4.1~M4.3) 과 (2) **provider별 UI 가시성**(이미지/auto-compact/MCP 등
+> provider 특성에 맞지 않는 UI 노출, M4.4) 에서 provider 간 체감 품질 갭이 남는다.
+> §0.1 "구현 가능한 UX 갭 — 콘솔 메시지 표현" 표 참고.
+> **전제**: Phase 2(OpenCode 구현) 완료.
+> **분석 기준**: `server/src/main/resources/static/admin/console-render.js` 의
+> `renderToolUse(name, input)` switch 매칭 + 각 SessionManager 의 WsFrame emit.
+
+### Milestone 4.1 (v1.157.0) — OpenCode 도구 렌더링 정규화 ✅
+
+핵심 갭 해결 — GLM 콘솔에서 도구 호출이 Claude 처럼 친화적으로 표시되도록.
+
+- [x] **도구 이름 정규화** — (b) 채택: `OpenCodeSessionManager.handleEvent` 에서
+  `normalizeOpenCodeToolName`(`read`→`Read`, `todowrite`→`TodoWrite`, `ls`→`Glob` 등)
+  로 파스칼케이스 정규화해 emit. 클라이언트 변경 최소.
+- [x] **input 필드명 정규화** — `normalizeOpenCodeToolInput` + `camelToSnakeKey` 로
+  `filePath`→`file_path`, `oldString`→`old_string` 변환. ToolStarted/Completed 모두 적용.
+- [x] **검증** — `OpenCodeParsingTest` 에 `normalizeOpenCodeToolName` / `camelToSnakeKey` /
+  `normalizeOpenCodeToolInput` 단위 테스트 14케이스 추가. `./gradlew :server:test` 통과.
+
+**Wire change**: 없음 (클라이언트 JS / 서버 emit 정규화). **Android 영향**: 없음.
+
+### Milestone 4.2 (v1.158.0) — thinking/reasoning 렌더링 (조사 완료, 형식 확정 시 구현)
+
+> v1.159.0 기준 조사 완료. reasoning 이벤트를 실제로 캡처하려면 thinking 모드 실행 출력이
+> 필요해 코드 기반 조사로는 parser 현재 상태만 확인. 형식 확정 시 별도 마일스톤에서 구현.
+
+- [x] **OpenCode reasoning 형식 조사** — `OpenCodeJsonParser`(`:17`) 가 reasoning 을
+  `Unknown`(원시 JSON 폴백) 으로 처리 중. `item.started` type=reasoning 추정이나,
+  `--thinking` / 강제 모드 실제 출력 확인 필요. `variant=max` 시 reasoning 이 포함될 수 있으나
+  z.ai API 응답 형식 미확정.
+- [x] **Codex reasoning 토큰** — `CodexJsonParser`(`:27`) 가 reasoning/thinking itemType 을
+  null(스킵) 처리 중. `reasoning_output_tokens` 필드 추정. 형식 확정 시 `CodexEvent.Reasoning`
+  추가.
+- [-] **전용 렌더링** — 형식 확정 전까지 보류. 현재 OpenCode 는 Unknown 원시 JSON, Codex 는
+  조용히 스킵(Codex 쪽이 노이즈 면에서 더 깔끔). ROADMAP 정책대로 "형식 미확정 시 조사만 마무리".
+
+**Wire change**: 없음 (Unknown 스킵 → 전용 렌더링). **Android 영향**: 없음.
+
+### Milestone 4.3 (v1.159.0) — 도구 결과 포맷 + 스트리밍 ✅
+
+- [x] **OpenCode 도구 결과 정규화** — **핵심 버그 수정**: `handleEvent` ToolCompleted 가
+  `event.output` 이 아닌 `event.input` 을 `ToolResult`/`ConsoleToolResult` 에 전달하던 것을
+  output 전달로 정정(`OpenCodeSessionManager:473`). 콘솔에 도구 입력이 아닌 결과가 표시됨.
+  output 이 null 인 드문 경우 input 정규화값으로 폴백.
+- [-] (조사) **assistant 스트리밍** — `opencode run --format json` 은 1회성 exec 모델이라
+  부분 text 가 단일 `item.text` 로 옴. 스트리밍 타이핑 체감은 CLI 한계로 보류.
+- [-] **도구 결과 이미지 마커** — output 정규화로 텍스트/JSON 결과가 자연스럽게 표시됨.
+  OpenCode output 에 이미지가 포함되는 케이스는 드물어 별도 마커는 보류.
+
+**Wire change**: 없음. **Android 영향**: 없음.
+
+### Milestone 4.4 (v1.159.0) — provider별 UI 가시성 정합성 ✅
+
+> 각 provider 의 특성(Claude 고급 기능 / GLM effort·z.ai 강제 / Codex 단일 도구) 에 맞춰
+> 콘솔 헤더·프롬프트 폼의 UI 요소를 provider 별로 활성화/숨김. Claude 중심 UI 가 타 provider
+> 에서 의미 없이 노출되거나 에러를 유발하는 것을 정합.
+
+**provider × UI 요소 현황** (v1.159.0 분석):
+
+| UI 요소 | Claude | Codex | GLM | 현재 분기 | 조치 |
+|---|:---:|:---:|:---:|---|---|
+| 모델 셀렉터 | ✓ | ✓ | ✓ | O (`claudeOnlyToolsHtml`) | 유지 |
+| MCP strict 토글 | ✓ | — | — | O (Claude 만) | 유지 |
+| effort(`--variant`) 콤보박스 | — | — | ✓ | O (GLM 만, v1.156.0) | 유지 |
+| **이미지 첨부 버튼** | ✓ | ✗(에러) | ✗(에러) | **O (Claude 만, v1.159.0)** | **완료** |
+| **auto-compact 토글** | ✓ | — | — | O (점검 완료) | 무해·유지 |
+| **background task 카드** | ✓ | — | — | O (점검 완료) | 무해·유지 |
+| usage 카드(사이드바/대시보드) | session/weekly % | session/weekly/context % | 토큰 통계 | O (provider별 카드) | 유지 |
+
+- [x] **이미지 첨부 버튼 provider 분기** — `WebProjectTemplates` `image-btn` 을
+  `if (agentProvider == AgentProvider.CLAUDE)` 로 분기(`:1797`). Codex/GLM 은 주석만 emit.
+  JS 바인딩(`keepKeyboardOnTap`/`imageBtn.addEventListener`)은 이미 null-safe 가드가 있어
+  별도 수정 불필요.
+- [x] **auto-compact 토글 점검** — Claude 전용(`isAutoCompact`). Codex/GLM 은 auto-compact
+  미지원이나 토글이 있어도 서버가 무시하므로 **무해**. 별도 분기 불필요.
+- [x] **background task 카드 점검** — Claude 전용(`ConsoleBackgroundTask`). Codex/GLM 읔
+  해당 프레임을 emit 하지 않아 빈 상태로 유지. **무해**, 분기 불필요.
+- [-] **provider 전환 UX** (HTMX/fragment) — 별도 개선 사항. 현재는 페이지 새로고침으로
+  동작. future work 로 이관(크고 독립적인 작업).
+
+**Wire change**: 없음 (UI 분기). **Android 영향**: 없음.
+
+### Out of scope (CLI 자체 한계, residual gap — §0.1)
+
+- Codex 서브에이전트 / inline 이미지 — CLI exec 미지원.
+- OpenCode usage % 임계치 알림 / token 자동갱신 — z.ai API 직접 연동 필요.
+- Claude 전용 고급 기능(auto-compaction/MCP strict/background task 카드) — 타 CLI 가
+  노출하지 않아 서버 구현 불가.
+
+---
+
 ## 1. 버전 / 릴리즈 계획 요약
 
 | Phase | 버전 | 주요 변경 | Wire change | Android 동기 |
@@ -424,6 +538,10 @@ Claude 전용 기능을 OpenCode 로 확장 (사용자 체감순).
 | 3.1 | v1.153.0 | z.ai coding plan 강제 | config-only | 없음 |
 | 3.2 | v1.154.0 | OpenCode rate-limit 자동재개 | 없음 | 없음 |
 | 3.3 | v1.155.0 | 종합 검증 + §0.1 갭 표 재작성(residual gap) | 없음 | 없음 |
+| 4.1 | v1.157.0 | OpenCode 도구 이름/input 필드 정규화 (콘솔 렌더링 매칭) | 없음 | 없음 |
+| 4.2 | v1.158.0 | thinking/reasoning 전용 렌더링 (형식 확정 시) | 없음 | 없음 |
+| 4.3 | v1.159.0 | 도구 결과 포맷 정규화 + 스트리밍 조사 | 없음 | 없음 |
+| 4.4 | v1.159.0 | provider별 UI 가시성 정합성 (이미지/auto-compact/background task) | 없음 | 없음 |
 
 > Docker buildx: Phase 0~3 각 마일스톤은 amd64-only. multi-arch(arm64)는
 > v1.155.0 종료 시점 1회. (`AGENTS.md` "버전 / 릴리즈")
@@ -433,6 +551,7 @@ Claude 전용 기능을 OpenCode 로 확장 (사용자 체감순).
 ```
 Phase 0 (기반) ──┬─→ Phase 1 (Codex 패리티)
                  ├─→ Phase 2 (OpenCode 기본) ─→ Phase 3 (z.ai 강제 + 고급)
+                 │                          └─→ Phase 4 (콘솔 UX 패리티) ◀─ v1.156.0 분석에서 추가
                  └─→ (독립) ApiPath SSOT 정리
 ```
 
@@ -440,6 +559,8 @@ Phase 0 (기반) ──┬─→ Phase 1 (Codex 패리티)
 - Phase 1 과 Phase 2 는 병렬 가능 (서로 다른 파일 영역). 다만 리소스 집중을
   위해 Phase 1 → Phase 2 순차 권장.
 - Phase 3 은 Phase 2 완료 후에만 의미 있음.
+- Phase 4 는 Phase 2(OpenCode 구현) 완료 후. 오케스트레이션 패리티(Phase 0~3)와 독립적인
+  **콘솔 메시지 표현** 영역 — Phase 3 과 병렬 가능(다른 파일: `console-render.js`/`handleEvent`).
 
 ## 3. 리스크 및 완화
 
@@ -469,3 +590,59 @@ Phase 0 (기반) ──┬─→ Phase 1 (Codex 패리티)
 - 진행 상황은 이 파일의 체크박스(`[ ]` → `[x]`)로 표시.
 - 완료된 Milestone 은 `CLAUDE.md` §10 "완료 이력" 으로 이전.
 - 우선순위 변경 시 §2 의존 그래프 존중. Phase 0 생략 금지.
+
+---
+
+## 6. 문서 vs 구현 갭 분석 (v1.159.0 기준)
+
+> Phase 0~4 전 마일스톤 구현 완료 후, ROADMAP 계획과 실제 코드 사이의 갭을 정리.
+> 기준 시점: Phase 4 M4.1~M4.4 구현 직후 (미커밋).
+
+### 6.1 구현 완료 (ROADMAP = 코드 일치)
+
+| Phase | 마일스톤 | 상태 | 비고 |
+|---|---|---|---|
+| 0~3 | M0.1 ~ M3.3 | ✅ 커밋됨 | v1.146.0 ~ v1.155.0. wire change 최소, Android 영향 none |
+| 4.1 | OpenCode 도구 이름/input 정규화 | ✅ 구현 | `normalizeOpenCodeToolName`/`Input`/`camelToSnakeKey` + 단위 테스트 14건 |
+| 4.3 | 도구 결과 output 버그 수정 | ✅ 구현 | `handleEvent` ToolCompleted input→output 정정 |
+| 4.4 | image-btn provider 분기 | ✅ 구현 | `WebProjectTemplates:1797` Claude-only 분기 |
+
+### 6.2 조사만 완료 (구현 연기, 정책적)
+
+| 항목 | 상태 | 연기 사유 |
+|---|---|---|
+| M4.2 OpenCode reasoning 렌더링 | 조사 완료 | `OpenCodeJsonParser` 가 reasoning 을 Unknown 폴백. z.ai API 응답 형식 미확정 → 형식 확정 시 별도 구현 |
+| M4.2 Codex reasoning 토큰 | 조사 완료 | `CodexJsonParser` 가 null 스킵. `reasoning_output_tokens` 형식 확인 필요 |
+| M4.3 assistant 스트리밍 | 조사 완료 | `opencode run --format json` 1회성 exec → 부분 text 스트리밍 불가 (CLI 한계) |
+| M4.4 provider 전환 UX (HTMX) | future work | 독립적 큰 작업, 현재는 페이지 새로고침으로 동작 |
+
+### 6.3 사이드 이슈 (ROADMAP에 별도 마일스톤 없이 구현됨)
+
+v1.156.0 작업으로 진행된 항목들. ROADMAP Phase 4 범위 밖이나 provider 패리티와 직결:
+
+- **사이드바 사용량 pill 접기/펼치기** — UX 개선 (UI)
+- **/env-setup OpenCode 설치 카드** — `vibe-doctor opencode` + `opencode.sh` + z.ai API key 입력 (`auth.json` 직접 작성)
+- **GLM 표기** — `AgentProvider.displayName` "OpenCode"→"GLM" (z.ai coding plan 강제 모드 연동)
+- **effort(`--variant`) 콤보박스** — 모델 셀렉터 옆 reasoning effort 선택 (max/high/minimal), `.vibecoder/opencode-variant` 영속
+- **opencode maxResidentSessions /settings UI** — ConfigLoader(v1.150.0)에 이미 있던 env를 `/settings` 페이지 + `.env.example` + `server.yml` 주석으로 노출
+
+### 6.4 버전 정합성
+
+- `server.yml` 현재 버전: **1.155.0** (Phase 3 종료 시점).
+- Phase 4 + 사이드 이슈는 미커밋. 커밋 시 **v1.156.0**(MINOR — UI 기능 추가 + 패리티 개선) 으로 승격 권장.
+- ROADMAP Phase 4 버전 라벨(v1.157.0~v1.159.0)은 계획값. 실제로는 한 번에 구현돼 단일 버전으로 반영.
+- Docker 태그(`docker/Dockerfile`/`compose.yml`/`.env.example`/`HUB_README.md`) 동기 필요.
+
+### 6.5 Residual gap (CLI 자체 한계, Out of scope)
+
+ROADMAP "Out of scope" 와 동일. 서버 구현 불가:
+
+- Codex 서브에이전트 / inline 이미지 — `codex exec` 미지원.
+- OpenCode usage % 임계치 알림 / token 자동갱신 — z.ai API 직접 연동 필요 (opencode CLI 가 갱신 미처리).
+- Claude 전용 고급 기능(auto-compaction/MCP strict/background task 카드) — 타 CLI 가 노출하지 않아 서버 구현 불가.
+
+### 6.6 결론
+
+- **ROADMAP 에 계획된 모든 구현 가능 항목은 완료**. M4.2(thinking 렌더링)만 형식 확정 전 조사 단계로 보류(정책적 연기).
+- 문서-구현 갭은 **버전 라벨 차이**(계획 v1.157~159 vs 실제 단일 버전)와 **사이드 이슈 미등록**(v1.156.0 작업들이 ROADMAP에 별도 항목 없음) 두 가지.
+- 커밋 시 v1.156.0 승격 + `CHANGELOG.md` 갱신 + Docker 태그 동기로 갭 해소.

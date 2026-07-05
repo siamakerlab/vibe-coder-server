@@ -398,11 +398,28 @@ git config --global user.email "&lt;email&gt;"
                   <button type="submit" class="primary" style="width:auto;padding:8px 16px">${esc(label)}</button>
                 </form>
                 ${renderCodexLoginAction(status, csrf, lang)}
-                ${renderOpenCodeLoginAction(csrf, lang)}
                 <p class="hint" style="margin-top:8px;font-size:12px">${esc(t("env.action.codexNote"))}</p>
                 <details style="margin-top:8px"><summary class="dim" style="cursor:pointer;font-size:12px">${esc(t("env.action.cliHint"))}</summary>
                   <pre class="diff-block" style="margin-top:6px">docker exec -it vibe-coder-server vibe-doctor codex
 docker exec -it vibe-coder-server codex login --device-auth</pre>
+                </details>"""
+            }
+
+            // v1.156.0 — opencode CLI (z.ai coding plan). 설치 버튼 + API key 입력 + 브라우저 login.
+            SetupComponent.OPENCODE -> {
+                val label = when (status) {
+                    ComponentStatus.INSTALLED -> t("env.action.opencodeLabel.installed")
+                    else -> t("env.action.opencodeLabel.missing")
+                }
+                """<form method="post" action="/env-setup/${esc(c.id)}/install" style="margin-top:10px"
+                        onsubmit="return confirm(${jsLit(t("env.action.opencodeConfirm"))})">
+                  ${CsrfTokens.hiddenInput(csrf)}
+                  <button type="submit" class="primary" style="width:auto;padding:8px 16px">${esc(label)}</button>
+                </form>
+                ${renderOpenCodeLoginAction(status, csrf, lang)}
+                <details style="margin-top:8px"><summary class="dim" style="cursor:pointer;font-size:12px">${esc(t("env.action.cliHint"))}</summary>
+                  <pre class="diff-block" style="margin-top:6px">docker exec -it vibe-coder-server vibe-doctor opencode
+docker exec -it --user vibe vibe-coder-server opencode providers login</pre>
                 </details>"""
             }
 
@@ -474,24 +491,35 @@ ssh -p $sshPort vibe@&lt;host&gt;</pre>
     }
 
     /**
-     * v1.151.0 — OpenCode(z.ai coding plan) 로그인 카드. SetupComponent.OPENCODE 가 별도로
-     * 없으므로 Codex 카드 하단에 구분선+제목으로 노출. 정식 카드 분리는 M2.3 콘솔 UI 완성 시 검토.
+     * v1.151.0/v1.156.0 — OpenCode(z.ai coding plan) 로그인. SetupComponent.OPENCODE 카드 안.
+     * ① 브라우저 기반 providers login, ② API key 직접 입력(auth.json 작성 — 서버 무인 환경용).
      */
-    private fun renderOpenCodeLoginAction(csrf: String?, lang: String): String {
+    private fun renderOpenCodeLoginAction(status: ComponentStatus, csrf: String?, lang: String): String {
         val t = { key: String -> Messages.t(lang, key) }
-        return """
-        <hr style="margin:14px 0;border:none;border-top:1px solid #333">
-        <div style="font-size:13px;font-weight:600;margin-bottom:4px">OpenCode (z.ai coding plan)</div>
-        <form method="post" action="/env-setup/opencode-login/start" style="margin-top:6px"
-                onsubmit="return confirm(${jsLit(t("env.action.opencodeLoginConfirm"))})">
-          ${CsrfTokens.hiddenInput(csrf)}
-          <button type="submit" class="chip chip-action" style="padding:8px 16px">${esc(t("env.action.opencodeLogin"))}</button>
-        </form>
-        <p class="hint" style="margin-top:6px;font-size:12px">${esc(t("env.action.opencodeNote"))}</p>
-        <details style="margin-top:6px"><summary class="dim" style="cursor:pointer;font-size:12px">${esc(t("env.action.cliHint"))}</summary>
-          <pre class="diff-block" style="margin-top:6px">docker exec -it vibe-coder-server opencode providers login</pre>
-        </details>
-        """
+        return if (status == ComponentStatus.INSTALLED) {
+            """
+            <form method="post" action="/env-setup/opencode-login/start" style="margin-top:8px"
+                    onsubmit="return confirm(${jsLit(t("env.action.opencodeLoginConfirm"))})">
+              ${CsrfTokens.hiddenInput(csrf)}
+              <button type="submit" class="chip chip-action" style="padding:8px 16px">${esc(t("env.action.opencodeLogin"))}</button>
+            </form>
+            <details style="margin-top:8px">
+              <summary class="dim" style="cursor:pointer;font-size:12px">${esc(t("env.action.opencodeApiKeyTitle"))}</summary>
+              <p class="hint" style="margin:6px 0 8px">${esc(t("env.action.opencodeApiKeyDesc"))}</p>
+              <form method="post" action="/env-setup/opencode-auth/api-key"
+                    style="display:flex;flex-direction:column;gap:8px"
+                    onsubmit="return confirm(${jsLit(t("env.action.opencodeApiKeyConfirm"))})">
+                ${CsrfTokens.hiddenInput(csrf)}
+                <input type="password" name="apiKey" placeholder="z.ai coding plan API key" required
+                       autocomplete="off" spellcheck="false"
+                       style="font-size:13px;padding:6px 8px">
+                <button type="submit" class="primary" style="width:auto;padding:8px 16px;align-self:flex-start">${esc(t("env.action.opencodeApiKeyBtn"))}</button>
+              </form>
+            </details>
+            """
+        } else {
+            """<p class="hint" style="margin-top:8px;font-size:12px">${esc(t("env.action.opencodeLoginInstallFirst"))}</p>"""
+        }
     }
 
     // ────────────────────────────────────────────────────────────────────

@@ -1215,6 +1215,8 @@ $errHtml
         chatTitle: String? = null,
         /** v1.106.0 — 현재 적용 모델(빈 문자열=CLI 기본). 헤더 셀렉터 초기값. */
         model: String = "",
+        /** v1.156.0 — opencode reasoning effort(--variant). */
+        variant: String = "",
         /** v1.106.0 — 직전 turn 컨텍스트(cache_read) 토큰. 0=미측정. */
         contextTokens: Long = 0,
         /** v1.106.1 — 직전 turn input(비캐시) 토큰(미터 세그먼트). */
@@ -1241,6 +1243,8 @@ $errHtml
         // v1.106.0 — 모델 셀렉터(토큰 사용량 레버). v1.x — 부모 탭 헤더에 주 표시,
         // standalone console 진입 시에만 하단 도구줄에도 보조 표시. provider별 모델 파일은 분리된다.
         val normalizedModel = model.ifBlank { "default" }
+        // v1.156.0 — opencode reasoning effort(--variant). 기본 "max".
+        val normalizedVariant = variant.trim().ifBlank { "max" }
         val knownModels = when (agentProvider) {
             AgentProvider.CLAUDE -> listOf(
                 "sonnet" to "Sonnet (권장·저비용)",
@@ -1272,15 +1276,29 @@ $errHtml
             append("""<option value="default"$defSel>CLI 기본</option>""")
             if (isCustomModel) append("""<option value="${esc(normalizedModel)}" selected>${esc(normalizedModel)}</option>""")
         }
-        val modelSelectorHtml = if (embed) "" else """
-    <form method="post" action="/projects/${esc(p.id)}/console/model" style="display:inline-flex;align-items:center;margin:0" id="model-form">
+        val modelSelectorHtml = if (embed) "" else run {
+            // v1.156.0 — opencode reasoning effort(--variant) 콤보박스를 모델 우측에 추가.
+            val variantHtml = if (agentProvider == AgentProvider.OPENCODE) {
+                fun vopt(v: String): String {
+                    val s = if (normalizedVariant.equals(v, ignoreCase = true)) " selected" else ""
+                    return """<option value="$v"$s>$v</option>"""
+                }
+                """<select name="variant" title="reasoning effort — 변경은 다음 prompt 부터 적용."
+                    onchange="document.getElementById('model-form').submit()"
+                    style="font-size:12px;line-height:1.6;padding:4px 8px;height:30px;box-sizing:border-box;vertical-align:middle;background:#1a1a1a;color:var(--text);border:1px solid #333;border-radius:8px;cursor:pointer">
+                    ${vopt("max")}${vopt("high")}${vopt("minimal")}
+                </select>"""
+            } else ""
+            """
+    <form method="post" action="/projects/${esc(p.id)}/console/model" style="display:inline-flex;align-items:center;margin:0;gap:6px" id="model-form">
       ${CsrfTokens.hiddenInput(csrf)}
       <select name="model" title="${esc(agentProvider.displayName)} 모델 — 변경은 다음 prompt 부터 같은 대화에 적용."
               onchange="document.getElementById('model-form').submit()"
               style="font-size:12px;line-height:1.6;padding:4px 8px;height:30px;box-sizing:border-box;vertical-align:middle;background:#1a1a1a;color:var(--text);border:1px solid #333;border-radius:8px;cursor:pointer">
         $modelOptions
-      </select>
+      </select>$variantHtml
     </form>"""
+        }
         val providerOptions = availableAgentProviders.joinToString("") { provider ->
             val selected = if (provider == agentProvider) " selected" else ""
             """<option value="${esc(provider.id)}"$selected>${esc(provider.displayName)}</option>"""
@@ -1774,15 +1792,18 @@ ${if (embed) "" else contextMeterHtml}
               title="${esc(t("console.voice.start"))}"
               style="width:auto;padding:8px 12px;background:#1a1a1a;color:var(--text);border:1px solid #2a2a2a;border-radius:6px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;line-height:0"
               ${if (blocking) "disabled" else ""}><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg></button>
-      <!-- v1.133.0 — 이미지 첨부 (Lucide 'image' 아이콘 인라인 — 외부 CDN 미사용 §3).
-           v1.134.1 — 클릭 시 첨부 다이얼로그(#image-modal). 첨부 수 배지(#image-count). -->
-      <button type="button" id="image-btn"
-              title="${esc(t("console.image.attach"))}" aria-label="${esc(t("console.image.attach"))}"
-              style="position:relative;width:auto;padding:8px 12px;background:#1a1a1a;color:var(--text);border:1px solid #2a2a2a;border-radius:6px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;line-height:0"
-              ${if (blocking) "disabled" else ""}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg><span id="image-count" style="display:none;position:absolute;top:-6px;right:-6px;min-width:16px;height:16px;line-height:16px;padding:0 4px;font-size:10px;font-weight:600;text-align:center;border-radius:8px;background:#1e40af;color:#fff;box-sizing:border-box"></span></button>
-      <!-- admin.css 의 input[type=file]{display:block}(0,1,1)이 [hidden](0,1,0)을 이겨
-           파일선택 박스가 노출되던 문제 → inline display:none 으로 확실히 숨김(v1.134.1). -->
-      <input type="file" id="image-file" accept="image/png,image/jpeg,image/webp,image/gif" multiple style="display:none">
+       ${if (agentProvider == AgentProvider.CLAUDE) """
+       <!-- v1.133.0 — 이미지 첨부 (Lucide 'image' 아이콘 인라인 — 외부 CDN 미사용 §3).
+            v1.134.1 — 클릭 시 첨부 다이얼로그(#image-modal). 첨부 수 배지(#image-count).
+            v1.159.0 (M4.4) — Claude provider 만 노출. Codex/GLM 은 images_unsupported. -->
+       <button type="button" id="image-btn"
+               title="${esc(t("console.image.attach"))}" aria-label="${esc(t("console.image.attach"))}"
+               style="position:relative;width:auto;padding:8px 12px;background:#1a1a1a;color:var(--text);border:1px solid #2a2a2a;border-radius:6px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;line-height:0"
+               ${if (blocking) "disabled" else ""}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg><span id="image-count" style="display:none;position:absolute;top:-6px;right:-6px;min-width:16px;height:16px;line-height:16px;padding:0 4px;font-size:10px;font-weight:600;text-align:center;border-radius:8px;background:#1e40af;color:#fff;box-sizing:border-box"></span></button>
+       <!-- admin.css 의 input[type=file]{display:block}(0,1,1)이 [hidden](0,1,0)을 이겨
+            파일선택 박스가 노출되던 문제 → inline display:none 으로 확실히 숨김(v1.134.1). -->
+       <input type="file" id="image-file" accept="image/png,image/jpeg,image/webp,image/gif" multiple style="display:none">
+       """ else "<!-- image-btn hidden (M4.4): provider=${agentProvider.id} does not support images -->"}
       <!-- v1.112.0 — "끼어들기": 진행 중 turn 을 interrupt 로 중단하고 입력창 내용을 즉시
            새 prompt 로 보낸다(TUI Esc+입력 동형).
            v1.139.0 — 상시 노출 + 게이트 만석 시 한도 무시 강제 전송 겸용("지금 당장"). -->

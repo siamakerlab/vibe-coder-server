@@ -152,7 +152,7 @@ object AdminTemplates {
   <link rel="icon" type="image/png" href="/static/icon.png">
   <link rel="manifest" href="/static/manifest.json">
   <meta name="theme-color" content="#0b0d12">
-  <link rel="stylesheet" href="/static/admin.css?v=1.145.0">
+  <link rel="stylesheet" href="/static/admin.css?v=1.155.0">
   <script>
     // v1.6.2 — 사이드바 접힘 상태를 first paint 전에 :root data-attribute 로 적용 (FOUC 회피).
     // CSS 의 :root[data-sidebar-collapsed="1"] .layout 가 grid-template-columns 축소.
@@ -329,9 +329,44 @@ object AdminTemplates {
       .replace(/\s*\([^)]*\)\s*/g, '')
       .trim();
   }
+  // v1.155.0 — 사용량 pill 색상/대표%/접기 헬퍼.
+  function pctColor(pct) {
+    var p = Math.max(0, Math.min(100, pct|0));
+    return p >= 95 ? '#dc2626' : (p >= 80 ? '#e08300' : 'var(--accent, #3b82f6)');
+  }
+  function maxPct(dto) {
+    var vals = [];
+    if (dto) {
+      if (dto.sessionUsagePercent != null) vals.push(dto.sessionUsagePercent);
+      if (dto.weeklyUsagePercent != null) vals.push(dto.weeklyUsagePercent);
+      if (dto.usagePercent != null) vals.push(dto.usagePercent);
+    }
+    return vals.length ? Math.max.apply(null, vals) : null;
+  }
+  // 접기/펼치기 — 헤더 클릭 시 토글. 접은 상태는 헤더 한 줄에 대표 % 만 (갱신 시각/게이지 숨김).
+  // localStorage(vibe.quota.<key>) 에 상태 저장. render 가 innerHTML 을 교체해도 dataset 으로
+  // 초기복원 1회 + 이벤트 바인딩 중복 방지.
+  function bindHeaderToggle(pillEl, key) {
+    if (!pillEl.dataset.toggleInit) {
+      pillEl.dataset.toggleInit = '1';
+      try { if (localStorage.getItem('vibe.quota.' + key) === '1') pillEl.classList.add('collapsed'); } catch(e){}
+    }
+    var header = pillEl.querySelector('.qp-header');
+    if (header && !header.dataset.bound) {
+      header.dataset.bound = '1';
+      header.addEventListener('click', function(e){
+        if (e.target.closest('.qp-refresh')) return;  // 새로고침 버튼 클릭은 토글 X
+        var collapsed = pillEl.classList.toggle('collapsed');
+        try { localStorage.setItem('vibe.quota.' + key, collapsed ? '1' : '0'); } catch(err){}
+      });
+      header.addEventListener('keydown', function(e){
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); header.click(); }
+      });
+    }
+  }
   function bar(label, pct, reset) {
     var safePct = Math.max(0, Math.min(100, pct|0));
-    var color = safePct >= 95 ? '#dc2626' : (safePct >= 80 ? '#e08300' : 'var(--accent, #3b82f6)');
+    var color = pctColor(safePct);
     // v1.7.2 — "초기화" / "resets" prefix 도 제거 (사용자 요구 — 사이드바 좁은 공간 노이즈).
     // stripTz 가 이미 "Resets" 단어를 제거하므로 cleanReset 만 그대로 표시.
     var cleanReset = stripTz(reset);
@@ -351,10 +386,13 @@ object AdminTemplates {
       rows += bar(sessLabel, dto.usagePercent, dto.resetAt);
     }
     if (!rows) { el.hidden = true; return; }
-    el.innerHTML = '<div class="qp-header"><span class="qp-h-title">Claude</span>'
+    var mp = maxPct(dto);
+    var compactHtml = (mp != null) ? '<span class="qp-pct-compact" style="color:' + pctColor(mp) + '">' + mp + '%</span>' : '';
+    el.innerHTML = '<div class="qp-header" role="button" tabindex="0" aria-expanded="true"><span class="qp-h-title">Claude</span>' + compactHtml
       + '<button type="button" class="qp-refresh" title="' + refreshTitle + '" aria-label="' + refreshTitle + '">↻</button>'
-      + '</div>' + rows;
+      + '</div><div class="qp-rows">' + rows + '</div>';
     el.hidden = false;
+    bindHeaderToggle(el, 'claude');
     var btn = el.querySelector('.qp-refresh');
     if (btn) btn.addEventListener('click', function(){
       btn.disabled = true; btn.textContent = '…';
@@ -386,10 +424,13 @@ object AdminTemplates {
       if (!rows && dto.usageSummary) {
         rows = '<div class="qp-row"><div class="qp-reset">' + escHtml(dto.usageSummary) + '</div></div>';
       }
-      codexEl.innerHTML = '<div class="qp-header"><span class="qp-h-title">Codex</span>'
+      var mp = maxPct(dto);
+      var compactHtml = (mp != null) ? '<span class="qp-pct-compact" style="color:' + pctColor(mp) + '">' + mp + '%</span>' : '';
+      codexEl.innerHTML = '<div class="qp-header" role="button" tabindex="0" aria-expanded="true"><span class="qp-h-title">Codex</span>' + compactHtml
         + '<button type="button" class="qp-refresh" title="' + refreshTitle + '" aria-label="' + refreshTitle + '">↻</button>'
-        + '</div>' + rows;
+        + '</div><div class="qp-rows">' + rows + '</div>';
       codexEl.hidden = false;
+      bindHeaderToggle(codexEl, 'codex');
       var btn = codexEl.querySelector('.qp-refresh');
       if (btn) btn.addEventListener('click', function(){
         btn.disabled = true; btn.textContent = '…';
@@ -1142,6 +1183,12 @@ $errHtml
   </fieldset>
 
   <fieldset>
+    <legend>${esc(t("settings.legend.opencode"))}</legend>
+    <label>${esc(t("settings.field.opencodeMaxResidentSessions"))} <input name="opencode.maxResidentSessions" type="number" min="0" max="64" value="${settings.opencodeMaxResident}"></label>
+    <p class="hint">${esc(t("settings.field.opencodeMaxResidentSessions.hint"))}</p>
+  </fieldset>
+
+  <fieldset>
     <legend>${esc(t("settings.legend.build"))}</legend>
     <label>${esc(t("settings.field.timeoutMin"))} <input name="build.timeoutMinutes" type="number" value="${settings.buildTimeoutMin}"></label>
     <label>${esc(t("settings.field.defaultDebugTask"))} <input name="build.defaultDebugTask" value="${esc(settings.defaultDebugTask)}"></label>
@@ -1289,6 +1336,8 @@ $okHtml
         val claudeMaxConcurrent: Int,
         val claudeMaxResident: Int,
         val codexMaxResident: Int,
+        /** v1.157.0 — opencode(GLM) provider 전용 상주 세션 상한. */
+        val opencodeMaxResident: Int,
         val buildTimeoutMin: Int,
         val defaultDebugTask: String,
     )

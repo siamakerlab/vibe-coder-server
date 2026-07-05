@@ -347,6 +347,9 @@ fun Routing.webProjectRoutes(
         } else {
             sessionManager.readProjectModel(id) ?: sessionManager.effectiveModel(id)
         }
+        // v1.156.0 — opencode reasoning effort(--variant) 조회.
+        val selectedVariant = (agentRouter?.managerFor(AgentProvider.OPENCODE) as? com.siamakerlab.vibecoder.server.agent.opencode.OpenCodeSessionManager)
+            ?.effectiveVariant(id) ?: ""
         // v1.50.0 — 우측 overview rail 데이터.
         // v1.108.4 — keystore/admob 준비 상태를 한 번의 get() 으로 함께 계산(개요카드 행).
         val ksEntry = runCatching { keystoreService.get(p.packageName) }.getOrNull()
@@ -372,6 +375,7 @@ fun Routing.webProjectRoutes(
                 agentProvider = agentProvider,
                 availableAgentProviders = availableAgentProviders,
                 model = selectedModel,
+                variant = selectedVariant,
                 keystoreReady = keystoreReady,
                 admobReady = admobReady,
                 tokensTotal = (usage?.let { it.inputTokens + it.outputTokens }) ?: 0L,
@@ -575,6 +579,7 @@ fun Routing.webProjectRoutes(
                 } else {
                     sessionManager.effectiveModel(id)
                 },
+                variant = (agentRouter?.managerFor(AgentProvider.OPENCODE) as? com.siamakerlab.vibecoder.server.agent.opencode.OpenCodeSessionManager)?.effectiveVariant(id) ?: "",
                 contextTokens = ctxSnap.cacheRead,
                 contextInputTokens = ctxSnap.input,
                 contextCacheCreationTokens = ctxSnap.cacheCreation,
@@ -678,13 +683,22 @@ fun Routing.webProjectRoutes(
         val id = call.parameters["id"]!!
         requireProjectAccessOrThrow(sess, projects, id)
         val model = form["model"]?.trim().orEmpty()
+        val variant = form["variant"]?.trim().orEmpty()
         val provider = agentRouter?.providerFor(id) ?: AgentProvider.CLAUDE
         runCatching {
-            if (agentRouter != null) agentRouter.setProjectModelAndRestart(id, model)
-            else sessionManager.setProjectModelAndRestart(id, model)
+            if (agentRouter != null) {
+                agentRouter.setProjectModelAndRestart(id, model)
+                // v1.156.0 — opencode reasoning effort(--variant) 별도 저장.
+                if (provider == AgentProvider.OPENCODE) {
+                    (agentRouter.managerFor(AgentProvider.OPENCODE) as? com.siamakerlab.vibecoder.server.agent.opencode.OpenCodeSessionManager)
+                        ?.setProjectVariant(id, variant.ifBlank { null })
+                }
+            } else {
+                sessionManager.setProjectModelAndRestart(id, model)
+            }
         }
             .onFailure { log.warn(it) { "set model failed for $id" } }
-        log.info { "console model set: $id/${provider.id} -> '${model.ifBlank { "default" }}' by ${sess.username}" }
+        log.info { "console model set: $id/${provider.id} -> '${model.ifBlank { "default" }}'${if (provider == AgentProvider.OPENCODE) " variant='${variant.ifBlank { "default" }}'" else ""} by ${sess.username}" }
         val target = when {
             id == ProjectService.SCRATCH_ID -> "/chat"
             ProjectService.isChatGhost(id) -> "/chat?c=${id.encodeUrl()}"
@@ -1598,6 +1612,7 @@ fun Routing.webProjectRoutes(
                 chatSidebar = sidebar,
                 chatTitle = activeTitle,
                 model = sessionManager.effectiveModel(p.id),
+                variant = (agentRouter?.managerFor(AgentProvider.OPENCODE) as? com.siamakerlab.vibecoder.server.agent.opencode.OpenCodeSessionManager)?.effectiveVariant(p.id) ?: "",
                 contextTokens = ctxSnap.cacheRead,
                 contextInputTokens = ctxSnap.input,
                 contextCacheCreationTokens = ctxSnap.cacheCreation,

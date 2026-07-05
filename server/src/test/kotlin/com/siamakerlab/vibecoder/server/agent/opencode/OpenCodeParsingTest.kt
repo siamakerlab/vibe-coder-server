@@ -1,6 +1,11 @@
 package com.siamakerlab.vibecoder.server.agent.opencode
 
 import io.kotest.matchers.shouldBe
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 import org.junit.Test
 
 class OpenCodeParsingTest {
@@ -183,5 +188,85 @@ class OpenCodeParsingTest {
     fun `generic errors are neither rate nor usage limit`() {
         isOpencodeRateLimitMessage("network error") shouldBe false
         isOpencodeUsageLimitMessage("network error") shouldBe false
+    }
+
+    // ── normalizeOpenCodeToolName (v1.157.0 M4.1) ───────────────────────────────
+
+    @Test
+    fun `normalizes lowercase tool names to pascal case`() {
+        normalizeOpenCodeToolName("read") shouldBe "Read"
+        normalizeOpenCodeToolName("write") shouldBe "Write"
+        normalizeOpenCodeToolName("edit") shouldBe "Edit"
+        normalizeOpenCodeToolName("multiedit") shouldBe "MultiEdit"
+        normalizeOpenCodeToolName("bash") shouldBe "Bash"
+        normalizeOpenCodeToolName("grep") shouldBe "Grep"
+        normalizeOpenCodeToolName("glob") shouldBe "Glob"
+        normalizeOpenCodeToolName("todowrite") shouldBe "TodoWrite"
+        normalizeOpenCodeToolName("webfetch") shouldBe "WebFetch"
+    }
+
+    @Test
+    fun `maps opencode aliases to claude-equivalent tool names`() {
+        normalizeOpenCodeToolName("todoread") shouldBe "TaskList"
+        normalizeOpenCodeToolName("task") shouldBe "Task"
+        normalizeOpenCodeToolName("subagent") shouldBe "Task"
+        normalizeOpenCodeToolName("list") shouldBe "Glob"
+        normalizeOpenCodeToolName("ls") shouldBe "Glob"
+        normalizeOpenCodeToolName("remove") shouldBe "Bash"
+        normalizeOpenCodeToolName("rm") shouldBe "Bash"
+    }
+
+    @Test
+    fun `unknown tool names fall back to titlecase`() {
+        normalizeOpenCodeToolName("custom") shouldBe "Custom"
+        normalizeOpenCodeToolName("websearch") shouldBe "WebSearch"
+    }
+
+    @Test
+    fun `already pascal case names pass through`() {
+        normalizeOpenCodeToolName("Read") shouldBe "Read"
+        normalizeOpenCodeToolName("Bash") shouldBe "Bash"
+    }
+
+    // ── camelToSnakeKey (v1.157.0 M4.1) ────────────────────────────────────────
+
+    @Test
+    fun `converts camelCase keys to snake_case`() {
+        camelToSnakeKey("filePath") shouldBe "file_path"
+        camelToSnakeKey("oldString") shouldBe "old_string"
+        camelToSnakeKey("newString") shouldBe "new_string"
+        camelToSnakeKey("command") shouldBe "command"
+    }
+
+    @Test
+    fun `snake_case keys are unchanged`() {
+        camelToSnakeKey("file_path") shouldBe "file_path"
+        camelToSnakeKey("old_string") shouldBe "old_string"
+    }
+
+    @Test
+    fun `consecutive capitals are handled`() {
+        camelToSnakeKey("htmlURL") shouldBe "html_url"
+        camelToSnakeKey("apiKey") shouldBe "api_key"
+    }
+
+    // ── normalizeOpenCodeToolInput (v1.157.0 M4.1) ─────────────────────────────
+
+    @Test
+    fun `normalizes camelCase fields in tool input object`() {
+        val input: JsonObject = buildJsonObject {
+            put("filePath", JsonPrimitive("/tmp/a.txt"))
+            put("oldString", JsonPrimitive("x"))
+            put("newString", JsonPrimitive("y"))
+        }
+        val out = normalizeOpenCodeToolInput(input)!!.jsonObject
+        out["file_path"]?.let { it as JsonPrimitive }?.content shouldBe "/tmp/a.txt"
+        out["old_string"]?.let { it as JsonPrimitive }?.content shouldBe "x"
+        out["new_string"]?.let { it as JsonPrimitive }?.content shouldBe "y"
+    }
+
+    @Test
+    fun `null input returns null`() {
+        normalizeOpenCodeToolInput(null) shouldBe null
     }
 }

@@ -2,7 +2,7 @@ server:
   name: Vibe Coder Server
   host: 0.0.0.0
   port: 17880
-  version: 1.155.0
+  version: 1.156.0
 
 workspace:
   # Each project lives at <root>/<projectId>/.
@@ -131,10 +131,22 @@ codex:
 #   커스텀 provider 무시 + zai-coding-plan/* 외 모델은 FALLBACK_ZAI_MODEL(glm-5.2) 로 대체.
 #   env VIBECODER_ZAI_ENFORCE_CODING_PLAN=true 로도 활성화.
 opencode:
-  model: default
+  # 기본 모델 — z.ai coding plan 의 GLM 계열. v1.156.0 기본 glm-5.2 (variant=max).
+  # 프로젝트별 선택값은 .vibecoder/opencode-model 에 저장.
+  # env VIBECODER_OPENCODE_MODEL 로 override.
+  model: zai-coding-plan/glm-5.2
+  # OPENCODE_CONFIG_HOME override. "default" = ~/.config/opencode.
+  # env VIBECODER_OPENCODE_CONFIG_HOME.
   configHome: default
+  # OpenCode(GLM) provider 전용 상주 세션 상한. Claude/Codex 와 독립적으로 /settings 에서 조정.
+  # opencode run 은 turn 단위 프로세스라 보통 turn 종료 후 비워진다. 0 이하 = 비활성.
+  # env VIBECODER_OPENCODE_MAX_RESIDENT_SESSIONS.
   maxResidentSessions: 3
+  # opencode 실행 경로. "auto" 면 OPENCODE_CMD env → opencode.
+  # env VIBECODER_OPENCODE_CMD.
   cmd: auto
+  # v1.156.0 — reasoning effort (--variant). high/max/minimal. 프로젝트별값은 opencode-variant.
+  variant: max
   zai:
     enforceCodingPlan: false
     baseUrl: default

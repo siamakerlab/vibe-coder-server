@@ -165,6 +165,25 @@ fun Routing.envSetupRoutes(
         call.respondRedirect("/env-setup/tasks/$taskId")
     }
 
+    // v1.156.0 — z.ai coding plan API key 를 auth.json 에 직접 등록 (서버 무인 환경용).
+    post("/env-setup/opencode-auth/api-key") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireAdminOrRedirect(sess)) return@post
+        val form = requireCsrf()
+        val apiKey = form["apiKey"].orEmpty()
+        val taskId = runCatching { setupService.spawnOpenCodeApiKeyLogin(apiKey) }.getOrElse { e ->
+            val msg = (e as? ApiException)?.message ?: e.message ?: Messages.t(sess.language, "env.error.keyRejected")
+            call.respondText(
+                EnvSetupTemplates.errorBlurb(msg, sess.language),
+                ContentType.Text.Html,
+                HttpStatusCode.BadRequest,
+            )
+            return@post
+        }
+        log.info { "env-setup opencode-api-key: $taskId by ${sess.username}" }
+        call.respondRedirect("/env-setup/tasks/$taskId")
+    }
+
     post("/env-setup/codex-auth/access-token") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireAdminOrRedirect(sess)) return@post

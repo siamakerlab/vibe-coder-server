@@ -205,12 +205,27 @@ a:hover { color: var(--primary-hover); text-decoration: underline; }
     gap: 8px;
 }
 /* v1.6.2 — 쿼타 헤더: "Claude" 라벨 + refresh 아이콘 버튼. */
+/* v1.155.0 — 헤더 클릭으로 접기/펼치기. 접으면 헤더 한 줄에 대표 % 만 (qp-pct-compact). */
 .quota-pill .qp-header {
-    display: flex; justify-content: space-between; align-items: center;
+    display: flex; justify-content: flex-start; align-items: center; gap: 6px;
     font-size: 11px; color: var(--text-dim); font-weight: 600;
     letter-spacing: 0.4px; text-transform: uppercase;
+    cursor: pointer; user-select: none;
 }
+.quota-pill .qp-header::before {
+    content: '▾'; font-size: 9px; color: var(--text-dim); flex: none;
+    transition: transform .15s ease;
+}
+.quota-pill.collapsed .qp-header::before { transform: rotate(-90deg); }
+.quota-pill .qp-header:focus-visible { outline: 1px solid var(--accent, #3b82f6); outline-offset: 2px; border-radius: 3px; }
 .quota-pill .qp-h-title { /* same as qp-header text */ }
+.quota-pill .qp-rows { display: flex; flex-direction: column; gap: 8px; }
+.quota-pill.collapsed .qp-rows { display: none; }
+.quota-pill .qp-pct-compact {
+    font-weight: 600; font-variant-numeric: tabular-nums;
+    font-size: 11px; text-transform: none; letter-spacing: 0;
+}
+.quota-pill:not(.collapsed) .qp-pct-compact { display: none; }
 /* v1.65.0 — 무선디버깅 pill (Claude 사용량 위). quota-pill 스타일 재사용 + 자체 body. */
 .adb-pill { text-decoration: none; color: inherit; gap: 6px; }
 .adb-pill:hover .adb-pill-body { color: var(--text); }
@@ -228,6 +243,7 @@ a:hover { color: var(--primary-hover); text-decoration: underline; }
 .quota-pill .qp-refresh {
     background: transparent; border: none; color: var(--text-dim);
     cursor: pointer; padding: 0 4px; font-size: 14px; line-height: 1;
+    margin-left: auto;  /* v1.155.0 — 접은 상태(compact% 숨김)에서도 우측 고정 */
 }
 .quota-pill .qp-refresh:hover { color: var(--text); }
 .quota-pill .qp-refresh:disabled { opacity: 0.5; cursor: wait; }

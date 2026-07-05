@@ -10,7 +10,11 @@ import com.siamakerlab.vibecoder.shared.ws.WsFrame
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
+import kotlinx.serialization.json.put
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
@@ -135,6 +139,16 @@ enum class SetupComponent(
         description = "env.comp.codex.desc",
         sizeHint = "env.size.codex",
     ),
+    // v1.156.0 — opencode CLI (z.ai coding plan provider). doctorCmd="opencode" → vibe-doctor opencode
+    // 가 공식 install 스크립트로 /home/vibe/.opencode/bin 에 설치(영속). 로그인은 auth.json
+    // (~/.local/share/opencode/)에 저장. 선택적 컴포넌트 — "모두 설치"에서 제외.
+    OPENCODE(
+        id = "opencode",
+        displayName = "env.comp.opencode.name",
+        doctorCmd = "opencode",
+        description = "env.comp.opencode.desc",
+        sizeHint = "env.size.opencode",
+    ),
     SSH_SERVER(
         id = "ssh-server",
         displayName = "env.comp.sshServer.name",
@@ -209,6 +223,7 @@ class EnvSetupService(
         SetupComponent.GRADLE -> probeGradle(c, lang)
         SetupComponent.FLUTTER -> probeFlutter(c, lang)
         SetupComponent.CODEX -> probeCmd(c, listOf("codex", "--version"), lang)
+        SetupComponent.OPENCODE -> probeCmd(c, listOf("opencode", "--version"), lang)
         SetupComponent.SSH_SERVER -> probeSshServer(c, lang)
     }
 
@@ -532,11 +547,11 @@ class EnvSetupService(
     fun spawnInstallAll(): String {
         val taskId = Ids.taskId()
         val steps = SetupComponent.entries
-            .mapNotNull { c -> c.doctorCmd?.takeIf { c != SetupComponent.CLAUDE_AUTH && c != SetupComponent.FLUTTER && c != SetupComponent.CODEX && c != SetupComponent.SSH_SERVER }?.let { c to it } }
-        // CLAUDE_AUTH 는 OAuth 라 자동 불가. FLUTTER(~2.5GB)·CODEX 는 선택적 도구라 개별 카드
-        // 버튼으로만 설치(Android 빌드 필수 아님). SSH_SERVER 는 외부 포트 노출/접속 경계가
-        // 열리는 선택 기능이라 개별 카드로만 설치. 나머지 (android / gradle / mcp) 만.
-        SetupComponent.entries.forEach { c -> if (c.doctorCmd != null && c != SetupComponent.FLUTTER && c != SetupComponent.CODEX && c != SetupComponent.SSH_SERVER) lastTask[c] = taskId }
+            .mapNotNull { c -> c.doctorCmd?.takeIf { c != SetupComponent.CLAUDE_AUTH && c != SetupComponent.FLUTTER && c != SetupComponent.CODEX && c != SetupComponent.OPENCODE && c != SetupComponent.SSH_SERVER }?.let { c to it } }
+        // CLAUDE_AUTH 는 OAuth 라 자동 불가. FLUTTER(~2.5GB)·CODEX·OPENCODE 는 선택적 도구라
+        // 개별 카드 버튼으로만 설치(Android 빌드 필수 아님). SSH_SERVER 는 외부 포트 노출/접속
+        // 경계가 열리는 선택 기능이라 개별 카드로만 설치. 나머지 (android / gradle / mcp) 만.
+        SetupComponent.entries.forEach { c -> if (c.doctorCmd != null && c != SetupComponent.FLUTTER && c != SetupComponent.CODEX && c != SetupComponent.OPENCODE && c != SetupComponent.SSH_SERVER) lastTask[c] = taskId }
         submitDoctor(taskId, label = "모두 설치/업데이트", steps = steps.map { it.second }, displaySteps = steps.map { it.first.displayName })
         return taskId
     }
@@ -657,6 +672,67 @@ class EnvSetupService(
             },
         )
         return taskId
+    }
+
+    /**
+     * v1.156.0 — z.ai coding plan API key 를 auth.json 에 직접 작성. opencode 의
+     * `providers login` 이 대화형/브라우저 기반이라 서버 무인 환경에서 API key 직접 입력이
+     * 더 확실. 기존 credential(다른 provider)은 보존 — zai-coding-plan 항목만 병합/갱신.
+     * 파일은 0600 권한으로 저장(민감정보).
+     */
+    fun spawnOpenCodeApiKeyLogin(apiKey: String): String {
+        val taskId = Ids.taskId()
+        queue.submit(
+            projectId = "env-setup",
+            taskId = taskId,
+            onStart = {
+                hub.publisher(taskId).emit(WsFrame.Log(taskId, "INFO", "▶ OpenCode(z.ai) API key 등록 시작", clock.nowIso()))
+            },
+            executor = { _ ->
+                withContext(Dispatchers.IO) {
+                    writeOpenCodeAuth(apiKey)
+                }
+            },
+            onSuccess = {
+                hub.publisher(taskId).emit(WsFrame.Log(taskId, "INFO", "✓ z.ai coding plan API key 가 auth.json 에 저장됨", clock.nowIso()))
+                hub.publisher(taskId).emit(WsFrame.Done(taskId, "SUCCESS"))
+            },
+            onFailure = { e ->
+                hub.publisher(taskId).emit(WsFrame.Log(taskId, "ERROR", "✗ API key 등록 실패: ${e.message}", clock.nowIso()))
+                hub.publisher(taskId).emit(WsFrame.Done(taskId, "FAILED", e.message))
+            },
+            onCancel = {
+                hub.publisher(taskId).emit(WsFrame.Done(taskId, "CANCELED"))
+            },
+        )
+        return taskId
+    }
+
+    /** auth.json(~/.local/share/opencode/auth.json) 에 zai-coding-plan credential 작성. */
+    private fun writeOpenCodeAuth(apiKey: String) {
+        require(apiKey.isNotBlank()) { "API key 가 비어있습니다" }
+        val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true; isLenient = true }
+        val authFile = java.nio.file.Path.of("/home/vibe/.local/share/opencode/auth.json")
+        java.nio.file.Files.createDirectories(authFile.parent)
+        val existing = runCatching {
+            json.parseToJsonElement(java.nio.file.Files.readString(authFile)).jsonObject
+        }.getOrDefault(JsonObject(emptyMap()))
+        val merged = existing.toMutableMap()
+        merged["zai-coding-plan"] = buildJsonObject {
+            put("type", "api")
+            put("key", apiKey)
+        }
+        java.nio.file.Files.writeString(authFile, JsonObject(merged).toString())
+        runCatching {
+            java.nio.file.Files.setPosixFilePermissions(
+                authFile,
+                java.util.Set.of(
+                    java.nio.file.attribute.PosixFilePermission.OWNER_READ,
+                    java.nio.file.attribute.PosixFilePermission.OWNER_WRITE,
+                ),
+            )
+        }
+        // API key 는 로그에 남기지 않는다 (민감정보).
     }
 
     private fun resolveOpenCodeCmd(): String =

@@ -107,6 +107,8 @@ internal object ProjectTabsTemplate {
         agentProvider: AgentProvider = AgentProvider.CLAUDE,
         availableAgentProviders: List<AgentProvider> = listOf(AgentProvider.CLAUDE),
         model: String = "",
+        /** v1.156.0 — opencode reasoning effort(--variant). opencode provider 일 때만 표시. */
+        variant: String = "",
         /** v1.50.0 — 우측 overview rail 데이터. */
         keystoreReady: Boolean = false,
         /** v1.108.4 — AdMob 준비 상태(`<pkg>-admob.properties` 존재). 개요카드 키스토어 하단 행. */
@@ -367,6 +369,8 @@ internal object ProjectTabsTemplate {
       </select>
     </form>"""
         val normalizedModel = model.ifBlank { "default" }
+        // v1.156.0 — opencode reasoning effort(--variant). 기본 "max".
+        val normalizedVariant = variant.trim().ifBlank { "max" }
         val knownModels = when (agentProvider) {
             AgentProvider.CLAUDE -> listOf(
                 "sonnet" to "Sonnet",
@@ -400,6 +404,17 @@ internal object ProjectTabsTemplate {
             append("""<option value="default"$defaultSelected>CLI 기본</option>""")
             customModel?.let { append("""<option value="${esc(it)}" selected>${esc(it)}</option>""") }
         }
+        val effortSelector = if (agentProvider == AgentProvider.OPENCODE) {
+            fun variantOpt(v: String): String {
+                val sel = if (normalizedVariant.equals(v, ignoreCase = true)) " selected" else ""
+                return """<option value="$v"$sel>$v</option>"""
+            }
+            """
+      <select name="variant" class="pt-model-select $providerClass" title="reasoning effort"
+              onchange="document.getElementById('pt-model-form').submit()">
+        ${variantOpt("max")}${variantOpt("high")}${variantOpt("minimal")}
+      </select>"""
+        } else ""
         val modelSelector = """
     <form method="post" action="/projects/${esc(project.id)}/console/model" class="pt-model-form" id="pt-model-form">
       ${CsrfTokens.hiddenInput(csrf)}
@@ -407,7 +422,7 @@ internal object ProjectTabsTemplate {
               title="${esc(agentProvider.displayName)} model"
               onchange="document.getElementById('pt-model-form').submit()">
         $modelOptions
-      </select>
+      </select>$effortSelector
     </form>"""
 
         // primary 탭만 상단 탭바에. overflow 는 더보기 드롭다운에 (아래 moreLinks).
