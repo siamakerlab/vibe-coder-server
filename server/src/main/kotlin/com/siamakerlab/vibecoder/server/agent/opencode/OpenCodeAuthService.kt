@@ -106,10 +106,12 @@ internal fun parseOpenCodeProvidersList(raw: String): List<OpenCodeAuthService.C
 internal fun stripOpenCodeAnsi(text: String): String =
     Regex("\\u001B\\[[0-?]*[ -/]*[@-~]|\\u001B\\][^\\u0007]*(?:\\u0007|\\u001B\\\\)").replace(text, "")
 
-/** v1.151.0 — env 주입 공통 (OpenCodeAuthService / OpenCodeStatusService 공유). */
+/** v1.151.0 — env 주입 공통 (OpenCodeAuthService / OpenCodeStatusService 공유).
+ * v1.156.1 — putIfAbsent → put 강제 설정 (컨테이너 HOME=/root 회피). */
 internal fun applyOpenCodeProcessEnv(pb: ProcessBuilder) {
-    pb.environment().putIfAbsent("HOME", "/home/vibe")
-    pb.environment().putIfAbsent("XDG_CONFIG_HOME", "/home/vibe/.config")
+    pb.environment()["HOME"] = "/home/vibe"
+    pb.environment()["XDG_CONFIG_HOME"] = "/home/vibe/.config"
+    pb.environment()["XDG_DATA_HOME"] = "/home/vibe/.local/share"
 }
 
 /** v1.151.0 — [OpenCodeAuthService.Credential] → [OpenCodeUsageDto] credential 필드 반영 (순수 함수). */

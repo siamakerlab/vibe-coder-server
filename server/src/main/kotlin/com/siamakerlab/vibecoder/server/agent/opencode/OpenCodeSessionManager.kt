@@ -669,8 +669,13 @@ class OpenCodeSessionManager(
     }
 
     private fun applyOpenCodeProcessEnv(pb: ProcessBuilder) {
-        pb.environment().putIfAbsent("HOME", "/home/vibe")
-        pb.environment().putIfAbsent("XDG_CONFIG_HOME", "/home/vibe/.config")
+        // v1.156.1 — HOME 를 /home/vibe 로 강제(putIfAbsent 금지). 컨테이너가 root 로
+        // 실행되면 HOME=/root 가 이미 있어 putIfAbsent 가 무시되고, opencode 가
+        // /root/.local/share/opencode/auth.json (없음) 을 찾아 z.ai 인증 실패 →
+        // "Unexpected server error". config/auth 는 /home/vibe 아래에 있으므로 강제 설정.
+        pb.environment()["HOME"] = "/home/vibe"
+        pb.environment()["XDG_CONFIG_HOME"] = "/home/vibe/.config"
+        pb.environment()["XDG_DATA_HOME"] = "/home/vibe/.local/share"
         // v1.153.0 — z.ai coding plan 강제 모드: OPENCODE_CONFIG_HOME 을 서버 통제 격리
         // 디렉토리로 설정. 사용자 원본 config(~/.config/opencode/opencode.jsonc) 의 커스텀
         // provider(vllm-gemma4 등) 가 무시되고 z.ai-only config 만 노출된다. auth.json 은

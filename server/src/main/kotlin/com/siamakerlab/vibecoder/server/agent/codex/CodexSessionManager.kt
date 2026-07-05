@@ -710,9 +710,10 @@ class CodexSessionManager(
     }
 
     private fun applyCodexProcessEnv(pb: ProcessBuilder) {
-        pb.environment().putIfAbsent("HOME", "/home/vibe")
-        pb.environment().putIfAbsent("XDG_CONFIG_HOME", "/home/vibe/.config")
-        pb.environment().putIfAbsent("CODEX_HOME", "/home/vibe/.config/codex")
+        // v1.156.1 — putIfAbsent → put 강제 설정 (컨테이너 HOME=/root 회피).
+        pb.environment()["HOME"] = "/home/vibe"
+        pb.environment()["XDG_CONFIG_HOME"] = "/home/vibe/.config"
+        pb.environment()["CODEX_HOME"] = "/home/vibe/.config/codex"
     }
 
     companion object {
