@@ -56,3 +56,37 @@ data class OpenCodeTokens(
     val cacheWrite: Long = 0,
     val cacheRead: Long = 0,
 )
+
+/**
+ * v1.154.0 — OpenCode rate-limit / usage-limit 분류 순수 함수. [OpenCodeSessionManager] 가
+ * 프로세스 crash(stderr) 또는 Unknown 이벤트(raw) 에서 rate-limit 신호를 감지해 자동 재개 /
+ * 사용량 한도 처리를 분기하는 데 사용. opencode CLI 의 정확한 rate-limit 이벤트 형식이
+ * 변동 가능해 broad 한 메시지 매칭(Codex [isCodexRateLimitMessage] 패턴 차용).
+ */
+
+/** 일시 rate-limit (429 / too many requests / overloaded) — 백오프 후 자동 재개 의미 있음. */
+internal fun isOpencodeRateLimitMessage(message: String): Boolean {
+    val m = message.lowercase()
+    return m.contains("temporarily limiting") ||
+        m.contains("rate limit") ||
+        m.contains("rate-limit") ||
+        m.contains("rate_limit") ||
+        m.contains("429") ||
+        m.contains("too many requests") ||
+        m.contains("overloaded")
+}
+
+/**
+ * 사용량/요금 한도 (5h / weekly / plan quota) — 재시도해도 소용없음. STOPPED + interrupt.
+ * 일시 rate-limit 신호가 섞이면 usage-limit 이 아닌 것으로 판정.
+ */
+internal fun isOpencodeUsageLimitMessage(message: String): Boolean {
+    val m = message.lowercase()
+    if (isOpencodeRateLimitMessage(message)) return false
+    return m.contains("usage limit") ||
+        m.contains("spend limit") ||
+        m.contains("quota") ||
+        m.contains("plan limit") ||
+        m.contains("reached your limit") ||
+        m.contains("billing")
+}

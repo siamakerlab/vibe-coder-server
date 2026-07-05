@@ -156,4 +156,32 @@ class OpenCodeParsingTest {
         isZaiCodingPlanModel("default") shouldBe false
         isZaiCodingPlanModel("") shouldBe false
     }
+
+    // ── rate-limit 분류 (v1.154.0) ─────────────────────────────────────────────
+
+    @Test
+    fun `classifies transient rate-limit phrases`() {
+        isOpencodeRateLimitMessage("Server is temporarily limiting requests (rate limit).") shouldBe true
+        isOpencodeRateLimitMessage("429 Too Many Requests") shouldBe true
+        isOpencodeRateLimitMessage("overloaded — retry later") shouldBe true
+    }
+
+    @Test
+    fun `classifies usage and quota limit phrases`() {
+        isOpencodeUsageLimitMessage("You've reached your usage limit for this window.") shouldBe true
+        isOpencodeUsageLimitMessage("spend limit reached") shouldBe true
+        isOpencodeUsageLimitMessage("quota exceeded") shouldBe true
+    }
+
+    @Test
+    fun `transient rate-limit is not misclassified as usage limit`() {
+        isOpencodeUsageLimitMessage("rate limit exceeded — retry in 30s") shouldBe false
+        isOpencodeUsageLimitMessage("429 Too Many Requests") shouldBe false
+    }
+
+    @Test
+    fun `generic errors are neither rate nor usage limit`() {
+        isOpencodeRateLimitMessage("network error") shouldBe false
+        isOpencodeUsageLimitMessage("network error") shouldBe false
+    }
 }

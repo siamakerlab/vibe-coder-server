@@ -17,7 +17,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -92,6 +94,13 @@ class OpenCodeSessionManager(
     private val busy = ConcurrentHashMap<String, Boolean>()
     private val lastTouched = ConcurrentHashMap<String, Instant>()
     private val pendingPrompts = ConcurrentHashMap<String, ArrayDeque<String>>()
+    /**
+     * v1.154.0 — rate-limit 자동 재개 카운터 (Codex 패턴 차용). 같은 sessionID 에서 연속
+     * rate-limit 시 [MAX_RATE_LIMIT_RETRIES] 까지 지수 백오프로 "이어서 진행" 프롬프트 재전송.
+     */
+    private val rateLimitRetries = ConcurrentHashMap<String, Int>()
+    /** v1.154.0 — rate-limit 자동 재개 대기 코루틴. */
+    private val retryJobs = ConcurrentHashMap<String, Job>()
     /** 이미 thread 로 저장한 sessionID 캐시 — 첫 이벤트에서 1회 thread.started 처리. */
     private val knownSessions = Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
 
@@ -127,6 +136,7 @@ class OpenCodeSessionManager(
     }
 
     override suspend fun cancelTurn(projectId: String) {
+        cancelRateLimitRetry(projectId)
         clearTurnActive(projectId)
         clearQueuedPrompts(projectId)
         val proc = processes[projectId]
@@ -220,9 +230,16 @@ class OpenCodeSessionManager(
     private fun clearQueuedPrompts(projectId: String) {
         pendingPrompts.remove(projectId)
     }
-
-    private suspend fun startPromptLocked(projectId: String, text: String) {
-        markTurnActive(projectId)
+    /**
+     * v1.154.0 — [isAutoResume]=true 면 rate-limit 자동 재개 경로. rate-limit 카운터와
+     * turn-active 마커를 유지 (재개 대기/부팅 재개 중엔 미완 상태 보존). 일반 사용자 prompt
+     * (sendPrompt / 큐 드레인) 는 isAutoResume=false 로 둘 다 초기화.
+     */
+    private suspend fun startPromptLocked(projectId: String, text: String, isAutoResume: Boolean = false) {
+        if (!isAutoResume) {
+            rateLimitRetries.remove(projectId)
+            markTurnActive(projectId)
+        }
         val sid = readSessionId(projectId)
         history?.userPrompt(projectId, sid, text, provider = provider.id)
         val root = workspace.projectRoot(projectId)
@@ -261,17 +278,32 @@ class OpenCodeSessionManager(
                 }
                 val ok = withContext(Dispatchers.IO) { proc.waitFor(1, TimeUnit.SECONDS); proc.exitValue() == 0 }
                 if (busy[projectId] == true) {
-                    setBusy(projectId, if (ok) ProjectState.READY else ProjectState.ERROR)
-                    if (!ok) {
-                        clearTurnActive(projectId)
+                    if (ok) {
+                        setBusy(projectId, ProjectState.READY)
+                    } else {
                         val detail = synchronized(stderrTail) { stderrTail.joinToString("\n").trim() }
                         val message = buildString {
                             append("OpenCode exited with status ${proc.exitValue()}.")
                             if (detail.isNotBlank()) append("\n").append(detail)
                         }
                         log.warn { "[$projectId] $message" }
-                        emitSystem(projectId, "opencode_exit", message)
-                        fireInterrupt(projectId, "crashed")
+                        // v1.154.0 — stderr/detail 에서 rate-limit / usage-limit 분기.
+                        val combined = "$message $detail"
+                        when {
+                            isOpencodeRateLimitMessage(combined) -> scheduleRateLimitRetry(projectId)
+                            isOpencodeUsageLimitMessage(combined) -> {
+                                emitSystem(projectId, "opencode_usage_limit", message)
+                                clearTurnActive(projectId)
+                                setBusy(projectId, ProjectState.STOPPED)
+                                fireInterrupt(projectId, "usage_limit")
+                            }
+                            else -> {
+                                emitSystem(projectId, "opencode_exit", message)
+                                clearTurnActive(projectId)
+                                setBusy(projectId, ProjectState.ERROR)
+                                fireInterrupt(projectId, "crashed")
+                            }
+                        }
                     }
                 }
             } catch (t: Throwable) {
@@ -305,6 +337,66 @@ class OpenCodeSessionManager(
             emitSystem(projectId, "opencode_prompt_dequeued", "Running queued OpenCode prompt. Remaining: $remaining.")
             startPromptLocked(projectId, next)
         }
+    }
+
+    /**
+     * v1.154.0 — 일시 rate-limit 시 지수 백오프(30/60/120/240/300초)로 같은 sessionID 에
+     * "이어서 진행" 프롬프트를 재전송. 최대 [MAX_RATE_LIMIT_RETRIES] 회. 초과 시 STOPPED.
+     * [com.siamakerlab.vibecoder.server.agent.codex.CodexSessionManager.scheduleRateLimitRetry]
+     * 와 동일 패턴 — fireTurnDone 을 호출하지 않아 자동화 폭주 차단.
+     */
+    private suspend fun scheduleRateLimitRetry(projectId: String) {
+        val attempt = (rateLimitRetries[projectId] ?: 0) + 1
+        if (attempt > MAX_RATE_LIMIT_RETRIES) {
+            cancelRateLimitRetry(projectId)
+            clearTurnActive(projectId)
+            setBusy(projectId, ProjectState.STOPPED)
+            fireInterrupt(projectId, "rate_limit_giveup")
+            emitSystem(
+                projectId, "rate_limit_giveup",
+                "OpenCode rate limit 이 ${MAX_RATE_LIMIT_RETRIES}회 자동 재개 후에도 지속됩니다. " +
+                    "자동 재개를 중지합니다 — 잠시 후 직접 이어서 진행해 주세요.",
+            )
+            return
+        }
+        rateLimitRetries[projectId] = attempt
+        val delayMs = RATE_LIMIT_BASE_BACKOFF_MS shl (attempt - 1)
+        retryJobs[projectId]?.cancel()
+        setBusy(projectId, ProjectState.RESPONDING)
+        emitSystem(
+            projectId, "rate_limit_retry",
+            "OpenCode 일시 rate limit (사용량 한도 아님). ${delayMs / 1000}초 후 자동으로 이어서 진행합니다 " +
+                "($attempt/$MAX_RATE_LIMIT_RETRIES).",
+        )
+        retryJobs[projectId] = scope.launch {
+            try {
+                delay(delayMs)
+            } catch (_: CancellationException) {
+                return@launch
+            }
+            retryJobs.remove(projectId)
+            val lock = locks.computeIfAbsent(projectId) { Mutex() }
+            lock.withLock {
+                if (busy[projectId] != true) return@withLock
+                runCatching { startPromptLocked(projectId, RATE_LIMIT_RESUME_PROMPT, isAutoResume = true) }
+                    .onFailure {
+                        log.warn(it) { "[$projectId] OpenCode rate-limit 자동 재개 실패" }
+                        cancelRateLimitRetry(projectId)
+                        clearTurnActive(projectId)
+                        scope.launch {
+                            setBusy(projectId, ProjectState.STOPPED)
+                            fireInterrupt(projectId, "rate_limit_resume_failed")
+                        }
+                    }
+            }
+        }
+    }
+
+    /** v1.154.0 — rate-limit 자동 재개 상태 초기화. */
+    private fun cancelRateLimitRetry(projectId: String) {
+        rateLimitRetries.remove(projectId)
+        retryJobs[projectId]?.cancel()
+        retryJobs.remove(projectId)
     }
 
     private suspend fun handleEvent(projectId: String, event: OpenCodeEvent) {
@@ -594,6 +686,16 @@ class OpenCodeSessionManager(
                 "Resume the in-progress work; do not restart from scratch."
         /** v1.153.0 — z.ai 강제 모드에서 비-zai 모델을 대체할 기본 zai-coding-plan 모델. */
         const val FALLBACK_ZAI_MODEL = "zai-coding-plan/glm-5.2"
+        /**
+         * v1.154.0 — OpenCode 일시 rate-limit 자동 재개. [RATE_LIMIT_BASE_BACKOFF_MS] 지수 백오프로
+         * 최대 [MAX_RATE_LIMIT_RETRIES] 회 같은 sessionID 에 "이어서 진행" 프롬프트 재전송.
+         * ClaudeSessionManager / CodexSessionManager 와 동일 정책/상숫값.
+         */
+        const val MAX_RATE_LIMIT_RETRIES = 5
+        const val RATE_LIMIT_BASE_BACKOFF_MS = 30_000L
+        const val RATE_LIMIT_RESUME_PROMPT =
+            "Continue from where you left off — the previous turn was interrupted by a temporary " +
+                "rate limit (not a usage limit). Resume the in-progress work; do not restart from scratch."
     }
 }
 

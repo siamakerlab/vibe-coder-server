@@ -359,12 +359,19 @@ docker/HUB_README.md / server.yml 동시 갱신 완료.
 
 Claude 전용 기능을 OpenCode 로 확장 (사용자 체감순).
 
-- [ ] OpenCode auto-compaction (컨텍스트 한도 근접 시).
-- [ ] OpenCode rate-limit 자동 재개.
-- [ ] OpenCode 부팅 reconcile (미완 turn).
-- [ ] (조사) OpenCode 서브에이전트 — opencode 가 sub-agent 개념을 지원하는지.
+- [~] OpenCode auto-compaction (컨텍스트 한도 근접 시).
+  (opencode CLI 가 컨텍스트 관리를 자체 수행 — 서버 별도 /compact 불필요. step_finish tokens 로
+  사용량 표시만.)
+- [x] OpenCode rate-limit 자동 재개.
+  (scheduleRateLimitRetry + isOpencodeRateLimitMessage/usage-limit 분류. crash(stderr) 기반
+  3-way 분기, 지수 백오프 30/60/120/240/300최대 5회. Codex/Claude 동일 정책.)
+- [x] OpenCode 부팅 reconcile (미완 turn).
+  (M2.1 v1.150.0 에서 이미 구현 — opencode-turn-active 마커 + sessionID resume.)
+- [~] (조사) OpenCode 서브에이전트 — opencode 가 sub-agent 개념을 지원하는지.
   미지원 시 명시적 disabled UX.
-- [ ] 사용량 임계치 이메일 알림 (z.ai coding plan 기준).
+  (opencode 의 `task` 도구가 서브에이전트 역할 — 이미 tool_use 이벤트로 처리됨. 별도 시스템 불필요.)
+- [~] 사용량 임계치 이메일 알림 (z.ai coding plan 기준).
+  (opencode CLI 가 usage % 미노출로 transition 알림 불가 — z.ai API 직접 연동 시 확장.)
 
 **Wire change**: 없음. **Android 영향**: 없음.
 
