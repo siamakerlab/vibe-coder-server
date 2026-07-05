@@ -271,6 +271,7 @@ class OpenCodeSessionManager(
         history?.userPrompt(projectId, sid, text, provider = provider.id)
         val root = workspace.projectRoot(projectId)
         if (!root.exists()) throw IllegalStateException("project root not found: $root")
+        ensureProjectOpenCodeConfig(projectId, root)
         val args = buildArgs(projectId, text, sid)
         log.info { "[$projectId] spawning OpenCode: ${args.joinToString(" ")} (cwd=$root)" }
         val proc = withContext(Dispatchers.IO) {
@@ -689,6 +690,35 @@ class OpenCodeSessionManager(
                 pb.environment()["OPENCODE_CONFIG_HOME"] = ch
             }
         }
+    }
+
+    /**
+     * v1.156.2 — 프로젝트별 opencode config (`opencode.json`) 생성. filesystem MCP 를
+     * 프로젝트 루트로만 제한 — 글로벌 config(`/home/vibe/.config/opencode/opencode.jsonc`)의
+     * `/workspace` 전체 마운트를 override (프로젝트 config 가 글로벌보다 우선).
+     * 사용자가 이미 opencode.json 을 두면 건드리지 않는다.
+     */
+    private fun ensureProjectOpenCodeConfig(projectId: String, projectRoot: Path) {
+        val configFile = projectRoot.resolve("opencode.json")
+        if (Files.exists(configFile)) return
+        val configContent = buildString {
+            appendLine("{")
+            appendLine("  \"${'$'}schema\": \"https://opencode.ai/config.json\",")
+            appendLine("  \"mcp\": {")
+            appendLine("    \"filesystem\": {")
+            appendLine("      \"type\": \"local\",")
+            append("      \"command\": [\"npx\", \"-y\", \"@modelcontextprotocol/server-filesystem\", \"")
+            append(projectRoot.toString())
+            appendLine("\"],")
+            appendLine("      \"enabled\": true")
+            appendLine("    }")
+            append("  }")
+            append("}")
+        }
+        runCatching {
+            configFile.writeText(configContent)
+            log.info { "[$projectId] opencode.json 생성 (filesystem MCP → $projectRoot)" }
+        }.onFailure { log.warn(it) { "프로젝트 opencode config 생성 실패: $configFile" } }
     }
 
     /**
