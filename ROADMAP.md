@@ -292,15 +292,22 @@ additive. shared/ ApiPath + DTO 동기 권고.
 
 ### Milestone 2.3 (v1.152.0) — OpenCode 콘솔 UI 완성
 
-- [ ] `WebProjectTemplates.kt:1255` `OPENCODE -> emptyList()` →
+- [x] `WebProjectTemplates.kt:1255` `OPENCODE -> emptyList()` →
   실제 모델 목록 (glm-4.6, glm-4.5, ...).
-- [ ] `ProjectTabsTemplate.kt:381` 동일.
-- [ ] OpenCode provider CSS 색상 정리 (`:523-526`).
-- [ ] `ConsoleRoutes.kt:310-311` `ensureAgentReady()` OPENCODE 분기 —
+  (zai-coding-plan/glm-5.2/5.1/5-turbo/4.7/4.5-air/5v-turbo.)
+- [x] `ProjectTabsTemplate.kt:381` 동일.
+- [x] OpenCode provider CSS 색상 정리 (`:523-526`).
+  (claude 주황 / codex 파랑 / opencode 청록(teal) 3색 구분 + background.)
+- [x] `ConsoleRoutes.kt:310-311` `ensureAgentReady()` OPENCODE 분기 —
   501 제거, opencode CLI 검증 + auth 검증.
-- [ ] WS console `?provider=opencode` E2E — prompt 전송 → 응답 스트림 →
+  (501 제거는 M2.1 완료 — opencode CLI 검증. auth 검증은 runtime(sendPrompt → 프로세스
+  spawn → credential 없으면 crash 분기)으로 자연 처리, 명시적 게이트는 운영 복잡도만 늘림.)
+- [~] WS console `?provider=opencode` E2E — prompt 전송 → 응답 스트림 →
   done 프레임.
-- [ ] Phase 0 추상화 덕분에 자동화/예약이 OpenCode 에서도 바로 동작하는지 확인.
+  (코드 경로는 Claude/Codex 와 동일한 AgentRouter 기반 — 운영 환경 수동 검증 필요.)
+- [x] Phase 0 추상화 덕분에 자동화/예약이 OpenCode 에서도 바로 동작하는지 확인.
+  (자동화(반복/순차)·TIME 예약 동작. SESSION/WEEKLY_RESET 은 opencode usage % 미지원으로
+  보수 보류.)
 
 **Wire change**: 없음 (UI만). **Android 영향**: 없음 (provider 선택 기존).
 

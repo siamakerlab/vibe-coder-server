@@ -654,6 +654,7 @@ object AdminTemplates {
         claudeAuth: com.siamakerlab.vibecoder.shared.dto.CheckItemDto? = null,
         claudeUsage: com.siamakerlab.vibecoder.shared.dto.ClaudeStatusDto? = null,
         codexUsage: com.siamakerlab.vibecoder.shared.dto.CodexUsageDto? = null,
+        opencodeUsage: com.siamakerlab.vibecoder.shared.dto.OpenCodeUsageDto? = null,
         diskSnapshot: com.siamakerlab.vibecoder.server.disk.DiskMonitor.Snapshot? = null,
         /** v1.9.0 — git global identity 미설정 시 dashboard 상단에 yellow banner. */
         gitIdentityMissing: Boolean = false,
@@ -771,6 +772,7 @@ $gitIdentityBanner
 
   ${renderClaudeUsageCard(claudeUsage, lang)}
   ${renderCodexUsageCard(codexUsage, lang)}
+  ${renderOpenCodeUsageCard(opencodeUsage, lang)}
   ${renderDiskUsageCard(diskSnapshot, lang)}
 
   <!-- v1.63.0 — 무선 ADB 기기 상태 카드. /api/adb/status 폴링(클라이언트). -->
@@ -1006,6 +1008,47 @@ $gitIdentityBanner
     <dl style="margin-top:6px;font-size:12px">
       <dt>${esc(t("dashboard.claude.lastPolled"))}</dt><dd>${esc(fmtTs(snapshot.updatedAt, lang))}</dd>
       <dt>${esc(t("dashboard.codex.login"))}</dt><dd>${esc(snapshot.loginStatus ?: "-")}</dd>
+    </dl>
+  </div>"""
+    }
+
+    /**
+     * v1.152.0 — OpenCode provider usage/credential 카드. opencode CLI 가 usage % 게이지를
+     * 노출하지 않아 credential 상태 + 토큰 사용량(통계)으로 구성. [renderCodexUsageCard] 와 대칭.
+     */
+    private fun renderOpenCodeUsageCard(snapshot: com.siamakerlab.vibecoder.shared.dto.OpenCodeUsageDto?, lang: String): String {
+        if (snapshot == null) return ""
+        val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
+        fun fmt(n: Long?): String = when (n) {
+            null -> "-"
+            else -> com.siamakerlab.vibecoder.server.agent.opencode.formatOpenCodeTokens(n)
+        }
+        val statusText = if (snapshot.loggedIn) {
+            "${snapshot.provider ?: "OpenCode"}${snapshot.credentialType?.let { " · $it" } ?: ""}"
+        } else {
+            t("dashboard.codex.login").let { "not logged in" }
+        }
+        val statusColor = if (snapshot.loggedIn) "#5eead4" else "#dc2626"
+        val summary = snapshot.usageSummary?.takeIf { snapshot.available }?.let {
+            """<p class="hint" style="margin-top:6px">${esc(it)}</p>"""
+        } ?: ""
+        return """
+  <div class="card">
+    <h2>OpenCode (z.ai)</h2>
+    <dl style="margin-top:4px;font-size:13px">
+      <dt style="display:inline;color:#aaa">credential</dt>
+      <dd style="display:inline;margin-left:6px;color:$statusColor">${esc(statusText)}</dd>
+    </dl>
+    <dl style="margin-top:8px;font-size:12px">
+      <dt>tokens</dt><dd>${fmt(snapshot.totalTokens)}</dd>
+      <dt>input</dt><dd>${fmt(snapshot.inputTokens)}</dd>
+      <dt>output</dt><dd>${fmt(snapshot.outputTokens)}</dd>
+      <dt>cache read</dt><dd>${fmt(snapshot.cacheReadTokens)}</dd>
+      <dt>cost</dt><dd>${esc(snapshot.totalCost ?: "-")}</dd>
+    </dl>
+    $summary
+    <dl style="margin-top:6px;font-size:12px">
+      <dt>${esc(t("dashboard.claude.lastPolled"))}</dt><dd>${esc(fmtTs(snapshot.updatedAt, lang))}</dd>
     </dl>
   </div>"""
     }

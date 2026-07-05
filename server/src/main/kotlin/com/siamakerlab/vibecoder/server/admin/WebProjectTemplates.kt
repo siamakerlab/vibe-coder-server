@@ -1252,7 +1252,14 @@ $errHtml
                 "gpt-5" to "GPT-5",
                 "gpt-5-codex" to "GPT-5 Codex",
             )
-            AgentProvider.OPENCODE -> emptyList()
+            AgentProvider.OPENCODE -> listOf(
+                "zai-coding-plan/glm-5.2" to "GLM 5.2 (권장)",
+                "zai-coding-plan/glm-5.1" to "GLM 5.1",
+                "zai-coding-plan/glm-5-turbo" to "GLM 5 Turbo",
+                "zai-coding-plan/glm-4.7" to "GLM 4.7",
+                "zai-coding-plan/glm-4.5-air" to "GLM 4.5 Air",
+                "zai-coding-plan/glm-5v-turbo" to "GLM 5V Turbo (vision)",
+            )
         }
         val isCustomModel = !normalizedModel.equals("default", ignoreCase = true) &&
             knownModels.none { it.first.equals(normalizedModel, ignoreCase = true) }
@@ -1333,8 +1340,9 @@ $errHtml
             AgentProvider.CODEX -> modelSelectorHtml.ifBlank {
                 """<span class="dim" style="font-size:11px;white-space:nowrap">provider settings isolated</span>"""
             }
-            AgentProvider.OPENCODE ->
+            AgentProvider.OPENCODE -> modelSelectorHtml.ifBlank {
                 """<span class="dim" style="font-size:11px;white-space:nowrap">provider settings isolated</span>"""
+            }
         }
         // Claude CLI 미설치 또는 인증 누락 시 큰 안내 카드 + 프롬프트 폼 비활성화.
         val cliMissing = claudeCli != null && claudeCli.status != CheckStatus.OK

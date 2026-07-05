@@ -403,6 +403,7 @@ fun Application.module(ctx: ServerContext) {
             audit = ctx.auditLogger,
             claudeUsageMonitor = ctx.claudeUsageMonitor,
             codexUsageMonitor = ctx.codexUsageMonitor,
+            opencodeUsageMonitor = ctx.opencodeUsageMonitor,
             diskMonitor = ctx.diskMonitor,
             webauthnService = ctx.webauthnService,
             gitConfig = ctx.gitConfig,

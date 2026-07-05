@@ -149,12 +149,13 @@ internal fun parseTokenCount(token: String): Long? {
 
 private fun buildSummary(totalCost: String?, totalTokens: Long?): String? {
     val parts = mutableListOf<String>()
-    totalTokens?.let { parts += "tokens ${formatTokenCount(it)}" }
+    totalTokens?.let { parts += "tokens ${formatOpenCodeTokens(it)}" }
     totalCost?.let { parts += "cost $it" }
     return if (parts.isEmpty()) null else parts.joinToString(" · ")
 }
 
-private fun formatTokenCount(n: Long): String = when {
+/** v1.152.0 — 토큰 수를 1.2K/3.4M 형태로 포맷 (AdminTemplates 카드 공유). */
+internal fun formatOpenCodeTokens(n: Long): String = when {
     n >= 1_000_000L -> "%.1fM".format(n / 1_000_000.0)
     n >= 1_000L -> "%.1fK".format(n / 1_000.0)
     else -> n.toString()

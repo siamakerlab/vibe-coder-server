@@ -47,6 +47,8 @@ data class AdminRoutesDeps(
     /** v0.21.0 — 대시보드 사용량 카드용 최신 snapshot 조회. */
     val claudeUsageMonitor: com.siamakerlab.vibecoder.server.claude.ClaudeUsageMonitor,
     val codexUsageMonitor: com.siamakerlab.vibecoder.server.agent.codex.CodexUsageMonitor,
+    /** v1.151.0 — OpenCode usage 카드 (Phase 2). */
+    val opencodeUsageMonitor: com.siamakerlab.vibecoder.server.agent.opencode.OpenCodeUsageMonitor,
     /** v0.29.0 — 대시보드 디스크 사용량 카드. */
     val diskMonitor: com.siamakerlab.vibecoder.server.disk.DiskMonitor,
     /** v0.57.0 — Phase 36 passwordless-only 검사용 hasCredentials lookup. */
@@ -90,6 +92,7 @@ fun Routing.adminRoutes(deps: AdminRoutesDeps) {
         // "아직 정보 없음" 메시지로 graceful degrade.
         val claudeUsage = deps.claudeUsageMonitor.snapshot()
         val codexUsage = deps.codexUsageMonitor.snapshot()
+        val opencodeUsage = deps.opencodeUsageMonitor.snapshot()
         // v0.29.0 — 디스크 monitor snapshot. 미측정이면 null → graceful.
         val diskSnapshot = deps.diskMonitor.snapshot()
         // v1.9.0 — git global identity 미설정 시 dashboard 상단에 yellow banner. graceful — git
@@ -103,6 +106,7 @@ fun Routing.adminRoutes(deps: AdminRoutesDeps) {
             claudeAuth = claudeAuth,
             claudeUsage = claudeUsage,
             codexUsage = codexUsage,
+            opencodeUsage = opencodeUsage,
             diskSnapshot = diskSnapshot,
             gitIdentityMissing = gitIdentityMissing,
             csrf = sess.csrf,
