@@ -265,13 +265,14 @@ body.mobile-nav-open .mobile-nav-toggle {
 .user-box .user { font-size: 12px; color: var(--text-dim); margin-bottom: 8px; }
 
 /* v1.3.2 — 전역 Claude 쿼타 pill (좌하단 사이드바, 유저명 직전). */
+/* v1.158.2 — pill 간격 압축 (padding/margin/gap 축소) — 상단 메뉴 영역 확보. */
 .quota-pill {
-    padding: 10px 0;
-    margin-top: 8px;
+    padding: 3px 0;
+    margin-top: 2px;
     border-top: 1px solid var(--border);
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 4px;
 }
 /* v1.6.2 — 쿼타 헤더: "Claude" 라벨 + refresh 아이콘 버튼. */
 /* v1.155.0 — 헤더 클릭으로 접기/펼치기. 접으면 헤더 한 줄에 대표 % 만 (qp-pct-compact). */
@@ -288,7 +289,7 @@ body.mobile-nav-open .mobile-nav-toggle {
 .quota-pill.collapsed .qp-header::before { transform: rotate(-90deg); }
 .quota-pill .qp-header:focus-visible { outline: 1px solid var(--primary); outline-offset: 2px; border-radius: 3px; }
 .quota-pill .qp-h-title { /* same as qp-header text */ }
-.quota-pill .qp-rows { display: flex; flex-direction: column; gap: 8px; }
+.quota-pill .qp-rows { display: flex; flex-direction: column; gap: 4px; }
 .quota-pill.collapsed .qp-rows { display: none; }
 .quota-pill .qp-pct-compact {
     font-weight: 600; font-variant-numeric: tabular-nums;
