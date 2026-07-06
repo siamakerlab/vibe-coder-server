@@ -163,11 +163,16 @@ class GlmQuotaService(
             )
         }
 
-        // TOKENS_LIMIT 항목만 추출 → nextResetTime 기준 정렬 (가까운=세션 5h, 먼=주간 7d).
-        // number 기준 정렬은 세션/주간이 뒤바뀌는 회귀가 있어 nextResetTime 으로 교체.
+        // TOKENS_LIMIT 항목만 추출 → 윈도우 크기(unit × number) 기준 정렬.
+        // nextResetTime 정렬은 주간 윈도우 리셋 임박 시 세션보다 빨라져 뒤집힘.
+        // 윈도우 크기가 작은 것이 세션(5h), 큰 것이 주간(7d).
         val tokenLimits = limits.mapNotNull { it as? JsonObject }
             .filter { it["type"]?.jsonPrimitive?.content == "TOKENS_LIMIT" }
-            .sortedBy { it["nextResetTime"]?.jsonPrimitive?.longOrNull ?: Long.MAX_VALUE }
+            .sortedBy {
+                val unit = it["unit"]?.jsonPrimitive?.longOrNull ?: Long.MAX_VALUE
+                val number = it["number"]?.jsonPrimitive?.longOrNull ?: 1L
+                windowDurationSeconds(unit, number)
+            }
 
         val sessionLimit = tokenLimits.firstOrNull()
         val weeklyLimit = tokenLimits.drop(1).firstOrNull() ?: tokenLimits.firstOrNull()
@@ -207,6 +212,24 @@ class GlmQuotaService(
     /** "75" / "75.0" / "75%" → 75. 소수점 버림. */
     private fun parsePercent(raw: String): Int? =
         raw.trim().trimEnd('%').toDoubleOrNull()?.toInt()
+
+    /**
+     * Z.AI quota unit → 초 단위 환산. unit enum:
+     * 2=MINUTE, 3=HOUR, 4=DAY, 5=WEEK, 6=MONTH.
+     * 알 수 없는 unit 은 [Long.MAX_VALUE] 로 분류 (안전하게 weekly 측에 배치).
+     */
+    private fun windowDurationSeconds(unit: Long, number: Long): Long {
+        val unitSeconds = when (unit) {
+            1L -> 1L                // SECOND
+            2L -> 60L               // MINUTE
+            3L -> 3_600L            // HOUR
+            4L -> 86_400L           // DAY
+            5L -> 604_800L          // WEEK
+            6L -> 2_629_800L        // MONTH (~30.44d)
+            else -> Long.MAX_VALUE
+        }
+        return number * unitSeconds
+    }
 
     private fun formatTokens(n: Long): String = when {
         n >= 1_000_000L -> "%.1fM".format(n / 1_000_000.0)
