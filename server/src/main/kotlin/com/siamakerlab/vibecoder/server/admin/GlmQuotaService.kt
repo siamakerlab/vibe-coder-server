@@ -163,10 +163,11 @@ class GlmQuotaService(
             )
         }
 
-        // TOKENS_LIMIT 항목만 추출 → number 기준 정렬 (작음=세션, 큼=주간)
+        // TOKENS_LIMIT 항목만 추출 → nextResetTime 기준 정렬 (가까운=세션 5h, 먼=주간 7d).
+        // number 기준 정렬은 세션/주간이 뒤바뀌는 회귀가 있어 nextResetTime 으로 교체.
         val tokenLimits = limits.mapNotNull { it as? JsonObject }
             .filter { it["type"]?.jsonPrimitive?.content == "TOKENS_LIMIT" }
-            .sortedBy { it["number"]?.jsonPrimitive?.longOrNull ?: Long.MAX_VALUE }
+            .sortedBy { it["nextResetTime"]?.jsonPrimitive?.longOrNull ?: Long.MAX_VALUE }
 
         val sessionLimit = tokenLimits.firstOrNull()
         val weeklyLimit = tokenLimits.drop(1).firstOrNull() ?: tokenLimits.firstOrNull()
