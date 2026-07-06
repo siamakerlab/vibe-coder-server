@@ -396,9 +396,10 @@ object AdminTemplates {
   document.querySelectorAll('.nav-links a').forEach(function(a){
     a.addEventListener('click', function(){ setMobileNav(false); });
   });
-  // 2) Quota pill — refresh 버튼 + 타임존 (괄호) strip.
+  // 2) Quota pill — refresh 버튼 + 리셋 시각 로케일 포맷.
   var el = document.getElementById('quota-pill');
   if (!el) return;
+  var QUOTA_LANG = '${esc(lang)}';
   var sessLabel = '${esc(t("quota.session"))}';
   var weekLabel = '${esc(t("quota.weekly"))}';
   var resetLabel = '${esc(t("quota.resetPrefix"))}';
@@ -408,15 +409,29 @@ object AdminTemplates {
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
-  function stripTz(reset) {
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  // v1.158.1 — 리셋 시각을 locale 에 맞춰 "7월 7일 15:30" / "Jul 7, 3:30 PM" 으로 포맷.
+  // ISO 8601 ("2026-07-07T15:30:00Z") 을 받아 브라우저 로컬 타임존으로 변환.
+  // 기존 텍스트 형식 ("Resets 10:20pm (Asia/Seoul)") 은 fallback 으로 strip 처리.
+  function formatReset(reset) {
     if (!reset) return '';
-    // v1.6.2 — "Resets 10:20pm (Asia/Seoul)" → "10:20pm".
-    // v1.7.1 — Kotlin raw string 안에서 \\s 가 JS 로 그대로 새서 매칭 실패하던
-    // 회귀 fix. raw string 은 escape 안 하므로 \s 한 backslash 로 작성.
-    return reset
-      .replace(/^Resets\s+/i, '')
-      .replace(/\s*\([^)]*\)\s*/g, '')
-      .trim();
+    // ISO 8601 감지 — 'T' 가 포함된 timestamp 만 Date 파싱 시도.
+    if (reset.indexOf('T') >= 0) {
+      var d = new Date(reset);
+      if (!isNaN(d.getTime())) {
+        var monthsEn = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        if (QUOTA_LANG === 'ko') {
+          return (d.getMonth() + 1) + '월 ' + d.getDate() + '일 ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+        } else {
+          var h = d.getHours();
+          var ampm = h >= 12 ? 'PM' : 'AM';
+          var h12 = h % 12 || 12;
+          return monthsEn[d.getMonth()] + ' ' + d.getDate() + ', ' + h12 + ':' + pad2(d.getMinutes()) + ' ' + ampm;
+        }
+      }
+    }
+    // fallback: 기존 텍스트 형식 "Resets 10:20pm (Asia/Seoul)" → "10:20pm".
+    return reset.replace(/^Resets\s+/i, '').replace(/\s*\([^)]*\)\s*/g, '').trim();
   }
   // v1.155.0 — 사용량 pill 색상/대표%/접기 헬퍼.
   function pctColor(pct) {
@@ -469,9 +484,8 @@ object AdminTemplates {
   function bar(label, pct, reset) {
     var safePct = Math.max(0, Math.min(100, pct|0));
     var color = pctColor(safePct);
-    // v1.7.2 — "초기화" / "resets" prefix 도 제거 (사용자 요구 — 사이드바 좁은 공간 노이즈).
-    // stripTz 가 이미 "Resets" 단어를 제거하므로 cleanReset 만 그대로 표시.
-    var cleanReset = stripTz(reset);
+    // v1.158.1 — formatReset 이 locale 에 맞춰 "7월 7일 15:30" / "Jul 7, 3:30 PM" 반환.
+    var cleanReset = formatReset(reset);
     var resetHtml = cleanReset ? '<div class="qp-reset">' + cleanReset + '</div>' : '';
     return '<div class="qp-row"><div class="qp-row-head"><span class="qp-label">' + label + '</span><span class="qp-pct" style="color:' + color + '">' + safePct + '%</span></div>'
       + '<div class="qp-track"><div class="qp-fill" style="width:' + safePct + '%;background:' + color + '"></div></div>'
