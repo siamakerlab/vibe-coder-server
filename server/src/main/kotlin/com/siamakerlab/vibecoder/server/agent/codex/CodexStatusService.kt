@@ -171,9 +171,13 @@ internal fun parseCodexUsageCapture(raw: String): CodexUsageDto {
             .lineSequence()
             .map { cleanCodexSummaryLine(it) }
             .firstOrNull {
-                it.contains("usage", ignoreCase = true) ||
+                // v1.158.6 — 키워드 + 숫자/% 가 함께 있는 줄만 허용 (TUI 노이즈 필터링).
+                // "Tip: Use /fast ... increased plan usage" 같은 팁 메시지가 summary 로 들어가는 회귀 방지.
+                (it.contains("usage", ignoreCase = true) ||
                     it.contains("limit", ignoreCase = true) ||
-                    it.contains("token", ignoreCase = true)
+                    it.contains("token", ignoreCase = true)) &&
+                    Regex("\\d").containsMatchIn(it) &&
+                    it.length <= 200
             }
     }
     val legacyUsage = listOfNotNull(session?.usagePercent, weekly?.usagePercent)
