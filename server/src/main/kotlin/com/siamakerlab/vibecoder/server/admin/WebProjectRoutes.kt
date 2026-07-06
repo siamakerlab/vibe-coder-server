@@ -363,7 +363,8 @@ fun Routing.webProjectRoutes(
         val keystoreReady = ksEntry != null
         val admobReady = ksEntry?.admobExists == true
         val usage = runCatching { conversationRepo.usageSummary(id) }.getOrNull()
-        val promptFilter = ConversationTurnRepository.Filter(projectId = id, provider = agentProvider.id, role = "user")
+        // v1.158.5 — 프롬프트 히스토리를 provider 무관하게 통합 조회.
+        val promptFilter = ConversationTurnRepository.Filter(projectId = id, role = "user")
         val promptCount = runCatching { conversationRepo.count(promptFilter) }.getOrDefault(0L)
         // v1.134.0 — rail 프롬프트 히스토리: 최근 7개 → 전체(스크롤 목록). 페이지 비대 방지
         // 안전 상한 1000(repo list 상한과 동일) — 사실상 전체.
