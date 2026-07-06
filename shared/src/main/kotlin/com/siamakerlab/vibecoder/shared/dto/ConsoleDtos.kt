@@ -157,11 +157,15 @@ data class GlmUsageDto(
     val available: Boolean = false,
     /** auth.json 에 zai-coding-plan credential 존재 여부. */
     val loggedIn: Boolean = false,
-    /** z.ai quota 사용량 백분율 (0–100). */
-    val usagePercent: Int? = null,
-    /** quota 리셋 시각 (ISO 8601 또는 Z.AI 포맷). */
-    val resetAt: String? = null,
-    /** 총 토큰 사용량 (Z.AI totalTokensUsage). */
+    /** 세션(단기) 사용량 백분율 (0–100). */
+    val sessionUsagePercent: Int? = null,
+    /** 주간 사용량 백분율 (0–100). */
+    val weeklyUsagePercent: Int? = null,
+    /** 세션 quota 리셋 시각 (ISO 8601). */
+    val sessionResetAt: String? = null,
+    /** 주간 quota 리셋 시각 (ISO 8601). */
+    val weeklyResetAt: String? = null,
+    /** 총 토큰 사용량. */
     val totalTokensUsage: Long? = null,
     val usageSummary: String? = null,
     val raw: String? = null,

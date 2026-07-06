@@ -569,19 +569,17 @@ object AdminTemplates {
   var glmEl = document.getElementById('glm-quota-pill');
   if (glmEl) {
     function renderGlm(dto) {
-      if (!dto || !dto.loggedIn || (dto.usagePercent == null && !dto.usageSummary)) {
+      if (!dto || !dto.loggedIn || (dto.sessionUsagePercent == null && dto.weeklyUsagePercent == null && !dto.usageSummary)) {
         glmEl.hidden = true;
         return;
       }
       var rows = '';
-      if (dto.usagePercent != null) rows += bar('Usage', dto.usagePercent, dto.resetAt);
+      if (dto.sessionUsagePercent != null) rows += bar(sessLabel, dto.sessionUsagePercent, dto.sessionResetAt);
+      if (dto.weeklyUsagePercent != null) rows += bar(weekLabel, dto.weeklyUsagePercent, dto.weeklyResetAt);
       if (!rows && dto.usageSummary) {
         rows = '<div class="qp-row"><div class="qp-reset">' + escHtml(dto.usageSummary) + '</div></div>';
       }
-      var compactHtml = '';
-      if (dto.usagePercent != null) {
-        compactHtml = '<span class="qp-pct-compact" style="color:' + pctColor(dto.usagePercent) + '">' + dto.usagePercent + '%</span>';
-      }
+      var compactHtml = compactQuota(dto);
       glmEl.innerHTML = '<div class="qp-header" role="button" tabindex="0" aria-expanded="true"><span class="qp-h-title">GLM</span>' + compactHtml
         + '<button type="button" class="qp-refresh" title="' + refreshTitle + '" aria-label="' + refreshTitle + '">↻</button>'
         + '</div><div class="qp-rows">' + rows + '</div>';

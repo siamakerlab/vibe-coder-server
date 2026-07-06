@@ -9,7 +9,9 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
@@ -125,44 +127,80 @@ class GlmQuotaService(
 
     /**
      * Z.AI `/api/monitor/usage/quota/limit` 응답 파싱.
-     * 응답 구조가 공식 문서화되지 않아(내부 모니터링 API), 유연하게 필드를 추출한다.
-     * 일반적인 응답 형태 (플러그인 소스 기준):
-     * `{ "percentage": 75, "nextResetTime": "...", "totalTokensUsage": 1234567 }`
+     *
+     * 실제 응답 구조 (2026-07-06 확인):
+     * ```json
+     * {"code":200,"data":{"limits":[
+     *   {"type":"TOKENS_LIMIT","unit":3,"number":5,"percentage":53,"nextResetTime":1783327414608},
+     *   {"type":"TOKENS_LIMIT","unit":6,"number":1,"percentage":88,"nextResetTime":1783777748997}
+     * ],"level":"max"},"success":true}
+     * ```
+     *
+     * `TOKENS_LIMIT` 항목 중 number 가 가장 작은(단기=세션) 것과 가장 큰(장기=주간) 것을
+     * 추출하여 session/weekly 바로 매핑. `TIME_LIMIT` 은 무시.
+     * `nextResetTime` 은 Unix epoch 밀리초 → ISO 8601 로 변환.
      */
+    @Suppress("UNCHECKED_CAST")
     internal fun parseQuota(body: String): GlmUsageDto {
-        if (body.isBlank()) return GlmUsageDto(updatedAt = Instant.now().toString(), available = true, loggedIn = true)
-        val json = Json.parseToJsonElement(body).let { it as? JsonObject }
-            ?: return GlmUsageDto(updatedAt = Instant.now().toString(), available = true, loggedIn = true, raw = body.take(4096))
+        val now = Instant.now().toString()
+        if (body.isBlank()) return GlmUsageDto(updatedAt = now, available = true, loggedIn = true)
+        val root = Json.parseToJsonElement(body).let { it as? JsonObject }
+            ?: return GlmUsageDto(updatedAt = now, available = true, loggedIn = true, raw = body.take(4096))
 
-        // Z.AI 응답이 중첩될 수 있음: { "data": { ... } } 또는 flat.
-        val data = (json["data"] as? JsonObject) ?: json
+        val data = (root["data"] as? JsonObject) ?: root
+        val limits = (data["limits"] as? JsonArray)
 
-        val pct = data["percentage"]?.jsonPrimitive?.let { parsePercent(it.content) }
-            ?: data["usagePercent"]?.jsonPrimitive?.let { parsePercent(it.content) }
-        val resetAt = data["nextResetTime"]?.jsonPrimitive?.content
-            ?: data["resetAt"]?.jsonPrimitive?.content
-            ?: data["expireAt"]?.jsonPrimitive?.content
-        val totalTokens = data["totalTokensUsage"]?.jsonPrimitive?.longOrNull
-            ?: data["totalTokens"]?.jsonPrimitive?.longOrNull
+        if (limits == null) {
+            // fallback: flat 구조 (과거 플러그인 호환)
+            val pct = data["percentage"]?.jsonPrimitive?.let { parsePercent(it.content) }
+            val resetAt = data["nextResetTime"]?.jsonPrimitive?.content
+            return GlmUsageDto(
+                updatedAt = now, available = true, loggedIn = true,
+                sessionUsagePercent = pct,
+                sessionResetAt = resetAt?.let(::epochMsToIso),
+                usageSummary = pct?.let { "$it%" },
+                raw = body.take(4096),
+            )
+        }
+
+        // TOKENS_LIMIT 항목만 추출 → number 기준 정렬 (작음=세션, 큼=주간)
+        val tokenLimits = limits.mapNotNull { it as? JsonObject }
+            .filter { it["type"]?.jsonPrimitive?.content == "TOKENS_LIMIT" }
+            .sortedBy { it["number"]?.jsonPrimitive?.longOrNull ?: Long.MAX_VALUE }
+
+        val sessionLimit = tokenLimits.firstOrNull()
+        val weeklyLimit = tokenLimits.drop(1).firstOrNull() ?: tokenLimits.firstOrNull()
+
+        val sessionPct = sessionLimit?.get("percentage")?.jsonPrimitive?.let { parsePercent(it.content) }
+        val weeklyPct = weeklyLimit?.get("percentage")?.jsonPrimitive?.let { parsePercent(it.content) }
+        val sessionReset = sessionLimit?.get("nextResetTime")?.jsonPrimitive?.longOrNull?.let(::epochMsToIso)
+        val weeklyReset = weeklyLimit?.get("nextResetTime")?.jsonPrimitive?.longOrNull?.let(::epochMsToIso)
 
         val summary = buildString {
-            pct?.let { append("$it%") }
-            totalTokens?.let {
+            sessionPct?.let { append("session $it%") }
+            weeklyPct?.let {
                 if (isNotEmpty()) append(" · ")
-                append("${formatTokens(it)} tokens")
+                append("weekly $it%")
             }
         }.ifBlank { null }
 
         return GlmUsageDto(
-            updatedAt = Instant.now().toString(),
+            updatedAt = now,
             available = true,
             loggedIn = true,
-            usagePercent = pct,
-            resetAt = resetAt,
-            totalTokensUsage = totalTokens,
+            sessionUsagePercent = sessionPct,
+            weeklyUsagePercent = if (weeklyLimit != sessionLimit) weeklyPct else null,
+            sessionResetAt = sessionReset,
+            weeklyResetAt = if (weeklyLimit != sessionLimit) weeklyReset else null,
             usageSummary = summary,
             raw = body.take(4096),
         )
+    }
+
+    /** Unix epoch 밀리초 정수/문자열 → ISO 8601. 파싱 실패 시 원본 반환. */
+    private fun epochMsToIso(raw: Any): String? = when (raw) {
+        is String -> raw.toLongOrNull()?.let { Instant.ofEpochMilli(it).toString() } ?: raw
+        else -> raw.toString().toLongOrNull()?.let { Instant.ofEpochMilli(it).toString() }
     }
 
     /** "75" / "75.0" / "75%" → 75. 소수점 버림. */
