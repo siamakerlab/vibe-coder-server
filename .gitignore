@@ -2,6 +2,8 @@
 .bkit/
 # Claude Code 자체 도구 상태 (ScheduleWakeup lock 등) — never commit.
 .claude/
+# impeccable skill 작업 결과물 — never commit.
+.impeccable/
 
 # Gradle
 .gradle/

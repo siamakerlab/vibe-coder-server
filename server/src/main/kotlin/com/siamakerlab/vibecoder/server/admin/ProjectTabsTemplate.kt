@@ -1,6 +1,8 @@
 package com.siamakerlab.vibecoder.server.admin
 
 import com.siamakerlab.vibecoder.server.agent.AgentProvider
+import com.siamakerlab.vibecoder.server.agent.AgentModelOption
+import com.siamakerlab.vibecoder.server.agent.ModelCatalogService
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens
 import com.siamakerlab.vibecoder.server.i18n.Messages
 import com.siamakerlab.vibecoder.shared.dto.ProjectDto
@@ -100,13 +102,14 @@ internal object ProjectTabsTemplate {
          */
         projectStatuses: Map<String, String> = emptyMap(),
         /**
-         * v1.137.2 — projectId → 마지막 대화 turn ts (영속). 콤보박스 2차 정렬(최근 활동순).
-         * busy(in-memory)는 서버 재시작 시 사라져 콤보 순서가 리셋되던 문제의 영속 대체 신호.
+         * v1.157.2 — projectId → 마지막 user prompt ts. 콤보박스 정렬은 세션 진행 중 생기는
+         * assistant/tool/system 메시지가 아니라 사용자가 프롬프트를 송신한 시각만 따른다.
          */
-        lastActivityTs: Map<String, String> = emptyMap(),
+        lastPromptTs: Map<String, String> = emptyMap(),
         agentProvider: AgentProvider = AgentProvider.CLAUDE,
         availableAgentProviders: List<AgentProvider> = listOf(AgentProvider.CLAUDE),
         model: String = "",
+        availableModelOptions: List<AgentModelOption> = emptyList(),
         /** v1.156.0 — opencode reasoning effort(--variant). opencode provider 일 때만 표시. */
         variant: String = "",
         /** v1.50.0 — 우측 overview rail 데이터. */
@@ -148,7 +151,7 @@ internal object ProjectTabsTemplate {
                 >${esc(preview)}</button>"""
         }
         val railHtml = """
-  <aside class="pt-rail" aria-label="${esc(t("tabs.rail.overview"))}">
+  <aside class="pt-rail" id="pt-rail" aria-label="${esc(t("tabs.rail.overview"))}">
     <div class="pt-rail-card" data-card="overview">
       <div class="pt-rail-h">${esc(t("tabs.rail.overview"))}</div>
       <div class="pt-ov">
@@ -167,6 +170,8 @@ internal object ProjectTabsTemplate {
         <span>${esc(t("tabs.rail.context"))} <span id="pt-ctx-provider" class="dim" style="font-size:11px"></span></span>
         <span class="pt-ctx-actions">
           <button type="button" class="pt-compact-btn" id="pt-compact-btn"
+                  aria-label="${esc(t("tabs.rail.compact.hint"))}"
+                  data-confirm="${esc(t("tabs.rail.compact.confirm"))}"
                   title="${esc(t("tabs.rail.compact.hint"))}">/compact</button>
           <label class="pt-autocompact" title="${esc(t("tabs.rail.autocompact.hint"))}">
             <input type="checkbox" id="pt-autocompact"${if (autoCompact) " checked" else ""}>${esc(t("tabs.rail.autocompact"))}
@@ -175,7 +180,14 @@ internal object ProjectTabsTemplate {
       </div>
       <div id="pt-ctx-empty" class="pt-ctx-empty">${esc(t("tabs.rail.context.empty"))}</div>
       <div id="pt-ctx-meter" class="pt-ctx-meter" hidden
-           title="대화 컨텍스트 점유율 — 윈도우 한도 대비 사용/남음. 클수록 매 turn 비용↑.">
+           role="meter" aria-label="${esc(t("tabs.rail.context"))}" aria-valuemin="0"
+           aria-valuemax="1" aria-valuenow="0" aria-valuetext="${esc(t("tabs.rail.context.empty"))}"
+           data-tooltip-prefix="${esc(t("tabs.rail.context.tooltip.prefix"))}"
+           data-tooltip-reuse="${esc(t("tabs.rail.context.reuse"))}"
+           data-tooltip-create="${esc(t("tabs.rail.context.create"))}"
+           data-tooltip-input="${esc(t("tabs.rail.context.input"))}"
+           data-tooltip-suffix="${esc(t("tabs.rail.context.tooltip.suffix"))}"
+           title="${esc(t("tabs.rail.context.title"))}">
         <div class="pt-ctx-top">
           <span class="pt-ctx-text"><b id="pt-ctx-used">–</b> / <span id="pt-ctx-limit">–</span> · <span id="pt-ctx-pct">0%</span></span>
         </div>
@@ -184,7 +196,7 @@ internal object ProjectTabsTemplate {
           <div class="ctx-seg ctx-seg-create"></div>
           <div class="ctx-seg ctx-seg-input"></div>
         </div>
-        <div class="pt-ctx-sub">남음 <span id="pt-ctx-free">–</span> <span class="pt-ctx-legend"><i class="ctx-seg-read"></i>재사용 <i class="ctx-seg-create"></i>신규 <i class="ctx-seg-input"></i>입력</span></div>
+        <div class="pt-ctx-sub">${esc(t("tabs.rail.context.free"))} <span id="pt-ctx-free">–</span> <span class="pt-ctx-legend"><i class="ctx-seg-read"></i>${esc(t("tabs.rail.context.reuse"))} <i class="ctx-seg-create"></i>${esc(t("tabs.rail.context.create"))} <i class="ctx-seg-input"></i>${esc(t("tabs.rail.context.input"))}</span></div>
       </div>
     </div>
     <!-- v1.111.0 — Todo 요약 + 백그라운드 작업 카드(콘솔에서 이동, 컨텍스트 카드 하단). 콘솔 iframe 이
@@ -243,6 +255,7 @@ internal object ProjectTabsTemplate {
     </div>
   </aside>
   <button type="button" class="pt-rail-toggle" id="pt-rail-toggle"
+          aria-controls="pt-rail" aria-expanded="true"
           title="${esc(t("tabs.rail.hide"))}" data-hide="${esc(t("tabs.rail.hide"))}" data-show="${esc(t("tabs.rail.show"))}">⟩</button>
   <!-- v1.91.0 — 메모 보기/편집 미니창(다이얼로그). 부모 레이어(fixed) — iframe 무관. -->
   <div class="pt-memo-modal" id="pt-memo-modal" hidden>
@@ -310,15 +323,14 @@ internal object ProjectTabsTemplate {
         // v1.49.0 — 상단 프로젝트명을 <details> 콤보박스로: 클릭 → 다른 프로젝트로 즉시 이동.
         // 현재 프로젝트는 active 표시. 항목이 많으면 상단 필터 input 으로 즉시 검색(project-tabs.js).
         // v1.60.0 — 사용자 정의 순서(sort_order)를 그대로 — allProjects 는 이미 그 순서.
-        // v1.128.3 — 유휴 아닌 busy(responding/waiting) 프로젝트를 상단으로(같은 그룹 내 sort_order
-        // 유지 — stable sort). JS patch 가 실시간 상태 변경 시 busy 전환 항목을 추가로 최상단 이동.
-        // v1.137.2 — 2차 키 "최근 콘솔 활동 DESC"(영속) 추가: busy ↓ → 최근 활동 ↓ → sort_order ↑.
-        // busy 만으로는 in-memory 라 서버 재시작 시 누적 순서가 리셋되던 현상 해소 — 재시작 후에도
-        // "최근에 다룬 프로젝트가 위" 순서가 유지된다. 대화 이력 없는 프로젝트는 뒤(sort_order 유지).
+        // v1.157.2 — 콤보 순서는 "마지막 사용자 프롬프트 송신 시각 DESC"만 반영한다.
+        // 세션 진행 중 assistant/tool/system 메시지나 busy 상태 전이가 항목 순서를 바꾸지 않는다.
+        // 대화 이력 없는 프로젝트는 뒤로 두되 기존 sort_order 상대 순서는 유지한다.
+        val originalOrder = allProjects.mapIndexed { idx, pr -> pr.id to idx }.toMap()
         val switcherItems = allProjects
             .sortedWith(
-                compareByDescending<ProjectDto> { ProjectState.fromWire(projectStatuses[it.id])?.busy == true }
-                    .thenByDescending { lastActivityTs[it.id] ?: "" }
+                compareByDescending<ProjectDto> { lastPromptTs[it.id] ?: "" }
+                    .thenBy { originalOrder[it.id] ?: Int.MAX_VALUE }
             )
             .joinToString("") { pr ->
                 val active = pr.id == project.id
@@ -371,34 +383,16 @@ internal object ProjectTabsTemplate {
         val normalizedModel = model.ifBlank { "default" }
         // v1.156.0 — opencode reasoning effort(--variant). 기본 "max".
         val normalizedVariant = variant.trim().ifBlank { "max" }
-        val knownModels = when (agentProvider) {
-            AgentProvider.CLAUDE -> listOf(
-                "sonnet" to "Sonnet",
-                "opus" to "Opus",
-                "fable" to "Fable 5",
-                "haiku" to "Haiku",
-            )
-            AgentProvider.CODEX -> listOf(
-                "gpt-5" to "GPT-5",
-                "gpt-5-codex" to "GPT-5 Codex",
-            )
-            AgentProvider.OPENCODE -> listOf(
-                "zai-coding-plan/glm-5.2" to "GLM 5.2",
-                "zai-coding-plan/glm-5.1" to "GLM 5.1",
-                "zai-coding-plan/glm-5-turbo" to "GLM 5 Turbo",
-                "zai-coding-plan/glm-4.7" to "GLM 4.7",
-                "zai-coding-plan/glm-4.5-air" to "GLM 4.5 Air",
-                "zai-coding-plan/glm-5v-turbo" to "GLM 5V Turbo",
-            )
-        }
+        val knownModels = availableModelOptions.ifEmpty { ModelCatalogService.fallbackModels(agentProvider) }
         val customModel = normalizedModel.takeIf { current ->
             !current.equals("default", ignoreCase = true) &&
-                knownModels.none { it.first.equals(current, ignoreCase = true) }
+                knownModels.none { it.value.equals(current, ignoreCase = true) }
         }
         val modelOptions = buildString {
-            knownModels.forEach { (value, label) ->
+            knownModels.forEach { option ->
+                val value = option.value
                 val selected = if (normalizedModel.equals(value, ignoreCase = true)) " selected" else ""
-                append("""<option value="${esc(value)}"$selected>${esc(label)}</option>""")
+                append("""<option value="${esc(value)}"$selected>${esc(option.label)}</option>""")
             }
             val defaultSelected = if (normalizedModel.equals("default", ignoreCase = true)) " selected" else ""
             append("""<option value="default"$defaultSelected>CLI 기본</option>""")
@@ -432,7 +426,14 @@ internal object ProjectTabsTemplate {
         // 탭을 고르면 reveal gate 뒤에서 전환되므로 사용자에겐 안 보인다.
         val tabBtns = PRIMARY_TABS.joinToString("") { tab ->
             val act = if (tab.id == "console") " active" else ""
+            val selected = if (tab.id == "console") "true" else "false"
+            val tabIndex = if (tab.id == "console") "0" else "-1"
             """<button type="button" class="tab-btn$act" data-tab-btn="${esc(tab.id)}"
+                       id="pt-tab-${esc(tab.id)}"
+                       role="tab"
+                       aria-selected="$selected"
+                       aria-controls="pt-panel-${esc(tab.id)}"
+                       tabindex="$tabIndex"
                        title="${esc(t(tab.labelKey))}">${esc(t(tab.labelKey))}</button>"""
         }
         // v1.47.0 — 콘솔 우선 로딩 + 나머지 백그라운드 프리로딩.
@@ -449,7 +450,11 @@ internal object ProjectTabsTemplate {
             else
                 """data-src="${esc(src)}" loading="lazy""""
             val paneAct = if (tab.id == "console") " active" else ""
-            """<div class="tab-pane$paneAct" data-tab="${esc(tab.id)}">
+            val hiddenAttr = if (tab.id == "console") "" else " hidden"
+            """<div class="tab-pane$paneAct" data-tab="${esc(tab.id)}"
+                     id="pt-panel-${esc(tab.id)}"
+                     role="tabpanel"
+                     aria-labelledby="pt-tab-${esc(tab.id)}"$hiddenAttr>
                 <iframe class="tab-frame" $srcAttr name="${esc(tab.frameName)}"
                         title="${esc(t(tab.labelKey))}"
                         referrerpolicy="same-origin"></iframe>
@@ -459,6 +464,11 @@ internal object ProjectTabsTemplate {
         // 기존 탭 로직으로 처리, iframe pane 재사용) + 구분선 + global /usage 외부 link.
         val overflowBtns = OVERFLOW_TABS.joinToString("") { tab ->
             """<button type="button" class="more-item" data-tab-btn="${esc(tab.id)}"
+                       id="pt-tab-${esc(tab.id)}"
+                       role="tab"
+                       aria-selected="false"
+                       aria-controls="pt-panel-${esc(tab.id)}"
+                       tabindex="-1"
                        title="${esc(t(tab.labelKey))}">${esc(t(tab.labelKey))}</button>"""
         }
         val moreLinks = overflowBtns +
@@ -482,12 +492,70 @@ internal object ProjectTabsTemplate {
             // v1.16.0 — .content.fullbleed 모드. ProjectTabs 가 viewport 100% 안에서
             // 자체 layout (sticky header + tab bar + iframe area) 구성.
             fullbleed = true,
+            chromeMode = AdminTemplates.ShellChromeMode.FULLBLEED_TOOL,
             body = """
 <style>
   /* v1.11.0 — Project tabs layout. Sticky header + tab bar + iframe area.
      v1.16.0 — admin shell 의 .content.fullbleed 안 → height 100% 부모 기준.
      이전 calc(100vh - 16px) + margin: -16px 트릭 제거 (.content 가 padding 0). */
   #project-tabs-root {
+    --pt-rail-width: clamp(248px, 22vw, 360px);
+    --pt-bg: #0d1018;
+    --pt-surface: #131722;
+    --pt-control: #0c0f17;
+    --pt-control-alt: #121722;
+    --pt-hover: #1a1f2c;
+    --pt-line: #1f2330;
+    --pt-line-strong: #2a3145;
+    --pt-muted: var(--text-dim);
+    --pt-primary: var(--primary);
+    --pt-primary-fill: rgba(106,169,255,0.12);
+    --pt-primary-badge-fill: rgba(106,169,255,0.15);
+    --pt-success-fill: rgba(105,219,124,0.08);
+    --pt-success-badge-fill: rgba(105,219,124,0.13);
+    --pt-state-responding-fill: rgba(105,219,124,.18);
+    --pt-state-waiting-fill: rgba(250,176,5,.18);
+    --pt-state-stopped-fill: rgba(151,117,250,.18);
+    --pt-state-error-fill: rgba(255,107,107,.18);
+    --pt-danger-fill: rgba(255,107,107,0.08);
+    --pt-danger-hover: #2c1a1a;
+    --pt-danger-line: #3a2424;
+    --pt-danger-text: #ff9e9e;
+    --pt-provider-claude-bg: #1c1510;
+    --pt-provider-claude-line: #b45309;
+    --pt-provider-claude-text: #fbbf24;
+    --pt-provider-codex-bg: #101827;
+    --pt-provider-codex-line: #2563eb;
+    --pt-provider-codex-text: #93c5fd;
+    --pt-provider-opencode-bg: #0f1c1c;
+    --pt-provider-opencode-line: #0d9488;
+    --pt-provider-opencode-text: #5eead4;
+    --pt-context-read: var(--context-read);
+    --pt-context-create: var(--context-create);
+    --pt-context-input: var(--context-input);
+    --pt-context-input-ring: var(--context-input-ring);
+    --pt-control-button-bg: #1f2937;
+    --pt-control-button-bg-hover: #26303f;
+    --pt-control-button-text: #cbd5e1;
+    --pt-control-button-line: #2b3648;
+    --pt-automation-primary-bg: #1e40af;
+    --pt-automation-danger-bg: #7f1d1d;
+    --pt-automation-danger-line: #991b1b;
+    --pt-positive-accent: #34d399;
+    --pt-ink-on-fill: #ffffff;
+    --pt-mask-solid: #000;
+    --pt-list-fill: rgba(255,255,255,0.03);
+    --pt-idle-fill: rgba(255,255,255,.06);
+    --pt-radius-xs: 4px;
+    --pt-radius-sm: 5px;
+    --pt-radius-md: var(--radius, 6px);
+    --pt-radius-lg: 8px;
+    --pt-radius-modal: 10px;
+    --pt-radius-pill: 999px;
+    --pt-shadow-menu: 0 8px 24px rgba(0,0,0,0.45);
+    --pt-shadow-modal: 0 12px 40px rgba(0,0,0,0.5);
+    --pt-shadow-toggle: -2px 0 6px rgba(0,0,0,0.25);
+    --pt-overlay: rgba(0,0,0,0.6);
     display: flex; flex-direction: column;
     height: 100%;
     background: var(--bg, #0b0d12);
@@ -506,7 +574,7 @@ internal object ProjectTabsTemplate {
   #project-tabs-root .pt-header {
     display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
     /* v1.89.1 — 우상단 알림 벨(fixed, 약 56px)과 ⚙ 설정 버튼이 겹치지 않도록 우측 여백 확보. */
-    padding: 10px 64px 8px 16px; border-bottom: 1px solid #1f2330;
+    padding: 10px 64px 8px 16px; border-bottom: 1px solid var(--pt-line);
   }
   #project-tabs-root .pt-header h1 {
     font-size: 16px; margin: 0; font-weight: 600;
@@ -516,61 +584,61 @@ internal object ProjectTabsTemplate {
   #project-tabs-root .pt-switcher { position: relative; }
   #project-tabs-root .pt-switcher > summary {
     list-style: none; cursor: pointer; font-size: 16px; font-weight: 600;
-    color: var(--text, #ddd); display: inline-flex; align-items: center; gap: 5px;
-    padding: 2px 4px; border-radius: 4px;
+    color: var(--text); display: inline-flex; align-items: center; gap: 5px;
+    padding: 2px 4px; border-radius: var(--pt-radius-xs);
   }
   #project-tabs-root .pt-switcher > summary::-webkit-details-marker { display: none; }
-  #project-tabs-root .pt-switcher > summary:hover { background: #1a1f2c; }
-  #project-tabs-root .pt-switcher .pt-caret { color: var(--text-dim, #888); font-size: 11px; }
-  #project-tabs-root .pt-switcher[open] > summary { color: var(--accent, #6aa9ff); }
+  #project-tabs-root .pt-switcher > summary:hover { background: var(--pt-hover); }
+  #project-tabs-root .pt-switcher .pt-caret { color: var(--text-dim); font-size: 11px; }
+  #project-tabs-root .pt-switcher[open] > summary { color: var(--pt-primary); }
   #project-tabs-root .pt-provider-form,
   #project-tabs-root .pt-model-form { display: inline-flex; align-items: center; margin: 0; }
   #project-tabs-root .pt-provider-select,
   #project-tabs-root .pt-model-select {
     height: 30px; max-width: 150px; box-sizing: border-box;
-    padding: 4px 26px 4px 9px; border-radius: 6px;
-    background: #121722; color: var(--text, #ddd);
-    border: 1px solid #2a3145; font: inherit; font-size: 12px;
+    padding: 4px 26px 4px 9px; border-radius: var(--pt-radius-md);
+    background: var(--pt-control-alt); color: var(--text);
+    border: 1px solid var(--pt-line-strong); font: inherit; font-size: 12px;
     line-height: 1.4; cursor: pointer;
   }
   #project-tabs-root .pt-provider-select { max-width: 132px; }
   #project-tabs-root .pt-provider-select.claude,
   #project-tabs-root .pt-model-select.claude {
-    border-color: #b45309; color: #fbbf24; background: #1c1510;
+    border-color: var(--pt-provider-claude-line); color: var(--pt-provider-claude-text); background: var(--pt-provider-claude-bg);
   }
   #project-tabs-root .pt-provider-select.codex,
   #project-tabs-root .pt-model-select.codex {
-    border-color: #2563eb; color: #93c5fd; background: #101827;
+    border-color: var(--pt-provider-codex-line); color: var(--pt-provider-codex-text); background: var(--pt-provider-codex-bg);
   }
   #project-tabs-root .pt-provider-select.opencode,
   #project-tabs-root .pt-model-select.opencode {
-    border-color: #0d9488; color: #5eead4; background: #0f1c1c;
+    border-color: var(--pt-provider-opencode-line); color: var(--pt-provider-opencode-text); background: var(--pt-provider-opencode-bg);
   }
   #project-tabs-root .pt-switcher-menu {
     position: absolute; left: 0; top: calc(100% + 6px); z-index: 200;
-    background: #131722; border: 1px solid #2a3145; border-radius: 6px;
+    background: var(--pt-surface); border: 1px solid var(--pt-line-strong); border-radius: var(--pt-radius-md);
     min-width: 280px; max-width: 440px; padding: 8px;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+    box-shadow: var(--pt-shadow-menu);
   }
   #project-tabs-root .pt-switch-filter {
     width: 100%; box-sizing: border-box; padding: 6px 8px; margin-bottom: 6px;
-    background: #0c0f17; border: 1px solid #2a3145; border-radius: 4px;
-    color: var(--text, #ddd); font-size: 13px; font-family: inherit;
+    background: var(--pt-control); border: 1px solid var(--pt-line-strong); border-radius: var(--pt-radius-xs);
+    color: var(--text); font-size: 13px; font-family: inherit;
   }
   #project-tabs-root .pt-switch-list {
     max-height: 320px; overflow-y: auto; display: flex; flex-direction: column;
   }
   #project-tabs-root .pt-switch-item {
     display: flex; justify-content: space-between; align-items: center; gap: 10px;
-    padding: 7px 9px; border-radius: 4px; text-decoration: none;
-    color: var(--text, #ddd); font-size: 13px;
+    padding: 7px 9px; border-radius: var(--pt-radius-xs); text-decoration: none;
+    color: var(--text); font-size: 13px;
   }
-  #project-tabs-root .pt-switch-item:hover { background: #1a1f2c; }
+  #project-tabs-root .pt-switch-item:hover { background: var(--pt-hover); }
   #project-tabs-root .pt-switch-item.active {
-    background: rgba(106,169,255,0.12); color: var(--accent, #6aa9ff);
+    background: var(--pt-primary-fill); color: var(--pt-primary);
   }
   #project-tabs-root .pt-switch-item .pt-si-id {
-    color: var(--text-dim, #888); font-size: 11px;
+    color: var(--text-dim); font-size: 11px;
     font-family: ui-monospace, Menlo, monospace; flex-shrink: 0;
   }
   /* v1.56.0 — 콤보 항목: [상태칩] 이름(신축) [id]. 이름이 남는 폭을 차지하고 id 는 우측. */
@@ -583,39 +651,39 @@ internal object ProjectTabsTemplate {
   /* active 항목이라도 칩 색은 유지 — accent 색 상속 차단. v1.100.0 5-state 일관 팔레트. */
   #project-tabs-root .pt-switch-item.active .pstat-responding { color: var(--ok, #69db7c); }
   #project-tabs-root .pt-switch-item.active .pstat-ready,
-  #project-tabs-root .pt-switch-item.active .pstat-idle { color: var(--text-dim, #888); }
+  #project-tabs-root .pt-switch-item.active .pstat-idle { color: var(--text-dim); }
   #project-tabs-root .pt-switch-item.active .pstat-waiting { color: var(--wait, #fab005); }
   #project-tabs-root .pt-switch-item.active .pstat-stopped { color: var(--halt, #b197fc); }
-  #project-tabs-root .pt-switch-item.active .pstat-error { color: var(--danger, #ff6b6b); }
+  #project-tabs-root .pt-switch-item.active .pstat-error { color: var(--danger); }
   /* v1.103.0 — 헤더 콘솔 상태칩(콘솔 busy-badge 미러). 콤보박스 좌측. 5-state 동일 팔레트. */
   #project-tabs-root #console-busy-badge {
-    flex: none; font-size: 12px; padding: 3px 10px; border-radius: 12px;
+    flex: none; font-size: 12px; padding: 3px 10px; border-radius: var(--pt-radius-pill);
     font-weight: 500; white-space: nowrap; transition: background .2s, color .2s;
   }
-  #console-busy-badge[data-state="responding"] { background: rgba(105,219,124,.18); color: #69db7c; }
+  #console-busy-badge[data-state="responding"] { background: var(--pt-state-responding-fill); color: var(--ok); }
   #console-busy-badge[data-state="idle"],
-  #console-busy-badge[data-state="ready"] { background: rgba(255,255,255,.06); color: var(--text-dim,#888); }
-  #console-busy-badge[data-state="waiting"] { background: rgba(250,176,5,.18); color: #fab005; }
-  #console-busy-badge[data-state="stopped"] { background: rgba(151,117,250,.18); color: #b197fc; }
-  #console-busy-badge[data-state="error"] { background: rgba(255,107,107,.18); color: #ff8787; }
+  #console-busy-badge[data-state="ready"] { background: var(--pt-idle-fill); color: var(--text-dim); }
+  #console-busy-badge[data-state="waiting"] { background: var(--pt-state-waiting-fill); color: var(--wait); }
+  #console-busy-badge[data-state="stopped"] { background: var(--pt-state-stopped-fill); color: var(--halt); }
+  #console-busy-badge[data-state="error"] { background: var(--pt-state-error-fill); color: var(--danger); }
   #project-tabs-root .pt-switcher-menu hr {
-    border: 0; border-top: 1px solid #1f2330; margin: 6px 0;
+    border: 0; border-top: 1px solid var(--pt-line); margin: 6px 0;
   }
-  #project-tabs-root .pt-switch-all { color: var(--text-dim, #aaa); }
+  #project-tabs-root .pt-switch-all { color: var(--text-dim); }
   /* v1.13.1 — 메타데이터를 헤더 chip 에서 빼고 Settings 드롭다운 안의 dl 로 이동. */
   #project-tabs-root .pt-settings .meta-block {
-    padding: 8px 14px; border-bottom: 1px solid #1f2330; margin-bottom: 4px;
+    padding: 8px 14px; border-bottom: 1px solid var(--pt-line); margin-bottom: 4px;
     font-family: ui-monospace, Menlo, monospace; font-size: 11px;
   }
   #project-tabs-root .pt-settings .meta-block dl {
     margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 10px;
   }
   #project-tabs-root .pt-settings .meta-block dt {
-    color: #5a6175; font-size: 10px; text-transform: uppercase;
+    color: var(--pt-muted); font-size: 10px; text-transform: uppercase;
     letter-spacing: 0.05em; align-self: center;
   }
   #project-tabs-root .pt-settings .meta-block dd {
-    margin: 0; color: var(--text, #ddd); word-break: break-all;
+    margin: 0; color: var(--text); word-break: break-all;
   }
   /* v1.13.0 — sticky 헤더 우측 Settings 드롭다운 (Delete / Zip 등 Overview 액션). */
   #project-tabs-root .pt-settings {
@@ -623,32 +691,32 @@ internal object ProjectTabsTemplate {
   }
   #project-tabs-root .pt-settings summary {
     list-style: none; cursor: pointer; padding: 6px 10px; font-size: 12px;
-    color: var(--text-dim, #888); border: 1px solid #1f2330; border-radius: 4px;
+    color: var(--text-dim); border: 1px solid var(--pt-line); border-radius: var(--pt-radius-xs);
   }
   #project-tabs-root .pt-settings summary::-webkit-details-marker { display: none; }
-  #project-tabs-root .pt-settings[open] summary { color: var(--text, #ddd); border-color: #2a3145; }
+  #project-tabs-root .pt-settings[open] summary { color: var(--text); border-color: var(--pt-line-strong); }
   #project-tabs-root .pt-settings .pt-settings-menu {
-    position: absolute; right: 0; top: calc(100% + 4px); background: #131722;
-    border: 1px solid #1f2330; border-radius: 4px; min-width: 320px;
+    position: absolute; right: 0; top: calc(100% + 4px); background: var(--pt-surface);
+    border: 1px solid var(--pt-line); border-radius: var(--pt-radius-xs); min-width: 320px;
     max-width: 480px; padding: 6px 0; z-index: 100; display: flex; flex-direction: column;
   }
   #project-tabs-root .pt-settings .pt-settings-menu .item {
-    color: var(--text, #ddd); text-decoration: none; padding: 8px 14px;
+    color: var(--text); text-decoration: none; padding: 8px 14px;
     font-size: 13px; background: transparent; border: 0; text-align: left;
     cursor: pointer; font-family: inherit; display: block; width: 100%;
   }
-  #project-tabs-root .pt-settings .pt-settings-menu .item:hover { background: #1a1f2c; }
-  #project-tabs-root .pt-settings .pt-settings-menu .item.danger { color: #ff9e9e; }
-  #project-tabs-root .pt-settings .pt-settings-menu .item.danger:hover { background: #2c1a1a; }
+  #project-tabs-root .pt-settings .pt-settings-menu .item:hover { background: var(--pt-hover); }
+  #project-tabs-root .pt-settings .pt-settings-menu .item.danger { color: var(--pt-danger-text); }
+  #project-tabs-root .pt-settings .pt-settings-menu .item.danger:hover { background: var(--pt-danger-hover); }
   #project-tabs-root .pt-settings .pt-settings-menu hr {
-    border: 0; border-top: 1px solid #1f2330; margin: 4px 0;
+    border: 0; border-top: 1px solid var(--pt-line); margin: 4px 0;
   }
   #project-tabs-root .tab-bar {
     /* v1.12.1 — overflow-x: auto 가 자식 absolute 의 .more-menu 까지 잘랐던 회귀
        해소. 내부 .tab-scroll 만 가로 스크롤, more-dropdown 은 외부에 둬서
        absolute child 가 잘리지 않게. */
     display: flex; gap: 2px; padding: 0;
-    border-bottom: 1px solid #1f2330; background: #0d1018;
+    border-bottom: 1px solid var(--pt-line); background: var(--pt-bg);
     align-items: stretch;
   }
   #project-tabs-root .tab-scroll {
@@ -657,50 +725,55 @@ internal object ProjectTabsTemplate {
     overflow-x: auto;
   }
   #project-tabs-root .tab-btn {
-    background: transparent; border: 0; color: var(--text-dim, #888);
-    padding: 10px 16px; cursor: pointer; font-size: 13px;
+    background: transparent; border: 0; color: var(--text-dim);
+    min-height: 44px; padding: 10px 16px; cursor: pointer; font-size: 13px;
     border-bottom: 2px solid transparent; white-space: nowrap;
     font-family: inherit;
   }
-  #project-tabs-root .tab-btn:hover { color: var(--text, #ddd); }
+  #project-tabs-root .tab-btn:hover { color: var(--text); }
   #project-tabs-root .tab-btn.active {
-    color: var(--accent, #6aa9ff);
-    border-bottom-color: var(--accent, #6aa9ff);
+    color: var(--pt-primary);
+    border-bottom-color: var(--pt-primary);
   }
   #project-tabs-root .more-dropdown {
-    position: relative; flex-shrink: 0; border-left: 1px solid #1f2330;
+    position: relative; flex-shrink: 0; border-left: 1px solid var(--pt-line);
   }
   #project-tabs-root .more-dropdown summary {
-    list-style: none; cursor: pointer; padding: 10px 12px;
-    color: var(--text-dim, #888); font-size: 13px;
+    list-style: none; cursor: pointer; min-height: 44px; padding: 10px 12px;
+    color: var(--text-dim); font-size: 13px;
+    display: inline-flex; align-items: center;
   }
   #project-tabs-root .more-dropdown summary::-webkit-details-marker { display: none; }
-  #project-tabs-root .more-dropdown[open] summary { color: var(--text, #ddd); }
+  #project-tabs-root .more-dropdown[open] summary { color: var(--text); }
   #project-tabs-root .more-dropdown .more-menu {
-    position: absolute; right: 0; top: 100%; background: #131722;
-    border: 1px solid #1f2330; border-radius: 4px; min-width: 180px;
+    position: absolute; right: 0; top: 100%; background: var(--pt-surface);
+    border: 1px solid var(--pt-line); border-radius: var(--pt-radius-xs); min-width: 180px;
     padding: 4px 0; z-index: 100; display: flex; flex-direction: column;
   }
   #project-tabs-root .more-item {
-    color: var(--text, #ddd); text-decoration: none; padding: 8px 14px;
+    color: var(--text); text-decoration: none; min-height: 44px; padding: 8px 14px;
     font-size: 13px;
+    display: flex; align-items: center;
   }
-  #project-tabs-root .more-item:hover { background: #1a1f2c; }
+  #project-tabs-root .more-item:hover { background: var(--pt-hover); }
   /* v1.29.0 — 더보기 메뉴 안 overflow 탭 버튼 (a.more-item 과 동일 외형, button reset). */
   #project-tabs-root button.more-item {
-    display: block; width: 100%; text-align: left; background: transparent;
+    width: 100%; text-align: left; background: transparent;
     border: 0; cursor: pointer; font-family: inherit;
   }
-  #project-tabs-root button.more-item.active { color: var(--accent, #6aa9ff); }
+  #project-tabs-root button.more-item.active { color: var(--pt-primary); }
   #project-tabs-root .more-menu hr {
-    border: 0; border-top: 1px solid #1f2330; margin: 4px 0;
+    border: 0; border-top: 1px solid var(--pt-line); margin: 4px 0;
   }
   #project-tabs-root .tab-content {
     flex: 1; position: relative; overflow: hidden;
   }
   #project-tabs-root .tab-pane {
-    position: absolute; inset: 0; display: none;
+    position: absolute; top: 0; bottom: 0; left: 0;
+    right: var(--pt-rail-width);
+    display: none;
   }
+  #project-tabs-root[data-rail="hidden"] .tab-pane { right: 0; }
   #project-tabs-root .tab-pane.active { display: block; }
   #project-tabs-root .tab-frame {
     width: 100%; height: 100%; border: 0; background: var(--bg, #0b0d12);
@@ -708,44 +781,44 @@ internal object ProjectTabsTemplate {
   #project-tabs-root .flash {
     margin: 8px 16px 0; padding: 8px 12px; border-radius: 4px; font-size: 13px;
   }
-  #project-tabs-root .flash.ok { background: rgba(105,219,124,0.08); color: var(--ok, #69db7c); }
-  #project-tabs-root .flash.err { background: rgba(255,107,107,0.08); color: var(--err, #ff6b6b); }
+  #project-tabs-root .flash.ok { background: var(--pt-success-fill); color: var(--ok, #69db7c); }
+  #project-tabs-root .flash.err { background: var(--pt-danger-fill); color: var(--danger); }
 
-  /* v1.50.0 — 우측 고정 overview rail. tab-content(position:relative) 안에서 우측 오버레이.
-     폭은 디스플레이 크기에 따라 동적(clamp). iframe 은 풀폭 유지(스크롤바 최우측) + JS 가
-     실제 rail 폭만큼 .content padding-right 주입 → 콘텐츠가 rail 뒤로 가려지지 않음. */
+  /* v1.50.0 — 우측 overview rail.
+     v1.157.0 — rail 공간은 parent tab-pane 의 right inset 이 소유한다. iframe 내부
+     .content padding 을 JS 로 주입하지 않으므로 load/resize race 와 double-padding 을 피한다. */
   #project-tabs-root .pt-rail {
     position: absolute; top: 0; right: 0; bottom: 0; z-index: 6;
-    width: clamp(248px, 22vw, 360px);
-    background: #0d1018; border-left: 1px solid #1f2330;
+    width: var(--pt-rail-width);
+    background: var(--pt-bg); border-left: 1px solid var(--pt-line);
     overflow-y: auto; overflow-x: hidden;
     padding: 12px; box-sizing: border-box;
     display: flex; flex-direction: column; gap: 12px;
   }
   #project-tabs-root[data-rail="hidden"] .pt-rail { display: none; }
   #project-tabs-root .pt-rail-card {
-    background: #131722; border: 1px solid #1f2330; border-radius: 8px;
+    background: var(--pt-surface); border: 1px solid var(--pt-line); border-radius: var(--pt-radius-lg);
     padding: 10px 12px;
   }
   #project-tabs-root .pt-rail-h {
     font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
-    color: #5a6175; margin-bottom: 8px;
+    color: var(--pt-muted); margin-bottom: 8px;
   }
   #project-tabs-root .pt-ov-row {
     display: flex; justify-content: space-between; gap: 10px; align-items: baseline;
-    padding: 4px 0; font-size: 12px; border-top: 1px solid #161b26;
+    padding: 4px 0; font-size: 12px; border-top: 1px solid var(--pt-line);
   }
   #project-tabs-root .pt-ov-row:first-child { border-top: 0; }
-  #project-tabs-root .pt-ov-row .k { color: #5a6175; flex-shrink: 0; }
-  #project-tabs-root .pt-ov-row .v { color: var(--text, #ddd); text-align: right; word-break: break-all; }
+  #project-tabs-root .pt-ov-row .k { color: var(--pt-muted); flex-shrink: 0; }
+  #project-tabs-root .pt-ov-row .v { color: var(--text); text-align: right; word-break: break-all; }
   #project-tabs-root .pt-ov-row .v.mono { font-family: ui-monospace, Menlo, monospace; font-size: 11px; }
   #project-tabs-root .pt-ks.ok { color: var(--ok, #69db7c); }
-  #project-tabs-root .pt-ks.miss { color: var(--text-dim, #888); }
+  #project-tabs-root .pt-ks.miss { color: var(--text-dim); }
   /* v1.110.0 — rail 카드 접기/펼치기. 헤더(.pt-rail-h) 클릭 토글, 카드별 localStorage 영속.
      좌측 캐럿(▾/▸) 표시. 헤더 내 액션 버튼/입력 클릭은 토글 제외(JS). */
   #project-tabs-root .pt-rail-card > .pt-rail-h { cursor: pointer; justify-content: flex-start; }
   #project-tabs-root .pt-rail-card > .pt-rail-h::before {
-    content: '▾'; display: inline-block; font-size: 9px; color: #5a6175;
+    content: '▾'; display: inline-block; font-size: 9px; color: var(--pt-muted);
     margin-right: 5px; transition: transform 0.15s ease; flex-shrink: 0;
   }
   #project-tabs-root .pt-rail-card.pt-collapsed > .pt-rail-h::before { transform: rotate(-90deg); }
@@ -762,239 +835,249 @@ internal object ProjectTabsTemplate {
   #project-tabs-root .pt-rail { justify-content: flex-start; }
   #project-tabs-root .pt-hist-card { display: flex; flex-direction: column; flex: 0 0 auto; }
   /* v1.106.2/.3 — 우측 rail 컨텍스트 점유율 카드 */
-  #project-tabs-root .pt-ctx-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-  #project-tabs-root .pt-ctx-actions { display: inline-flex; align-items: center; gap: 6px; }
-  #project-tabs-root .pt-autocompact { display: inline-flex; align-items: center; gap: 3px; margin: 0; font-size: 11px; color: var(--text-dim,#888); cursor: pointer; user-select: none; }
-  #project-tabs-root .pt-autocompact input { cursor: pointer; margin: 0; }
+  #project-tabs-root .pt-ctx-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+  #project-tabs-root .pt-ctx-head > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+  #project-tabs-root .pt-ctx-actions { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; min-width: 0; }
+  #project-tabs-root .pt-autocompact {
+    min-height: 44px; display: inline-flex; align-items: center; gap: 6px; margin: 0; padding: 0 2px;
+    font-size: 11px; color: var(--text-dim); cursor: pointer; user-select: none; border-radius: var(--pt-radius-md);
+  }
+  #project-tabs-root .pt-autocompact input { width: 16px; height: 16px; cursor: pointer; margin: 0; flex: none; }
   #project-tabs-root .pt-compact-btn {
-    font: inherit; font-size: 11px; line-height: 1; padding: 4px 9px; cursor: pointer;
-    background: #1f2937; color: #cbd5e1; border: 1px solid #2b3648; border-radius: 6px;
+    min-width: 74px; min-height: 44px; font: inherit; font-size: 11px; line-height: 1; padding: 0 12px; cursor: pointer;
+    background: var(--pt-control-button-bg); color: var(--pt-control-button-text); border: 1px solid var(--pt-control-button-line); border-radius: var(--pt-radius-md);
     font-family: ui-monospace, Menlo, monospace;
   }
-  #project-tabs-root .pt-compact-btn:hover:not(:disabled) { background: #253247; border-color: #3a82f6; color: #e6edf5; }
+  #project-tabs-root .pt-compact-btn:hover:not(:disabled) { background: var(--pt-control-button-bg-hover); border-color: var(--pt-context-read); color: var(--text); }
   #project-tabs-root .pt-compact-btn:disabled { opacity: .5; cursor: default; }
   #project-tabs-root .pt-compact-btn.busy { opacity: .6; cursor: progress; }
-  #project-tabs-root .pt-ctx-empty { font-size: 11px; color: var(--text-dim,#888); margin-top: 8px; }
+  #project-tabs-root .pt-compact-btn:focus-visible,
+  #project-tabs-root .pt-autocompact:focus-within {
+    outline: 2px solid var(--pt-context-read);
+    outline-offset: 2px;
+  }
+  #project-tabs-root .pt-ctx-empty { font-size: 11px; color: var(--text-dim); margin-top: 8px; }
   #project-tabs-root .pt-ctx-meter { margin: 8px 0 0; }
   #project-tabs-root .pt-ctx-meter[hidden] { display: none; }
-  #project-tabs-root .pt-ctx-top { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; font-size: 10px; color: var(--text-dim,#888); margin-bottom: 4px; }
+  #project-tabs-root .pt-ctx-top { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; font-size: 10px; color: var(--text-dim); margin-bottom: 4px; }
   #project-tabs-root .pt-ctx-cap { font-weight: 600; }
   #project-tabs-root .pt-ctx-text { font-family: ui-monospace, Menlo, monospace; white-space: nowrap; }
-  #project-tabs-root .pt-ctx-bar { height: 7px; border-radius: 5px; background: #1f2330; overflow: hidden; display: flex; }
-  #project-tabs-root .pt-ctx-meter .ctx-seg { height: 100%; width: 0; transition: width .3s ease; }
-  #project-tabs-root .pt-ctx-meter .ctx-seg-read { background: #3a82f6; }
-  #project-tabs-root .pt-ctx-meter .ctx-seg-create { background: #2dd4bf; }
-  #project-tabs-root .pt-ctx-meter .ctx-seg-input { background: #ffb86b; }
-  #project-tabs-root .pt-ctx-sub { font-size: 10px; color: var(--text-dim,#888); margin-top: 4px; display: flex; justify-content: space-between; gap: 6px; flex-wrap: wrap; }
+  #project-tabs-root .pt-ctx-bar { height: 7px; border-radius: var(--pt-radius-sm); background: var(--pt-line); overflow: hidden; display: flex; }
+  #project-tabs-root .pt-ctx-meter .ctx-seg { height: 100%; width: 0; }
+  #project-tabs-root .pt-ctx-meter .ctx-seg-read { background: var(--pt-context-read); }
+  #project-tabs-root .pt-ctx-meter .ctx-seg-create { background: var(--pt-context-create); }
+  #project-tabs-root .pt-ctx-meter .ctx-seg-input { background: var(--pt-context-input); }
+  #project-tabs-root .pt-ctx-sub { font-size: 10px; color: var(--text-dim); margin-top: 4px; display: flex; justify-content: space-between; gap: 6px; flex-wrap: wrap; }
   #project-tabs-root .pt-ctx-legend { display: inline-flex; gap: 7px; align-items: center; }
   #project-tabs-root .pt-ctx-legend i { display: inline-block; width: 7px; height: 7px; border-radius: 2px; margin-right: 2px; vertical-align: middle; }
   #project-tabs-root .pt-ctx-meter.warn .pt-ctx-text,
-  #project-tabs-root .pt-ctx-meter.warn .pt-ctx-sub { color: #ffb86b; }
-  #project-tabs-root .pt-ctx-meter.warn .pt-ctx-bar { box-shadow: 0 0 0 1px rgba(255,184,107,.45) inset; }
+  #project-tabs-root .pt-ctx-meter.warn .pt-ctx-sub { color: var(--pt-context-input); }
+  #project-tabs-root .pt-ctx-meter.warn .pt-ctx-bar { box-shadow: 0 0 0 1px var(--pt-context-input-ring) inset; }
   #project-tabs-root .pt-hist-list {
     /* 2줄 항목(≈48px) 7개 + gap 6 ≈ 372px — 5개 선명 + 마지막 ~2개는 아래 마스크로 페이드. */
     max-height: 376px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;
-    -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 104px), transparent 100%);
-    mask-image: linear-gradient(180deg, #000 calc(100% - 104px), transparent 100%);
+    -webkit-mask-image: linear-gradient(180deg, var(--pt-mask-solid) calc(100% - 104px), transparent 100%);
+    mask-image: linear-gradient(180deg, var(--pt-mask-solid) calc(100% - 104px), transparent 100%);
   }
   /* 스크롤 끝이거나 스크롤 불필요(내용 적음) → 페이드 제거(project-tabs.js 가 토글). */
   #project-tabs-root .pt-hist-list.at-end {
     -webkit-mask-image: none; mask-image: none;
   }
   #project-tabs-root .pt-hist-item {
-    text-align: left; background: #0c0f17; border: 1px solid #1f2330; border-radius: 6px;
-    color: var(--text, #ddd); font: inherit; font-size: 12px; line-height: 1.35;
+    text-align: left; background: var(--pt-control); border: 1px solid var(--pt-line); border-radius: var(--pt-radius-md);
+    color: var(--text); font: inherit; font-size: 12px; line-height: 1.35;
     padding: 7px 9px; cursor: pointer; width: 100%; flex-shrink: 0;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   }
-  #project-tabs-root .pt-hist-item:hover { background: #1a1f2c; border-color: #2a3145; }
-  #project-tabs-root .pt-hist-empty { color: #5a6175; font-size: 12px; padding: 6px 2px; }
+  #project-tabs-root .pt-hist-item:hover { background: var(--pt-hover); border-color: var(--pt-line-strong); }
+  #project-tabs-root .pt-hist-empty { color: var(--pt-muted); font-size: 12px; padding: 6px 2px; }
   /* v1.109.0 — 프롬프트 자동화 카드(메모 위). 콘솔에서 이동 — 우측 오버뷰 별개 기능. */
   #project-tabs-root .pt-auto-card { display: flex; flex-direction: column; flex: 0 0 auto; gap: 8px; }
   #project-tabs-root .pt-auto-modes { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
-  #project-tabs-root .pt-auto-modes label { display: inline-flex; align-items: center; gap: 4px; margin: 0; font-size: 12px; color: var(--text, #ddd); cursor: pointer; }
+  #project-tabs-root .pt-auto-modes label { display: inline-flex; align-items: center; gap: 4px; margin: 0; font-size: 12px; color: var(--text); cursor: pointer; }
   #project-tabs-root .pt-auto-modes input[type="radio"] { margin: 0; cursor: pointer; }
-  #project-tabs-root .pt-auto-count { color: var(--text-dim, #888); }
+  #project-tabs-root .pt-auto-count { color: var(--text-dim); }
   #project-tabs-root .pt-auto-count input {
     width: 56px; margin-left: 5px; padding: 3px 5px; font: inherit; font-size: 12px;
-    background: #0c0f17; border: 1px solid #1f2330; border-radius: 5px; color: var(--text, #ddd);
+    background: var(--pt-control); border: 1px solid var(--pt-line); border-radius: var(--pt-radius-sm); color: var(--text);
   }
   #project-tabs-root .pt-auto-idle textarea {
     width: 100%; box-sizing: border-box; resize: vertical; min-height: 52px;
-    background: #0c0f17; border: 1px solid #1f2330; border-radius: 6px; color: var(--text, #ddd);
+    background: var(--pt-control); border: 1px solid var(--pt-line); border-radius: var(--pt-radius-md); color: var(--text);
     font: inherit; font-size: 12px; line-height: 1.4; padding: 7px 9px;
   }
   #project-tabs-root .pt-auto-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
   #project-tabs-root .pt-auto-btn {
     font: inherit; font-size: 12px; line-height: 1; padding: 6px 11px; cursor: pointer;
-    background: #1f2937; color: #cbd5e1; border: 1px solid #2b3648; border-radius: 6px;
+    background: var(--pt-control-button-bg); color: var(--pt-control-button-text); border: 1px solid var(--pt-control-button-line); border-radius: var(--pt-radius-md);
   }
-  #project-tabs-root .pt-auto-btn:hover { background: #26303f; }
-  #project-tabs-root .pt-auto-btn.primary { background: #1e40af; color: #fff; border-color: #1e40af; }
+  #project-tabs-root .pt-auto-btn:hover { background: var(--pt-control-button-bg-hover); }
+  #project-tabs-root .pt-auto-btn.primary { background: var(--pt-automation-primary-bg); color: var(--pt-ink-on-fill); border-color: var(--pt-automation-primary-bg); }
   #project-tabs-root .pt-auto-btn.primary:hover { filter: brightness(1.1); }
-  #project-tabs-root .pt-auto-btn.danger { background: #7f1d1d; color: #fff; border-color: #991b1b; }
-  #project-tabs-root .pt-auto-preset { font: inherit; font-size: 12px; padding: 5px 7px; background: #0c0f17; color: var(--text, #ddd); border: 1px solid #1f2330; border-radius: 5px; max-width: 100%; }
-  #project-tabs-root .pt-auto-manage { font-size: 11px; color: var(--text-dim, #888); text-decoration: none; margin-left: auto; }
-  #project-tabs-root .pt-auto-manage:hover { color: var(--accent, #6aa9ff); }
+  #project-tabs-root .pt-auto-btn.danger { background: var(--pt-automation-danger-bg); color: var(--pt-ink-on-fill); border-color: var(--pt-automation-danger-line); }
+  #project-tabs-root .pt-auto-preset { font: inherit; font-size: 12px; padding: 5px 7px; background: var(--pt-control); color: var(--text); border: 1px solid var(--pt-line); border-radius: var(--pt-radius-sm); max-width: 100%; }
+  #project-tabs-root .pt-auto-manage { font-size: 11px; color: var(--text-dim); text-decoration: none; margin-left: auto; }
+  #project-tabs-root .pt-auto-manage:hover { color: var(--pt-primary); }
   #project-tabs-root .pt-auto-running { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   /* v1.131.1 — hidden 속성이 위 display:flex(구체성 1,1,0)에 밀려 무력화 → 진행 중이 아닌데도
      점(pt-auto-dot)이 항상 깜빡이던 버그. [hidden] 규칙(1,2,0)으로 명시적으로 숨김. */
   #project-tabs-root .pt-auto-running[hidden] { display: none; }
-  #project-tabs-root .pt-auto-prog { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: #6aa9ff; min-width: 0; }
+  #project-tabs-root .pt-auto-prog { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--pt-primary); min-width: 0; }
   #project-tabs-root .pt-auto-prog #pt-auto-progress { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #project-tabs-root .pt-auto-dot {
-    flex-shrink: 0; width: 8px; height: 8px; border-radius: 50%; background: #6aa9ff;
+    flex-shrink: 0; width: 8px; height: 8px; border-radius: 50%; background: var(--pt-primary);
     animation: vibe-busy-pulse 1.4s ease-in-out infinite;
   }
   /* vibe-busy-pulse 는 콘솔 iframe(WebProjectTemplates)에만 정의돼 부모 스코프엔 없으므로 여기서도 정의. */
   @keyframes vibe-busy-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
   /* v1.131.0 — 자동화 사용중 인디케이터(badge) + 예약 보내기 진입 버튼. */
-  #project-tabs-root .pt-auto-badge { font-size: 11px; color: var(--text-dim, #888); }
-  #project-tabs-root .pt-auto-badge.on { color: #34d399; font-weight: 600; }
+  #project-tabs-root .pt-auto-badge { font-size: 11px; color: var(--text-dim); }
+  #project-tabs-root .pt-auto-badge.on { color: var(--pt-positive-accent); font-weight: 600; }
   #project-tabs-root .pt-sched-open { align-self: flex-start; }
   /* v1.111.0 — Todo 요약 + 백그라운드 작업 카드(콘솔에서 이동, 컨텍스트 하단). */
   #project-tabs-root .pt-todo-card, #project-tabs-root .pt-bg-card { display: flex; flex-direction: column; flex: 0 0 auto; }
   #project-tabs-root .pt-todo-list { list-style: none; margin: 0; padding: 0; max-height: 30vh; overflow-y: auto; }
   #project-tabs-root .pt-bg-list { display: flex; flex-direction: column; gap: 4px; max-height: 30vh; overflow-y: auto; }
   #project-tabs-root .bg-task-card {
-    display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px;
-    background: rgba(255,255,255,0.03); font-size: 12px;
+    display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: var(--pt-radius-md);
+    background: var(--pt-list-fill); font-size: 12px;
   }
   #project-tabs-root .bg-task-icon { flex-shrink: 0; width: 16px; text-align: center; }
-  #project-tabs-root .bg-task-card[data-status="running"] .bg-task-icon { color: #69db7c; animation: vibe-busy-pulse 1.4s ease-in-out infinite; border-radius: 50%; }
-  #project-tabs-root .bg-task-card[data-status="completed"] .bg-task-icon { color: #69db7c; }
-  #project-tabs-root .bg-task-card[data-status="failed"] .bg-task-icon { color: #ff8787; }
+  #project-tabs-root .bg-task-card[data-status="running"] .bg-task-icon { color: var(--ok); animation: vibe-busy-pulse 1.4s ease-in-out infinite; border-radius: 50%; }
+  #project-tabs-root .bg-task-card[data-status="completed"] .bg-task-icon { color: var(--ok); }
+  #project-tabs-root .bg-task-card[data-status="failed"] .bg-task-icon { color: var(--danger); }
   #project-tabs-root .bg-task-card[data-status="completed"] { opacity: 0.7; transition: opacity 0.4s; }
   #project-tabs-root .bg-task-desc { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #project-tabs-root .bg-task-meta { flex-shrink: 0; color: var(--text-dim,#888); font-size: 10px; font-family: monospace; }
+  #project-tabs-root .bg-task-meta { flex-shrink: 0; color: var(--text-dim); font-size: 10px; font-family: monospace; }
   /* v1.91.0 — 메모 위젯 (프롬프트 히스토리 하단). */
   #project-tabs-root .pt-memo-card { display: flex; flex-direction: column; flex: 0 0 auto; }
   #project-tabs-root .pt-memo-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   #project-tabs-root .pt-memo-add {
-    background: transparent; color: var(--text-dim, #888); border: 1px solid #1f2330;
-    border-radius: 5px; width: 22px; height: 22px; line-height: 1; cursor: pointer;
+    background: transparent; color: var(--text-dim); border: 1px solid var(--pt-line);
+    border-radius: var(--pt-radius-sm); width: 32px; height: 32px; line-height: 1; cursor: pointer;
     font-size: 13px; padding: 0; flex-shrink: 0;
   }
-  #project-tabs-root .pt-memo-add:hover { color: var(--accent, #6aa9ff); border-color: #2a3145; }
+  #project-tabs-root .pt-memo-add:hover { color: var(--pt-primary); border-color: var(--pt-line-strong); }
   #project-tabs-root .pt-memo-list {
     max-height: 36vh; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;
   }
   #project-tabs-root .pt-memo-item {
-    text-align: left; background: #0c0f17; border: 1px solid #1f2330; border-radius: 6px;
-    color: var(--text, #ddd); font: inherit; cursor: pointer; width: 100%; padding: 7px 9px;
+    text-align: left; background: var(--pt-control); border: 1px solid var(--pt-line); border-radius: var(--pt-radius-md);
+    color: var(--text); font: inherit; cursor: pointer; width: 100%; padding: 7px 9px;
     display: flex; flex-direction: column; gap: 4px;
   }
-  #project-tabs-root .pt-memo-item:hover { background: #1a1f2c; border-color: #2a3145; }
+  #project-tabs-root .pt-memo-item:hover { background: var(--pt-hover); border-color: var(--pt-line-strong); }
   #project-tabs-root .pt-memo-item .mi-badge {
     font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em; padding: 1px 7px;
     border-radius: 999px; align-self: flex-start;
   }
-  #project-tabs-root .pt-memo-item .mi-badge.global { background: rgba(106,169,255,0.15); color: var(--accent, #6aa9ff); }
-  #project-tabs-root .pt-memo-item .mi-badge.project { background: rgba(105,219,124,0.13); color: var(--ok, #69db7c); }
+  #project-tabs-root .pt-memo-item .mi-badge.global { background: var(--pt-primary-badge-fill); color: var(--pt-primary); }
+  #project-tabs-root .pt-memo-item .mi-badge.project { background: var(--pt-success-badge-fill); color: var(--ok); }
   #project-tabs-root .pt-memo-item .mi-body {
     font-size: 12px; line-height: 1.35; white-space: pre-wrap; word-break: break-word;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   }
-  #project-tabs-root .pt-memo-empty { color: #5a6175; font-size: 12px; padding: 6px 2px; }
+  #project-tabs-root .pt-memo-empty { color: var(--pt-muted); font-size: 12px; padding: 6px 2px; }
   /* 메모 미니창(다이얼로그) */
   #project-tabs-root .pt-memo-modal {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 400;
+    position: fixed; inset: 0; background: var(--pt-overlay); z-index: 400;
     display: flex; align-items: center; justify-content: center; padding: 16px;
   }
   #project-tabs-root .pt-memo-modal[hidden] { display: none; }
   #project-tabs-root .pt-memo-box {
-    background: #131722; border: 1px solid #2a3145; border-radius: 10px; padding: 18px;
+    background: var(--pt-surface); border: 1px solid var(--pt-line-strong); border-radius: var(--pt-radius-modal); padding: 18px;
     width: 100%; max-width: 460px; max-height: 85vh; overflow-y: auto;
-    box-shadow: 0 12px 40px rgba(0,0,0,0.5); display: flex; flex-direction: column; gap: 11px;
+    box-shadow: var(--pt-shadow-modal); display: flex; flex-direction: column; gap: 11px;
   }
   #project-tabs-root .pt-memo-box h2 { margin: 0; font-size: 14px; }
   #project-tabs-root .pt-memo-field { display: flex; flex-direction: column; gap: 5px; }
-  #project-tabs-root .pt-memo-field label { font-size: 10px; color: #5a6175; text-transform: uppercase; letter-spacing: 0.04em; }
+  #project-tabs-root .pt-memo-field label { font-size: 10px; color: var(--pt-muted); text-transform: uppercase; letter-spacing: 0.04em; }
   #project-tabs-root .pt-memo-field select, #project-tabs-root .pt-memo-field textarea {
-    background: #0c0f17; border: 1px solid #2a3145; border-radius: 6px; color: var(--text, #ddd);
+    background: var(--pt-control); border: 1px solid var(--pt-line-strong); border-radius: var(--pt-radius-md); color: var(--text);
     font: inherit; padding: 8px 10px; box-sizing: border-box; width: 100%;
   }
   #project-tabs-root .pt-memo-field textarea { min-height: 150px; resize: vertical; line-height: 1.45; }
   #project-tabs-root .pt-memo-foot { display: flex; gap: 8px; align-items: center; margin-top: 2px; }
   #project-tabs-root .pt-memo-spacer { flex: 1; }
-  #project-tabs-root .pt-memo-btn { border: 0; border-radius: 6px; padding: 8px 13px; font: inherit; cursor: pointer; }
-  #project-tabs-root .pt-memo-btn.primary { background: var(--accent, #6aa9ff); color: #0b0d12; font-weight: 600; }
-  #project-tabs-root .pt-memo-btn.ghost { background: transparent; color: var(--text-dim, #888); border: 1px solid #1f2330; }
-  #project-tabs-root .pt-memo-btn.ghost:hover { color: var(--text, #ddd); border-color: #2a3145; }
-  #project-tabs-root .pt-memo-btn.danger { background: transparent; color: #ff9e9e; border: 1px solid #3a2424; }
-  #project-tabs-root .pt-memo-btn.danger:hover { background: #2c1a1a; }
-  #project-tabs-root .pt-memo-err { color: #ff6b6b; font-size: 11px; min-height: 13px; }
+  #project-tabs-root .pt-memo-btn { border: 0; border-radius: var(--pt-radius-md); padding: 8px 13px; font: inherit; cursor: pointer; }
+  #project-tabs-root .pt-memo-btn.primary { background: var(--pt-primary); color: #0b0d12; font-weight: 600; }
+  #project-tabs-root .pt-memo-btn.ghost { background: transparent; color: var(--text-dim); border: 1px solid var(--pt-line); }
+  #project-tabs-root .pt-memo-btn.ghost:hover { color: var(--text); border-color: var(--pt-line-strong); }
+  #project-tabs-root .pt-memo-btn.danger { background: transparent; color: var(--pt-danger-text); border: 1px solid var(--pt-danger-line); }
+  #project-tabs-root .pt-memo-btn.danger:hover { background: var(--pt-danger-hover); }
+  #project-tabs-root .pt-memo-err { color: var(--danger); font-size: 11px; min-height: 13px; }
   /* v1.131.0 — 예약 보내기 모달 (메모 모달과 동일 부모 레이어 패턴, pt-memo-btn 재사용). */
   #project-tabs-root .pt-sched-modal {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 400;
+    position: fixed; inset: 0; background: var(--pt-overlay); z-index: 400;
     display: flex; align-items: center; justify-content: center; padding: 16px;
   }
   #project-tabs-root .pt-sched-modal[hidden] { display: none; }
   #project-tabs-root .pt-sched-box {
-    background: #131722; border: 1px solid #2a3145; border-radius: 10px; padding: 18px;
+    background: var(--pt-surface); border: 1px solid var(--pt-line-strong); border-radius: var(--pt-radius-modal); padding: 18px;
     width: 100%; max-width: 460px; max-height: 85vh; overflow-y: auto;
-    box-shadow: 0 12px 40px rgba(0,0,0,0.5); display: flex; flex-direction: column; gap: 10px;
+    box-shadow: var(--pt-shadow-modal); display: flex; flex-direction: column; gap: 10px;
   }
   #project-tabs-root .pt-sched-box h2 { margin: 0; font-size: 14px; }
-  #project-tabs-root .pt-sched-sub { margin: 0; font-size: 11px; color: var(--text-dim, #888); line-height: 1.45; }
+  #project-tabs-root .pt-sched-sub { margin: 0; font-size: 11px; color: var(--text-dim); line-height: 1.45; }
   #project-tabs-root .pt-sched-box textarea {
-    background: #0c0f17; border: 1px solid #2a3145; border-radius: 6px; color: var(--text, #ddd);
+    background: var(--pt-control); border: 1px solid var(--pt-line-strong); border-radius: var(--pt-radius-md); color: var(--text);
     font: inherit; font-size: 12px; padding: 8px 10px; box-sizing: border-box; width: 100%;
     resize: vertical; min-height: 60px; line-height: 1.45;
   }
   #project-tabs-root .pt-sched-trig { display: flex; flex-direction: column; gap: 5px; }
   #project-tabs-root .pt-sched-trig label,
   #project-tabs-root .pt-sched-time label {
-    display: inline-flex; align-items: center; gap: 5px; margin: 0; font-size: 12px; color: var(--text, #ddd); cursor: pointer;
+    display: inline-flex; align-items: center; gap: 5px; margin: 0; font-size: 12px; color: var(--text); cursor: pointer;
   }
   #project-tabs-root .pt-sched-time { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
   #project-tabs-root .pt-sched-in { display: inline-flex; gap: 5px; align-items: center; }
   #project-tabs-root .pt-sched-time input[type="number"] { width: 64px; }
   #project-tabs-root .pt-sched-time input, #project-tabs-root .pt-sched-time select {
-    background: #0c0f17; border: 1px solid #2a3145; border-radius: 5px; color: var(--text, #ddd);
+    background: var(--pt-control); border: 1px solid var(--pt-line-strong); border-radius: var(--pt-radius-sm); color: var(--text);
     font: inherit; font-size: 12px; padding: 4px 6px;
   }
   #project-tabs-root .pt-sched-hint { margin: 0; font-size: 11px; color: #8b96a8; }
-  #project-tabs-root .pt-sched-err { color: #ff6b6b; font-size: 11px; }
+  #project-tabs-root .pt-sched-err { color: var(--danger); font-size: 11px; }
   #project-tabs-root .pt-sched-err:empty { display: none; }
   #project-tabs-root .pt-sched-listh { margin-top: 4px; }
   #project-tabs-root .pt-sched-list { display: flex; flex-direction: column; gap: 4px; max-height: 30vh; overflow-y: auto; }
   #project-tabs-root .pt-sched-item {
-    display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px;
-    background: rgba(255,255,255,0.03); font-size: 12px;
+    display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: var(--pt-radius-md);
+    background: var(--pt-list-fill); font-size: 12px;
   }
   #project-tabs-root .pt-sched-item .si-icon { flex-shrink: 0; width: 16px; text-align: center; }
   #project-tabs-root .pt-sched-item .si-main { flex: 1; min-width: 0; overflow: hidden; }
-  #project-tabs-root .pt-sched-item .si-label { color: var(--text, #ddd); }
-  #project-tabs-root .pt-sched-item .si-prompt { color: var(--text-dim, #888); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #project-tabs-root .pt-sched-item[data-status="pending"] .si-icon { color: #6aa9ff; }
-  #project-tabs-root .pt-sched-item[data-status="sent"] .si-icon { color: #69db7c; }
-  #project-tabs-root .pt-sched-item[data-status="failed"] .si-icon { color: #ff8787; }
+  #project-tabs-root .pt-sched-item .si-label { color: var(--text); }
+  #project-tabs-root .pt-sched-item .si-prompt { color: var(--text-dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #project-tabs-root .pt-sched-item[data-status="pending"] .si-icon { color: var(--pt-primary); }
+  #project-tabs-root .pt-sched-item[data-status="sent"] .si-icon { color: var(--ok); }
+  #project-tabs-root .pt-sched-item[data-status="failed"] .si-icon { color: var(--danger); }
   #project-tabs-root .pt-sched-item[data-status="sent"],
   #project-tabs-root .pt-sched-item[data-status="cancelled"] { opacity: 0.6; }
   #project-tabs-root .pt-sched-cancel {
-    flex-shrink: 0; background: transparent; border: 1px solid #3a2424; color: #ff9e9e;
-    border-radius: 5px; font-size: 11px; padding: 3px 7px; cursor: pointer;
+    flex-shrink: 0; background: transparent; border: 1px solid var(--pt-danger-line); color: var(--pt-danger-text);
+    border-radius: var(--pt-radius-sm); font-size: 11px; padding: 3px 7px; cursor: pointer;
   }
-  #project-tabs-root .pt-sched-empty { color: #5a6175; font-size: 12px; padding: 4px 2px; }
+  #project-tabs-root .pt-sched-empty { color: var(--pt-muted); font-size: 12px; padding: 4px 2px; }
   #project-tabs-root .pt-sched-foot { display: flex; gap: 8px; align-items: center; margin-top: 2px; }
   /* rail 접기/펼치기 토글 — rail 좌측 가장자리 손잡이. */
   /* v1.50.1 — 토글을 rail 세로 중앙에 배치(이전 top:8px 는 콘솔 헤더의 "새 세션" 버튼과
      겹쳐 오클릭 위험). transform 으로 세로 중앙 정렬. */
   #project-tabs-root .pt-rail-toggle {
     position: absolute; top: 50%; transform: translateY(-50%); z-index: 7;
-    right: clamp(248px, 22vw, 360px);
-    background: #131722; color: var(--text-dim, #888);
-    border: 1px solid #1f2330; border-right: 0; border-radius: 6px 0 0 6px;
-    width: 20px; height: 48px; cursor: pointer; font-size: 12px; line-height: 1;
+    right: var(--pt-rail-width);
+    background: var(--pt-surface); color: var(--text-dim);
+    border: 1px solid var(--pt-line); border-right: 0; border-radius: var(--pt-radius-md) 0 0 var(--pt-radius-md);
+    width: 28px; height: 56px; cursor: pointer; font-size: 12px; line-height: 1;
     display: flex; align-items: center; justify-content: center;
-    box-shadow: -2px 0 6px rgba(0,0,0,0.25);
+    box-shadow: var(--pt-shadow-toggle);
   }
-  #project-tabs-root .pt-rail-toggle:hover { color: var(--text, #ddd); background: #1a1f2c; }
-  #project-tabs-root[data-rail="hidden"] .pt-rail-toggle { right: 0; border-right: 1px solid #1f2330; border-radius: 6px 0 0 6px; }
+  #project-tabs-root .pt-rail-toggle:hover { color: var(--text); background: var(--pt-hover); }
+  #project-tabs-root[data-rail="hidden"] .pt-rail-toggle { right: 0; border-right: 1px solid var(--pt-line); border-radius: var(--pt-radius-md) 0 0 var(--pt-radius-md); }
   /* 좁은 화면: rail 자동 숨김(JS 가 measured width 0 으로 패딩 제거). */
   @media (max-width: 760px) {
     #project-tabs-root .pt-rail, #project-tabs-root .pt-rail-toggle { display: none; }
+    #project-tabs-root .tab-pane { right: 0; }
   }
 </style>
 
@@ -1041,7 +1124,7 @@ internal object ProjectTabsTemplate {
     </details>
   </div>
   $flashHtml
-  <div class="tab-bar" role="tablist">
+  <div class="tab-bar" role="tablist" aria-label="${esc(t("tabs.title"))}">
     <div class="tab-scroll">
       $tabBtns
     </div>
@@ -1056,7 +1139,7 @@ $railHtml
   </div>
 </div>
 
-<script src="/static/project-tabs.js?v=1.145.0" defer></script>
+<script src="/static/project-tabs.js?v=1.157.0" defer></script>
 <!-- v1.56.0 — 콤보박스 상태칩 실시간 동기. 목록 페이지와 동일하게 `/ws/projects`
      (단방향) 의 ProjectBusyChanged 로 responding↔ready patch. -->
 <script>
@@ -1078,13 +1161,7 @@ $railHtml
     el.dataset.state = state;
     el.textContent = LABELS[state] || state;
     el.title = LABELS[state] || state;
-    // v1.128.3 — busy(responding/waiting)로 전환된 프로젝트를 콤보박스 리스트 최상단으로
-    // (마지막 상태 변경이 위에 남도록). idle 전환은 위치 유지(다음 새로고침 시 SSR 정렬로 재배치).
-    if (state === 'responding' || state === 'waiting') {
-      var item = el.closest('.pt-switch-item');
-      var list = item && item.parentNode;
-      if (item && list && list.firstChild !== item) list.insertBefore(item, list.firstChild);
-    }
+    // v1.157.2 — 상태칩만 갱신한다. 항목 순서는 user prompt 송신 시각 기준 SSR 정렬이 소유한다.
   }
   var ws = null;
   function connect() {

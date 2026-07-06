@@ -2,6 +2,7 @@ package com.siamakerlab.vibecoder.server
 
 import com.siamakerlab.vibecoder.server.actions.CapabilityService
 import com.siamakerlab.vibecoder.server.agent.AgentRouter
+import com.siamakerlab.vibecoder.server.agent.ModelCatalogService
 import com.siamakerlab.vibecoder.server.actions.ProjectActionRegistry
 import com.siamakerlab.vibecoder.server.actions.ServerActionHandler
 import com.siamakerlab.vibecoder.server.actions.projectActionRoutes
@@ -33,6 +34,7 @@ import com.siamakerlab.vibecoder.server.admin.sshKeyRoutes
 import com.siamakerlab.vibecoder.server.admin.quotaRoutes
 import com.siamakerlab.vibecoder.server.admin.codexQuotaRoutes
 import com.siamakerlab.vibecoder.server.admin.opencodeQuotaRoutes
+import com.siamakerlab.vibecoder.server.admin.glmQuotaRoutes
 import com.siamakerlab.vibecoder.server.admin.keystoreRoutes
 import com.siamakerlab.vibecoder.server.admin.KeystoreService
 import com.siamakerlab.vibecoder.server.terminal.terminalRoutes
@@ -156,6 +158,7 @@ data class ServerContext(
     val projects: ProjectService,
     val sessionManager: ClaudeSessionManager,
     val agentRouter: AgentRouter,
+    val modelCatalog: ModelCatalogService,
     val gradle: GradleBuilder,
     val artifacts: ArtifactService,
     val build: BuildService,
@@ -189,6 +192,8 @@ data class ServerContext(
     /** v1.151.0 — Phase 2 OpenCode status/quota. */
     val opencodeStatusService: com.siamakerlab.vibecoder.server.agent.opencode.OpenCodeStatusService,
     val opencodeUsageMonitor: com.siamakerlab.vibecoder.server.agent.opencode.OpenCodeUsageMonitor,
+    /** v1.158.0 — z.ai coding plan usage quota (Z.AI monitor API 직접 호출). */
+    val glmQuotaService: com.siamakerlab.vibecoder.server.admin.GlmQuotaService,
     /** v0.22.0 — Play Console 업로드 트리거 (MCP google-play-publisher 위임). */
     val playPublishService: com.siamakerlab.vibecoder.server.publish.PlayPublishService,
     /** v0.23.0 — TestFlight 업로드 트리거 (MCP app-store-connect 위임). */
@@ -429,6 +434,8 @@ fun Application.module(ctx: ServerContext) {
         quotaRoutes(ctx.claudeStatusService)
         codexQuotaRoutes(ctx.codexStatusService)
         opencodeQuotaRoutes(ctx.opencodeStatusService)
+        // v1.158.0 — z.ai coding plan usage quota — 사이드바 GLM pill.
+        glmQuotaRoutes(ctx.glmQuotaService)
         // v1.74.0 — 홈 대시보드 "서버 상태" 카드(CPU/RAM/프로세스). 무상태 서비스라 직접 생성.
         systemStatsRoutes(com.siamakerlab.vibecoder.server.metrics.SystemStatsService())
         // v1.5.0 — Android 키스토어 관리 (설정 → Keystores).
@@ -485,12 +492,13 @@ fun Application.module(ctx: ServerContext) {
             subAgentManager = ctx.subAgentManager,
             promptAutomationManager = ctx.promptAutomationManager,
             agentRouter = ctx.agentRouter,
+            modelCatalog = ctx.modelCatalog,
         )
         // v0.28.0 — /settings/cache 라우트.
         buildCacheRoutes(adminDeps, ctx.buildCacheService)
         envRoutes(ctx.status, ctx.env)
         projectRoutes(ctx.projects)
-        consoleRoutes(ctx.projects, ctx.sessionManager, ctx.hub, ctx.claudeStatusService, ctx.env, ctx.auditLogger, ctx.promptSuggestionService, ctx.agentRouter)
+        consoleRoutes(ctx.projects, ctx.sessionManager, ctx.hub, ctx.claudeStatusService, ctx.env, ctx.auditLogger, ctx.promptSuggestionService, ctx.agentRouter, ctx.modelCatalog)
         projectActionRoutes(ctx.projects, ctx.actionRegistry, ctx.actionHandler, ctx.capabilityService)
         buildRoutes(ctx.build, ctx.hub, ctx.projects, ctx.playPublishService)
         artifactRoutes(ctx.artifactRepo, ctx.workspace, ctx.artifacts, ctx.apkVerifier, ctx.projects)

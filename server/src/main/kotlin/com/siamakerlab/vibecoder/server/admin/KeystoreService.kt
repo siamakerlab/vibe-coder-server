@@ -2,10 +2,12 @@ package com.siamakerlab.vibecoder.server.admin
 
 import com.siamakerlab.vibecoder.server.config.KeystoreDefaults
 import io.github.oshai.kotlinlogging.KotlinLogging
+import java.io.FileInputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermission
 import java.nio.file.attribute.PosixFilePermissions
+import java.security.KeyStore
 import java.util.Properties
 import java.util.concurrent.TimeUnit
 
@@ -120,7 +122,13 @@ class KeystoreService(
      * 강제 사용한다(properties 의 `storeFile`=릴리즈 경로는 무시). `android.injected.signing.*`
      * 는 AGP 가 빌드되는 variant(debug task 포함)에 그대로 적용하므로, 이전엔
      * `assembleDebug` 빌드에도 릴리즈 키(`<pkg>.keystore`)가 주입되던 회귀가 있었다.
-     * 비밀번호/alias 는 release 와 공유한다(`create()` 가 양쪽을 동일 정보로 생성).
+     *
+     * v1.154.1 — debug 빌드 시 keyAlias 도 `{properties.alias}-debug` 로 변환한다.
+     * debug keystore 의 alias 는 release 와 다를 수 있다(운영자/업로드가 `-debug` 접미사로
+     * 생성한 경우). [resolveDebugAlias] 가 Java KeyStore API 로 debug keystore 를 열어
+     * `{alias}-debug` 가 실제로 존재하는지 검증한 뒤, 없으면 원래 alias 로 fallback 한다
+     * (create() 가 양쪽을 동일 alias 로 생성한 기존 키스토어 호환).
+     *
      * debug 키스토어가 없으면(과거 release 만 업로드 등) null → 미주입(AGP 표준 debug 서명).
      */
     fun loadSigning(packageName: String, debug: Boolean = false): SigningCredentials? {
@@ -149,13 +157,42 @@ class KeystoreService(
                 ?.takeIf { Files.exists(it) }
                 ?: release
         }
+        // debug 빌드: debug keystore 의 실제 alias 를 Java KeyStore API 로 확인.
+        // {keyAlias}-debug 가 있으면 사용, 없거나 keystore를 열 수 없으면 원래 alias 로 fallback.
+        val effectiveKeyAlias = if (debug) {
+            resolveDebugAlias(debugKs, storePassword, keyAlias)
+        } else {
+            keyAlias
+        }
         return SigningCredentials(
             storeFile = storeFile,
             storePassword = storePassword,
-            keyAlias = keyAlias,
+            keyAlias = effectiveKeyAlias,
             keyPassword = keyPassword,
             propertiesFile = props,
         )
+    }
+
+    /**
+     * v1.154.1 — debug keystore 에서 `{baseAlias}-debug` alias 존재 여부를 Java KeyStore API 로
+     * 검증한다. 존재하면 `{baseAlias}-debug` 를 반환하고, 없거나 keystore를 열 수 없으면
+     * 원래 [baseAlias] 를 반환한다(create() 가 동일 alias 로 생성한 기존 키스토어 호환).
+     *
+     * keytool 프로세스 spawn 은 무거우므로 JVM 내 KeyStore API 로 처리.
+     */
+    private fun resolveDebugAlias(debugKs: Path, storePassword: String, baseAlias: String): String {
+        val debugAlias = "$baseAlias-debug"
+        return runCatching {
+            val ks = KeyStore.getInstance("PKCS12")
+            FileInputStream(debugKs.toFile()).use { fis ->
+                ks.load(fis, storePassword.toCharArray())
+            }
+            if (ks.containsAlias(debugAlias)) debugAlias else baseAlias
+        }.getOrElse {
+            // keystore를 열 수 없는 경우(더미 파일, 손상, 지원하지 않는 형식 등) baseAlias fallback.
+            log.debug { "resolveDebugAlias: keystore 열기 실패, baseAlias=$baseAlias 사용 — ${it.message}" }
+            baseAlias
+        }
     }
 
     /**
@@ -180,7 +217,9 @@ class KeystoreService(
             .getOrNull()
         val debugFile = keystoreDir.resolve("$packageName-debug.keystore")
         val debugInfo = if (Files.exists(debugFile)) {
-            runCatching { readCert(debugFile, signing.storePassword, signing.keyAlias) }
+            // v1.154.1 — debug keystore 의 alias 가 release 와 다를 수 있으므로 resolveDebugAlias 로 확인.
+            val debugAlias = resolveDebugAlias(debugFile, signing.storePassword, signing.keyAlias)
+            runCatching { readCert(debugFile, signing.storePassword, debugAlias) }
                 .onFailure { log.warn(it) { "keytool -list debug failed for $packageName" } }
                 .getOrNull()
         } else null
@@ -414,7 +453,9 @@ class KeystoreService(
         keytool(release, "key0", req.password, dname, validity)
         runCatching { setPerm(release, "rw-------") }
 
-        keytool(debug, "key0", req.password, dname, validity)
+        // v1.154.1 — debug keystore 의 alias 는 `key0-debug` (release 와 구분).
+        // loadSigning(debug=true) 가 resolveDebugAlias 로 `{properties.alias}-debug` 를 자동 탐지.
+        keytool(debug, "key0-debug", req.password, dname, validity)
         runCatching { setPerm(debug, "rw-------") }
 
         Files.writeString(

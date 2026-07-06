@@ -94,12 +94,14 @@ class OpenCodeJsonParserTest {
             text = "hello",
             sessionId = "ses_abc",
             model = "zai-coding-plan/glm-5.2",
+            dir = "/workspace/postgres-client",
         ) shouldBe listOf(
             "opencode",
             "run",
             "--format", "json",
             "--auto",
             "-m", "zai-coding-plan/glm-5.2",
+            "--dir", "/workspace/postgres-client",
             "-s", "ses_abc",
             "hello",
         )
@@ -112,11 +114,13 @@ class OpenCodeJsonParserTest {
             text = "hello",
             sessionId = null,
             model = null,
+            dir = "/workspace/postgres-client",
         ) shouldBe listOf(
             "opencode",
             "run",
             "--format", "json",
             "--auto",
+            "--dir", "/workspace/postgres-client",
             "hello",
         )
     }

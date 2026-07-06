@@ -45,4 +45,20 @@ class EmulatorServiceTest {
             st.startedAtIso shouldBe null
         }
     }
+
+    @Test
+    fun `pool exposes five stable emulator slots`() {
+        kotlinx.coroutines.runBlocking {
+            val pool = svc().poolStatus()
+            pool.max shouldBe 5
+            pool.slots.map { it.serial } shouldBe listOf(
+                "emulator-5554",
+                "emulator-5556",
+                "emulator-5558",
+                "emulator-5560",
+                "emulator-5562",
+            )
+            pool.slots.map { it.kind }.toSet() shouldBe setOf("phone", "tablet", "foldable")
+        }
+    }
 }

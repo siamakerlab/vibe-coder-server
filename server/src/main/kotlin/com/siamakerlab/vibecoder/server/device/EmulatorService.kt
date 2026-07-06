@@ -1,5 +1,6 @@
 package com.siamakerlab.vibecoder.server.device
 
+import com.siamakerlab.vibecoder.server.core.WorkspacePath
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -12,56 +13,123 @@ import kotlinx.coroutines.withContext
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 private val log = KotlinLogging.logger {}
 
 /**
- * v1.73.0 — 안드로이드 에뮬레이터(헤드리스) lifecycle. **Claude Code 로그분석용** — 화면
- * 미러링(noVNC) 없이, 에뮬레이터를 띄워 `adb` 로 잡히게 하는 것이 목적. APK 설치/logcat 은
- * Claude 가 프로젝트 콘솔에서 `adb -s emulator-5554 install|logcat` 으로 직접 수행한다.
+ * Android emulator pool. Up to five headless AVDs can be managed concurrently.
  *
- * - 설치: 빌드환경(/env-setup)의 "Android Emulator" 컴포넌트(vibe-doctor android) 가
- *   `emulator` + `system-images;android-35;google_apis;x86_64` 를 SDK 볼륨에 설치.
- * - AVD 생성: 첫 [start] 시 [ensureAvd] 가 `avdmanager` 로 1개(`vibe_pixel_api35`) 멱등 생성.
- * - 실행: 수동(/emulator·사이드바 pill 의 시작/중지). KVM 가속(`-accel on`, compose `/dev/kvm`).
- *   자동 시작/idle reaper 없음(운영자 결정).
- *
- * 종료는 [ClaudeSessionManager] 와 동일 패턴: `adb emu kill`(graceful) → SIGTERM → 5s → SIGKILL.
+ * Legacy callers still see [serial], [avdName], [systemImage], [start], [stop] and [status] for
+ * the default slot so existing instrumented-test and sidebar code keeps working.
  */
 class EmulatorService(
     private val adb: AdbService,
     val avdName: String = "vibe_pixel_api35",
-    val systemImage: String = "system-images;android-35;google_apis;x86_64",
+    val systemImage: String = "system-images;android-35;google_atd;x86_64",
     private val deviceProfile: String = "pixel_6",
+    private val workspace: WorkspacePath? = null,
 ) {
-    /** 첫 에뮬레이터 인스턴스의 콘솔 포트(5554) 기준 serial. 단일 에뮬레이터만 운영. */
     val serial: String = "emulator-5554"
+    val maxEmulators: Int = MAX_EMULATORS
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val startMutex = Mutex()
+    data class EmulatorProfile(
+        val id: String,
+        val label: String,
+        val kind: String,
+        val avdName: String,
+        val systemImage: String,
+        val deviceProfile: String,
+    )
 
-    @Volatile private var process: Process? = null
-    @Volatile private var startedAt: Instant? = null
-    /** 진단용 최근 stdout/stderr tail (최대 200줄). */
-    private val logTail = java.util.ArrayDeque<String>()
+    data class EmulatorSlot(
+        val id: String,
+        val index: Int,
+        val consolePort: Int,
+        val serial: String,
+        val profile: EmulatorProfile,
+    )
 
     data class StartResult(val ok: Boolean, val message: String)
+
+    data class Lease(
+        val emulatorId: String,
+        val serial: String,
+        val projectId: String,
+        val acquiredAtIso: String,
+        val lastSeenAtIso: String,
+        val expiresAtIso: String,
+        val mode: String,
+    )
+
     data class Status(
         val available: Boolean,
         val running: Boolean,
         val booted: Boolean,
         val serial: String,
         val startedAtIso: String?,
-        /**
-         * v1.96.0 — adb 에 [serial] 이 잡혀 있으나 **서버가 spawn한 프로세스가 아님**.
-         * 콘솔/수동으로(특히 `-accel off`) 띄운 인스턴스 → 서버가 KVM 가속을 보장 못 함.
-         * UI 가 경고 + [중지] 회수를 노출하는 근거.
-         */
         val external: Boolean = false,
+        val id: String = "phone-1",
+        val label: String = "Phone",
+        val kind: String = "phone",
+        val avdName: String = "vibe_pixel_api35",
+        val systemImage: String = "system-images;android-35;google_atd;x86_64",
+        val consolePort: Int = 5554,
+        val leasedByProjectId: String? = null,
+        val leaseExpiresAtIso: String? = null,
     )
 
-    // ── SDK 경로 ────────────────────────────────────────────────────────────
+    data class PoolStatus(
+        val available: Boolean,
+        val max: Int,
+        val running: Int,
+        val booted: Int,
+        val slots: List<Status>,
+    )
+
+    private data class ManagedProcess(val process: Process, val slot: EmulatorSlot)
+
+    private data class MutableLease(
+        val emulatorId: String,
+        val serial: String,
+        val projectId: String,
+        val acquiredAt: Instant,
+        var lastSeenAt: Instant,
+        var expiresAt: Instant,
+        val mode: String,
+    ) {
+        fun snapshot(): Lease = Lease(
+            emulatorId = emulatorId,
+            serial = serial,
+            projectId = projectId,
+            acquiredAtIso = acquiredAt.toString(),
+            lastSeenAtIso = lastSeenAt.toString(),
+            expiresAtIso = expiresAt.toString(),
+            mode = mode,
+        )
+    }
+
+    private data class BoolCache(var value: Boolean = false, var checkedAt: Long = 0L)
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val startMutex = Mutex()
+    private val processes = ConcurrentHashMap<String, ManagedProcess>()
+    private val startedAt = ConcurrentHashMap<String, Instant>()
+    private val logTails = ConcurrentHashMap<String, java.util.ArrayDeque<String>>()
+    private val bootedCache = ConcurrentHashMap<String, BoolCache>()
+    private val serialPresentCache = ConcurrentHashMap<String, BoolCache>()
+    private val leases = ConcurrentHashMap<String, MutableLease>()
+
+    val slots: List<EmulatorSlot> = buildSlots(avdName, systemImage, deviceProfile)
+
+    init {
+        loadLeases()
+    }
+
+    private fun defaultSlot(): EmulatorSlot = slots.first()
+
+    // SDK paths
     private fun androidHome(): Path? =
         (System.getenv("ANDROID_HOME")?.ifBlank { null }
             ?: System.getenv("ANDROID_SDK_ROOT")?.ifBlank { null })?.let { Path.of(it) }
@@ -72,11 +140,12 @@ class EmulatorService(
     private fun avdmanagerBin(): Path? =
         androidHome()?.resolve("cmdline-tools/latest/bin/avdmanager")?.takeIf { Files.exists(it) }
 
-    private fun systemImageDir(): Path? {
-        // "system-images;android-35;google_apis;x86_64" → system-images/android-35/google_apis/x86_64
-        val rel = systemImage.split(';').joinToString("/")
-        return androidHome()?.resolve(rel)
-    }
+    private fun systemImageDir(systemImage: String = this.systemImage): Path? =
+        androidHome()?.resolve(systemImage.split(';').joinToString("/"))
+
+    private fun effectiveSystemImage(slot: EmulatorSlot): String? =
+        slot.profile.systemImage.takeIf { systemImageDir(it)?.let(Files::isDirectory) == true }
+            ?: LEGACY_GOOGLE_APIS_IMAGE.takeIf { systemImageDir(it)?.let(Files::isDirectory) == true }
 
     private fun avdHome(): Path {
         System.getenv("ANDROID_AVD_HOME")?.ifBlank { null }?.let { return Path.of(it) }
@@ -84,238 +153,281 @@ class EmulatorService(
         return Path.of(home, ".android", "avd")
     }
 
-    /** emulator 바이너리 + 대상 system-image 가 모두 설치되어 있는지. */
-    fun available(): Boolean {
+    fun available(): Boolean = available(defaultSlot())
+
+    fun available(slot: EmulatorSlot): Boolean {
         val emu = emulatorBin() ?: return false
-        val img = systemImageDir() ?: return false
+        val img = effectiveSystemImage(slot)?.let { systemImageDir(it) } ?: return false
         return Files.isExecutable(emu) && Files.isDirectory(img)
     }
 
-    /** 서버가 직접 spawn 해 추적 중인 프로세스가 살아있는가. */
-    fun isManaged(): Boolean = process?.isAlive == true
+    fun isManaged(): Boolean = processes[defaultSlot().id]?.process?.isAlive == true
 
-    /**
-     * v1.96.0 — 서버 프로세스 **또는** 외부/콘솔에서 띄운 같은 [serial] 에뮬레이터가 살아있는가.
-     * 외부 인식은 [serialPresentCached] (adb devices, TTL 캐시) 로 — 콘솔에서 수동 실행한
-     * 인스턴스도 status/stop 대상이 되도록.
-     */
-    fun isRunning(): Boolean = isManaged() || serialPresentCached()
+    fun isRunning(): Boolean = isRunning(defaultSlot())
 
-    // v1.96.0 — adb devices 에 우리 serial 존재 여부. pill 30s 폴링이 매번 adb 를 fork 하지
-    // 않도록 짧은 TTL 캐시(booted 캐시와 동일 전략). devices 는 로컬 데몬 즉답이라 booted 보다
-    // 가볍지만, 무인증 status 폴링×탭수 fork 누적을 흡수.
-    @Volatile private var serialPresentCache: Boolean = false
-    @Volatile private var serialPresentCheckedAt: Long = 0L
+    private fun isRunning(slot: EmulatorSlot): Boolean =
+        processes[slot.id]?.process?.isAlive == true || serialPresentCached(slot)
 
-    private fun serialPresentCached(): Boolean {
-        val now = System.currentTimeMillis()
-        if (now - serialPresentCheckedAt < SERIAL_TTL_MS) return serialPresentCache
-        // v1.98.2 — offline(죽어가는/좀비) 인스턴스는 제외. 포함 시 좀비가 status.external/
-        //  isRunning 을 true 로 묶어 start 를 영구 거부하고 stop(adb emu kill)은 offline 에
-        //  무효라 "종료 신호 보냄" 거짓 성공이 된다. device/booting 등 live 상태만 present.
-        serialPresentCache = runCatching {
-            adb.devices().any { it.serial == serial && it.state != "offline" }
-        }.getOrDefault(false)
-        serialPresentCheckedAt = now
-        return serialPresentCache
-    }
+    fun booted(): Boolean = booted(defaultSlot())
 
-    /** 부팅 완료: `getprop sys.boot_completed == 1`. 미부팅/오프라인이면 false. (직접 adb — 캐시 X) */
-    fun booted(): Boolean {
-        if (!isRunning()) return false
-        val out = adbCmd(listOf("-s", serial, "shell", "getprop", "sys.boot_completed"), 6) ?: return false
+    private fun booted(slot: EmulatorSlot): Boolean {
+        if (!isRunning(slot)) return false
+        val out = adbCmd(listOf("-s", slot.serial, "shell", "getprop", "sys.boot_completed"), 6) ?: return false
         return out.trim() == "1"
     }
 
-    /**
-     * KVM 하드웨어 가속 가용 여부. 미가용이면 [start] 가 TCG 소프트 에뮬레이션(부팅 수분 +
-     * ANR 폭주)을 막기 위해 시작을 거부한다.
-     *
-     * v1.96.1 — 판정 방식 교체. v1.96.0 은 `emulator -accel-check` 바이너리를 ProcessBuilder
-     * 로 호출했는데, **셸에선 어떤 조건(cwd/stdin/비-TTY 포함)에서도 exit 0 + "usable"** 인
-     * 명령이 JVM 자식프로세스 컨텍스트에선 오탐(false)을 내, 정상 KVM 환경에서도 시작을
-     * 막아 버렸다(운영 회귀). emulator 런처가 JVM 하위에서 종료코드를 제대로 전파하지 못한
-     * 것으로 추정. KVM 가속의 실제 전제는 **`/dev/kvm` 을 R/W 로 열 수 있는지**(`-accel on`
-     * 이 여는 것)이므로, fork 없이 파일 접근성으로 직접·견고하게 판정한다.
-     */
     fun accelCheckUsable(): Boolean {
         val kvm = Path.of("/dev/kvm")
         if (!Files.exists(kvm)) return false
         if (Files.isReadable(kvm) && Files.isWritable(kvm)) return true
-        // access(2) 가 supplementary group/ACL 을 놓치는 드문 환경 대비 — 실제 R/W open 시도.
         return runCatching { java.io.RandomAccessFile(kvm.toFile(), "rw").close(); true }.getOrDefault(false)
     }
 
-    // v1.73.0 점검 — booted adb 호출 TTL 캐시. 무인증 /api/emulator/status pill 폴링이
-    // 매 호출 adb getprop 를 fork 하지 않도록(코루틴 워커 블로킹 + adb spawn 남용 방지).
-    @Volatile private var bootedCache: Boolean = false
-    @Volatile private var bootedCheckedAt: Long = 0L
+    suspend fun status(): Status = status(defaultSlot())
 
-    private fun bootedCached(): Boolean {
-        if (!isRunning()) { bootedCache = false; return false }
-        val now = System.currentTimeMillis()
-        if (now - bootedCheckedAt < BOOTED_TTL_MS) return bootedCache
-        val out = adbCmd(listOf("-s", serial, "shell", "getprop", "sys.boot_completed"), 6)
-        bootedCache = out?.trim() == "1"
-        bootedCheckedAt = now
-        return bootedCache
+    suspend fun status(id: String): Status? = slots.firstOrNull { it.id == id }?.let { status(it) }
+
+    suspend fun poolStatus(): PoolStatus = withContext(Dispatchers.IO) {
+        reapExpiredLeases()
+        val statuses = slots.map { status(it) }
+        PoolStatus(
+            available = statuses.any { it.available },
+            max = maxEmulators,
+            running = statuses.count { it.running },
+            booted = statuses.count { it.booted },
+            slots = statuses,
+        )
     }
 
-    /**
-     * 상태 스냅샷. booted 의 adb 호출은 [Dispatchers.IO] 격리 + [BOOTED_TTL_MS] TTL 캐시 —
-     * 라우트(코루틴) 워커를 블로킹하지 않고, pill 폴링이 매번 adb 를 fork 하지 않는다.
-     */
-    suspend fun status(): Status = withContext(Dispatchers.IO) {
-        val managed = isManaged()
-        val present = runCatching { serialPresentCached() }.getOrDefault(false)
+    private suspend fun status(slot: EmulatorSlot): Status = withContext(Dispatchers.IO) {
+        val managed = processes[slot.id]?.process?.isAlive == true
+        val present = runCatching { serialPresentCached(slot) }.getOrDefault(false)
         val running = managed || present
+        val lease = leases[slot.id]?.takeIf { it.expiresAt.isAfter(Instant.now()) }
         Status(
-            available = available(),
+            available = available(slot),
             running = running,
-            booted = if (running) runCatching { bootedCached() }.getOrDefault(false) else false,
-            serial = serial,
-            startedAtIso = startedAt?.toString(),
+            booted = if (running) runCatching { bootedCached(slot) }.getOrDefault(false) else false,
+            serial = slot.serial,
+            startedAtIso = startedAt[slot.id]?.toString(),
             external = present && !managed,
+            id = slot.id,
+            label = slot.profile.label,
+            kind = slot.profile.kind,
+            avdName = slot.profile.avdName,
+            systemImage = effectiveSystemImage(slot) ?: slot.profile.systemImage,
+            consolePort = slot.consolePort,
+            leasedByProjectId = lease?.projectId,
+            leaseExpiresAtIso = lease?.expiresAt?.toString(),
         )
     }
 
-    fun recentLog(): List<String> = synchronized(logTail) { logTail.toList() }
+    fun recentLog(id: String = defaultSlot().id): List<String> =
+        synchronized(tailFor(id)) { tailFor(id).toList() }
 
-    // ── lifecycle ────────────────────────────────────────────────────────────
-    private fun avdExists(): Boolean {
-        val home = avdHome()
-        return Files.isDirectory(home.resolve("$avdName.avd")) || Files.exists(home.resolve("$avdName.ini"))
-    }
+    suspend fun start(): StartResult = start(defaultSlot().id)
 
-    /** AVD 가 없으면 avdmanager 로 1개 생성(멱등). google_apis x86_64 + pixel_6 프로파일. */
-    suspend fun ensureAvd(): Boolean = withContext(Dispatchers.IO) {
-        if (avdExists()) return@withContext true
-        val avdm = avdmanagerBin() ?: run {
-            log.warn { "avdmanager 미설치 (cmdline-tools)" }; return@withContext false
+    suspend fun start(id: String): StartResult = startMutex.withLock {
+        val slot = slots.firstOrNull { it.id == id } ?: return StartResult(false, "unknown emulator: $id")
+        if (!available(slot)) return StartResult(false, "emulator/system-image 미설치 — 빌드환경에서 먼저 설치하세요")
+        if (processes[slot.id]?.process?.isAlive == true) return StartResult(true, "이미 실행 중 (${slot.serial})")
+        if (serialPresentCached(slot)) {
+            return StartResult(false, "이미 ${slot.serial} 에뮬레이터가 외부에서 실행 중입니다. 중지 후 다시 시작하세요.")
         }
-        val args = listOf(
-            avdm.toString(), "create", "avd",
-            "-n", avdName, "-k", systemImage, "-d", deviceProfile, "--force",
-        )
-        runCatching {
-            val p = ProcessBuilder(args).redirectErrorStream(true).start()
-            // v1.73.0 점검(M2) — stdout 을 별도 데몬 스레드로 drain 하면서 stdin 에 "no" 주입.
-            // ("Do you wish to create a custom hardware profile? [no]" 프롬프트 대비.)
-            // avdmanager 출력이 파이프 버퍼를 채워도(stdin 미독 상태) 데드락 나지 않도록 분리.
-            val outText = StringBuilder()
-            val drain = Thread {
-                runCatching { p.inputStream.bufferedReader().forEachLine { synchronized(outText) { outText.appendLine(it) } } }
-            }.apply { isDaemon = true; name = "avd-create-drain"; start() }
-            runCatching { p.outputStream.bufferedWriter().use { it.write("no\n"); it.flush() } }
-            val finished = p.waitFor(120, TimeUnit.SECONDS)
-            if (!finished) { p.destroyForcibly() }
-            drain.join(2000)
-            val tail = synchronized(outText) { outText.toString() }.takeLast(200).replace('\n', ' ')
-            log.info { "avdmanager create avd '$avdName': finished=$finished $tail" }
-            finished && avdExists()
-        }.getOrElse { log.warn(it) { "avd create 실패" }; false }
-    }
-
-    /**
-     * 헤드리스 에뮬레이터 시작(비동기 — 부팅은 백그라운드, status.booted 로 폴링). 멱등.
-     * KVM 가속 필요(`-accel on` + compose `/dev/kvm`). 미가속이면 매우 느려 부팅 실패 가능.
-     */
-    suspend fun start(): StartResult = startMutex.withLock {
-        if (!available()) return StartResult(false, "emulator/system-image 미설치 — 빌드환경에서 먼저 설치하세요")
-        if (isManaged()) return StartResult(true, "이미 실행 중")
-        // v1.96.0 — 콘솔/외부에서 같은 serial 을 점유 중이면 중복 spawn 금지(포트 충돌·좀비 방지).
-        //  특히 `-accel off` 로 수동 실행해 방치된 인스턴스를 서버가 위에 또 띄우지 않도록.
-        if (serialPresentCached()) {
-            return StartResult(false,
-                "이미 $serial 에뮬레이터가 외부(콘솔/수동)에서 실행 중입니다. 서버가 KVM 가속을 보장하지 못하므로, [중지]로 회수한 뒤 다시 시작하세요.")
-        }
-        // v1.96.0 — KVM 가드. 가속 불가 상태로 시작하면 TCG 소프트 에뮬레이션이 되어 부팅 수분 +
-        //  ANR 폭주(불안정)로 이어진다 → 차라리 시작을 막고 원인(/dev/kvm)을 안내.
         if (!accelCheckUsable()) {
-            return StartResult(false,
-                "KVM 하드웨어 가속을 쓸 수 없어 시작을 막았습니다 — 가속 없이는 매우 느리고 불안정합니다. compose 에 `/dev/kvm` 디바이스 매핑 + vibe 의 kvm 그룹 권한을 확인하세요.")
+            return StartResult(false, "KVM 하드웨어 가속을 쓸 수 없어 시작을 막았습니다 — /dev/kvm 매핑과 권한을 확인하세요.")
         }
-        if (!ensureAvd()) return StartResult(false, "AVD 생성 실패 (avdmanager/system-image 확인)")
+        if (!ensureAvd(slot)) return StartResult(false, "AVD 생성 실패 (${slot.profile.avdName})")
         val emu = emulatorBin() ?: return StartResult(false, "emulator 바이너리 없음")
         val args = listOf(
-            emu.toString(), "-avd", avdName,
+            emu.toString(), "-avd", slot.profile.avdName,
+            "-port", slot.consolePort.toString(),
             "-no-window", "-no-audio", "-no-boot-anim", "-no-snapshot",
             "-gpu", "swiftshader_indirect", "-accel", "on", "-no-metrics",
         )
-        return runCatching {
-            val pb = ProcessBuilder(args).redirectErrorStream(true)
-            // emulator 는 $ANDROID_SDK_ROOT / $HOME(~/.android) 환경을 본다 — ProcessBuilder 가 상속.
-            val p = pb.start()
-            process = p
-            startedAt = Instant.now()
-            serialPresentCheckedAt = 0L
-            synchronized(logTail) { logTail.clear() }
-            // stdout drain(진단 tail) — 안 읽으면 파이프 버퍼가 차서 멈출 수 있음.
+        runCatching {
+            val p = ProcessBuilder(args).redirectErrorStream(true).start()
+            processes[slot.id] = ManagedProcess(p, slot)
+            startedAt[slot.id] = Instant.now()
+            serialPresentCache[slot.id] = BoolCache()
+            synchronized(tailFor(slot.id)) { tailFor(slot.id).clear() }
             scope.launch {
                 runCatching {
                     p.inputStream.bufferedReader().useLines { lines ->
-                        for (line in lines) appendLog(line)
+                        for (line in lines) appendLog(slot.id, line)
                     }
                 }
             }
-            // 종료 감지 → 상태 정리.
             scope.launch {
                 runCatching { withContext(Dispatchers.IO) { p.waitFor() } }
-                if (process === p) { process = null; startedAt = null }
-                log.info { "에뮬레이터 프로세스 종료 (exit=${runCatching { p.exitValue() }.getOrNull()})" }
+                processes.remove(slot.id, processes[slot.id])
+                startedAt.remove(slot.id)
+                log.info { "에뮬레이터 프로세스 종료: ${slot.id}/${slot.serial} (exit=${runCatching { p.exitValue() }.getOrNull()})" }
             }
-            log.info { "에뮬레이터 시작: $avdName (headless, accel on)" }
-            StartResult(true, "시작됨 — 부팅까지 1~2분 소요")
+            log.info { "에뮬레이터 시작: ${slot.id}/${slot.profile.avdName} (${slot.serial}, headless, accel on)" }
+            StartResult(true, "시작됨 — ${slot.serial} 부팅까지 1~2분 소요")
         }.getOrElse {
-            log.warn(it) { "에뮬레이터 spawn 실패" }
-            process = null; startedAt = null
+            log.warn(it) { "에뮬레이터 spawn 실패: ${slot.id}" }
+            processes.remove(slot.id)
+            startedAt.remove(slot.id)
             StartResult(false, "에뮬레이터 실행 실패: ${it.message}")
         }
     }
 
-    /** graceful(adb emu kill) → SIGTERM → 5s → SIGKILL. 외부/콘솔 에뮬레이터는 adb 로만 회수. */
-    suspend fun stop(): StartResult = startMutex.withLock {
-        val p = process
-        if (p == null) {
-            // v1.96.0 — 서버가 띄운 프로세스는 없지만 외부(콘솔/수동, 예: -accel off 좀비)가
-            //  같은 serial 로 살아있으면 adb 로 종료 신호를 보내 회수한다.
-            if (serialPresentCached()) {
-                runCatching { adbCmd(listOf("-s", serial, "emu", "kill"), 8) }
-                serialPresentCheckedAt = 0L
-                return StartResult(true, "외부에서 실행된 에뮬레이터에 종료 신호를 보냈습니다 ($serial)")
+    suspend fun stop(): StartResult = stop(defaultSlot().id)
+
+    suspend fun stop(id: String): StartResult = startMutex.withLock {
+        val slot = slots.firstOrNull { it.id == id } ?: return StartResult(false, "unknown emulator: $id")
+        leases.remove(slot.id)
+        saveLeases()
+        val managed = processes[slot.id]
+        if (managed == null) {
+            if (serialPresentCached(slot)) {
+                runCatching { adbCmd(listOf("-s", slot.serial, "emu", "kill"), 8) }
+                serialPresentCache[slot.id] = BoolCache()
+                return StartResult(true, "외부에서 실행된 에뮬레이터에 종료 신호를 보냈습니다 (${slot.serial})")
             }
             return StartResult(true, "이미 중지됨")
         }
-        runCatching { adbCmd(listOf("-s", serial, "emu", "kill"), 8) }
+        runCatching { adbCmd(listOf("-s", slot.serial, "emu", "kill"), 8) }
         withContext(Dispatchers.IO) {
+            val p = managed.process
             if (!p.waitFor(5, TimeUnit.SECONDS)) {
                 p.destroy()
-                if (!p.waitFor(5, TimeUnit.SECONDS)) {
-                    log.warn { "에뮬레이터 SIGTERM grace 만료 → SIGKILL" }
-                    p.destroyForcibly()
-                }
+                if (!p.waitFor(5, TimeUnit.SECONDS)) p.destroyForcibly()
             }
         }
-        process = null
-        startedAt = null
-        serialPresentCheckedAt = 0L
-        StartResult(true, "중지됨")
+        processes.remove(slot.id)
+        startedAt.remove(slot.id)
+        serialPresentCache[slot.id] = BoolCache()
+        StartResult(true, "중지됨 (${slot.serial})")
+    }
+
+    suspend fun acquireLease(projectId: String, preferredKind: String? = null, mode: String = "manual"): StartResult {
+        reapExpiredLeases()
+        leases.values.firstOrNull { it.projectId == projectId && it.expiresAt.isAfter(Instant.now()) }?.let {
+            touchLease(it)
+            return StartResult(true, "이미 할당됨: ${it.serial}")
+        }
+        val occupied = leases.values.filter { it.expiresAt.isAfter(Instant.now()) }.map { it.emulatorId }.toSet()
+        val candidates = slots
+            .filter { it.id !in occupied }
+            .filter { preferredKind.isNullOrBlank() || it.profile.kind == preferredKind }
+            .ifEmpty { slots.filter { it.id !in occupied } }
+        val slot = candidates.sortedWith(compareBy<EmulatorSlot>({ !bootedCached(it) }, { !isRunning(it) }, { it.index })).firstOrNull()
+            ?: return StartResult(false, "사용 가능한 에뮬레이터가 없습니다 (상한 ${MAX_EMULATORS}개)")
+        if (!isRunning(slot)) {
+            val started = start(slot.id)
+            if (!started.ok) return started
+        }
+        val now = Instant.now()
+        leases[slot.id] = MutableLease(
+            emulatorId = slot.id,
+            serial = slot.serial,
+            projectId = projectId,
+            acquiredAt = now,
+            lastSeenAt = now,
+            expiresAt = now.plusSeconds(LEASE_TTL_SECONDS),
+            mode = mode,
+        )
+        saveLeases()
+        return StartResult(true, "할당됨: ${slot.serial}")
+    }
+
+    fun releaseLease(projectId: String): StartResult {
+        val removed = leases.entries.filter { it.value.projectId == projectId }.map { it.key }
+        removed.forEach { leases.remove(it) }
+        saveLeases()
+        return StartResult(true, if (removed.isEmpty()) "할당된 에뮬레이터 없음" else "에뮬레이터 할당 해제됨")
+    }
+
+    fun leaseForProject(projectId: String): Lease? {
+        reapExpiredLeases()
+        return leases.values.firstOrNull { it.projectId == projectId }?.also { touchLease(it) }?.snapshot()
     }
 
     suspend fun shutdown() {
-        runCatching { stop() }
+        slots.forEach { runCatching { stop(it.id) } }
         scope.cancel()
     }
 
-    // ── 내부 ────────────────────────────────────────────────────────────────
-    private fun appendLog(line: String) {
-        synchronized(logTail) {
-            logTail.addLast(line)
-            while (logTail.size > 200) logTail.removeFirst()
+    private fun avdExists(avdName: String): Boolean {
+        val home = avdHome()
+        return Files.isDirectory(home.resolve("$avdName.avd")) || Files.exists(home.resolve("$avdName.ini"))
+    }
+
+    suspend fun ensureAvd(): Boolean = ensureAvd(defaultSlot())
+
+    private suspend fun ensureAvd(slot: EmulatorSlot): Boolean = withContext(Dispatchers.IO) {
+        if (avdExists(slot.profile.avdName)) return@withContext true
+        val avdm = avdmanagerBin() ?: return@withContext false
+        val image = effectiveSystemImage(slot) ?: slot.profile.systemImage
+        val args = listOf(
+            avdm.toString(), "create", "avd",
+            "-n", slot.profile.avdName, "-k", image, "-d", slot.profile.deviceProfile, "--force",
+        )
+        createAvd(args, slot.profile.avdName).also { ok ->
+            if (!ok && slot.profile.deviceProfile != deviceProfile) {
+                log.warn { "AVD profile '${slot.profile.deviceProfile}' 실패 — 기본 profile '$deviceProfile' 로 재시도" }
+                createAvd(
+                    listOf(avdm.toString(), "create", "avd", "-n", slot.profile.avdName, "-k", image, "-d", deviceProfile, "--force"),
+                    slot.profile.avdName,
+                )
+            }
+        } || avdExists(slot.profile.avdName)
+    }
+
+    private fun createAvd(args: List<String>, avdName: String): Boolean = runCatching {
+        val p = ProcessBuilder(args).redirectErrorStream(true).start()
+        val outText = StringBuilder()
+        val drain = Thread {
+            runCatching { p.inputStream.bufferedReader().forEachLine { synchronized(outText) { outText.appendLine(it) } } }
+        }.apply { isDaemon = true; name = "avd-create-drain-$avdName"; start() }
+        runCatching { p.outputStream.bufferedWriter().use { it.write("no\n"); it.flush() } }
+        val finished = p.waitFor(120, TimeUnit.SECONDS)
+        if (!finished) p.destroyForcibly()
+        drain.join(2000)
+        val tail = synchronized(outText) { outText.toString() }.takeLast(300).replace('\n', ' ')
+        log.info { "avdmanager create avd '$avdName': finished=$finished exit=${runCatching { p.exitValue() }.getOrNull()} $tail" }
+        finished && p.exitValue() == 0 && avdExists(avdName)
+    }.getOrElse { log.warn(it) { "avd create 실패: $avdName" }; false }
+
+    private fun serialPresentCached(slot: EmulatorSlot): Boolean {
+        val now = System.currentTimeMillis()
+        val cache = serialPresentCache.computeIfAbsent(slot.id) { BoolCache() }
+        if (now - cache.checkedAt < SERIAL_TTL_MS) return cache.value
+        cache.value = runCatching {
+            adb.devices().any { it.serial == slot.serial && it.state != "offline" }
+        }.getOrDefault(false)
+        cache.checkedAt = now
+        return cache.value
+    }
+
+    private fun bootedCached(slot: EmulatorSlot): Boolean {
+        if (!isRunning(slot)) {
+            bootedCache[slot.id] = BoolCache(false, System.currentTimeMillis())
+            return false
+        }
+        val now = System.currentTimeMillis()
+        val cache = bootedCache.computeIfAbsent(slot.id) { BoolCache() }
+        if (now - cache.checkedAt < BOOTED_TTL_MS) return cache.value
+        val out = adbCmd(listOf("-s", slot.serial, "shell", "getprop", "sys.boot_completed"), 6)
+        cache.value = out?.trim() == "1"
+        cache.checkedAt = now
+        return cache.value
+    }
+
+    private fun appendLog(id: String, line: String) {
+        synchronized(tailFor(id)) {
+            val tail = tailFor(id)
+            tail.addLast(line)
+            while (tail.size > 200) tail.removeFirst()
         }
     }
 
-    /** adb 동기 실행(adb 경로는 AdbService 재사용). 실패/타임아웃 시 null. */
+    private fun tailFor(id: String): java.util.ArrayDeque<String> =
+        logTails.computeIfAbsent(id) { java.util.ArrayDeque() }
+
     private fun adbCmd(args: List<String>, timeoutSec: Long): String? {
         val adbBin = adb.adbPath() ?: return null
         return runCatching {
@@ -326,11 +438,88 @@ class EmulatorService(
         }.getOrElse { log.warn(it) { "adb ${args.firstOrNull()} 실패" }; null }
     }
 
-    private companion object {
-        /** booted(adb getprop) 결과 캐시 TTL. pill 폴링(30s)·동시 호출의 adb fork 억제. */
-        const val BOOTED_TTL_MS = 4000L
+    private fun leaseFile(): Path? = workspace?.root?.resolve(".vibecoder")?.resolve("emulator-leases.tsv")
 
-        /** v1.96.0 — serial 존재(adb devices) 캐시 TTL. 외부 인식 폴링의 fork 억제. */
+    private fun loadLeases() {
+        val file = leaseFile() ?: return
+        if (!Files.isRegularFile(file)) return
+        runCatching {
+            Files.readAllLines(file).forEach { line ->
+                val p = line.split('\t')
+                if (p.size < 7) return@forEach
+                val lease = MutableLease(
+                    emulatorId = p[0],
+                    serial = p[1],
+                    projectId = p[2],
+                    acquiredAt = Instant.parse(p[3]),
+                    lastSeenAt = Instant.parse(p[4]),
+                    expiresAt = Instant.parse(p[5]),
+                    mode = p[6],
+                )
+                if (lease.expiresAt.isAfter(Instant.now())) leases[lease.emulatorId] = lease
+            }
+        }.onFailure { log.warn(it) { "emulator lease 로드 실패" } }
+    }
+
+    private fun saveLeases() {
+        val file = leaseFile() ?: return
+        runCatching {
+            Files.createDirectories(file.parent)
+            Files.writeString(
+                file,
+                leases.values.joinToString("\n") {
+                    listOf(it.emulatorId, it.serial, it.projectId, it.acquiredAt, it.lastSeenAt, it.expiresAt, it.mode).joinToString("\t")
+                },
+            )
+        }.onFailure { log.warn(it) { "emulator lease 저장 실패" } }
+    }
+
+    private fun touchLease(lease: MutableLease) {
+        lease.lastSeenAt = Instant.now()
+        lease.expiresAt = lease.lastSeenAt.plusSeconds(LEASE_TTL_SECONDS)
+        saveLeases()
+    }
+
+    private fun reapExpiredLeases() {
+        val now = Instant.now()
+        val expired = leases.entries.filter { it.value.expiresAt.isBefore(now) }.map { it.key }
+        if (expired.isNotEmpty()) {
+            expired.forEach { leases.remove(it) }
+            saveLeases()
+        }
+    }
+
+    private fun buildSlots(defaultAvdName: String, defaultSystemImage: String, defaultDeviceProfile: String): List<EmulatorSlot> {
+        val profiles = listOf(
+            EmulatorProfile("phone", "Phone", "phone", defaultAvdName, defaultSystemImage, defaultDeviceProfile),
+            EmulatorProfile("phone-large", "Large phone", "phone", "vibe_phone_large_api35", defaultSystemImage, "pixel_7_pro"),
+            EmulatorProfile("tablet", "Tablet", "tablet", "vibe_tablet_api35", defaultSystemImage, "pixel_tablet"),
+            EmulatorProfile("foldable", "Foldable", "foldable", "vibe_foldable_api35", defaultSystemImage, "pixel_fold"),
+            EmulatorProfile("fold7", "Foldable wide", "foldable", "vibe_fold7_api35", defaultSystemImage, "pixel_fold"),
+        )
+        return profiles.mapIndexed { idx, profile ->
+            val port = 5554 + (idx * 2)
+            EmulatorSlot(
+                id = when (idx) {
+                    0 -> "phone-1"
+                    1 -> "phone-2"
+                    2 -> "tablet-1"
+                    3 -> "foldable-1"
+                    else -> "foldable-2"
+                },
+                index = idx,
+                consolePort = port,
+                serial = "emulator-$port",
+                profile = profile,
+            )
+        }
+    }
+
+    private companion object {
+        const val MAX_EMULATORS = 5
+        const val LEASE_TTL_SECONDS = 4 * 60 * 60L
+        const val BOOTED_TTL_MS = 4000L
         const val SERIAL_TTL_MS = 4000L
+        const val LEGACY_GOOGLE_APIS_IMAGE = "system-images;android-35;google_apis;x86_64"
     }
 }

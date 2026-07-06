@@ -378,6 +378,23 @@ class ConversationTurnRepository(private val clock: Clock) {
     }
 
     /**
+     * v1.157.2 — 프로젝트 이동 콤보 정렬용 마지막 사용자 프롬프트 송신 시각.
+     * assistant/tool/system turn 은 세션 진행 중 계속 추가되므로 콤보 순서를 흔들 수 있다.
+     * 메인 콘솔의 user turn 만 기준으로 삼아 "사용자가 프롬프트를 보낸 순서"를 유지한다.
+     */
+    fun lastUserPromptTsByProject(): Map<String, String> = transaction {
+        val agg = ConversationTurns.ts.max()
+        ConversationTurns.select(ConversationTurns.projectId, agg)
+            .where {
+                (ConversationTurns.role eq "user") and
+                    IsNullOp(ConversationTurns.agentName)
+            }
+            .groupBy(ConversationTurns.projectId)
+            .mapNotNull { row -> row[agg]?.let { row[ConversationTurns.projectId] to it } }
+            .toMap()
+    }
+
+    /**
      * v1.60.0 — 상태칩 "중지됨" 판정용. 메인 콘솔(agent_name IS NULL)의 **최신 user
      * 프롬프트 이후 완료 row(assistant/usage)가 없으면 true** (= 응답이 시작/완료되지
      * 못하고 끊김: cancel / crash / 서버중단). user 프롬프트가 아예 없으면 false.

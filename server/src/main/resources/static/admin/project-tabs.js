@@ -60,25 +60,17 @@
       }
     }
 
-    // ── v1.50.0 — overview rail (fixed right; width dynamic by display) ──
-    var railEl = root.querySelector('.pt-rail');
-    function railWidthPx() {
-      // display:none (toggle hidden OR media-query) → offsetParent null → 0.
-      if (!railEl || root.getAttribute('data-rail') === 'hidden' || railEl.offsetParent === null) return 0;
-      return Math.round(railEl.getBoundingClientRect().width);
-    }
-    // Inside each (same-origin) iframe: left-align .content + reserve rail width on the right
-    // so the page content isn't hidden behind the fixed rail. iframe stays full-width so its
-    // scrollbar is at the display's far right.
+    // ── v1.50.0 — overview rail. Parent CSS reserves the rail column. ──
+    // Inside each same-origin iframe: keep content left-aligned and wide. Rail reservation is now
+    // owned by the parent tab pane CSS, so iframe documents don't receive fragile padding patches.
     function applyRailToFrame(iframe) {
       try {
         var doc = iframe && iframe.contentDocument;
         if (!doc) return;
-        var w = railWidthPx();
         doc.querySelectorAll('.content').forEach(function (c) {
-          c.style.justifySelf = 'start';      // was center → left-align
+          c.style.justifySelf = 'start';
           c.style.maxWidth = 'none';
-          c.style.paddingRight = (w > 0 ? (w + 24) : 16) + 'px';
+          c.style.paddingRight = '';
         });
       } catch (e) { /* same-origin SSR → unreachable */ }
     }
@@ -99,10 +91,16 @@
     function activate(tab) {
       if (validTabs.indexOf(tab) < 0) tab = validTabs[0];
       root.querySelectorAll('.tab-pane').forEach(p => {
-        p.classList.toggle('active', p.dataset.tab === tab);
+        var active = p.dataset.tab === tab;
+        p.classList.toggle('active', active);
+        p.hidden = !active;
+        p.setAttribute('aria-hidden', active ? 'false' : 'true');
       });
       buttons.forEach(b => {
-        b.classList.toggle('active', b.dataset.tabBtn === tab);
+        var active = b.dataset.tabBtn === tab;
+        b.classList.toggle('active', active);
+        b.setAttribute('aria-selected', active ? 'true' : 'false');
+        b.setAttribute('tabindex', active ? '0' : '-1');
       });
       // v1.47.0 — on-demand load: a tab clicked before the background preload
       // reaches it loads right away (no wait beyond this single frame).
@@ -139,6 +137,21 @@
       b.addEventListener('click', function (e) {
         e.preventDefault();
         activate(b.dataset.tabBtn);
+      });
+      b.addEventListener('keydown', function (e) {
+        var keys = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
+        if (keys.indexOf(e.key) < 0) return;
+        e.preventDefault();
+        var current = buttons.indexOf(b);
+        var next = current;
+        if (e.key === 'Home') next = 0;
+        else if (e.key === 'End') next = buttons.length - 1;
+        else if (e.key === 'ArrowLeft') next = current <= 0 ? buttons.length - 1 : current - 1;
+        else if (e.key === 'ArrowRight') next = current >= buttons.length - 1 ? 0 : current + 1;
+        var target = buttons[next];
+        if (!target) return;
+        target.focus();
+        activate(target.dataset.tabBtn);
       });
     });
     window.addEventListener('hashchange', function () {
@@ -204,8 +217,8 @@
     // (AdminTemplates.shell(embed=true); ?_embed=1 + 표준 Sec-Fetch-Dest:iframe 로 자동 판정).
     // 따라서 과거의 "load 후 JS 로 nav 숨김(cleanup) + visibility:hidden 으로 flash 방지"는
     // 모두 제거했다 — 숨길 nav 자체가 HTML 에 없고, visibility:hidden 잔재는 cleanup 미실행
-    // race 시 iframe 이 영구 invisible 이 되는 새 결함을 만들었다. 남은 책임은 우측 overview
-    // rail 폭만큼 inner .content 우측 패딩을 보정하는 것뿐(applyRailToFrame).
+    // race 시 iframe 이 영구 invisible 이 되는 새 결함을 만들었다. v1.157.0 부터 rail 공간
+    // 예약도 parent pane CSS 가 담당하므로, 여기서는 iframe content alignment 만 보정한다.
     root.querySelectorAll('iframe.tab-frame').forEach(iframe => {
       iframe.addEventListener('load', function () { applyRailToFrame(iframe); });
       // load race: 이미 complete 면(가벼운 sub-page) 한 번 즉시 적용.
@@ -251,6 +264,8 @@
         var hidden = root.getAttribute('data-rail') === 'hidden';
         toggle.textContent = hidden ? '⟨' : '⟩';
         toggle.title = hidden ? (toggle.getAttribute('data-show') || '') : (toggle.getAttribute('data-hide') || '');
+        toggle.setAttribute('aria-expanded', hidden ? 'false' : 'true');
+        toggle.setAttribute('aria-label', toggle.title || toggle.textContent);
       }
       if (toggle) {
         toggle.addEventListener('click', function () {
@@ -345,7 +360,20 @@
         var providerEl = document.getElementById('pt-ctx-provider');
         if (providerEl) providerEl.textContent = d.provider ? '· ' + String(d.provider) : '';
         var used = input + cacheRead + cacheCreation;
-        if (limit <= 0 || used <= 0) { el.hidden = true; if (empty) empty.hidden = false; return; }
+        function setMeterA11y(now, max, text) {
+          max = Math.max(1, Math.round(Number(max) || 1));
+          now = Math.max(0, Math.min(max, Math.round(Number(now) || 0)));
+          el.setAttribute('aria-valuemin', '0');
+          el.setAttribute('aria-valuemax', String(max));
+          el.setAttribute('aria-valuenow', String(now));
+          el.setAttribute('aria-valuetext', text || '');
+        }
+        if (limit <= 0 || used <= 0) {
+          el.hidden = true;
+          if (empty) empty.hidden = false;
+          setMeterA11y(0, 1, empty ? empty.textContent : '');
+          return;
+        }
         el.hidden = false; if (empty) empty.hidden = true;
         var pct = Math.min(100, used / limit * 100);
         function w(x) { return (Math.max(0, x) / limit * 100) + '%'; }
@@ -358,9 +386,14 @@
         setT('pt-ctx-pct', Math.round(pct) + '%');
         setT('pt-ctx-free', ptCtxFmt(Math.max(0, limit - used)));
         el.classList.toggle('warn', pct >= 70);
-        el.title = '대화 컨텍스트 ' + ptCtxFmt(used) + ' / ' + ptCtxFmt(limit) + ' (' + Math.round(pct) +
-          '%). 재사용 ' + ptCtxFmt(cacheRead) + ' · 신규캐시 ' + ptCtxFmt(cacheCreation) +
-          ' · 입력 ' + ptCtxFmt(input) + '. 클수록 매 turn 비용↑ — 새 세션으로 리셋 가능.';
+        function msg(name, fallback) { return el.getAttribute('data-' + name) || fallback; }
+        var title = msg('tooltip-prefix', 'Conversation context') + ' ' + ptCtxFmt(used) + ' / ' + ptCtxFmt(limit) + ' (' + Math.round(pct) +
+          '%). ' + msg('tooltip-reuse', 'Cache reused') + ' ' + ptCtxFmt(cacheRead) +
+          ' · ' + msg('tooltip-create', 'New cache') + ' ' + ptCtxFmt(cacheCreation) +
+          ' · ' + msg('tooltip-input', 'Input') + ' ' + ptCtxFmt(input) +
+          '. ' + msg('tooltip-suffix', 'Higher usage increases each turn cost. Start a new session to reset.');
+        el.title = title;
+        setMeterA11y(used, limit, title);
       }
       // v1.106.3 — /compact 버튼: 콘솔 iframe 에 vibe:send-prompt 로 '/compact' 전달
       // (콘솔의 정상 전송 경로 사용 → busy 면 큐, 에코/미터 갱신 일관). 우측 rail 에 위치.
@@ -369,10 +402,17 @@
         compactBtn.addEventListener('click', function () {
           var cf = frameOf('console');
           if (!cf || !cf.contentWindow) return;
-          if (!window.confirm('/compact 를 콘솔에 보냅니다 — 대화를 요약해 컨텍스트를 줄입니다(맥락 유지). 진행할까요?')) return;
+          var confirmText = compactBtn.getAttribute('data-confirm') || 'Send /compact to the console?';
+          if (!window.confirm(confirmText)) return;
           cf.contentWindow.postMessage({ type: 'vibe:send-prompt', text: '/compact' }, location.origin);
           compactBtn.classList.add('busy');
-          setTimeout(function () { compactBtn.classList.remove('busy'); }, 4000);
+          compactBtn.disabled = true;
+          compactBtn.setAttribute('aria-busy', 'true');
+          setTimeout(function () {
+            compactBtn.classList.remove('busy');
+            compactBtn.disabled = false;
+            compactBtn.setAttribute('aria-busy', 'false');
+          }, 4000);
         });
       }
       // v1.108.0 — '자동(auto-compact)' 체크박스: 콘솔 iframe 으로 전달해 서버에 영속(fetch).
@@ -400,10 +440,15 @@
           }
           head.setAttribute('role', 'button');
           head.setAttribute('tabindex', '0');
+          function syncExpanded() {
+            head.setAttribute('aria-expanded', card.classList.contains('pt-collapsed') ? 'false' : 'true');
+          }
           function toggle() {
             var collapsed = card.classList.toggle('pt-collapsed');
             if (lsKey) { try { localStorage.setItem(lsKey, collapsed ? '1' : '0'); } catch (e) {} }
+            syncExpanded();
           }
+          syncExpanded();
           head.addEventListener('click', function (ev) {
             // 헤더 내 액션(버튼/링크/입력/체크박스 라벨)은 토글 트리거 제외.
             if (ev.target.closest('button, a, input, select, label')) return;

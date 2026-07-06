@@ -143,3 +143,26 @@ data class OpenCodeUsageDto(
     val cacheReadTokens: Long? = null,
     val raw: String? = null,
 )
+
+/**
+ * v1.158.0 — z.ai coding plan 사용량 스냅샷. Z.AI monitor API
+ * (`/api/monitor/usage/quota/limit`) 를 직접 호출한 결과.
+ *
+ * 사이드바 GLM pill 이 [usagePercent] / [resetAt] 로 게이지 바를 렌더링한다.
+ * [OpenCodeUsageDto] 와 별도 DTO — opencode CLI quota 와 z.ai API quota 는 데이터 소스가 다르다.
+ */
+@Serializable
+data class GlmUsageDto(
+    val updatedAt: String,
+    val available: Boolean = false,
+    /** auth.json 에 zai-coding-plan credential 존재 여부. */
+    val loggedIn: Boolean = false,
+    /** z.ai quota 사용량 백분율 (0–100). */
+    val usagePercent: Int? = null,
+    /** quota 리셋 시각 (ISO 8601 또는 Z.AI 포맷). */
+    val resetAt: String? = null,
+    /** 총 토큰 사용량 (Z.AI totalTokensUsage). */
+    val totalTokensUsage: Long? = null,
+    val usageSummary: String? = null,
+    val raw: String? = null,
+)

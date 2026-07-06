@@ -95,7 +95,7 @@ enum class SetupComponent(
         sizeHint = "env.size.platformTools",
     ),
     // v1.73.0 — 안드로이드 에뮬레이터(헤드리스, Claude 로그분석용). doctorCmd="android" 재사용:
-    // manifest.yml 에 emulator + system-images;android-35;google_apis;x86_64 가 들어가 있어
+    // manifest.yml 에 emulator + system-images;android-35;google_atd;x86_64 가 들어가 있어
     // `vibe-doctor android` 가 SDK 와 함께 설치한다. 실행/AVD 생성은 EmulatorService(/emulator).
     ANDROID_EMULATOR(
         id = "android-emulator",
@@ -330,9 +330,11 @@ class EnvSetupService(
     private fun probeAndroidEmulator(c: SetupComponent, lang: String): ComponentState {
         val sdk = androidSdkRoot() ?: return ComponentState(c, ComponentStatus.MISSING, t(lang, "probe.androidSdk.notSet"))
         val emulatorBin = sdk.resolve("emulator/emulator")
-        val imageDir = sdk.resolve("system-images/android-35/google_apis/x86_64")
+        val imageDir = sdk.resolve("system-images/android-35/google_atd/x86_64")
+        val legacyImageDir = sdk.resolve("system-images/android-35/google_apis/x86_64")
         val hasEmu = emulatorBin.exists()
-        val hasImg = imageDir.exists() && Files.isDirectory(imageDir)
+        val hasImg = (imageDir.exists() && Files.isDirectory(imageDir)) ||
+            (legacyImageDir.exists() && Files.isDirectory(legacyImageDir))
         return when {
             hasEmu && hasImg -> ComponentState(c, ComponentStatus.INSTALLED, t(lang, "probe.androidEmulator.ok", sdk.toString()))
             hasEmu -> ComponentState(c, ComponentStatus.PARTIAL, t(lang, "probe.androidEmulator.noImage"))

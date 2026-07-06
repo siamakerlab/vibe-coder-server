@@ -110,8 +110,9 @@ docker compose up -d            # boots postgres + vibe-coder-server
 - Build environment one-click installer — Android SDK, Gradle, Node + Claude
   CLI, MCP packages, optional Flutter SDK, and optional OpenSSH server;
   everything in bind-mounted volumes where possible.
-- MCP catalog with 60+ servers (trust tiers, per-MCP token forms); headless
-  Android emulator (KVM) with wireless ADB.
+- MCP catalog with 60+ servers (trust tiers, per-MCP token forms); a headless
+  Android emulator pool (KVM, up to five phone/tablet/foldable AVDs) with
+  wireless ADB.
 
 **Operations & security**
 - Single-admin model (multi-user roles were removed in v1.45.0). BCrypt +
@@ -273,7 +274,7 @@ cookie required except `/setup`, `/login`, `/health`.
 | `/history` · `/usage` · `/audit` · `/logs` | Cross-project search / usage stats / audit / build-log grep |
 | `/env-setup` (+ `/mcp`, `/claude-login`) | Build environment installer, MCP catalog, Claude OAuth |
 | `/backup` · `/archive` | Workspace backup + project restore; archived projects |
-| `/emulator` · `/adb` | Headless AVD lifecycle; wireless ADB pairing |
+| `/emulator` · `/adb` | Headless AVD pool lifecycle; wireless ADB pairing |
 | `/settings…` · `/devices` · `/password` · `/2fa` · `/webauthn` | Operations & security |
 | `/metrics` | Prometheus exposition |
 

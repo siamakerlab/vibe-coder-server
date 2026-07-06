@@ -246,6 +246,7 @@ class OpenCodeSessionManager(
             sessionId = sessionId,
             model = effectiveModel(projectId),
             variant = effectiveVariant(projectId),
+            dir = workspace.projectRoot(projectId).toString(),
         )
 
     private fun enqueuePrompt(projectId: String, text: String): Int {
@@ -271,7 +272,6 @@ class OpenCodeSessionManager(
         history?.userPrompt(projectId, sid, text, provider = provider.id)
         val root = workspace.projectRoot(projectId)
         if (!root.exists()) throw IllegalStateException("project root not found: $root")
-        ensureProjectOpenCodeConfig(projectId, root)
         val args = buildArgs(projectId, text, sid)
         log.info { "[$projectId] spawning OpenCode: ${args.joinToString(" ")} (cwd=$root)" }
         val proc = withContext(Dispatchers.IO) {
@@ -693,35 +693,6 @@ class OpenCodeSessionManager(
     }
 
     /**
-     * v1.156.2 — 프로젝트별 opencode config (`opencode.json`) 생성. filesystem MCP 를
-     * 프로젝트 루트로만 제한 — 글로벌 config(`/home/vibe/.config/opencode/opencode.jsonc`)의
-     * `/workspace` 전체 마운트를 override (프로젝트 config 가 글로벌보다 우선).
-     * 사용자가 이미 opencode.json 을 두면 건드리지 않는다.
-     */
-    private fun ensureProjectOpenCodeConfig(projectId: String, projectRoot: Path) {
-        val configFile = projectRoot.resolve("opencode.json")
-        if (Files.exists(configFile)) return
-        val configContent = buildString {
-            appendLine("{")
-            appendLine("  \"${'$'}schema\": \"https://opencode.ai/config.json\",")
-            appendLine("  \"mcp\": {")
-            appendLine("    \"filesystem\": {")
-            appendLine("      \"type\": \"local\",")
-            append("      \"command\": [\"npx\", \"-y\", \"@modelcontextprotocol/server-filesystem\", \"")
-            append(projectRoot.toString())
-            appendLine("\"],")
-            appendLine("      \"enabled\": true")
-            appendLine("    }")
-            append("  }")
-            append("}")
-        }
-        runCatching {
-            configFile.writeText(configContent)
-            log.info { "[$projectId] opencode.json 생성 (filesystem MCP → $projectRoot)" }
-        }.onFailure { log.warn(it) { "프로젝트 opencode config 생성 실패: $configFile" } }
-    }
-
-    /**
      * v1.153.0 — z.ai-only config 디렉토리 생성/유지. provider 블록을 비워 커스텀 provider 를
      * 숨기고, model 을 zai-coding-plan 으로 고정. 매 spawn 전 호출 — config 가 손상되면 자동 복구.
      */
@@ -783,6 +754,7 @@ internal fun buildOpenCodeExecArgs(
     sessionId: String?,
     model: String?,
     variant: String? = null,
+    dir: String? = null,
 ): List<String> = buildList {
     add(cmd)
     add("run")
@@ -791,6 +763,9 @@ internal fun buildOpenCodeExecArgs(
     model?.let { add("-m"); add(it) }
     // v1.156.0 — reasoning effort (opencode --variant). high/max/minimal.
     variant?.let { add("--variant"); add(it) }
+    // v1.156.3 — OpenCode 내부 project dir 을 명시. Process cwd 만으로는 GLM 세션이
+    // 컨테이너 WORKDIR(/workspace)을 현재 폴더로 인식하는 경우가 있었다.
+    dir?.takeIf { it.isNotBlank() }?.let { add("--dir"); add(it) }
     if (sessionId != null) {
         add("-s"); add(sessionId)
     }

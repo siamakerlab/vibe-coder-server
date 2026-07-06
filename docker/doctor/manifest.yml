@@ -14,10 +14,10 @@ android:
     - "build-tools;35.0.0"
     - "platforms;android-34"           # 호환성 (라이브러리 일부)
     - "build-tools;34.0.0"
-    # v1.73.0 — 헤드리스 에뮬레이터(Claude Code 로그분석용). emulator 바이너리 + 시스템 이미지.
-    # AVD 생성/실행은 서버의 EmulatorService(/emulator) 가 담당. google_apis(비-Play) → adb root.
+    # v1.160.0 — 헤드리스/자동 테스트용 에뮬레이터. google_atd 는 UI/번들 앱을 줄인
+    # Automated Test Device 이미지라 멀티 에뮬레이터 동시 실행에 유리하다.
     - "emulator"
-    - "system-images;android-35;google_apis;x86_64"
+    - "system-images;android-35;google_atd;x86_64"
 
 # Flutter SDK (Android 앱 빌드 전용). git channel 을 /home/vibe/.local/flutter 에 clone.
 # lib/flutter.sh 가 이 값을 grep 으로 읽는다.

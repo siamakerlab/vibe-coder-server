@@ -256,7 +256,7 @@ docker exec -it vibe-coder-server vibe-doctor mcp          # 선택적 MCP만
 처음 실행 시 다음 순서로 진행됩니다.
 
 1. **환경 진단** — JDK / Node / git / Claude CLI / 워크스페이스 권한
-2. **Android SDK 설치** — cmdline-tools (130MB) → 라이선스 자동 수락 → platform-tools + platforms;android-35 + build-tools;35.0.0
+2. **Android SDK 설치** — cmdline-tools (130MB) → 라이선스 자동 수락 → platform-tools + platforms;android-35 + build-tools;35.0.0 + emulator + android-35 google_atd x86_64
 3. **Claude 인증** — 호스트 ~/.claude 마운트 권장. 또는 컨테이너 안 `claude login`.
 4. **선택적 MCP** — filesystem, sqlite, fetch, playwright 등 (개별 동의)
 5. **최종 점검** — 모든 컴포넌트 ✓ 확인

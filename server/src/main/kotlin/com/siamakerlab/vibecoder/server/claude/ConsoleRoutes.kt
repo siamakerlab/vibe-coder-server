@@ -3,6 +3,7 @@ package com.siamakerlab.vibecoder.server.claude
 import com.siamakerlab.vibecoder.server.audit.AuditLogger
 import com.siamakerlab.vibecoder.server.agent.AgentProvider
 import com.siamakerlab.vibecoder.server.agent.AgentRouter
+import com.siamakerlab.vibecoder.server.agent.ModelCatalogService
 import com.siamakerlab.vibecoder.server.auth.AUTH_BEARER
 import com.siamakerlab.vibecoder.server.auth.requireApiWrite
 import com.siamakerlab.vibecoder.server.auth.requireDevice
@@ -57,6 +58,7 @@ fun Routing.consoleRoutes(
     /** v0.31.0 — prompt 자동완성. */
     promptSuggestionService: PromptSuggestionService,
     agentRouter: AgentRouter? = null,
+    modelCatalog: ModelCatalogService? = null,
 ) {
     authenticate(AUTH_BEARER) {
         post("/api/projects/{projectId}/claude/console/prompt") {
@@ -224,7 +226,7 @@ fun Routing.consoleRoutes(
                 ?: throw ApiException.localized(400, "bad_request", messageKey = "api.console.projectIdRequired")
             call.requireProjectAcl(projects, projectId)
             projects.rowOrThrow(projectId)
-            call.respond(buildConsoleSettings(sessionManager, projectId))
+            call.respond(buildConsoleSettings(sessionManager, projectId, agentRouter, modelCatalog))
         }
         get(ApiPath.projectAgentProvider("{projectId}")) {
             val projectId = call.parameters["projectId"]
@@ -261,8 +263,9 @@ fun Routing.consoleRoutes(
             projects.rowOrThrow(projectId)
             val model = call.receive<com.siamakerlab.vibecoder.shared.dto.ConsoleModelRequestDto>().model
                 ?.trim()?.ifBlank { null }
-            sessionManager.setProjectModelAndRestart(projectId, model)
-            call.respond(buildConsoleSettings(sessionManager, projectId))
+            if (agentRouter != null) agentRouter.setProjectModelAndRestart(projectId, model)
+            else sessionManager.setProjectModelAndRestart(projectId, model)
+            call.respond(buildConsoleSettings(sessionManager, projectId, agentRouter, modelCatalog))
         }
         post("/api/projects/{projectId}/claude/console/mcp-strict") {
             call.requireApiWrite()
@@ -272,7 +275,7 @@ fun Routing.consoleRoutes(
             projects.rowOrThrow(projectId)
             val enabled = call.receive<com.siamakerlab.vibecoder.shared.dto.ConsoleToggleRequestDto>().enabled
             sessionManager.setMcpStrictAndRestart(projectId, enabled)
-            call.respond(buildConsoleSettings(sessionManager, projectId))
+            call.respond(buildConsoleSettings(sessionManager, projectId, agentRouter, modelCatalog))
         }
         post("/api/projects/{projectId}/claude/console/auto-compact") {
             call.requireApiWrite()
@@ -282,7 +285,7 @@ fun Routing.consoleRoutes(
             projects.rowOrThrow(projectId)
             val enabled = call.receive<com.siamakerlab.vibecoder.shared.dto.ConsoleToggleRequestDto>().enabled
             sessionManager.setAutoCompact(projectId, enabled)
-            call.respond(buildConsoleSettings(sessionManager, projectId))
+            call.respond(buildConsoleSettings(sessionManager, projectId, agentRouter, modelCatalog))
         }
     }
 }
@@ -336,21 +339,26 @@ private fun validatedImages(body: PromptRequestDto): List<com.siamakerlab.vibeco
     return images
 }
 
-/** v1.120.0 — 콘솔 설정 현재 상태 → DTO. 모델 목록은 알려진 5종(기본 포함, v1.140.0 fable 추가). */
+/** v1.120.0 — 콘솔 설정 현재 상태 → DTO. v1.157.0 — provider별 동적 모델 catalog 반영. */
 private fun buildConsoleSettings(
     sessionManager: ClaudeSessionManager,
     projectId: String,
+    agentRouter: AgentRouter?,
+    modelCatalog: ModelCatalogService?,
 ): com.siamakerlab.vibecoder.shared.dto.ConsoleSettingsDto =
-    com.siamakerlab.vibecoder.shared.dto.ConsoleSettingsDto(
-        model = sessionManager.readProjectModel(projectId),
-        effectiveModel = sessionManager.effectiveModel(projectId),
-        autoCompact = sessionManager.isAutoCompact(projectId),
-        mcpStrict = sessionManager.isMcpStrict(projectId),
-        availableModels = listOf(
-            com.siamakerlab.vibecoder.shared.dto.ConsoleModelOptionDto("", "CLI default"),
-            com.siamakerlab.vibecoder.shared.dto.ConsoleModelOptionDto("sonnet", "Sonnet"),
-            com.siamakerlab.vibecoder.shared.dto.ConsoleModelOptionDto("opus", "Opus"),
-            com.siamakerlab.vibecoder.shared.dto.ConsoleModelOptionDto("fable", "Fable 5"),
-            com.siamakerlab.vibecoder.shared.dto.ConsoleModelOptionDto("haiku", "Haiku"),
-        ),
-    )
+    run {
+        val provider = agentRouter?.providerFor(projectId) ?: AgentProvider.CLAUDE
+        val currentModel = agentRouter?.readProjectModel(projectId) ?: sessionManager.readProjectModel(projectId)
+        val effectiveModel = agentRouter?.effectiveModel(projectId) ?: sessionManager.effectiveModel(projectId)
+        val modelOptions = modelCatalog?.modelsFor(provider, currentModel, effectiveModel)
+            ?: ModelCatalogService.fallbackModels(provider)
+        com.siamakerlab.vibecoder.shared.dto.ConsoleSettingsDto(
+            model = currentModel,
+            effectiveModel = effectiveModel,
+            autoCompact = sessionManager.isAutoCompact(projectId),
+            mcpStrict = sessionManager.isMcpStrict(projectId),
+            availableModels =
+                listOf(com.siamakerlab.vibecoder.shared.dto.ConsoleModelOptionDto("", "CLI default")) +
+                    modelOptions.map { com.siamakerlab.vibecoder.shared.dto.ConsoleModelOptionDto(it.value, it.label) },
+        )
+    }

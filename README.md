@@ -232,9 +232,9 @@ For per-release history, see [CHANGELOG.md](CHANGELOG.md).
 - **Publishing** — Play Console upload (via `google-play-publisher` MCP) and
   TestFlight (via `app-store-connect` MCP). MCP-delegated, so signing secrets
   stay off the server code path.
-- **Headless Android emulator** — `/emulator` starts/stops a KVM-accelerated
-  AVD (`/dev/kvm`) so Claude can run `adb -s emulator-5554 install/logcat`
-  directly for log analysis (no screen).
+- **Headless Android emulator pool** — `/emulator` manages up to five
+  KVM-accelerated AVD slots (`/dev/kvm`) across phone, tablet, and foldable
+  profiles. Project leases prevent two projects from targeting the same serial.
 
 ### Project tooling
 
@@ -583,9 +583,9 @@ required except `/setup`, `/login`, `/health`. Every SSR POST carries a CSRF
 | `/history` | Cross-project conversation search |
 | `/logs` | Build log grep across all projects |
 | `/code-search` | Workspace-wide grep |
+| `/emulator` | Headless Android emulator pool; start/stop up to five phone/tablet/foldable AVD slots |
 | `/agents` | Custom `.agents/*.md` CRUD |
 | `/multi-console` | N-pane multi-project console (iframe grid) |
-| `/emulator` | Headless Android emulator — start/stop + status (KVM-accelerated) |
 | `/env-setup` | Build-environment status + one-click installers |
 | `/env-setup/mcp` | MCP catalog (60+) — marketplace cards with Install/Remove + status |
 | `/env-setup/claude-login` | Semi-automatic web OAuth |
@@ -674,7 +674,9 @@ Highlights:
 **Notifications, push & emulator**
 - `GET /api/notifications`, `POST /api/notifications/{ack|ack-all}`
 - `GET /api/push/vapid-public-key`, `POST /api/push/subscribe`, `DELETE /api/push/subscriptions/{id}`
-- `GET /api/emulator/status`, `POST /emulator/{start|stop}`
+- `GET /api/emulator/status`, `GET /api/emulators`, `POST /api/emulators/{id}/{start|stop}`
+- `GET|POST|DELETE /api/projects/{id}/emulator/lease` (project-level emulator allocation)
+- `POST /emulator/{start|stop}` and `/emulator/{start|stop}/{id}` (SSR controls)
 - `GET /api/settings/git-integrations`, `POST .../{register|delete|ssh-keygen}`
 
 **WebSocket**

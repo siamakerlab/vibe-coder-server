@@ -235,6 +235,9 @@ fun main(args: Array<String>) {
             opencodeSessionManager,
         ),
     )
+    val modelCatalog = com.siamakerlab.vibecoder.server.agent.ModelCatalogService(
+        configProvider = { com.siamakerlab.vibecoder.server.config.ConfigHolder.current },
+    )
     // v1.1.0 — ProjectDto.busy 필드를 위해 sessionManager 를 lambda 로 주입.
     // 구성 순서: sessionManager 가 먼저 생성되어야 lambda 가 안전하게 호출 가능.
     // v0.33.0 — Cron 빌드 schedule + webhook secret. v1.43.0 — ProjectService 삭제 cascade
@@ -348,6 +351,9 @@ fun main(args: Array<String>) {
         intervalProvider = { java.time.Duration.ofMinutes(5) },
     )
     opencodeUsageMonitor.start()
+    // v1.158.0 — z.ai coding plan usage quota (Z.AI monitor API 직접 호출). 사이드바 GLM pill.
+    val glmQuotaService = com.siamakerlab.vibecoder.server.admin.GlmQuotaService()
+    glmQuotaService.start()
     // v1.7.9 — 컨테이너 구동 중 토큰 자동 갱신. workspace.root 를 cwd 로 사용해
     // SCRATCH 디렉토리 유무와 무관하게 동작 보장.
     val claudeTokenRefresher = com.siamakerlab.vibecoder.server.claude.ClaudeTokenRefresher(
@@ -566,7 +572,7 @@ fun main(args: Array<String>) {
     // v1.40.0 — 무선 ADB 기기 logcat (admin). adb 없으면 기능 페이지가 안내.
     val adbService = com.siamakerlab.vibecoder.server.device.AdbService()
     // v1.73.0 — 안드로이드 에뮬레이터(헤드리스, Claude 로그분석용). 미설치/미가속이면 페이지가 안내.
-    val emulatorService = com.siamakerlab.vibecoder.server.device.EmulatorService(adbService)
+    val emulatorService = com.siamakerlab.vibecoder.server.device.EmulatorService(adbService, workspace = workspace)
     // v1.117.0 — 인스트루먼트 테스트(에뮬레이터) 실행기. 빌드환경 > Emulator 의 컨테이너
     //  에뮬레이터(emulatorService.serial)를 connectedDebugAndroidTest 타겟으로 고정.
     val instrumentedTest = com.siamakerlab.vibecoder.server.build.InstrumentedTestService(workspace, emulatorService, gradleRunGuard)
@@ -600,6 +606,7 @@ fun main(args: Array<String>) {
         projects = projects,
         sessionManager = sessionManager,
         agentRouter = agentRouter,
+        modelCatalog = modelCatalog,
         gradle = gradle,
         artifacts = artifacts,
         build = build,
@@ -630,6 +637,7 @@ fun main(args: Array<String>) {
         codexUsageMonitor = codexUsageMonitor,
         opencodeStatusService = opencodeStatusService,
         opencodeUsageMonitor = opencodeUsageMonitor,
+        glmQuotaService = glmQuotaService,
         playPublishService = playPublishService,
         testFlightPublishService = testFlightPublishService,
         apkSignerInspector = apkSignerInspector,

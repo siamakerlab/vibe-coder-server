@@ -48,6 +48,17 @@ class FlutterToolchain(private val config: ServerConfig) : BuildToolchain {
             BuildVariant.RELEASE -> listOf("build", "apk", "--release")
             BuildVariant.BUNDLE -> listOf("build", "appbundle", "--release")
         }
+        val cleanCommand = listOf(flutterBin(), "clean")
+        logger.info("Flutter clean command: ${cleanCommand.joinToString(" ")}")
+        val runner = ProcessRunner(workdir = source)
+        val clean = runner.run(
+            command = cleanCommand,
+            timeout = config.build.timeoutMinutes.minutes,
+            cancellation = cancellation,
+        ) { level, line -> logger.line(level, line) }
+        logger.info("Flutter clean exited code=${clean.exitCode} timedOut=${clean.timedOut} duration=${clean.durationMs}ms")
+        if (clean.exitCode != 0) return clean.exitCode
+
         val command = listOf(flutterBin()) + sub
         logger.info("Flutter build command: ${command.joinToString(" ")}")
         if (signing != null && variant != BuildVariant.DEBUG) {
@@ -58,7 +69,6 @@ class FlutterToolchain(private val config: ServerConfig) : BuildToolchain {
             )
         }
 
-        val runner = ProcessRunner(workdir = source)
         val result = runner.run(
             command = command,
             timeout = config.build.timeoutMinutes.minutes,

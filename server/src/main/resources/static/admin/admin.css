@@ -9,6 +9,7 @@
     --text: #e4e8ef;
     --text-dim: #8b94a8;
     --primary: #5e9eff;
+    --accent: var(--primary);
     --primary-hover: #7eb4ff;
     --danger: #ff6b6b;
     --warn: #ffa94d;
@@ -17,7 +18,44 @@
     --wait: #fab005;
     --halt: #b197fc;
     --radius: 6px;
+    --radius-hairline: 2px;
+    --status-off: #3a4150;
     --shadow: 0 2px 8px rgba(0,0,0,0.3);
+    --shadow-brand-icon: 0 2px 8px rgba(0,0,0,0.25);
+    --shadow-drawer: -12px 0 32px color-mix(in srgb, var(--bg) 72%, transparent);
+    --overlay-scrim: color-mix(in srgb, var(--bg) 78%, transparent);
+    --console-bg: #0a0d12;
+    --console-sticky-bg: #121a28;
+    --console-scroll-thumb: #3b3b3b;
+    --console-scroll-thumb-hover: #555;
+    --console-bubble-fill: rgba(255,255,255,0.05);
+    --console-assistant-fill: rgba(94,211,161,0.09);
+    --console-assistant-border: rgba(94,211,161,0.18);
+    --console-tool-fill: rgba(207,167,99,0.09);
+    --console-tool-border: rgba(207,167,99,0.16);
+    --console-tool-out-fill: rgba(142,160,194,0.08);
+    --console-tool-out-border: rgba(142,160,194,0.14);
+    --console-error-fill: rgba(255,107,107,0.11);
+    --console-error-border: rgba(255,107,107,0.26);
+    --console-sys-fill: rgba(108,122,147,0.15);
+    --console-sys-text: #9aa7bd;
+    --console-thinking-fill: rgba(138,127,176,0.14);
+    --console-thinking-border: rgba(138,127,176,0.22);
+    --console-assistant-accent: #5ed3a1;
+    --console-tool-accent: #cfa763;
+    --console-tool-out-accent: #8ea0c2;
+    --console-gauge-vibe: #16a34a;
+    --context-read: #3a82f6;
+    --context-create: #2dd4bf;
+    --context-input: #ffb86b;
+    --context-input-ring: rgba(255,184,107,0.45);
+    --status-stopped-border: rgba(151, 117, 250, 0.4);
+    --status-stopped-fill: rgba(151, 117, 250, 0.08);
+    --radius-scroll-thumb: 5px;
+    --radius-console-bubble: 14px;
+    --radius-console-pill: 11px;
+    --radius-badge: 9px;
+    --shadow-floating-control: 0 4px 14px rgba(0,0,0,0.5);
 }
 
 html, body {
@@ -46,7 +84,6 @@ a:hover { color: var(--primary-hover); text-decoration: underline; }
     height: 100dvh;
     height: var(--app-viewport-height, 100dvh);
     overflow: hidden;
-    transition: grid-template-columns 0.18s ease;
 }
 .layout.no-nav { grid-template-columns: 1fr; }
 /* v1.6.2 — 사이드바 접힘. :root data-attribute (first paint 전 inline script 가
@@ -61,7 +98,6 @@ a:hover { color: var(--primary-hover); text-decoration: underline; }
     display: flex;
     flex-direction: column;
     gap: 16px;
-    transition: padding 0.18s ease;
     align-items: stretch;
     /* v1.16.0 — 사이드바 자체는 viewport 안에 항상 100% 표시 (스크롤 X). nav-links
        가 길어지면 그 안에서만 자체 스크롤 (overflow: auto 가 nav-links 에 적용). */
@@ -88,7 +124,7 @@ a:hover { color: var(--primary-hover); text-decoration: underline; }
     border-radius: 50%;
     object-fit: cover;
     flex-shrink: 0;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    box-shadow: var(--shadow-brand-icon);
 }
 .brand-title {
     font-size: 18px;
@@ -118,6 +154,39 @@ a:hover { color: var(--primary-hover); text-decoration: underline; }
     justify-content: center;
 }
 .sidebar-toggle:hover { background: var(--bg-card); color: var(--text); }
+
+.mobile-nav-toggle,
+.mobile-nav-backdrop {
+    display: none;
+}
+
+.mobile-nav-toggle {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-dim);
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 4px;
+    flex-shrink: 0;
+}
+.mobile-nav-toggle span {
+    display: block;
+    width: 16px;
+    height: 2px;
+    border-radius: var(--radius-hairline);
+    background: currentColor;
+}
+.mobile-nav-toggle:hover,
+body.mobile-nav-open .mobile-nav-toggle {
+    background: var(--bg-card);
+    color: var(--text);
+}
 
 /* v1.7.6 — 접힘 상태:
    - 브랜드 타이틀, nav 라벨, quota pill, username, logout 모두 숨김.
@@ -217,26 +286,50 @@ a:hover { color: var(--primary-hover); text-decoration: underline; }
     transition: transform .15s ease;
 }
 .quota-pill.collapsed .qp-header::before { transform: rotate(-90deg); }
-.quota-pill .qp-header:focus-visible { outline: 1px solid var(--accent, #3b82f6); outline-offset: 2px; border-radius: 3px; }
+.quota-pill .qp-header:focus-visible { outline: 1px solid var(--primary); outline-offset: 2px; border-radius: 3px; }
 .quota-pill .qp-h-title { /* same as qp-header text */ }
 .quota-pill .qp-rows { display: flex; flex-direction: column; gap: 8px; }
 .quota-pill.collapsed .qp-rows { display: none; }
 .quota-pill .qp-pct-compact {
     font-weight: 600; font-variant-numeric: tabular-nums;
     font-size: 11px; text-transform: none; letter-spacing: 0;
+    display: inline-flex; align-items: center; gap: 2px; white-space: nowrap;
 }
+.quota-pill .qp-compact-sep { color: var(--text-dim); font-weight: 400; }
 .quota-pill:not(.collapsed) .qp-pct-compact { display: none; }
 /* v1.65.0 — 무선디버깅 pill (Claude 사용량 위). quota-pill 스타일 재사용 + 자체 body. */
 .adb-pill { text-decoration: none; color: inherit; gap: 6px; }
 .adb-pill:hover .adb-pill-body { color: var(--text); }
 .adb-pill .adb-pill-body { font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 5px; }
 .adb-pill .adb-dot {
-    width: 8px; height: 8px; border-radius: 50%; background: #3a4150; flex: none;
+    width: 8px; height: 8px; border-radius: 50%; background: var(--status-off); flex: none;
 }
 .adb-pill .adb-dot.on {
-    background: #69db7c;
-    box-shadow: 0 0 0 0 rgba(105,219,124,0.6);
+    background: var(--ok);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 60%, transparent);
     animation: pstat-pulse 1.6s ease-in-out infinite;
+}
+.adb-pill .emu-dot-list {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+}
+.adb-pill .emu-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--status-off);
+    flex: none;
+}
+.adb-pill .emu-dot.idle {
+    background: var(--ok);
+}
+.adb-pill .emu-dot.busy {
+    background: var(--wait);
+}
+.adb-pill .emu-dot.stopped {
+    background: var(--status-off);
 }
 :root[data-sidebar-collapsed="1"] .layout .adb-pill,
 .layout.sidebar-collapsed .adb-pill { display: none; }
@@ -255,9 +348,9 @@ a:hover { color: var(--primary-hover); text-decoration: underline; }
 .quota-pill .qp-label { color: var(--text-dim); }
 .quota-pill .qp-pct { font-weight: 600; font-variant-numeric: tabular-nums; }
 .quota-pill .qp-track {
-    height: 4px; background: var(--bg-card); border-radius: 2px; overflow: hidden;
+    height: 4px; background: var(--bg-card); border-radius: var(--radius-hairline); overflow: hidden;
 }
-.quota-pill .qp-fill { height: 100%; transition: width 0.4s ease; }
+.quota-pill .qp-fill { height: 100%; }
 .quota-pill .qp-reset {
     font-size: 10px; color: var(--text-dim); margin-top: 1px;
 }
@@ -497,7 +590,7 @@ button {
     font: inherit;
 }
 /* 평범한 <button> (variant 미지정) 의 baseline — chip 보다는 형태가 분명한 secondary 버튼. */
-button:not(.primary):not(.danger):not(.chip):not(.logout):not(.tab) {
+button:not(.primary):not(.danger):not(.chip):not(.logout):not(.tab):not(.mobile-nav-toggle):not(.mobile-nav-backdrop) {
     background: var(--bg-card);
     color: var(--text);
     border: 1px solid var(--border);
@@ -506,7 +599,7 @@ button:not(.primary):not(.danger):not(.chip):not(.logout):not(.tab) {
     font-weight: 500;
     transition: background 0.1s, border-color 0.1s;
 }
-button:not(.primary):not(.danger):not(.chip):not(.logout):not(.tab):hover {
+button:not(.primary):not(.danger):not(.chip):not(.logout):not(.tab):not(.mobile-nav-toggle):not(.mobile-nav-backdrop):hover {
     background: var(--border);
     border-color: var(--text-dim);
 }
@@ -721,7 +814,7 @@ body.console-page .console-log-wrap {
 }
 
 .console-log {
-    background: #0a0d12;
+    background: var(--console-bg);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     /* v1.70.1 — top padding 제거: sticky 프롬프트(top:0)가 최상단까지 올라가 그 위로
@@ -736,7 +829,7 @@ body.console-page .console-log-wrap {
     margin-bottom: 0;
     /* v1.6.4 — 명시 scrollbar. firefox + chromium. */
     scrollbar-width: thin;
-    scrollbar-color: #3b3b3b transparent;
+    scrollbar-color: var(--console-scroll-thumb) transparent;
 }
 
 body.console-page .console-log {
@@ -747,11 +840,11 @@ body.console-page .console-log {
 .console-log::-webkit-scrollbar { width: 10px; }
 .console-log::-webkit-scrollbar-track { background: transparent; }
 .console-log::-webkit-scrollbar-thumb {
-    background: #3b3b3b;
-    border-radius: 5px;
-    border: 2px solid #0a0d12;
+    background: var(--console-scroll-thumb);
+    border-radius: var(--radius-scroll-thumb);
+    border: 2px solid var(--console-bg);
 }
-.console-log::-webkit-scrollbar-thumb:hover { background: #555; }
+.console-log::-webkit-scrollbar-thumb:hover { background: var(--console-scroll-thumb-hover); }
 
 /* v1.6.4 — 최하단 아닌 경우 표시되는 fly-down 버튼. console-log-wrap 안 absolute. */
 .console-jump-bottom {
@@ -761,9 +854,9 @@ body.console-page .console-log {
     width: 36px;
     height: 36px;
     border-radius: 50%;
-    background: var(--bg-card, #1a1a1a);
-    border: 1px solid var(--border, #2a2a2a);
-    color: var(--text, #eee);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text);
     cursor: pointer;
     display: none;
     align-items: center;
@@ -771,21 +864,21 @@ body.console-page .console-log {
     font-size: 18px;
     line-height: 1;
     padding: 0;
-    box-shadow: 0 4px 14px rgba(0,0,0,0.5);
+    box-shadow: var(--shadow-floating-control);
     transition: opacity 0.15s ease, transform 0.12s ease;
     opacity: 0.92;
     z-index: 5;
 }
-.console-jump-bottom:hover { background: var(--accent, #3b82f6); color: #fff; opacity: 1; transform: translateY(-1px); }
+.console-jump-bottom:hover { background: var(--primary); color: white; opacity: 1; transform: translateY(-1px); }
 .console-jump-bottom.visible { display: flex; }
 .console-jump-bottom .badge {
     position: absolute;
     top: -4px; right: -4px;
-    background: var(--accent, #3b82f6);
-    color: #fff;
+    background: var(--primary);
+    color: white;
     font-size: 10px;
     font-weight: 700;
-    border-radius: 9px;
+    border-radius: var(--radius-badge);
     padding: 1px 5px;
     min-width: 16px;
     line-height: 1.2;
@@ -811,9 +904,9 @@ body.console-page .console-log {
     display: flex; flex-direction: column; min-width: 0;
     max-width: 82%;
     padding: 7px 12px;
-    border-radius: 14px;
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: var(--radius-console-bubble);
+    background: var(--console-bubble-fill);
+    border: 1px solid var(--console-bubble-fill);
 }
 .console-log .log-body { white-space: pre-wrap; word-break: break-word; }
 
@@ -822,7 +915,7 @@ body.console-page .console-log {
 .console-log .log-line.user { display: block; }
 .console-log .log-line.user::before {
     display: inline; position: absolute;
-    content: '> '; color: var(--primary, #6aa9ff);
+    content: '> '; color: var(--primary);
     font-weight: 600; white-space: pre; user-select: none;
 }
 .console-log .user .log-content {
@@ -831,48 +924,48 @@ body.console-page .console-log {
 }
 /* claude 응답 — 좌측 중립 버블 (마크다운 렌더) */
 .console-log .assistant .log-content {
-    background: rgba(94,211,161,0.09);
-    border-color: rgba(94,211,161,0.18);
+    background: var(--console-assistant-fill);
+    border-color: var(--console-assistant-border);
     border-bottom-left-radius: 4px;
 }
 /* 도구 호출/결과 — 좌측 인셋, 작은 모노 버블 */
 .console-log .tool .log-content {
-    background: rgba(207,167,99,0.09);
-    border-color: rgba(207,167,99,0.16);
+    background: var(--console-tool-fill);
+    border-color: var(--console-tool-border);
     font-size: 0.92em; max-width: 90%;
 }
 .console-log .tool-out .log-content {
-    background: rgba(142,160,194,0.08);
-    border-color: rgba(142,160,194,0.14);
+    background: var(--console-tool-out-fill);
+    border-color: var(--console-tool-out-border);
     font-size: 0.92em; max-width: 90%;
 }
 .console-log .tool-err .log-content,
 .console-log .err .log-content {
-    background: rgba(255,107,107,0.11);
-    border-color: rgba(255,107,107,0.26);
+    background: var(--console-error-fill);
+    border-color: var(--console-error-border);
 }
 /* 시스템/완료/replay — 좌측 작은 pill (v1.86.2 — 모든 응답 버블 좌측 정렬) */
 .console-log .sys { justify-content: flex-start; }
 .console-log .sys .log-content {
-    background: rgba(108,122,147,0.15);
+    background: var(--console-sys-fill);
     border: none;
     font-size: 0.82em;
     padding: 3px 11px;
-    border-radius: 11px;
-    color: #9aa7bd;
+    border-radius: var(--radius-console-pill);
+    color: var(--console-sys-text);
     max-width: 90%;
     text-align: center;
 }
 /* thinking / 파싱 불가 — 좌측 흐린 작은 뱃지(이름만) */
 .console-log .thinking { justify-content: flex-start; }
 .console-log .thinking .log-content {
-    background: rgba(138,127,176,0.14);
-    border-color: rgba(138,127,176,0.22);
+    background: var(--console-thinking-fill);
+    border-color: var(--console-thinking-border);
     font-style: italic;
     opacity: 0.85;
     font-size: 0.88em;
     padding: 4px 10px;
-    border-radius: 11px;
+    border-radius: var(--radius-console-pill);
 }
 
 /* v1.7.9 — 응답 카드 내부 하단 meta: 시각 + 복사 버튼. 우측 정렬. */
@@ -903,7 +996,7 @@ body.console-page .console-log {
     transition: color 0.15s;
 }
 .console-log .log-copy:hover { color: var(--text); }
-.console-log .log-copy.copied { color: #5ed3a1; }
+.console-log .log-copy.copied { color: var(--console-assistant-accent); }
 /* v1.70.2 → v1.70.3 — 복사 아이콘 축소 (14 → 9px, 원본의 ~2/3). */
 .console-log .log-copy svg { display: block; width: 9px; height: 9px; }
 
@@ -981,8 +1074,8 @@ body.console-page .console-log {
    - 긴 프롬프트는 앞 2줄만 표시(line-clamp) — 콘솔 전체를 덮지 않음. 카드 클릭으로
      펼침/접힘(.expanded). */
 .console-log .log-line.user {
-    background: #121a28;
-    box-shadow: inset 3px 0 0 var(--primary, #6aa9ff),
+    background: var(--console-sticky-bg);
+    box-shadow: inset 3px 0 0 var(--primary),
                 0 8px 12px -10px rgba(0,0,0,0.75);
     margin: 0 -14px;            /* console-log 좌우 padding 만큼 넓혀 가장자리까지 덮음 */
     padding-top: 3px;
@@ -1014,9 +1107,9 @@ body.console-page .console-log {
     overflow-y: auto;
     overscroll-behavior: contain;
 }
-.console-log .assistant .log-label { color: #5ed3a1; }
-.console-log .tool .log-label  { color: #cfa763; }
-.console-log .tool-out .log-label { color: #8ea0c2; }
+.console-log .assistant .log-label { color: var(--console-assistant-accent); }
+.console-log .tool .log-label  { color: var(--console-tool-accent); }
+.console-log .tool-out .log-label { color: var(--console-tool-out-accent); }
 .console-log .tool-err .log-label { color: var(--danger); }
 .console-log .tool-err .log-body  { color: var(--danger); }
 .console-log .err .log-label   { color: var(--danger); }
@@ -1042,18 +1135,70 @@ body.console-page .console-log {
         padding-bottom: 8px;
     }
     body.console-keyboard .console-log {
-        min-height: 96px;
+        min-height: 72px;
     }
     body.console-keyboard .prompt-form textarea {
-        min-height: 68px;
-        max-height: 112px;
+        min-height: 56px;
+        max-height: 96px;
         resize: none;
     }
-    body.console-keyboard #quick-prompts,
+    body.console-keyboard #quick-prompts {
+        display: flex !important;
+        flex-wrap: nowrap;
+        gap: 4px;
+        margin: 4px 0;
+        overflow-x: auto;
+        overflow-y: hidden;
+        scrollbar-width: none;
+    }
+    body.console-keyboard #quick-prompts::-webkit-scrollbar { display: none; }
+    body.console-keyboard #quick-prompts .qp-btn {
+        padding: 4px 9px;
+        font-size: 11px;
+        flex: 0 0 auto;
+    }
+    body.console-keyboard #quick-prompts .qp-sep {
+        flex: 0 0 auto;
+        min-height: 18px;
+    }
     body.console-keyboard .console-template-row,
-    body.console-keyboard .console-agent-row,
+    body.console-keyboard .console-agent-row {
+        display: flex !important;
+        flex-wrap: nowrap !important;
+        gap: 4px !important;
+        margin-top: 4px !important;
+        overflow-x: auto;
+        overflow-y: hidden;
+        scrollbar-width: none;
+    }
+    body.console-keyboard .console-template-row::-webkit-scrollbar,
+    body.console-keyboard .console-agent-row::-webkit-scrollbar { display: none; }
+    body.console-keyboard .console-template-row select,
+    body.console-keyboard .console-agent-row select {
+        min-width: 120px !important;
+        min-height: 32px;
+    }
+    body.console-keyboard .console-template-row .chip,
+    body.console-keyboard .console-agent-row .chip {
+        padding: 5px 9px;
+        white-space: nowrap;
+    }
     body.console-keyboard .console-bottom-bar {
-        display: none !important;
+        display: flex !important;
+        gap: 4px;
+        min-height: 24px;
+        margin-top: 4px !important;
+        margin-bottom: 0;
+        padding: 0 2px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        scrollbar-width: none;
+    }
+    body.console-keyboard .console-bottom-bar::-webkit-scrollbar { display: none; }
+    body.console-keyboard .console-bottom-tools {
+        gap: 4px;
+        margin-left: 0;
+        flex-wrap: nowrap;
     }
 }
 
@@ -1088,7 +1233,7 @@ body.console-page .console-log {
     color: var(--text-dim); text-decoration: none; font-size: 13px; line-height: 1;
     transition: background .15s, color .15s, border-color .15s;
 }
-.back-btn:hover { background: var(--bg-elev); color: var(--text); border-color: var(--accent); }
+.back-btn:hover { background: var(--bg-elev); color: var(--text); border-color: var(--primary); }
 .back-btn svg { flex-shrink: 0; }
 
 /* v1.78.0 — 대시보드 서버 상태 원형 게이지(#sys-card). r=15.915 둘레≈100 → dasharray 백분율. */
@@ -1101,12 +1246,10 @@ body.console-page .console-log {
 .gauge-track { fill: none; stroke: var(--border); stroke-width: 3.2; }
 /* v1.79.0 — 2색 도넛: 파랑=서버 전체(total), 초록=vibe-coder 점유(vibe, total 위에 겹쳐 그림). */
 .gauge-total {
-    fill: none; stroke: var(--accent, #3b82f6); stroke-width: 3.2; stroke-linecap: round;
-    transition: stroke-dasharray .5s ease;
+    fill: none; stroke: var(--primary); stroke-width: 3.2; stroke-linecap: round;
 }
 .gauge-vibe {
-    fill: none; stroke: #16a34a; stroke-width: 3.2; stroke-linecap: round;
-    transition: stroke-dasharray .5s ease;
+    fill: none; stroke: var(--console-gauge-vibe); stroke-width: 3.2; stroke-linecap: round;
 }
 .gauge-txt { fill: var(--text); font-size: 9px; font-weight: 600; text-anchor: middle; dominant-baseline: central; }
 #sys-card .gauge-label { font-size: 12px; color: var(--text-dim); }
@@ -1118,8 +1261,8 @@ body.console-page .console-log {
     content: ''; display: inline-block; width: 9px; height: 9px;
     border-radius: 2px; margin-right: 5px; vertical-align: middle;
 }
-#sys-card .lg-total::before { background: var(--accent, #3b82f6); }
-#sys-card .lg-vibe::before { background: #16a34a; }
+#sys-card .lg-total::before { background: var(--primary); }
+#sys-card .lg-vibe::before { background: var(--console-gauge-vibe); }
 #sys-card .sys-detail { margin: 0; }
 .chip-danger {
     border-color: var(--danger);
@@ -1171,8 +1314,8 @@ body.console-page .console-log {
 /* v1.60.0 → v1.100.0 — 중단됨(cancel/crash/idle/rate-limit 소진)=보라. 이전엔 빨강. */
 .pstat-stopped {
     color: var(--halt, #b197fc);
-    border-color: rgba(151, 117, 250, 0.4);
-    background: rgba(151, 117, 250, 0.08);
+    border-color: var(--status-stopped-border);
+    background: var(--status-stopped-fill);
 }
 /* v1.100.0 — 에러(API/turn 에러 종료)=빨강. */
 .pstat-error {
@@ -1210,7 +1353,7 @@ body.console-page .console-log {
     height: 100%;
     width: 0%;
     background: var(--primary);
-    transition: width 0.4s ease, background 0.2s;
+    transition: background 0.2s;
 }
 .progress-fill.done-ok   { background: var(--ok); }
 .progress-fill.done-fail { background: var(--danger); }
@@ -1218,7 +1361,7 @@ body.console-page .console-log {
 /* ── git diff 블록 ───────────────────────────────────────────────── */
 
 pre.diff-block {
-    background: #0a0d12;
+    background: var(--console-bg);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 10px 12px;
@@ -1264,40 +1407,96 @@ pre.diff-block {
     .content { padding: 24px; }
 }
 
-/* 작은 태블릿 / 큰 폰. 사이드바 horizontal nav(상단 헤더)로 전환. v1.33.1 — 모바일
-   768px 단일 블록으로 통합(이전엔 56px 세로 collapsed 블록과 충돌). */
+/* 작은 태블릿 / 큰 폰. 모바일은 wrap nav 가 아니라 compact app bar + drawer 로 전환.
+   nav label 이 길거나 browser zoom 이 켜져도 header 가 여러 줄로 늘어나 content 를
+   밀어내지 않는다. */
 @media (max-width: 768px) {
     /* v1.33.1 — 1칼럼 + rows(헤더 auto / 컨텐츠 1fr). 이전엔 grid-template-rows 가
        없어 fullbleed 탭(#project-tabs-root height:100%)의 높이 기준이 무너졌음. */
     .layout { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+    body.mobile-nav-open {
+        overflow: hidden;
+    }
     .sidebar {
         flex-direction: row;
         align-items: center;
-        padding: 10px 14px;
+        padding: 8px 12px;
         gap: 10px;
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
         border-right: none;
         border-bottom: 1px solid var(--border);
+        min-height: 56px;
+        overflow: visible;
     }
     /* v1.33.1 — 가로 헤더에선 접기 토글 불필요, quota pill 은 좁아 부적합. */
     .sidebar-toggle { display: none; }
     .quota-pill { display: none; }
+    .mobile-nav-toggle { display: inline-flex; margin-left: auto; }
     /* v1.7.6 — mobile: brand 는 horizontal (icon + title 한 줄). */
-    .brand { flex-direction: row; gap: 8px; padding: 0; }
+    .brand { flex-direction: row; gap: 8px; padding: 0; min-width: 0; }
     .brand-icon { width: 32px; height: 32px; }
-    /* v1.33.1 — 가로 nav. 기본 .nav-links 의 flex:1/overflow:auto(세로 스크롤용)를
-       override — 가로에선 내용폭만 차지하고 wrap. */
-    .nav-links { flex-direction: row; flex-wrap: wrap; gap: 6px; flex: 0 1 auto; overflow: visible; min-height: 0; }
-    .nav-links a { padding: 6px 10px; font-size: 13px; gap: 6px; }
-    .nav-links a .nav-icon { width: 16px; height: 16px; }
-    .user-box { padding: 0; border: none; margin-left: auto; }
-    .user-box .user { display: inline-block; margin-right: 8px; margin-bottom: 0; }
-    .logout { width: auto; padding: 6px 14px; }
+    .brand-title {
+        min-width: 0;
+        max-width: min(46vw, 220px);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .nav-links {
+        position: fixed;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 80;
+        width: min(320px, calc(100vw - 44px));
+        padding: calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom));
+        background: var(--bg-elev);
+        border-left: 1px solid var(--border);
+        box-shadow: var(--shadow-drawer);
+        flex-direction: column;
+        gap: 6px;
+        overflow-y: auto;
+        overflow-x: hidden;
+        overscroll-behavior: contain;
+        pointer-events: none;
+        transform: translateX(100%);
+        visibility: hidden;
+        transition: transform 0.16s ease, visibility 0.16s ease;
+    }
+    body.mobile-nav-open .nav-links {
+        transform: translateX(0);
+        visibility: visible;
+        pointer-events: auto;
+    }
+    .nav-links a {
+        min-height: 44px;
+        min-width: 0;
+        padding: 10px 12px;
+        font-size: 14px;
+        gap: 10px;
+    }
+    .nav-links a .nav-label { overflow-wrap: anywhere; }
+    .nav-links a .nav-icon { width: 20px; height: 20px; }
+    .mobile-nav-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 70;
+        border: 0;
+        padding: 0;
+        background: var(--overlay-scrim);
+        cursor: pointer;
+    }
+    body.mobile-nav-open .mobile-nav-backdrop { display: block; }
+    .user-box { display: none; }
     .content { padding: 20px 16px; }
     .auth-card { margin: 24px auto; max-width: 100%; padding: 24px; }
     .settings-tabs { margin-left: -16px; margin-right: -16px; padding: 0 16px;
                      overflow-x: auto; -webkit-overflow-scrolling: touch; }
     .settings-tabs::-webkit-scrollbar { display: none; }
+}
+
+@media (max-width: 768px) and (prefers-reduced-motion: reduce) {
+    .nav-links { transition: none; }
 }
 
 /* 모바일 폰. fieldset/card padding 줄임. */

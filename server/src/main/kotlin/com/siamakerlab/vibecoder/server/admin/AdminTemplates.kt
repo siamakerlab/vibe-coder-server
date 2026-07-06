@@ -14,6 +14,20 @@ import com.siamakerlab.vibecoder.shared.dto.ServerStatusDto
  */
 object AdminTemplates {
 
+    /**
+     * Which chrome owns the current document.
+     *
+     * This keeps the legacy showNav/embed/fullbleed parameters source-compatible while giving new
+     * templates an explicit vocabulary. The important invariant is that embedded documents never
+     * render app chrome; their parent shell owns navigation, tabs, and rails.
+     */
+    internal enum class ShellChromeMode {
+        FULL_APP,
+        FULLBLEED_TOOL,
+        EMBEDDED_CONTENT,
+        STANDALONE,
+    }
+
     private fun esc(s: String?): String =
         s.orEmpty()
             .replace("&", "&amp;")
@@ -95,9 +109,17 @@ object AdminTemplates {
          * 불필요 DOM/스크립트도 생성 안 됨. [ApplicationCall.isEmbeddedRequest] 로 자동 판정.
          */
         embed: Boolean = false,
+        chromeMode: ShellChromeMode? = null,
     ): String {
-        // v1.72.0 — embed(iframe inner) 면 nav/탭바 크롬 미렌더. 부모 탭 UI 가 이미 제공.
-        val showChrome = showNav && !embed
+        val resolvedChromeMode = chromeMode ?: when {
+            embed -> ShellChromeMode.EMBEDDED_CONTENT
+            !showNav -> ShellChromeMode.STANDALONE
+            fullbleed -> ShellChromeMode.FULLBLEED_TOOL
+            else -> ShellChromeMode.FULL_APP
+        }
+        // iframe inner documents must never render app chrome. Their parent shell owns it.
+        val showChrome = resolvedChromeMode == ShellChromeMode.FULL_APP ||
+            resolvedChromeMode == ShellChromeMode.FULLBLEED_TOOL
         val nav = if (showChrome) navHtml(currentPath, username, csrf, lang) else ""
         val layoutCls = if (showChrome) "layout" else "layout no-nav"
         val contentCls = when {
@@ -125,23 +147,19 @@ object AdminTemplates {
         val notifStyle = if (showChrome) NotificationBell.headStyle() else ""
         val notifBell = if (showChrome) NotificationBell.bodyHtml(lang) else ""
         val notifScript = if (showChrome) NotificationBell.bodyScript(lang) else ""
-        // v1.93.3 — embed iframe 이 프로젝트 탭(우측 rail 컨텍스트)일 때, inner .content 가
-        // 첫 페인트부터 rail 폭만큼 우측 여백을 확보하도록 CSS 로 선반영한다. 이전엔
-        // project-tabs.js 가 iframe load 후 paddingRight 를 주입해 콘텐츠가 가운데→왼쪽 +
-        // 여백 추가로 재배치(reflow)되는 모습이 보였다. rail 폭(clamp)은 .pt-rail width 와
-        // 동일 값이라 JS 가 같은 값을 재적용해도 변동 없음. chat 콘솔(/chat)·settings/tools
-        // embed(/settings·/tools)는 rail 이 없어 제외(startsWith("/projects") 로 한정).
-        val railContext = embed && currentPath.startsWith("/projects")
-        val railCss = if (railContext)
-            """<style>
-  body.pt-embed .content:not(.fullbleed) {
-    justify-self: start; max-width: none;
-    padding-right: calc(clamp(248px, 22vw, 360px) + 24px);
-  }
-  @media (max-width: 760px) { body.pt-embed .content:not(.fullbleed) { padding-right: 16px; } }
-  </style>"""
-        else ""
-        val bodyCls = if (railContext) "pt-embed" else ""
+        // v1.157.0 — project rail 공간 예약은 parent ProjectTabs shell 이 소유한다.
+        // embedded document 에는 식별 class 만 남겨 chrome ownership 을 명확히 한다.
+        val railContext = resolvedChromeMode == ShellChromeMode.EMBEDDED_CONTENT && currentPath.startsWith("/projects")
+        val railCss = ""
+        val bodyCls = listOfNotNull(
+            if (railContext) "pt-embed" else null,
+            when (resolvedChromeMode) {
+                ShellChromeMode.FULL_APP -> "shell-full-app"
+                ShellChromeMode.FULLBLEED_TOOL -> "shell-fullbleed-tool"
+                ShellChromeMode.EMBEDDED_CONTENT -> "shell-embedded-content"
+                ShellChromeMode.STANDALONE -> "shell-standalone"
+            },
+        ).joinToString(" ")
         return """<!doctype html>
 <html lang="${esc(lang)}">
 <head>
@@ -152,7 +170,7 @@ object AdminTemplates {
   <link rel="icon" type="image/png" href="/static/icon.png">
   <link rel="manifest" href="/static/manifest.json">
   <meta name="theme-color" content="#0b0d12">
-  <link rel="stylesheet" href="/static/admin.css?v=1.155.0">
+  <link rel="stylesheet" href="/static/admin.css?v=1.157.0">
   <script>
     // v1.6.2 — 사이드바 접힘 상태를 first paint 전에 :root data-attribute 로 적용 (FOUC 회피).
     // CSS 의 :root[data-sidebar-collapsed="1"] .layout 가 grid-template-columns 축소.
@@ -259,7 +277,14 @@ object AdminTemplates {
   <button type="button" class="sidebar-toggle" id="sidebar-toggle"
           title="${esc(t("nav.collapseToggle"))}"
           aria-label="${esc(t("nav.collapseToggle"))}">⇆</button>
-  <div class="nav-links">
+  <button type="button" class="mobile-nav-toggle" id="mobile-nav-toggle"
+          aria-controls="mobile-nav-links"
+          aria-expanded="false"
+          title="${esc(t("nav.collapseToggle"))}"
+          aria-label="${esc(t("nav.collapseToggle"))}">
+    <span></span><span></span><span></span>
+  </button>
+  <div class="nav-links" id="mobile-nav-links">
     ${link("/", t("nav.home"), "dashboard", "home")}
     ${link("/projects", t("nav.projects"), "projects", "folder")}
     ${link("/chat", t("nav.chat"), "chat", "chat")}
@@ -268,6 +293,7 @@ object AdminTemplates {
     ${link("/terminal", t("nav.terminal"), "terminal", "terminal")}
     ${link("/settings/tabs", t("nav.settings"), "settings", "settings")}
   </div>
+  <button type="button" class="mobile-nav-backdrop" id="mobile-nav-backdrop" aria-label="${esc(t("nav.collapseToggle"))}"></button>
   <!-- v1.65.0 — 무선디버깅 상태 pill (Claude 사용량 위). adb 미설치면 hidden. 클릭 시 /adb. -->
   <a id="adb-pill" class="quota-pill adb-pill" href="/adb" title="${esc(t("nav.adb.title"))}" hidden>
     <div class="qp-header">
@@ -281,13 +307,15 @@ object AdminTemplates {
   <a id="emulator-pill" class="quota-pill adb-pill" href="/emulator" title="${esc(t("nav.emulator.title"))}" hidden>
     <div class="qp-header">
       <span class="qp-h-title">${esc(t("nav.emulator.title"))}</span>
-      <span id="emulator-pill-dot" class="adb-dot"></span>
+      <span id="emulator-pill-dots" class="emu-dot-list" aria-label="${esc(t("nav.emulator.title"))}"></span>
     </div>
     <div class="adb-pill-body"><span id="emulator-pill-status" class="dim">…</span></div>
   </a>
   <!-- v1.3.2 — 전역 Claude 쿼타 pill. v1.6.2 — header 에 refresh 버튼 + 타임존 제거. -->
   <div id="quota-pill" class="quota-pill" hidden></div>
   <div id="codex-quota-pill" class="quota-pill" hidden></div>
+  <!-- v1.158.0 — z.ai coding plan usage quota pill. -->
+  <div id="glm-quota-pill" class="quota-pill" hidden></div>
   <div class="user-box">
     <form method="post" action="/logout">
       $csrfInput
@@ -307,6 +335,67 @@ object AdminTemplates {
       try { localStorage.setItem('vibe.sidebar.collapsed', next ? '1' : '0'); } catch(e){}
     });
   }
+  var mobBtn = document.getElementById('mobile-nav-toggle');
+  var mobBackdrop = document.getElementById('mobile-nav-backdrop');
+  var mobileMq = window.matchMedia ? window.matchMedia('(max-width: 768px)') : null;
+  var mobileNavReturnFocus = null;
+  function isMobileNavMode() {
+    return mobileMq ? mobileMq.matches : window.innerWidth <= 768;
+  }
+  function isVisible(el) {
+    if (!el || el.disabled) return false;
+    var style = window.getComputedStyle ? window.getComputedStyle(el) : null;
+    if (style && (style.display === 'none' || style.visibility === 'hidden')) return false;
+    return !!(el.getClientRects && el.getClientRects().length);
+  }
+  function mobileNavFocusable() {
+    return Array.prototype.slice.call(document.querySelectorAll('#mobile-nav-links a[href]'))
+      .filter(isVisible);
+  }
+  function setMobileNav(open) {
+    if (open && !isMobileNavMode()) open = false;
+    if (open) mobileNavReturnFocus = document.activeElement;
+    document.body.classList.toggle('mobile-nav-open', !!open);
+    if (mobBtn) mobBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) {
+      window.setTimeout(function(){
+        var first = document.querySelector('#mobile-nav-links a.active') || document.querySelector('#mobile-nav-links a[href]');
+        if (first && isMobileNavMode()) first.focus();
+      }, 0);
+    } else if (mobileNavReturnFocus && document.contains(mobileNavReturnFocus)) {
+      mobileNavReturnFocus.focus();
+      mobileNavReturnFocus = null;
+    }
+  }
+  if (mobBtn) {
+    mobBtn.addEventListener('click', function(){
+      setMobileNav(!document.body.classList.contains('mobile-nav-open'));
+    });
+  }
+  if (mobBackdrop) mobBackdrop.addEventListener('click', function(){ setMobileNav(false); });
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape') setMobileNav(false);
+    if (e.key !== 'Tab' || !document.body.classList.contains('mobile-nav-open') || !isMobileNavMode()) return;
+    var nodes = mobileNavFocusable();
+    if (!nodes.length) return;
+    var first = nodes[0];
+    var last = nodes[nodes.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  });
+  if (mobileMq) {
+    var closeOnDesktop = function(e){ if (!e.matches) setMobileNav(false); };
+    if (mobileMq.addEventListener) mobileMq.addEventListener('change', closeOnDesktop);
+    else if (mobileMq.addListener) mobileMq.addListener(closeOnDesktop);
+  }
+  document.querySelectorAll('.nav-links a').forEach(function(a){
+    a.addEventListener('click', function(){ setMobileNav(false); });
+  });
   // 2) Quota pill — refresh 버튼 + 타임존 (괄호) strip.
   var el = document.getElementById('quota-pill');
   if (!el) return;
@@ -343,13 +432,26 @@ object AdminTemplates {
     }
     return vals.length ? Math.max.apply(null, vals) : null;
   }
-  // 접기/펼치기 — 헤더 클릭 시 토글. 접은 상태는 헤더 한 줄에 대표 % 만 (갱신 시각/게이지 숨김).
+  function isClaudeLoggedIn(dto) {
+    if (!dto) return false;
+    return !!(dto.plan || dto.model || dto.sessionUsagePercent != null || dto.weeklyUsagePercent != null || dto.usagePercent != null);
+  }
+  function isCodexLoggedIn(dto) {
+    if (!dto) return false;
+    if (dto.available) return true;
+    var s = String(dto.loginStatus || '').toLowerCase();
+    return s.indexOf('logged in') >= 0 && s.indexOf('not logged in') < 0;
+  }
+  // 접기/펼치기 — 헤더 클릭 시 토글. 기본은 접힘. 접은 상태는 5h/weekly % 를 모두 표시.
   // localStorage(vibe.quota.<key>) 에 상태 저장. render 가 innerHTML 을 교체해도 dataset 으로
   // 초기복원 1회 + 이벤트 바인딩 중복 방지.
   function bindHeaderToggle(pillEl, key) {
     if (!pillEl.dataset.toggleInit) {
       pillEl.dataset.toggleInit = '1';
-      try { if (localStorage.getItem('vibe.quota.' + key) === '1') pillEl.classList.add('collapsed'); } catch(e){}
+      try {
+        var stored = localStorage.getItem('vibe.quota.' + key);
+        if (stored !== '0') pillEl.classList.add('collapsed');
+      } catch(e){ pillEl.classList.add('collapsed'); }
     }
     var header = pillEl.querySelector('.qp-header');
     if (header && !header.dataset.bound) {
@@ -375,7 +477,25 @@ object AdminTemplates {
       + '<div class="qp-track"><div class="qp-fill" style="width:' + safePct + '%;background:' + color + '"></div></div>'
       + resetHtml + '</div>';
   }
+  function compactQuota(dto) {
+    if (!dto) return '';
+    var parts = [];
+    if (dto.sessionUsagePercent != null) {
+      var sp = Math.max(0, Math.min(100, dto.sessionUsagePercent|0));
+      parts.push('<span style="color:' + pctColor(sp) + '">5h ' + sp + '%</span>');
+    }
+    if (dto.weeklyUsagePercent != null) {
+      var wp = Math.max(0, Math.min(100, dto.weeklyUsagePercent|0));
+      parts.push('<span style="color:' + pctColor(wp) + '">7d ' + wp + '%</span>');
+    }
+    if (!parts.length && dto.usagePercent != null) {
+      var up = Math.max(0, Math.min(100, dto.usagePercent|0));
+      parts.push('<span style="color:' + pctColor(up) + '">' + up + '%</span>');
+    }
+    return parts.length ? '<span class="qp-pct-compact">' + parts.join('<span class="qp-compact-sep"> · </span>') + '</span>' : '';
+  }
   function render(dto) {
+    if (!isClaudeLoggedIn(dto)) { el.hidden = true; return; }
     var rows = '';
     if (dto && (dto.sessionUsagePercent != null || dto.weeklyUsagePercent != null)) {
       if (dto.sessionUsagePercent != null)
@@ -386,8 +506,7 @@ object AdminTemplates {
       rows += bar(sessLabel, dto.usagePercent, dto.resetAt);
     }
     if (!rows) { el.hidden = true; return; }
-    var mp = maxPct(dto);
-    var compactHtml = (mp != null) ? '<span class="qp-pct-compact" style="color:' + pctColor(mp) + '">' + mp + '%</span>' : '';
+    var compactHtml = compactQuota(dto);
     el.innerHTML = '<div class="qp-header" role="button" tabindex="0" aria-expanded="true"><span class="qp-h-title">Claude</span>' + compactHtml
       + '<button type="button" class="qp-refresh" title="' + refreshTitle + '" aria-label="' + refreshTitle + '">↻</button>'
       + '</div><div class="qp-rows">' + rows + '</div>';
@@ -412,7 +531,7 @@ object AdminTemplates {
   var codexEl = document.getElementById('codex-quota-pill');
   if (codexEl) {
     function renderCodex(dto) {
-      if (!dto || !dto.available || (dto.sessionUsagePercent == null && dto.weeklyUsagePercent == null && dto.usagePercent == null && dto.contextUsagePercent == null && !dto.usageSummary)) {
+      if (!isCodexLoggedIn(dto) || (dto.sessionUsagePercent == null && dto.weeklyUsagePercent == null && dto.usagePercent == null && dto.contextUsagePercent == null && !dto.usageSummary)) {
         codexEl.hidden = true;
         return;
       }
@@ -424,8 +543,7 @@ object AdminTemplates {
       if (!rows && dto.usageSummary) {
         rows = '<div class="qp-row"><div class="qp-reset">' + escHtml(dto.usageSummary) + '</div></div>';
       }
-      var mp = maxPct(dto);
-      var compactHtml = (mp != null) ? '<span class="qp-pct-compact" style="color:' + pctColor(mp) + '">' + mp + '%</span>' : '';
+      var compactHtml = compactQuota(dto);
       codexEl.innerHTML = '<div class="qp-header" role="button" tabindex="0" aria-expanded="true"><span class="qp-h-title">Codex</span>' + compactHtml
         + '<button type="button" class="qp-refresh" title="' + refreshTitle + '" aria-label="' + refreshTitle + '">↻</button>'
         + '</div><div class="qp-rows">' + rows + '</div>';
@@ -445,6 +563,44 @@ object AdminTemplates {
     }
     codexTick();
     setInterval(codexTick, 60000);
+  }
+
+  // v1.158.0 — z.ai coding plan usage pill (GLM). Z.AI monitor API quota.
+  var glmEl = document.getElementById('glm-quota-pill');
+  if (glmEl) {
+    function renderGlm(dto) {
+      if (!dto || !dto.loggedIn || (dto.usagePercent == null && !dto.usageSummary)) {
+        glmEl.hidden = true;
+        return;
+      }
+      var rows = '';
+      if (dto.usagePercent != null) rows += bar('Usage', dto.usagePercent, dto.resetAt);
+      if (!rows && dto.usageSummary) {
+        rows = '<div class="qp-row"><div class="qp-reset">' + escHtml(dto.usageSummary) + '</div></div>';
+      }
+      var compactHtml = '';
+      if (dto.usagePercent != null) {
+        compactHtml = '<span class="qp-pct-compact" style="color:' + pctColor(dto.usagePercent) + '">' + dto.usagePercent + '%</span>';
+      }
+      glmEl.innerHTML = '<div class="qp-header" role="button" tabindex="0" aria-expanded="true"><span class="qp-h-title">GLM</span>' + compactHtml
+        + '<button type="button" class="qp-refresh" title="' + refreshTitle + '" aria-label="' + refreshTitle + '">↻</button>'
+        + '</div><div class="qp-rows">' + rows + '</div>';
+      glmEl.hidden = false;
+      bindHeaderToggle(glmEl, 'glm');
+      var btn = glmEl.querySelector('.qp-refresh');
+      if (btn) btn.addEventListener('click', function(){
+        btn.disabled = true; btn.textContent = '…';
+        glmTick().then(function(){ btn.disabled = false; });
+      });
+    }
+    function glmTick() {
+      return fetch('/api/server/glm-quota', { credentials: 'same-origin' })
+        .then(function(r){ return r.ok ? r.json() : null; })
+        .then(renderGlm)
+        .catch(function(){ glmEl.hidden = true; });
+    }
+    glmTick();
+    setInterval(glmTick, 60000);
   }
 
   // v1.65.0 — 무선디버깅 pill 폴링. adb 사용 가능 시 노출(연결 0대도 표시), 미설치면 hidden.
@@ -476,20 +632,37 @@ object AdminTemplates {
   // v1.73.0 — 에뮬레이터(헤드리스) pill 폴링. 설치돼 있으면 노출(중지 상태도 표시), 미설치면 hidden.
   var emuEl = document.getElementById('emulator-pill');
   var emuStatus = document.getElementById('emulator-pill-status');
-  var emuDot = document.getElementById('emulator-pill-dot');
+  var emuDots = document.getElementById('emulator-pill-dots');
   if (emuEl && emuStatus) {
-    var EMU_BOOTED = '${esc(t("nav.emulator.booted"))}';
-    var EMU_BOOTING = '${esc(t("nav.emulator.booting"))}';
+    var EMU_IDLE = '${esc(t("nav.emulator.idle"))}';
+    var EMU_BUSY = '${esc(t("nav.emulator.busy"))}';
     var EMU_STOPPED = '${esc(t("nav.emulator.stopped"))}';
     function emuTick() {
-      fetch('/api/emulator/status', { credentials: 'same-origin' })
+      fetch('/api/emulators', { credentials: 'same-origin' })
         .then(function(r){ return r.ok ? r.json() : null; })
-        .then(function(s){
-          if (!s || !s.available) { emuEl.hidden = true; return; }
-          var label = s.booted ? EMU_BOOTED : (s.running ? EMU_BOOTING : EMU_STOPPED);
-          emuStatus.textContent = label;
-          emuStatus.className = s.booted ? 'ok' : (s.running ? 'dim' : 'dim');
-          if (emuDot) emuDot.className = 'adb-dot' + (s.booted ? ' on' : '');
+        .then(function(p){
+          var slots = p && Array.isArray(p.slots) ? p.slots.slice(0, 5) : [];
+          if (!p || !p.available || slots.length === 0) { emuEl.hidden = true; return; }
+          if (emuDots) {
+            emuDots.innerHTML = '';
+            slots.forEach(function(slot, idx) {
+              var state = slot.leasedByProjectId ? 'busy' : (slot.booted ? 'idle' : 'stopped');
+              if (!slot.booted && slot.running) state = 'busy';
+              var dot = document.createElement('span');
+              dot.className = 'emu-dot ' + state;
+              var statusText = state === 'busy' ? EMU_BUSY : (state === 'idle' ? EMU_IDLE : EMU_STOPPED);
+              var name = slot.label || ('Emulator ' + (idx + 1));
+              var serial = slot.serial ? ' · ' + slot.serial : '';
+              var lease = slot.leasedByProjectId ? ' · ' + slot.leasedByProjectId : '';
+              dot.title = name + ' · ' + statusText + serial + lease;
+              emuDots.appendChild(dot);
+            });
+          }
+          var busy = slots.filter(function(s){ return !!s.leasedByProjectId || (!!s.running && !s.booted); }).length;
+          var idle = slots.filter(function(s){ return !!s.booted && !s.leasedByProjectId; }).length;
+          var stopped = Math.max(0, slots.length - busy - idle);
+          emuStatus.textContent = EMU_IDLE + ' ' + idle + ' · ' + EMU_BUSY + ' ' + busy + ' · ' + EMU_STOPPED + ' ' + stopped;
+          emuStatus.className = busy > 0 ? 'warn' : (idle > 0 ? 'ok' : 'dim');
           emuEl.hidden = false;
         })
         .catch(function(){ emuEl.hidden = true; });
@@ -1069,23 +1242,24 @@ $gitIdentityBanner
         } else {
             t("dashboard.codex.login").let { "not logged in" }
         }
-        val statusColor = if (snapshot.loggedIn) "#5eead4" else "#dc2626"
+        val statusColor = if (snapshot.loggedIn) "var(--ok)" else "var(--danger)"
         val summary = snapshot.usageSummary?.takeIf { snapshot.available }?.let {
             """<p class="hint" style="margin-top:6px">${esc(it)}</p>"""
         } ?: ""
         return """
   <div class="card">
-    <h2>OpenCode (z.ai)</h2>
+    <h2>${esc(t("dashboard.opencode.title"))}</h2>
+    <p class="hint" style="margin:4px 0 0;font-size:12px">${esc(t("dashboard.opencode.globalHint"))}</p>
     <dl style="margin-top:4px;font-size:13px">
-      <dt style="display:inline;color:#aaa">credential</dt>
+      <dt style="display:inline;color:var(--text-dim)">${esc(t("dashboard.opencode.credential"))}</dt>
       <dd style="display:inline;margin-left:6px;color:$statusColor">${esc(statusText)}</dd>
     </dl>
     <dl style="margin-top:8px;font-size:12px">
-      <dt>tokens</dt><dd>${fmt(snapshot.totalTokens)}</dd>
-      <dt>input</dt><dd>${fmt(snapshot.inputTokens)}</dd>
-      <dt>output</dt><dd>${fmt(snapshot.outputTokens)}</dd>
-      <dt>cache read</dt><dd>${fmt(snapshot.cacheReadTokens)}</dd>
-      <dt>cost</dt><dd>${esc(snapshot.totalCost ?: "-")}</dd>
+      <dt>${esc(t("dashboard.opencode.tokens"))}</dt><dd>${fmt(snapshot.totalTokens)}</dd>
+      <dt>${esc(t("dashboard.opencode.input"))}</dt><dd>${fmt(snapshot.inputTokens)}</dd>
+      <dt>${esc(t("dashboard.opencode.output"))}</dt><dd>${fmt(snapshot.outputTokens)}</dd>
+      <dt>${esc(t("dashboard.opencode.cacheRead"))}</dt><dd>${fmt(snapshot.cacheReadTokens)}</dd>
+      <dt>${esc(t("dashboard.opencode.cost"))}</dt><dd>${esc(snapshot.totalCost ?: "-")}</dd>
     </dl>
     $summary
     <dl style="margin-top:6px;font-size:12px">

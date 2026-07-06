@@ -38,6 +38,8 @@ object ApiPath {
     const val SERVER_CODEX_QUOTA = "/api/server/codex-quota"
     // v1.151.0 — OpenCode CLI credential/usage snapshot. Same shape as Codex quota (provider isolation).
     const val SERVER_OPENCODE_QUOTA = "/api/server/opencode-quota"
+    // v1.158.0 — z.ai coding plan usage quota (Z.AI monitor API 직접 호출). 사이드바 GLM pill.
+    const val SERVER_GLM_QUOTA = "/api/server/glm-quota"
 
     // v1.74.0 — 홈 대시보드 "서버 상태" 카드(CPU/RAM/프로세스 점유). admin 페이지 폴링,
     // server-internal (Android client 미사용). 저민감(리소스 사용률) → quota 와 동일 무인증.
@@ -56,6 +58,11 @@ object ApiPath {
     // server-internal (Android client 미사용). 사이드바 pill 폴링. /emulator(SSR)·start·stop 은
     // AdbRoutes 와 동일하게 hardcoded path (SSR 액션은 ApiPath 비등록 관례).
     const val EMULATOR_STATUS = "/api/emulator/status"
+    const val EMULATORS = "/api/emulators"
+    fun emulatorStart(id: String) = "/api/emulators/${pathSeg(id)}/start"
+    fun emulatorStop(id: String) = "/api/emulators/${pathSeg(id)}/stop"
+    fun projectEmulatorLease(projectId: String) =
+        "/api/projects/${pathSeg(projectId)}/emulator/lease"
 
     // Projects
     const val PROJECTS = "/api/projects"

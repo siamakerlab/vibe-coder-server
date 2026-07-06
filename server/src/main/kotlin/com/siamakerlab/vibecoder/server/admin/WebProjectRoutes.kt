@@ -4,6 +4,7 @@ import com.siamakerlab.vibecoder.server.auth.CsrfTokens
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens.requireCsrf
 import com.siamakerlab.vibecoder.server.agent.AgentProvider
 import com.siamakerlab.vibecoder.server.agent.AgentRouter
+import com.siamakerlab.vibecoder.server.agent.ModelCatalogService
 import com.siamakerlab.vibecoder.server.build.BuildService
 import com.siamakerlab.vibecoder.server.claude.ClaudeSessionManager
 import com.siamakerlab.vibecoder.server.core.WorkspacePath
@@ -145,6 +146,7 @@ fun Routing.webProjectRoutes(
     /** v1.71.0 (정밀점검 H4) — 폴더/패키지 변경 시 자동화 진행 여부 가드. */
     promptAutomationManager: com.siamakerlab.vibecoder.server.automation.PromptAutomationManager,
     agentRouter: AgentRouter? = null,
+    modelCatalog: ModelCatalogService? = null,
 ) {
 
     // ── 목록 + 등록 폼 ────────────────────────────────────────────────
@@ -338,8 +340,8 @@ fun Routing.webProjectRoutes(
         val projectStatuses = allProjects.associate { pr ->
             pr.id to projectStatus(pr.id, sessionManager, conversationRepo)
         }
-        // v1.137.2 — 콤보박스 "최근 활동순" 2차 정렬용 (영속 — 재시작 후에도 순서 유지).
-        val lastActivityTs = runCatching { conversationRepo.lastTsByProject() }.getOrDefault(emptyMap())
+        // v1.157.2 — 콤보박스 정렬은 세션 출력 활동이 아니라 사용자가 프롬프트를 송신한 시각 기준.
+        val lastPromptTs = runCatching { conversationRepo.lastUserPromptTsByProject() }.getOrDefault(emptyMap())
         val agentProvider = agentRouter?.providerFor(id) ?: AgentProvider.CLAUDE
         val availableAgentProviders = agentRouter?.availableProviders() ?: listOf(AgentProvider.CLAUDE)
         val selectedModel = if (agentRouter != null) {
@@ -347,6 +349,11 @@ fun Routing.webProjectRoutes(
         } else {
             sessionManager.readProjectModel(id) ?: sessionManager.effectiveModel(id)
         }
+        val modelOptions = modelCatalog?.modelsFor(
+            provider = agentProvider,
+            currentModel = selectedModel,
+            effectiveModel = agentRouter?.effectiveModel(id) ?: sessionManager.effectiveModel(id),
+        ).orEmpty()
         // v1.156.0 — opencode reasoning effort(--variant) 조회.
         val selectedVariant = (agentRouter?.managerFor(AgentProvider.OPENCODE) as? com.siamakerlab.vibecoder.server.agent.opencode.OpenCodeSessionManager)
             ?.effectiveVariant(id) ?: ""
@@ -371,10 +378,11 @@ fun Routing.webProjectRoutes(
                 project = p,
                 allProjects = allProjects,
                 projectStatuses = projectStatuses,
-                lastActivityTs = lastActivityTs,
+                lastPromptTs = lastPromptTs,
                 agentProvider = agentProvider,
                 availableAgentProviders = availableAgentProviders,
                 model = selectedModel,
+                availableModelOptions = modelOptions,
                 variant = selectedVariant,
                 keystoreReady = keystoreReady,
                 admobReady = admobReady,
@@ -565,6 +573,16 @@ fun Routing.webProjectRoutes(
         // v1.129.0 — history(DB·과거) ↔ WS replay(ring·미래) 경계 seq. 클라가 WS 연결 시
         // since=이 값으로 보내, ring 의 과거 프레임(history 와 중복)을 replay 하지 않게 한다.
         val initialMaxSeq = hub.consoleCurrentSeq(LogHub.consoleTopic(id, agentProvider.id))
+        val selectedModel = if (agentRouter != null) {
+            agentRouter.readProjectModel(id) ?: agentRouter.effectiveModel(id) ?: "default"
+        } else {
+            sessionManager.effectiveModel(id)
+        }
+        val modelOptions = modelCatalog?.modelsFor(
+            provider = agentProvider,
+            currentModel = selectedModel,
+            effectiveModel = agentRouter?.effectiveModel(id) ?: sessionManager.effectiveModel(id),
+        ).orEmpty()
         call.respondText(
             WebProjectTemplates.consolePage(
                 sess.username, p, sid, alive,
@@ -574,11 +592,7 @@ fun Routing.webProjectRoutes(
                 starterPrompt = starterPrompt,
                 initialHistory = history,
                 initialMaxSeq = initialMaxSeq,
-                model = if (agentRouter != null) {
-                    agentRouter.readProjectModel(id) ?: agentRouter.effectiveModel(id) ?: "default"
-                } else {
-                    sessionManager.effectiveModel(id)
-                },
+                model = selectedModel,
                 variant = (agentRouter?.managerFor(AgentProvider.OPENCODE) as? com.siamakerlab.vibecoder.server.agent.opencode.OpenCodeSessionManager)?.effectiveVariant(id) ?: "",
                 contextTokens = ctxSnap.cacheRead,
                 contextInputTokens = ctxSnap.input,
@@ -588,6 +602,7 @@ fun Routing.webProjectRoutes(
                 mcpStrict = sessionManager.isMcpStrict(id),
                 agentProvider = agentProvider,
                 availableAgentProviders = availableAgentProviders,
+                availableModelOptions = modelOptions,
                 lang = sess.language,
                 embed = call.isEmbeddedRequest(),
             ),
@@ -1601,6 +1616,12 @@ fun Routing.webProjectRoutes(
         } else emptyList()
         val activeTitle = chats.firstOrNull { it.id == activeId }?.title
         val sidebar = WebProjectTemplates.chatSidebar(chats, activeId, sess.csrf, sess.language)
+        val chatModel = sessionManager.effectiveModel(p.id)
+        val chatModelOptions = modelCatalog?.modelsFor(
+            provider = AgentProvider.CLAUDE,
+            currentModel = chatModel,
+            effectiveModel = chatModel,
+        ).orEmpty()
         call.respondText(
             WebProjectTemplates.consolePage(
                 sess.username, p, sid, alive,
@@ -1611,7 +1632,7 @@ fun Routing.webProjectRoutes(
                 initialHistory = history,
                 chatSidebar = sidebar,
                 chatTitle = activeTitle,
-                model = sessionManager.effectiveModel(p.id),
+                model = chatModel,
                 variant = (agentRouter?.managerFor(AgentProvider.OPENCODE) as? com.siamakerlab.vibecoder.server.agent.opencode.OpenCodeSessionManager)?.effectiveVariant(p.id) ?: "",
                 contextTokens = ctxSnap.cacheRead,
                 contextInputTokens = ctxSnap.input,
@@ -1619,6 +1640,7 @@ fun Routing.webProjectRoutes(
                 contextLimit = ctxSnap.limit,
                 contextWarnTokens = sessionManager.contextWarnTokens(),
                 mcpStrict = sessionManager.isMcpStrict(p.id),
+                availableModelOptions = chatModelOptions,
                 lang = sess.language,
             ),
             ContentType.Text.Html,

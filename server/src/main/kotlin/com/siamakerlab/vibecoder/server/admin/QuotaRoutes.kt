@@ -60,3 +60,16 @@ fun Routing.opencodeQuotaRoutes(opencodeStatus: OpenCodeStatusService) {
         }
     }
 }
+
+/**
+ * v1.158.0 — z.ai coding plan usage quota (Z.AI monitor API 직접 호출).
+ * 사이드바 GLM pill 이 60s 폴링. [GlmQuotaService] 의 백그라운드 캐시를 비차단 반환.
+ */
+fun Routing.glmQuotaRoutes(glmQuota: GlmQuotaService) {
+    authenticate(AUTH_BEARER) {
+        get(ApiPath.SERVER_GLM_QUOTA) {
+            call.requireDevice()
+            call.respond(glmQuota.cachedSnapshot())
+        }
+    }
+}

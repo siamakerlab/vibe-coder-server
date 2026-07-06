@@ -2,6 +2,8 @@ package com.siamakerlab.vibecoder.server.admin
 
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens
 import com.siamakerlab.vibecoder.server.agent.AgentProvider
+import com.siamakerlab.vibecoder.server.agent.AgentModelOption
+import com.siamakerlab.vibecoder.server.agent.ModelCatalogService
 import com.siamakerlab.vibecoder.server.files.ProjectFileBrowser
 import com.siamakerlab.vibecoder.server.repo.ArtifactRow
 import com.siamakerlab.vibecoder.shared.dto.BuildDto
@@ -1231,6 +1233,7 @@ $errHtml
         mcpStrict: Boolean = false,
         agentProvider: AgentProvider = AgentProvider.CLAUDE,
         availableAgentProviders: List<AgentProvider> = listOf(AgentProvider.CLAUDE),
+        availableModelOptions: List<AgentModelOption> = emptyList(),
         lang: String,
         embed: Boolean = false,
     ): String {
@@ -1245,32 +1248,14 @@ $errHtml
         val normalizedModel = model.ifBlank { "default" }
         // v1.156.0 — opencode reasoning effort(--variant). 기본 "max".
         val normalizedVariant = variant.trim().ifBlank { "max" }
-        val knownModels = when (agentProvider) {
-            AgentProvider.CLAUDE -> listOf(
-                "sonnet" to "Sonnet (권장·저비용)",
-                "opus" to "Opus (고성능·고비용)",
-                "fable" to "Fable 5",
-                "haiku" to "Haiku",
-            )
-            AgentProvider.CODEX -> listOf(
-                "gpt-5" to "GPT-5",
-                "gpt-5-codex" to "GPT-5 Codex",
-            )
-            AgentProvider.OPENCODE -> listOf(
-                "zai-coding-plan/glm-5.2" to "GLM 5.2 (권장)",
-                "zai-coding-plan/glm-5.1" to "GLM 5.1",
-                "zai-coding-plan/glm-5-turbo" to "GLM 5 Turbo",
-                "zai-coding-plan/glm-4.7" to "GLM 4.7",
-                "zai-coding-plan/glm-4.5-air" to "GLM 4.5 Air",
-                "zai-coding-plan/glm-5v-turbo" to "GLM 5V Turbo (vision)",
-            )
-        }
+        val knownModels = availableModelOptions.ifEmpty { ModelCatalogService.fallbackModels(agentProvider) }
         val isCustomModel = !normalizedModel.equals("default", ignoreCase = true) &&
-            knownModels.none { it.first.equals(normalizedModel, ignoreCase = true) }
+            knownModels.none { it.value.equals(normalizedModel, ignoreCase = true) }
         val modelOptions = buildString {
-            for ((v, label) in knownModels) {
+            for (option in knownModels) {
+                val v = option.value
                 val selAttr = if (normalizedModel.equals(v, ignoreCase = true)) " selected" else ""
-                append("""<option value="$v"$selAttr>${esc(label)}</option>""")
+                append("""<option value="${esc(v)}"$selAttr>${esc(option.label)}</option>""")
             }
             val defSel = if (normalizedModel.equals("default", ignoreCase = true)) " selected" else ""
             append("""<option value="default"$defSel>CLI 기본</option>""")
@@ -1317,11 +1302,18 @@ $errHtml
         // 한도 대비 스택 바로 표시. console_context_usage 프레임으로 live 갱신. Claude CLI
         // /context 와 유사한 점유/사용/남음 시각화(카테고리 분해는 stream-json 미노출).
         val ctxInitiallyHidden = if (contextTokens <= 0 && contextInputTokens <= 0 && contextCacheCreationTokens <= 0) "hidden" else ""
+        val ctxUsedInitial = contextTokens + contextInputTokens + contextCacheCreationTokens
+        val ctxAriaMaxInitial = if (contextLimit > 0) contextLimit else 1L
+        val ctxAriaNowInitial = ctxUsedInitial.coerceIn(0L, ctxAriaMaxInitial)
+        val ctxTitle = t("tabs.rail.context.title.reset")
         val contextMeterHtml = """
 <div id="ctx-meter" class="ctx-meter" $ctxInitiallyHidden
-     title="대화 컨텍스트 점유율 — 윈도우 한도 대비 사용/남음. 클수록 매 turn 비용↑. '새 세션' 으로 리셋.">
+     role="meter" aria-label="${esc(t("tabs.rail.context"))}" aria-valuemin="0"
+     aria-valuemax="$ctxAriaMaxInitial" aria-valuenow="$ctxAriaNowInitial"
+     aria-valuetext="${esc("$ctxUsedInitial / $ctxAriaMaxInitial")}"
+     title="${esc(ctxTitle)}">
   <div class="ctx-meter-row">
-    <span class="ctx-meter-label">컨텍스트</span>
+    <span class="ctx-meter-label">${esc(t("tabs.rail.context"))}</span>
     <div class="ctx-meter-bar">
       <div class="ctx-seg ctx-seg-read"></div>
       <div class="ctx-seg ctx-seg-create"></div>
@@ -1329,14 +1321,14 @@ $errHtml
     </div>
     <span class="ctx-meter-text">
       <b id="ctx-used">–</b> / <span id="ctx-limit">–</span>
-      (<span id="ctx-pct">0%</span>) · 남음 <span id="ctx-free">–</span>
+      (<span id="ctx-pct">0%</span>) · ${esc(t("tabs.rail.context.free"))} <span id="ctx-free">–</span>
     </span>
   </div>
   <div class="ctx-legend">
-    <span><i class="ctx-dot ctx-seg-read"></i>재사용</span>
-    <span><i class="ctx-dot ctx-seg-create"></i>신규캐시</span>
-    <span><i class="ctx-dot ctx-seg-input"></i>입력</span>
-    <span><i class="ctx-dot ctx-dot-free"></i>남음</span>
+    <span><i class="ctx-dot ctx-seg-read"></i>${esc(t("tabs.rail.context.reuse"))}</span>
+    <span><i class="ctx-dot ctx-seg-create"></i>${esc(t("tabs.rail.context.create"))}</span>
+    <span><i class="ctx-dot ctx-seg-input"></i>${esc(t("tabs.rail.context.input"))}</span>
+    <span><i class="ctx-dot ctx-dot-free"></i>${esc(t("tabs.rail.context.free"))}</span>
   </div>
 </div>"""
         // v1.106.0 (P1-a) — MCP 최소화 토글(전역 5개 MCP 툴 스키마를 빼 캐시 프리픽스 축소).
@@ -1584,22 +1576,28 @@ $errHtml
   }
   /* v1.111.0 — 백그라운드 작업 패널 CSS 는 부모 rail(ProjectTabsTemplate)로 이동. */
   /* v1.106.1 — 컨텍스트 점유율 미터(상시 — 비임베드 standalone 콘솔에서만 렌더) */
-  .ctx-meter { margin:0 0 8px; padding:6px 10px; border:1px solid #1f2330; border-radius:8px; background:#0d1018; }
+  .ctx-meter { margin:0 0 8px; padding:6px 10px; border:1px solid var(--border); border-radius:var(--radius); background:var(--console-bg); }
   .ctx-meter[hidden] { display:none; }
-  .ctx-meter-row { display:flex; align-items:center; gap:8px; }
-  .ctx-meter-label { font-size:11px; color:var(--text-dim,#888); font-weight:600; flex:0 0 auto; }
-  .ctx-meter-bar { flex:1 1 auto; height:8px; border-radius:5px; background:#1f2330; overflow:hidden; display:flex; }
-  .ctx-seg { height:100%; width:0; transition:width 0.3s ease; }
-  .ctx-seg-read { background:#3a82f6; }
-  .ctx-seg-create { background:#2dd4bf; }
-  .ctx-seg-input { background:#ffb86b; }
-  .ctx-meter-text { font-size:11px; color:var(--text-dim,#888); flex:0 0 auto; font-family:ui-monospace,Menlo,monospace; white-space:nowrap; }
-  .ctx-meter.warn .ctx-meter-text { color:#ffb86b; }
-  .ctx-meter.warn .ctx-meter-bar { box-shadow:0 0 0 1px rgba(255,184,107,0.45) inset; }
-  .ctx-legend { display:flex; gap:12px; margin-top:5px; font-size:10px; color:var(--text-dim,#888); flex-wrap:wrap; }
+  .ctx-meter-row { display:grid; grid-template-columns:auto minmax(72px,1fr) auto; align-items:center; gap:6px 8px; }
+  .ctx-meter-label { font-size:11px; color:var(--text-dim); font-weight:600; }
+  .ctx-meter-bar { min-width:72px; height:8px; border-radius:var(--radius-scroll-thumb); background:var(--border); overflow:hidden; display:flex; }
+  .ctx-seg { height:100%; width:0; }
+  .ctx-seg-read { background:var(--context-read); }
+  .ctx-seg-create { background:var(--context-create); }
+  .ctx-seg-input { background:var(--context-input); }
+  .ctx-meter-text { min-width:0; font-size:11px; color:var(--text-dim); font-family:ui-monospace,Menlo,monospace; white-space:nowrap; }
+  .ctx-meter.warn .ctx-meter-text { color:var(--context-input); }
+  .ctx-meter.warn .ctx-meter-bar { box-shadow:0 0 0 1px var(--context-input-ring) inset; }
+  .ctx-legend { display:flex; gap:12px; margin-top:5px; font-size:10px; color:var(--text-dim); flex-wrap:wrap; }
   .ctx-legend span { display:inline-flex; align-items:center; gap:4px; }
   .ctx-dot { width:8px; height:8px; border-radius:2px; display:inline-block; }
-  .ctx-dot-free { background:#1f2330; border:1px solid #333; }
+  .ctx-dot-free { background:var(--border); border:1px solid var(--border); }
+  @media (max-width: 520px) {
+    .ctx-meter-row { grid-template-columns:auto 1fr; }
+    .ctx-meter-bar { grid-column:1 / -1; grid-row:2; }
+    .ctx-meter-text { grid-column:1 / -1; white-space:normal; overflow-wrap:anywhere; }
+    .ctx-legend { gap:8px; }
+  }
   /* v1.85.0 — assistant 마크다운 렌더 */
   .log-body.md { line-height:1.55; }
   .log-body.md > :first-child { margin-top:0; }
@@ -2845,7 +2843,19 @@ $quickBarHtml
     input = Number(input) || 0; cacheRead = Number(cacheRead) || 0;
     cacheCreation = Number(cacheCreation) || 0; limit = Number(limit) || 0;
     var used = input + cacheRead + cacheCreation;
-    if (limit <= 0 || used <= 0) { el.hidden = true; return; }
+    function setMeterA11y(now, max, text) {
+      max = Math.max(1, Math.round(Number(max) || 1));
+      now = Math.max(0, Math.min(max, Math.round(Number(now) || 0)));
+      el.setAttribute('aria-valuemin', '0');
+      el.setAttribute('aria-valuemax', String(max));
+      el.setAttribute('aria-valuenow', String(now));
+      el.setAttribute('aria-valuetext', text || '');
+    }
+    if (limit <= 0 || used <= 0) {
+      el.hidden = true;
+      setMeterA11y(0, 1, ${jsLit(t("tabs.rail.context.empty"))});
+      return;
+    }
     el.hidden = false;
     var pct = Math.min(100, used / limit * 100);
     function w(x) { return (Math.max(0, x) / limit * 100) + '%'; }
@@ -2858,9 +2868,13 @@ $quickBarHtml
     setT('ctx-pct', Math.round(pct) + '%');
     setT('ctx-free', ctxFmt(Math.max(0, limit - used)));
     el.classList.toggle('warn', pct >= 70);
-    el.title = '대화 컨텍스트 ' + ctxFmt(used) + ' / ' + ctxFmt(limit) + ' (' + Math.round(pct) +
-      '%). 재사용 ' + ctxFmt(cacheRead) + ' · 신규캐시 ' + ctxFmt(cacheCreation) + ' · 입력 ' + ctxFmt(input) +
-      '. 클수록 매 turn 비용↑ — 새 세션으로 리셋 가능.';
+    var title = ${jsLit(t("tabs.rail.context.tooltip.prefix"))} + ' ' + ctxFmt(used) + ' / ' + ctxFmt(limit) + ' (' + Math.round(pct) +
+      '%). ' + ${jsLit(t("tabs.rail.context.reuse"))} + ' ' + ctxFmt(cacheRead) +
+      ' · ' + ${jsLit(t("tabs.rail.context.create"))} + ' ' + ctxFmt(cacheCreation) +
+      ' · ' + ${jsLit(t("tabs.rail.context.input"))} + ' ' + ctxFmt(input) +
+      '. ' + ${jsLit(t("tabs.rail.context.tooltip.suffix.reset"))};
+    el.title = title;
+    setMeterA11y(used, limit, title);
   }
   // 초기값(서버 직전 turn 스냅샷) 렌더.
   updateContextMeter($contextInputTokens, $contextTokens, $contextCacheCreationTokens, $contextLimit);

@@ -53,10 +53,8 @@ class GradleBuilder(private val config: ServerConfig) {
         // gradlew 에도 실행 권한을 보장한다(idempotent, 이미 +x 면 no-op).
         if (os != OsType.WINDOWS) ensureExecutable(gradlew, logger)
 
-        // Use `:module:assembleDebug` syntax which works on every OS without quoting.
-        val fullTask = ":$moduleName:$debugTask"
         val signingArgs = signing?.toInjectedArgs().orEmpty()
-        val tasks = listOf(fullTask, "--no-daemon", "--stacktrace") + signingArgs
+        val tasks = cleanBuildArgs(moduleName, debugTask, signingArgs)
         val command = os.gradleCommand(source, tasks)
         // v1.8.0 — store/key password 는 ps 노출은 단일사용자 컨테이너 특성상 감수하지만
         // 빌드 로그에 평문 echo 되지 않도록 redact.
@@ -78,6 +76,24 @@ class GradleBuilder(private val config: ServerConfig) {
 
         logger.info("Gradle exited code=${result.exitCode} timedOut=${result.timedOut} duration=${result.durationMs}ms")
         return result.exitCode
+    }
+
+    internal fun cleanBuildArgs(
+        moduleName: String,
+        taskName: String,
+        signingArgs: List<String> = emptyList(),
+    ): List<String> = listOf(
+        gradleTaskPath(moduleName, "clean"),
+        gradleTaskPath(moduleName, taskName),
+        "--no-build-cache",
+        "--no-daemon",
+        "--stacktrace",
+    ) + signingArgs
+
+    private fun gradleTaskPath(moduleName: String, taskName: String): String {
+        val cleanModule = moduleName.trim().trim(':')
+        val cleanTask = taskName.trim().trim(':')
+        return if (cleanModule.isBlank()) ":$cleanTask" else ":$cleanModule:$cleanTask"
     }
 
     /**
