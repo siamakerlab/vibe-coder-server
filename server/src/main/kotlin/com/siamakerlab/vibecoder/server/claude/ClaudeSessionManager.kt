@@ -1592,7 +1592,10 @@ class ClaudeSessionManager(
     }
 
     companion object {
-        const val MAX_PROMPT_BYTES = 32 * 1024
+        // v1.158.8 — 프롬프트 송신 한도를 문서 수준으로 상향(32KB → 100_000 byte).
+        // 프롬프트 템플릿 본문 한도(PromptTemplateStore.MAX_BODY_LEN=100_000자)와 정렬 —
+        // 템플릿으로 만든 긴 문서 프롬프트를 콘솔에서 그대로 송신할 수 있도록.
+        const val MAX_PROMPT_BYTES = 100_000
         const val IDLE_CHECK_INTERVAL_MS = 60_000L
 
         /**

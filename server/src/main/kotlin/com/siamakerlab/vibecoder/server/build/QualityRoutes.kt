@@ -135,8 +135,10 @@ fun Routing.qualityRoutes(
 }
 
 /**
- * 선택 항목을 번호 목록으로 직렬화하되, sendPrompt 의 32KB 한도(MAX_PROMPT_BYTES)를
- * 넘지 않도록 바이트 예산(24KB)에서 자른다. 잘린 개수를 함께 반환해 안내 문구에 쓴다.
+ * 선택 항목을 번호 목록으로 직렬화하되, sendPrompt 의 한도(MAX_PROMPT_BYTES=100KB)를
+ * 넘지 않도록 바이트 예산(24KB)에서 자른다. lint 수정 요청은 한 번에 처리 가능한 실용
+ * 상한을 별도로 두는 편이 UX 상 낫기에 예산은 보수적으로 유지한다. 잘린 개수를 함께
+ * 반환해 안내 문구에 쓴다.
  */
 private const val FIX_PROMPT_BUDGET_BYTES = 24 * 1024
 private fun numberedWithBudget(selected: List<String>): Pair<String, Int> {

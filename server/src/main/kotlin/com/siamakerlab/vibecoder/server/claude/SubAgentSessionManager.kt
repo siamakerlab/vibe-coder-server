@@ -475,7 +475,8 @@ class SubAgentSessionManager(
     )
 
     companion object {
-        const val MAX_PROMPT_BYTES = 32 * 1024
+        // v1.158.8 — 문서 수준 상향(32KB → 100_000 byte). ClaudeSessionManager 와 정렬.
+        const val MAX_PROMPT_BYTES = 100_000
         const val IDLE_CHECK_INTERVAL_MS = 60_000L
     }
 }

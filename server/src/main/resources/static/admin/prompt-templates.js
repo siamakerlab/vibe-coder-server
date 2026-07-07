@@ -203,7 +203,7 @@
       '        <input id="pt-f-cat" type="text" maxlength="100" list="pt-cat-list" autocomplete="off" placeholder="예: Android" style="width:100%;margin-top:3px;padding:7px 9px;background:#1a1a1a;color:var(--text,#ddd);border:1px solid #333;border-radius:6px">',
       '        <datalist id="pt-cat-list"></datalist></label>',
       '      <label style="display:block;font-size:12px;color:var(--text-dim,#999);margin-top:8px">본문 — {{변수}} 사용 가능',
-      '        <textarea id="pt-f-body" rows="9" maxlength="16000" style="width:100%;margin-top:3px;padding:7px 9px;background:#1a1a1a;color:var(--text,#ddd);border:1px solid #333;border-radius:6px;font-family:ui-monospace,Menlo,monospace;font-size:12px"></textarea></label>',
+      '        <textarea id="pt-f-body" rows="18" maxlength="100000" style="width:100%;margin-top:3px;padding:7px 9px;background:#1a1a1a;color:var(--text,#ddd);border:1px solid #333;border-radius:6px;font-family:ui-monospace,Menlo,monospace;font-size:12px;resize:vertical"></textarea></label>',
       '      <div id="pt-form-err" class="error" style="display:none;margin-top:8px"></div>',
       '      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">',
       '        <button id="pt-save" class="primary" style="padding:7px 18px">저장</button>',

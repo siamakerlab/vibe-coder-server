@@ -717,7 +717,8 @@ class CodexSessionManager(
     }
 
     companion object {
-        const val MAX_PROMPT_BYTES = 32 * 1024
+        // v1.158.8 — 문서 수준 상향(32KB → 100_000 byte). ClaudeSessionManager 와 정렬.
+        const val MAX_PROMPT_BYTES = 100_000
         private const val MAX_STDERR_TAIL_LINES = 12
         /**
          * v1.148.0 — Codex 일시 rate-limit 자동 재개. [RATE_LIMIT_BASE_BACKOFF_MS] 지수 백오프로

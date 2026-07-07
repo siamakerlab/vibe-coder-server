@@ -246,7 +246,7 @@ class PromptTemplateStore(
 
     companion object {
         const val MAX_TITLE_LEN = 200
-        const val MAX_BODY_LEN = 16_000
+        const val MAX_BODY_LEN = 100_000
         const val MAX_TOTAL = 500
     }
 }

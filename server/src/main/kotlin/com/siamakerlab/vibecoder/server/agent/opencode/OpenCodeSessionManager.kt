@@ -720,7 +720,8 @@ class OpenCodeSessionManager(
     }
 
     companion object {
-        const val MAX_PROMPT_BYTES = 32 * 1024
+        // v1.158.8 — 문서 수준 상향(32KB → 100_000 byte). ClaudeSessionManager 와 정렬.
+        const val MAX_PROMPT_BYTES = 100_000
         private const val MAX_STDERR_TAIL_LINES = 12
         const val MAX_BOOT_RESUME_RETRIES = 2
         const val BOOT_RESUME_PROMPT =

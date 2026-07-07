@@ -93,8 +93,8 @@ $errHtml
         <datalist id="cat-list">$catOptions</datalist>
       </label>
       <label>본문 (Claude 프롬프트)
-        <textarea name="body" id="form-body-input" required rows="10" maxlength="16000"
-                  style="font-family:ui-monospace,Menlo,monospace;font-size:13px"
+        <textarea name="body" id="form-body-input" required rows="20" maxlength="100000"
+                  style="font-family:ui-monospace,Menlo,monospace;font-size:13px;resize:vertical"
                   placeholder="Compose 로 Settings 화면을 추가하고 Material3 Switch 로 다크모드 토글을 넣어줘."></textarea>
       </label>
       <div style="display:flex;gap:8px;margin-top:8px">

@@ -420,7 +420,7 @@ private fun renderSubAgentConsole(
 <div id="console-log" class="console-log" aria-live="polite"></div>
 
 <form id="prompt-form" class="prompt-form" autocomplete="off">
-  <textarea id="prompt-input" rows="3" maxlength="32768"
+  <textarea id="prompt-input" rows="3" maxlength="100000"
             placeholder="이 sub-agent 에게 보낼 prompt 를 입력하세요. Enter 로 전송, Ctrl+Enter 로 줄바꿈."></textarea>
   <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
     <small class="dim">첫 prompt 에 자동으로 'Use the @${esc(agentName)} sub-agent to …' prefix 가 붙습니다.</small>

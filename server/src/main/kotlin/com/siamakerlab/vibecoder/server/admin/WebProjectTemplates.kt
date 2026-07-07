@@ -1769,13 +1769,14 @@ ${if (embed) "" else contextMeterHtml}
      기존에 입력창 위에 있던 빠른프롬프트(quickBar)와 도구바(console-bottom-bar)를 모두
      입력창 하단으로 이동했다. 순서: 메시지 → 입력창 → 빠른프롬프트 → 템플릿/에이전트 → 도구바. -->
 <form id="prompt-form" class="prompt-form" autocomplete="off">
-  <!-- maxlength 는 char 단위라 ASCII 기준 32K. 한국어 등 multi-byte 입력은
-       실제 UTF-8 byte 가 32K 를 넘으면 서버에서 prompt_too_large (400) 로 거절. -->
+  <!-- v1.158.8 — 문서 수준 상향(32K → 100K). maxlength 는 char 단위라 ASCII 기준 100K.
+       한국어 등 multi-byte 입력은 실제 UTF-8 byte 가 MAX_PROMPT_BYTES(100K) 를 넘으면
+       서버에서 prompt_too_large (400) 로 거절. 템플릿 본문 한도(100K자)와 정렬. -->
   <!-- v1.134.1 — 첨부 미리보기 strip 은 이미지 다이얼로그(#image-modal) 안으로 이동. -->
   <!-- v1.16.1 — textarea + voice/send 버튼을 동일 row 에 가로 배치. send 가
        textarea 의 우측 (사용자 요청). 버튼들은 column flex 로 stack, 하단 정렬. -->
   <div style="display:flex;gap:8px;align-items:stretch">
-    <textarea id="prompt-input" rows="${if (starterPrompt != null) 8 else 3}" maxlength="32768"
+    <textarea id="prompt-input" rows="${if (starterPrompt != null) 8 else 3}" maxlength="100000"
               placeholder="${esc(if (blocking) t("console.input.disabled") else t("console.input.placeholder")).replace("\n", "&#10;")}"
               style="flex:1;width:auto;min-width:0"
               ${if (blocking) "disabled" else "required"}>${esc(starterPrompt)}</textarea>
@@ -1826,7 +1827,7 @@ ${if (embed) "" else contextMeterHtml}
   </div>
 </form>
 <script src="/static/voice-input.js?v=1.144.6" defer></script>
-<script src="/static/prompt-templates.js?v=1.142.0" defer></script>
+<script src="/static/prompt-templates.js?v=1.158.8" defer></script>
 <style>
   /* v1.15.0 — 음성 입력 listening 시각 강조. */
   #voice-btn.listening {

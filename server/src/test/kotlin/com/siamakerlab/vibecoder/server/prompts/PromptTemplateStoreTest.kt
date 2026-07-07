@@ -113,4 +113,27 @@ class PromptTemplateStoreTest {
         t.useCount shouldBe 0
         t.lastUsedAt shouldBe null
     }
+
+    @Test
+    fun `body 길이 제한은 문서 수준 100_000자까지 허용한다`() {
+        val s = store()
+        // 16_000(구 제한) 초과 ~ 100_000(신 제한) 본문은 이제 저장 가능.
+        val longBody = "x".repeat(16_001)
+        val saved = s.create(title = "긴 프롬프트", category = "doc", body = longBody)
+        saved.body.length shouldBe 16_001
+        // 경계값 100_000 도 허용.
+        val max = s.create("max", "doc", "y".repeat(100_000))
+        max.body.length shouldBe 100_000
+    }
+
+    @Test
+    fun `body 가 100_000자 초과면 거절한다`() {
+        val s = store()
+        try {
+            s.create("over", "doc", "z".repeat(100_001))
+            error("예상치 못한 성공")
+        } catch (e: com.siamakerlab.vibecoder.server.error.ApiException) {
+            e.statusCode shouldBe 400
+        }
+    }
 }
