@@ -1148,6 +1148,11 @@ body.console-page .console-log {
         flex-wrap: nowrap;
         gap: 4px;
         margin: 4px 0;
+        /* v1.158.10 — .content 가 flex column + 고정 height(--app-viewport-height) 이고
+           overflow-y:hidden 이라 flex automatic minimum size 가 0 이 되면서, 키보드로
+           세로가 좁아지면 이 행이 0 높이까지 짓눌려 텍스트가 겹쳤다. shrink 를 막아
+           자기 높이를 유지 → 세로 압축은 console-log-wrap(flex:1, min-height:0)만 흡수. */
+        flex-shrink: 0;
         overflow-x: auto;
         overflow-y: hidden;
         scrollbar-width: none;
@@ -1168,6 +1173,8 @@ body.console-page .console-log {
         flex-wrap: nowrap !important;
         gap: 4px !important;
         margin-top: 4px !important;
+        /* v1.158.10 — 위 #quick-prompts 와 동일: flex column 세로 압축 시 짓눌림 방지. */
+        flex-shrink: 0 !important;
         overflow-x: auto;
         overflow-y: hidden;
         scrollbar-width: none;
@@ -1191,6 +1198,8 @@ body.console-page .console-log {
         margin-top: 4px !important;
         margin-bottom: 0;
         padding: 0 2px;
+        /* v1.158.10 — flex column 세로 압축 시 짓눌림 방지. */
+        flex-shrink: 0;
         overflow-x: auto;
         overflow-y: hidden;
         scrollbar-width: none;
