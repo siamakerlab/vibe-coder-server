@@ -730,7 +730,7 @@ object WebProjectTemplates {
         // v1.14.4 — row 전체 영역이 클릭 가능 + 첫 화면 무조건 console (#console hash 명시).
         // v1.60.0 — 우측 드래그 핸들(☰) 열 추가 + 3-state 상태칩(idle 제거 → ready 폴백).
         val rowsHtml = if (projects.isEmpty()) {
-            """<tr><td colspan="5" class="dim">${esc(t("projects.list.empty"))}</td></tr>"""
+            """<tr><td colspan="6" class="dim">${esc(t("projects.list.empty"))}</td></tr>"""
         } else {
             projects.joinToString("\n") { p ->
                 val href = "/projects/${esc(p.id)}#console"
@@ -753,6 +753,20 @@ object WebProjectTemplates {
                     val bg = if (isFlutter) "#02569B" else "#7F52FF"
                     """<span style="margin-left:8px;font-size:10px;font-weight:600;padding:2px 7px;border-radius:4px;background:$bg;color:#fff;vertical-align:middle;white-space:nowrap">$label</span>"""
                 }
+                // v1.160.0 — 패키지명과 타입 뱃지 사이 Google Play 스토어 링크. 탭하면 새 탭에서
+                // play.google.com 앱 페이지로 이동. row-link 네비와 겹치지 않게 셀은 project href
+                // 로 감싸지 않고 stopPropagation. packageName 은 항상 존재(applicationId).
+                val playUrl = "https://play.google.com/store/apps/details?id=${esc(p.packageName)}"
+                val playCell = """<td style="width:44px;text-align:center;white-space:nowrap">
+                      <a href="$playUrl" target="_blank" rel="noopener noreferrer"
+                         title="${esc(t("projects.playstore.title"))}" aria-label="${esc(t("projects.playstore.title"))}"
+                         onclick="event.stopPropagation()"
+                         style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:6px;background:rgba(1,135,95,0.12);vertical-align:middle">
+                        <svg width="15" height="16" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                          <path fill="#01875f" d="M22.018 13.298l-3.919 2.218-3.515-3.493 3.543-3.521 3.891 2.202a1.49 1.49 0 0 1 0 2.594zM1.337.924a1.486 1.486 0 0 0-.112.568v21.017c0 .217.045.419.124.6l11.155-11.087L1.337.924zm12.207 10.065l3.258-3.238L3.45.195a1.466 1.466 0 0 0-.946-.179l11.04 10.973zm0 2.067l-11 10.933c.298.036.612-.016.906-.183l13.324-7.54-3.23-3.21z"/>
+                        </svg>
+                      </a>
+                    </td>"""
                 """<tr class="row-link proj-row" data-pid="${esc(p.id)}">
                     <td><a href="$href" style="$cellLinkStyle">$chip</a></td>
                     <td><a href="$href" style="$cellLinkStyle;display:flex;align-items:center;gap:10px">
@@ -761,6 +775,7 @@ object WebProjectTemplates {
                         <span style="min-width:0"><strong>${esc(p.name)}</strong>$verBadge<br><small class="dim">${esc(p.id)}</small></span>
                       </a></td>
                     <td><a href="$href" style="$cellLinkStyle"><code>${esc(p.packageName)}</code></a></td>
+                    $playCell
                     <td style="text-align:right;white-space:nowrap">$typeBadge</td>
                     <td class="proj-handle" title="${esc(t("projects.reorder.handle"))}" aria-label="${esc(t("projects.reorder.handle"))}">☰</td>
                   </tr>"""

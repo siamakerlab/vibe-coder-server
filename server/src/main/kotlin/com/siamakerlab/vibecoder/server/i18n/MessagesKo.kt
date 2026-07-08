@@ -459,6 +459,7 @@ internal object MessagesKo {
         "projects.status.error" to "에러",
         // v1.60.0 — 순서변경 / 페이지네이션.
         "projects.reorder.handle" to "드래그하여 순서 변경",
+        "projects.playstore.title" to "Google Play 스토어에서 열기",
         "projects.pageSize" to "페이지당",
         "projects.page.prev" to "이전",
         "projects.page.next" to "다음",

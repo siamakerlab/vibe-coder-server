@@ -482,6 +482,7 @@ internal object MessagesEn {
         "projects.status.error" to "Error",
         // v1.60.0 — reorder / pagination.
         "projects.reorder.handle" to "Drag to reorder",
+        "projects.playstore.title" to "Open in Google Play Store",
         "projects.pageSize" to "Per page",
         "projects.page.prev" to "Prev",
         "projects.page.next" to "Next",
