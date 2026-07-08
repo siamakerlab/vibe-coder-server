@@ -201,6 +201,13 @@ For per-release history, see [CHANGELOG.md](CHANGELOG.md).
   `ssh -p <port> vibe@<host>`. Compose exposes `${VIBE_SSH_PORT:-2222}` to
   `${VIBECODER_SSH_PORT:-2222}`; usually set only `VIBE_SSH_PORT`, and set
   `VIBECODER_SSH_PORT` too only when changing the container port from the card.
+  `sshd` is key-only (`PasswordAuthentication no`) since the `vibe` account has no
+  password, so the card provisions the login key two ways: **register your public
+  key** (pasted into `~/.ssh/authorized_keys`, private key never leaves your machine)
+  or **issue an access key** (server generates a dedicated `access_ed25519` keypair,
+  registers its public key, and offers the private key for download —
+  `ssh -i vibe-access -p <port> vibe@<host>`). The card shows the ready `ssh` command
+  and the fingerprints of authorized keys.
 - **Pre-installed image tooling** — the runtime image ships ImageMagick,
   Pillow (`python3-pil` + NumPy), `rsvg-convert`, `cwebp`/`dwebp`,
   `poppler-utils`, Ghostscript, and `optipng`/`pngquant`/`jpegoptim` so Claude

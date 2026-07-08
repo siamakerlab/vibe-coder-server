@@ -421,7 +421,7 @@ fun Application.module(ctx: ServerContext) {
         adminRoutes(adminDeps)
         // v0.26.0 — 2FA SSR routes.
         twoFactorRoutes(adminDeps, ctx.adminUserRepo)
-        envSetupRoutes(adminDeps, ctx.envSetup, ctx.claudeAuth, ctx.claudeLogin, ctx.gitConfig)
+        envSetupRoutes(adminDeps, ctx.envSetup, ctx.claudeAuth, ctx.claudeLogin, ctx.gitConfig, com.siamakerlab.vibecoder.server.admin.SshAccessService())
         mcpRoutes(adminDeps, ctx.mcp)
         globalClaudeMdRoutes(adminDeps, ctx.globalClaudeMd)
         skillRoutes(adminDeps, globalSkillRegistry)

@@ -15,13 +15,17 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.Serializable
 import io.github.oshai.kotlinlogging.KotlinLogging
+import io.ktor.http.ContentDisposition
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.PartData
 import io.ktor.server.application.call
+import io.ktor.server.request.host
 import io.ktor.server.request.receiveMultipart
 import io.ktor.server.request.receiveParameters
 import io.ktor.utils.io.jvm.javaio.toInputStream
+import io.ktor.server.response.header
+import io.ktor.server.response.respondBytes
 import io.ktor.server.response.respondRedirect
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Routing
@@ -45,6 +49,8 @@ fun Routing.envSetupRoutes(
     claudeLogin: ClaudeLoginService,
     /** v1.9.0 — Git global identity (`user.name` / `user.email`) 입력 카드. */
     gitConfig: GitConfigService,
+    /** v1.159.0 — SSH 인바운드 접속 인증키(authorized_keys) + 접속용 키 발급. */
+    sshAccess: SshAccessService,
 ) {
     get("/env-setup") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
@@ -55,6 +61,12 @@ fun Routing.envSetupRoutes(
         val sshFlash = call.request.queryParameters["ssh"]
         val gitIdentity = runCatching { gitConfig.get() }
             .getOrDefault(com.siamakerlab.vibecoder.server.env.GitIdentity(null, null))
+        val sshCard = SshCardData(
+            host = runCatching { call.request.host() }.getOrNull()?.ifBlank { null } ?: "<host>",
+            port = setupService.sshServerPort(),
+            authorizedKeys = runCatching { sshAccess.listAuthorizedKeys() }.getOrDefault(emptyList()),
+            accessKey = runCatching { sshAccess.accessKey() }.getOrNull(),
+        )
         call.respondText(
             EnvSetupTemplates.envSetupPage(
                 username = sess.username,
@@ -64,6 +76,7 @@ fun Routing.envSetupRoutes(
                 gitFlash = gitFlash,
                 sshPort = setupService.sshServerPort(),
                 sshFlash = sshFlash,
+                sshCard = sshCard,
                 csrf = sess.csrf,
                 lang = sess.language,
                 embed = call.isEmbeddedRequest(),
@@ -144,6 +157,66 @@ fun Routing.envSetupRoutes(
         }
         log.info { "env-setup ssh-server configure/install: task $taskId by ${sess.username}" }
         call.respondRedirect("/env-setup/tasks/$taskId")
+    }
+
+    // v1.159.0 — 내 공개키를 authorized_keys 에 등록 (키 접속 provisioning ①).
+    post("/env-setup/ssh-server/authorized-keys/add") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireAdminOrRedirect(sess)) return@post
+        val form = requireCsrf()
+        val flash = runCatching {
+            val info = sshAccess.addAuthorizedKey(form["publicKey"].orEmpty())
+            log.info { "env-setup ssh authorized-key add: ${info.fingerprint} by ${sess.username}" }
+            "key-added"
+        }.getOrElse { e ->
+            log.warn { "ssh authorized-key add rejected: ${e.message}" }
+            "err:invalid_public_key"
+        }
+        call.respondRedirect("/env-setup?ssh=$flash#ssh-server")
+    }
+
+    // v1.159.0 — 등록된 공개키를 fingerprint 로 삭제.
+    post("/env-setup/ssh-server/authorized-keys/remove") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireAdminOrRedirect(sess)) return@post
+        val form = requireCsrf()
+        runCatching { sshAccess.removeAuthorizedKey(form["fingerprint"].orEmpty()) }
+            .onFailure { log.warn { "ssh authorized-key remove failed: ${it.message}" } }
+        call.respondRedirect("/env-setup?ssh=key-removed#ssh-server")
+    }
+
+    // v1.159.0 — 전용 접속 키쌍 발급 (키 접속 provisioning ②). 공개키는 authorized_keys 에 자동 등록.
+    post("/env-setup/ssh-server/access-key/generate") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireAdminOrRedirect(sess)) return@post
+        requireCsrf()
+        val flash = runCatching {
+            val info = sshAccess.generateAccessKey()
+            log.info { "env-setup ssh access-key generated: ${info.fingerprint} by ${sess.username}" }
+            "access-key-generated"
+        }.getOrElse { e ->
+            log.warn { "ssh access-key generate failed: ${e.message}" }
+            "err:access_key_failed"
+        }
+        call.respondRedirect("/env-setup?ssh=$flash#ssh-server")
+    }
+
+    // v1.159.0 — 발급된 접속용 개인키 다운로드. GET(다운로드) — no-store, attachment.
+    get("/env-setup/ssh-server/access-key/download") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@get
+        if (!requireAdminOrRedirect(sess)) return@get
+        val key = sshAccess.accessPrivateKey()
+        if (key == null) {
+            call.respondRedirect("/env-setup?ssh=err:no_access_key#ssh-server")
+            return@get
+        }
+        call.response.header(HttpHeaders.CacheControl, "no-store")
+        call.response.header(
+            HttpHeaders.ContentDisposition,
+            ContentDisposition.Attachment.withParameter(ContentDisposition.Parameters.FileName, "vibe-access").toString(),
+        )
+        log.info { "env-setup ssh access-key downloaded by ${sess.username}" }
+        call.respondBytes(key, ContentType.Application.OctetStream)
     }
 
     post("/env-setup/codex-login/start") {

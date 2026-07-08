@@ -8,6 +8,17 @@ import com.siamakerlab.vibecoder.server.env.SetupComponent
 import com.siamakerlab.vibecoder.server.i18n.Messages
 
 /**
+ * v1.159.0 — SSH 서버 카드의 접속 정보 + 인증키 상태. 라우트가 채워 [EnvSetupTemplates.envSetupPage]
+ * 로 전달한다. `host` 는 요청 Host 헤더 기반(외부 접근 도메인) — HTML escape 필수.
+ */
+data class SshCardData(
+    val host: String = "<host>",
+    val port: Int = 2222,
+    val authorizedKeys: List<AuthorizedKeyInfo> = emptyList(),
+    val accessKey: AccessKeyInfo? = null,
+)
+
+/**
  * 빌드환경 페이지 SSR 템플릿.
  *
  * v0.6.0 Phase A — 상태 카드 + 사용자 절차 안내.
@@ -38,6 +49,8 @@ object EnvSetupTemplates {
         gitFlash: String? = null,
         sshPort: Int = 2222,
         sshFlash: String? = null,
+        /** v1.159.0 — SSH 카드 접속 정보 + 등록된 인증키. */
+        sshCard: SshCardData = SshCardData(),
         csrf: String? = null,
         lang: String,
         embed: Boolean = false,
@@ -52,8 +65,8 @@ object EnvSetupTemplates {
         val ordered = states.sortedBy { priorityRank(it.component) }
             .filterNot { it.component == SetupComponent.MCP_DEFAULTS }
         val (coreStates, builtinStates) = ordered.partition { it.component.doctorCmd != null }
-        val coreCards = coreStates.joinToString("\n") { renderCard(it, csrf, lang, sshPort) }
-        val builtinCards = builtinStates.joinToString("\n") { renderCard(it, csrf, lang, sshPort) }
+        val coreCards = coreStates.joinToString("\n") { renderCard(it, csrf, lang, sshPort, sshCard) }
+        val builtinCards = builtinStates.joinToString("\n") { renderCard(it, csrf, lang, sshPort, sshCard) }
         val builtinNeedsAttention = builtinStates.any { it.status != ComponentStatus.INSTALLED }
         val flashHtml = claudeFlashBlurb(claudeFlash, lang) + gitFlashBlurb(gitFlash, lang) + sshFlashBlurb(sshFlash, lang)
         val gitCard = renderGitIdentityCard(gitIdentity, csrf, lang)
@@ -240,7 +253,12 @@ git config --global user.email "&lt;email&gt;"
                 val msg = Messages.t(lang, key).takeIf { it != key } ?: errCode
                 blurb("err", "${t("env.ssh.flash.err")}: $msg")
             }
-            else -> ""
+            // v1.159.0 — 키 provisioning 성공 flash. env.ssh.flash.<camel> 키.
+            else -> {
+                val key = "env.ssh.flash.${camelize(code.replace('-', '_'))}"
+                val msg = Messages.t(lang, key)
+                if (msg != key) blurb("ok", msg) else ""
+            }
         }
     }
 
@@ -251,16 +269,18 @@ git config --global user.email "&lt;email&gt;"
         return parts.first() + parts.drop(1).joinToString("") { it.replaceFirstChar { c -> c.uppercase() } }
     }
 
-    private fun renderCard(s: ComponentState, csrf: String?, lang: String, sshPort: Int): String {
+    private fun renderCard(s: ComponentState, csrf: String?, lang: String, sshPort: Int, sshCard: SshCardData): String {
         val c = s.component
         // v1.7.16 — c.displayName / sizeHint / description 는 i18n 키 (String).
         // Messages.t 로 lookup. 영어 사용자에 영어, 한국어 사용자에 한글 표시.
         val (badgeCls, badgeText) = badgeFor(c, s.status, lang)
-        val actionHtml = renderAction(c, s.status, csrf, lang, sshPort)
+        val actionHtml = renderAction(c, s.status, csrf, lang, sshPort, sshCard)
         val name = Messages.t(lang, c.displayName)
         val size = Messages.t(lang, c.sizeHint)
         val desc = Messages.t(lang, c.description)
-        return """<div class="card">
+        // v1.159.0 — SSH 카드는 flash redirect(#ssh-server) 앵커를 위해 id 부여.
+        val cardId = if (c == SetupComponent.SSH_SERVER) " id=\"ssh-server\"" else ""
+        return """<div class="card"$cardId>
   <div style="display:flex;justify-content:space-between;align-items:start;gap:8px">
     <h2 style="margin-bottom:8px">${esc(name)}</h2>
     <span class="$badgeCls" style="white-space:nowrap;font-size:12px">${esc(badgeText)}</span>
@@ -291,7 +311,7 @@ git config --global user.email "&lt;email&gt;"
         }
     }
 
-    private fun renderAction(c: SetupComponent, status: ComponentStatus, csrf: String?, lang: String, sshPort: Int): String {
+    private fun renderAction(c: SetupComponent, status: ComponentStatus, csrf: String?, lang: String, sshPort: Int, sshCard: SshCardData): String {
         val t = { key: String -> Messages.t(lang, key) }
         return when (c) {
             // 이미지 내장 — 진단 실패 시에만 경고. 정상이면 액션 없음.
@@ -423,30 +443,124 @@ docker exec -it --user vibe vibe-coder-server opencode providers login</pre>
                 </details>"""
             }
 
-            SetupComponent.SSH_SERVER -> {
-                val label = when (status) {
-                    ComponentStatus.INSTALLED -> t("env.action.sshServerLabel.installed")
-                    else -> t("env.action.sshServerLabel.missing")
-                }
-                """<form method="post" action="/env-setup/ssh-server/config" style="margin-top:10px"
-                        onsubmit="return confirm(${jsLit(t("env.action.sshServerConfirm"))})">
-                  ${CsrfTokens.hiddenInput(csrf)}
-                  <label>
-                    <div style="font-size:12px;color:#aaa;margin-bottom:4px">${esc(t("env.action.sshServerPort"))}</div>
-                    <input name="port" type="number" min="1024" max="65535" required value="${esc(sshPort.toString())}"
-                           style="width:140px;padding:8px;font-family:ui-monospace,Menlo,monospace">
-                  </label>
-                  <div style="margin-top:8px">
-                    <button type="submit" class="primary" style="width:auto;padding:8px 16px">${esc(label)}</button>
-                  </div>
-                </form>
-                <p class="hint" style="margin-top:8px;font-size:12px">${esc(t("env.action.sshServerNote"))}</p>
-                <details style="margin-top:8px"><summary class="dim" style="cursor:pointer;font-size:12px">${esc(t("env.action.cliHint"))}</summary>
-                  <pre class="diff-block" style="margin-top:6px">docker exec -it vibe-coder-server vibe-doctor ssh-server
-ssh -p $sshPort vibe@&lt;host&gt;</pre>
-                </details>"""
-            }
+            SetupComponent.SSH_SERVER -> renderSshServerAction(status, csrf, lang, sshPort, sshCard)
         }
+    }
+
+    /**
+     * v1.159.0 — SSH 서버 카드. 비밀번호 접속은 sshd 에서 원천 차단(PasswordAuthentication no)이라
+     * **키 접속**만 가능. 두 provisioning 경로(내 공개키 등록 / 접속용 키 발급)와 접속 명령을 표시한다.
+     */
+    private fun renderSshServerAction(status: ComponentStatus, csrf: String?, lang: String, sshPort: Int, sshCard: SshCardData): String {
+        val t = { key: String -> Messages.t(lang, key) }
+        val host = esc(sshCard.host)
+        val port = sshCard.port
+        val installed = status == ComponentStatus.INSTALLED
+        val hasKeys = sshCard.authorizedKeys.isNotEmpty()
+
+        // ── 접속 정보 ──
+        val notInstalledNote = if (!installed)
+            """<p class="hint" style="margin:6px 0 0;color:var(--warn)">${esc(t("env.ssh.conn.notInstalled"))}</p>""" else ""
+        val noKeyNote = if (installed && !hasKeys)
+            """<p class="hint" style="margin:6px 0 0;color:var(--warn)">${esc(t("env.ssh.conn.noKey"))}</p>""" else ""
+        val accessCmd = if (sshCard.accessKey != null)
+            "\nssh -i vibe-access -p $port vibe@${host}" else ""
+        val connInfo = """
+                <div style="margin-top:10px;padding:10px;border:1px solid var(--border);border-radius:6px">
+                  <div style="font-size:12px;color:var(--text-dim);margin-bottom:4px">${esc(t("env.ssh.conn.title"))}</div>
+                  <div style="font-size:13px;font-family:ui-monospace,Menlo,monospace">user <strong>vibe</strong> · port <strong>$port</strong> · host <strong>$host</strong></div>
+                  <pre class="diff-block" style="margin-top:6px">ssh -p $port vibe@${host}${accessCmd}</pre>
+                  $notInstalledNote
+                  $noKeyNote
+                </div>"""
+
+        // ── ① 내 공개키 등록 + 등록된 키 목록 ──
+        val keysList = if (!hasKeys) {
+            """<p class="dim" style="font-size:12px;margin:6px 0 0">${esc(t("env.ssh.keys.none"))}</p>"""
+        } else {
+            val items = sshCard.authorizedKeys.joinToString("\n") { k ->
+                val badge = if (k.isAccessKey)
+                    """ <span class="chip" style="font-size:11px;padding:1px 6px">${esc(t("env.ssh.keys.accessBadge"))}</span>""" else ""
+                val label = k.comment ?: k.algorithm
+                """<li style="display:flex;align-items:center;gap:8px;margin:4px 0;flex-wrap:wrap">
+                     <code style="font-size:12px">${esc(k.fingerprint)}</code>
+                     <span class="dim" style="font-size:12px">${esc(label)}</span>$badge
+                     <form method="post" action="/env-setup/ssh-server/authorized-keys/remove" style="display:inline;margin:0"
+                           onsubmit="return confirm(${jsLit(t("env.ssh.keys.removeConfirm"))})">
+                       ${CsrfTokens.hiddenInput(csrf)}
+                       <input type="hidden" name="fingerprint" value="${esc(k.fingerprint)}">
+                       <button type="submit" class="chip chip-action" style="font-size:11px;padding:2px 8px">${esc(t("env.ssh.keys.remove"))}</button>
+                     </form>
+                   </li>"""
+            }
+            """<ul style="list-style:none;padding:0;margin:6px 0 0">$items</ul>"""
+        }
+        val pasteKey = """
+                <div style="margin-top:14px">
+                  <div style="font-size:13px;font-weight:600;margin-bottom:2px">${esc(t("env.ssh.paste.title"))}</div>
+                  <p class="hint" style="margin:0 0 6px;font-size:12px">${esc(t("env.ssh.paste.desc"))}</p>
+                  <form method="post" action="/env-setup/ssh-server/authorized-keys/add">
+                    ${CsrfTokens.hiddenInput(csrf)}
+                    <textarea name="publicKey" required rows="2" placeholder="ssh-ed25519 AAAA... you@host"
+                              style="width:100%;padding:8px;font-family:ui-monospace,Menlo,monospace;font-size:12px;resize:vertical"></textarea>
+                    <div style="margin-top:6px"><button type="submit" class="primary" style="width:auto;padding:8px 16px">${esc(t("env.ssh.paste.add"))}</button></div>
+                  </form>
+                  <div style="font-size:12px;color:var(--text-dim);margin-top:8px">${esc(t("env.ssh.keys.registered"))}</div>
+                  $keysList
+                </div>"""
+
+        // ── ② 접속용 키 발급 ──
+        val accessBlock = if (sshCard.accessKey != null) {
+            """
+                <div style="margin-top:14px">
+                  <div style="font-size:13px;font-weight:600;margin-bottom:2px">${esc(t("env.ssh.access.title"))}</div>
+                  <div style="font-size:12px;font-family:ui-monospace,Menlo,monospace;color:var(--text-dim);margin-bottom:6px">${esc(sshCard.accessKey.fingerprint)}</div>
+                  <a href="/env-setup/ssh-server/access-key/download" class="primary chip" style="padding:8px 16px;display:inline-block">${esc(t("env.ssh.access.download"))}</a>
+                  <form method="post" action="/env-setup/ssh-server/access-key/generate" style="display:inline;margin-left:6px"
+                        onsubmit="return confirm(${jsLit(t("env.ssh.access.regenConfirm"))})">
+                    ${CsrfTokens.hiddenInput(csrf)}
+                    <button type="submit" class="chip chip-action" style="padding:8px 14px">${esc(t("env.ssh.access.regen"))}</button>
+                  </form>
+                  <p class="hint" style="margin:8px 0 0;font-size:12px">${esc(t("env.ssh.access.usage"))}</p>
+                </div>"""
+        } else {
+            """
+                <div style="margin-top:14px">
+                  <div style="font-size:13px;font-weight:600;margin-bottom:2px">${esc(t("env.ssh.access.title"))}</div>
+                  <p class="hint" style="margin:0 0 6px;font-size:12px">${esc(t("env.ssh.access.desc"))}</p>
+                  <form method="post" action="/env-setup/ssh-server/access-key/generate"
+                        onsubmit="return confirm(${jsLit(t("env.ssh.access.genConfirm"))})">
+                    ${CsrfTokens.hiddenInput(csrf)}
+                    <button type="submit" class="primary" style="width:auto;padding:8px 16px">${esc(t("env.ssh.access.generate"))}</button>
+                  </form>
+                </div>"""
+        }
+
+        // ── 설치 / 포트 ──
+        val installLabel = if (installed) t("env.action.sshServerLabel.installed") else t("env.action.sshServerLabel.missing")
+        val installForm = """
+                <details style="margin-top:14px" ${if (installed) "" else "open"}>
+                  <summary style="cursor:pointer;font-size:13px;font-weight:600">${esc(t("env.ssh.install.title"))}</summary>
+                  <form method="post" action="/env-setup/ssh-server/config" style="margin-top:8px"
+                        onsubmit="return confirm(${jsLit(t("env.action.sshServerConfirm"))})">
+                    ${CsrfTokens.hiddenInput(csrf)}
+                    <label>
+                      <div style="font-size:12px;color:#aaa;margin-bottom:4px">${esc(t("env.action.sshServerPort"))}</div>
+                      <input name="port" type="number" min="1024" max="65535" required value="${esc(sshPort.toString())}"
+                             style="width:140px;padding:8px;font-family:ui-monospace,Menlo,monospace">
+                    </label>
+                    <div style="margin-top:8px">
+                      <button type="submit" class="primary" style="width:auto;padding:8px 16px">${esc(installLabel)}</button>
+                    </div>
+                  </form>
+                  <p class="hint" style="margin-top:8px;font-size:12px">${esc(t("env.action.sshServerNote"))}</p>
+                  <details style="margin-top:8px"><summary class="dim" style="cursor:pointer;font-size:12px">${esc(t("env.action.cliHint"))}</summary>
+                    <pre class="diff-block" style="margin-top:6px">docker exec -it vibe-coder-server vibe-doctor ssh-server
+ssh -p $port vibe@${host}</pre>
+                  </details>
+                </details>"""
+
+        return connInfo + pasteKey + accessBlock + installForm
     }
 
     private fun renderCodexLoginAction(status: ComponentStatus, csrf: String?, lang: String): String {
