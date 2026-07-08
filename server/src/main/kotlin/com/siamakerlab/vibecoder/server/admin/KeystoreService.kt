@@ -99,12 +99,22 @@ class KeystoreService(
     /** Host path of `<pkg>-keystore.properties` — Claude prompt 에 절대경로로 노출. */
     fun propertiesPath(packageName: String): Path = keystoreDir.resolve("$packageName-keystore.properties")
 
+    /**
+     * v1.160.0 — Host path of `<pkg>-debug-keystore.properties` — **디버그 빌드 전용** Gradle
+     * signing config. release properties 와 별도 파일로, 디버그 키스토어의 실제
+     * storeFile / storePassword / keyAlias / keyPassword 를 명시한다. debug 키스토어의
+     * alias·비번은 release 와 다를 수 있어(예: 표준 `androiddebugkey`, `key0`, `<name>-debug`),
+     * 릴리즈 properties 를 재사용한 추측이 서명 실패/AGP 자동 debug.keystore 생성을 유발했다.
+     */
+    fun debugPropertiesPath(packageName: String): Path = keystoreDir.resolve("$packageName-debug-keystore.properties")
+
     /** v1.98.0 — 아카이브용: 해당 패키지의 **존재하는** 키스토어 파일 경로(최대 4종). */
     fun keystoreFiles(packageName: String): List<Path> {
         if (!packageNameRegex.matches(packageName)) return emptyList()
         return listOf(
             "$packageName.keystore", "$packageName-debug.keystore",
-            "$packageName-keystore.properties", "$packageName-admob.properties",
+            "$packageName-keystore.properties", "$packageName-debug-keystore.properties",
+            "$packageName-admob.properties",
         ).map { keystoreDir.resolve(it) }.filter { Files.exists(it) }
     }
 
@@ -133,50 +143,73 @@ class KeystoreService(
      */
     fun loadSigning(packageName: String, debug: Boolean = false): SigningCredentials? {
         if (!packageNameRegex.matches(packageName)) return null
+        return if (debug) loadDebugSigning(packageName) else loadReleaseSigning(packageName)
+    }
+
+    /** release 서명 자격증명 — `<pkg>-keystore.properties` + `<pkg>.keystore`. */
+    private fun loadReleaseSigning(packageName: String): SigningCredentials? {
         val release = keystoreDir.resolve("$packageName.keystore")
-        val debugKs = keystoreDir.resolve("$packageName-debug.keystore")
         val props = keystoreDir.resolve("$packageName-keystore.properties")
-        // 서명에 쓸 키스토어: debug 빌드면 -debug.keystore, 아니면 release.
-        val targetKeystore = if (debug) debugKs else release
-        if (!Files.exists(targetKeystore) || !Files.exists(props)) return null
-        val p = Properties()
-        runCatching {
-            Files.newBufferedReader(props).use { p.load(it) }
-        }.getOrElse { return null }
+        if (!Files.exists(release) || !Files.exists(props)) return null
+        val p = readProps(props) ?: return null
         val storePassword = p.getProperty("storePassword")?.takeIf { it.isNotBlank() } ?: return null
         val keyAlias = p.getProperty("keyAlias")?.takeIf { it.isNotBlank() } ?: return null
         val keyPassword = p.getProperty("keyPassword")?.takeIf { it.isNotBlank() } ?: storePassword
-        // debug 빌드는 항상 -debug.keystore 강제 — properties.storeFile 은 릴리즈 경로라 무시.
-        // release 빌드만 properties 의 storeFile(보통 릴리즈 키 경로)을 신뢰, 없으면 fallback.
-        val storeFile = if (debug) {
-            debugKs
-        } else {
-            p.getProperty("storeFile")
-                ?.takeIf { it.isNotBlank() }
-                ?.let { Path.of(it) }
-                ?.takeIf { Files.exists(it) }
-                ?: release
-        }
-        // debug 빌드: debug keystore 의 실제 alias 를 Java KeyStore API 로 확인.
-        // {keyAlias}-debug 가 있으면 사용, 없거나 keystore를 열 수 없으면 원래 alias 로 fallback.
-        val effectiveKeyAlias = if (debug) {
-            resolveDebugAlias(debugKs, storePassword, keyAlias)
-        } else {
-            keyAlias
-        }
-        return SigningCredentials(
-            storeFile = storeFile,
-            storePassword = storePassword,
-            keyAlias = effectiveKeyAlias,
-            keyPassword = keyPassword,
-            propertiesFile = props,
-        )
+        val storeFile = p.getProperty("storeFile")
+            ?.takeIf { it.isNotBlank() }?.let { Path.of(it) }?.takeIf { Files.exists(it) }
+            ?: release
+        return SigningCredentials(storeFile, storePassword, keyAlias, keyPassword, props)
     }
 
     /**
-     * v1.154.1 — debug keystore 에서 `{baseAlias}-debug` alias 존재 여부를 Java KeyStore API 로
-     * 검증한다. 존재하면 `{baseAlias}-debug` 를 반환하고, 없거나 keystore를 열 수 없으면
-     * 원래 [baseAlias] 를 반환한다(create() 가 동일 alias 로 생성한 기존 키스토어 호환).
+     * v1.160.0 — 디버그 서명 자격증명. **디버그 키스토어 폴더에 보관된 지문을 그대로 사용**하도록
+     * 다음 우선순위로 해석한다:
+     *
+     *  1. `<pkg>-debug-keystore.properties` (SSOT) — 있으면 그 storeFile/storePassword/
+     *     keyAlias/keyPassword 를 **그대로** 사용. debug 키스토어의 실제 alias·비번을 명시하므로
+     *     추측이 없다. create() 와 운영 마이그레이션이 이 파일을 생성한다.
+     *  2. (레거시 fallback) 전용 debug properties 가 없을 때만 — `<pkg>-keystore.properties`
+     *     의 비번 + [resolveDebugAlias] 로 debug 키스토어 안의 실제 key alias 를 자동 탐지.
+     *
+     * 어느 경우든 **`<pkg>-debug.keystore` 가 없으면 null** → 미주입(AGP 표준 debug). 릴리즈
+     * 키스토어로 fallback 하지 않는다(디버그가 릴리즈 지문으로 서명되던 회귀 방지).
+     */
+    private fun loadDebugSigning(packageName: String): SigningCredentials? {
+        val debugKs = keystoreDir.resolve("$packageName-debug.keystore")
+        if (!Files.exists(debugKs)) return null
+        // 1) 전용 debug properties 우선.
+        val debugProps = keystoreDir.resolve("$packageName-debug-keystore.properties")
+        if (Files.exists(debugProps)) {
+            val p = readProps(debugProps) ?: return null
+            val storePassword = p.getProperty("storePassword")?.takeIf { it.isNotBlank() } ?: return null
+            val keyAlias = p.getProperty("keyAlias")?.takeIf { it.isNotBlank() } ?: return null
+            val keyPassword = p.getProperty("keyPassword")?.takeIf { it.isNotBlank() } ?: storePassword
+            val storeFile = p.getProperty("storeFile")
+                ?.takeIf { it.isNotBlank() }?.let { Path.of(it) }?.takeIf { Files.exists(it) }
+                ?: debugKs
+            return SigningCredentials(storeFile, storePassword, keyAlias, keyPassword, debugProps)
+        }
+        // 2) 레거시 fallback: release properties 비번 + debug 키스토어 실제 alias 자동 탐지.
+        val relProps = keystoreDir.resolve("$packageName-keystore.properties")
+        if (!Files.exists(relProps)) return null
+        val p = readProps(relProps) ?: return null
+        val storePassword = p.getProperty("storePassword")?.takeIf { it.isNotBlank() } ?: return null
+        val baseAlias = p.getProperty("keyAlias")?.takeIf { it.isNotBlank() } ?: return null
+        val keyPassword = p.getProperty("keyPassword")?.takeIf { it.isNotBlank() } ?: storePassword
+        val effectiveKeyAlias = resolveDebugAlias(debugKs, storePassword, baseAlias)
+        return SigningCredentials(debugKs, storePassword, effectiveKeyAlias, keyPassword, relProps)
+    }
+
+    /** properties 파일을 읽어 [Properties] 로 반환. 실패 시 null. */
+    private fun readProps(path: Path): Properties? = runCatching {
+        Properties().apply { Files.newBufferedReader(path).use { load(it) } }
+    }.getOrNull()
+
+    /**
+     * v1.154.1 / v1.160.0 — debug keystore 안의 실제 key alias 를 Java KeyStore API 로 찾는다.
+     * 우선순위: `{baseAlias}-debug` → `{baseAlias}` → **키스토어 안의 첫 key entry alias**
+     * (표준 `androiddebugkey` / `key0` 등 base 와 무관한 alias 도 커버). keystore 를 열 수
+     * 없으면(더미/손상/비번 불일치) [baseAlias] fallback.
      *
      * keytool 프로세스 spawn 은 무거우므로 JVM 내 KeyStore API 로 처리.
      */
@@ -187,7 +220,11 @@ class KeystoreService(
             FileInputStream(debugKs.toFile()).use { fis ->
                 ks.load(fis, storePassword.toCharArray())
             }
-            if (ks.containsAlias(debugAlias)) debugAlias else baseAlias
+            when {
+                ks.containsAlias(debugAlias) -> debugAlias
+                ks.containsAlias(baseAlias) -> baseAlias
+                else -> ks.aliases().toList().firstOrNull { ks.isKeyEntry(it) } ?: baseAlias
+            }
         }.getOrElse {
             // keystore를 열 수 없는 경우(더미 파일, 손상, 지원하지 않는 형식 등) baseAlias fallback.
             log.debug { "resolveDebugAlias: keystore 열기 실패, baseAlias=$baseAlias 사용 — ${it.message}" }
@@ -217,11 +254,14 @@ class KeystoreService(
             .getOrNull()
         val debugFile = keystoreDir.resolve("$packageName-debug.keystore")
         val debugInfo = if (Files.exists(debugFile)) {
-            // v1.154.1 — debug keystore 의 alias 가 release 와 다를 수 있으므로 resolveDebugAlias 로 확인.
-            val debugAlias = resolveDebugAlias(debugFile, signing.storePassword, signing.keyAlias)
-            runCatching { readCert(debugFile, signing.storePassword, debugAlias) }
-                .onFailure { log.warn(it) { "keytool -list debug failed for $packageName" } }
-                .getOrNull()
+            // v1.160.0 — debug 서명 자격증명(전용 `<pkg>-debug-keystore.properties` 우선)으로
+            // 지문을 읽는다. debug 키스토어의 비번/alias 가 release 와 달라도 정확히 표시된다.
+            val dsign = loadSigning(packageName, debug = true)
+            if (dsign != null) {
+                runCatching { readCert(dsign.storeFile, dsign.storePassword, dsign.keyAlias) }
+                    .onFailure { log.warn(it) { "keytool -list debug failed for $packageName" } }
+                    .getOrNull()
+            } else null
         } else null
         val available = releaseInfo != null || debugInfo != null
         return KeystoreFingerprints(
@@ -396,7 +436,7 @@ class KeystoreService(
             throw IllegalArgumentException("invalid_package_name: $newPackageName")
         }
         if (oldPackageName == newPackageName) return 0
-        val suffixes = listOf(".keystore", "-debug.keystore", "-keystore.properties", "-admob.properties")
+        val suffixes = listOf(".keystore", "-debug.keystore", "-keystore.properties", "-debug-keystore.properties", "-admob.properties")
         // v1.71.0 (정밀점검 H3) — 대상(newPackage) 파일이 이미 있으면 release 키 덮어쓰기로
         // 복구 불가한 서명키 손실 위험 → 사전 차단(REPLACE_EXISTING 미사용).
         suffixes.forEach { suffix ->
@@ -445,6 +485,7 @@ class KeystoreService(
 
         val debug = keystoreDir.resolve("${req.packageName}-debug.keystore")
         val props = keystoreDir.resolve("${req.packageName}-keystore.properties")
+        val debugProps = keystoreDir.resolve("${req.packageName}-debug-keystore.properties")
         val admob = keystoreDir.resolve("${req.packageName}-admob.properties")
 
         val dname = buildDname(req)
@@ -462,7 +503,7 @@ class KeystoreService(
             props,
             buildString {
                 appendLine("# v1.5.0 — auto-generated by vibe-coder-server /settings/keystores")
-                appendLine("# Android Gradle signing config — host path mounted at /home/vibe/keystores")
+                appendLine("# Android Gradle signing config (RELEASE) — host path mounted at /home/vibe/keystores")
                 appendLine("storeFile=/home/vibe/keystores/${req.packageName}.keystore")
                 appendLine("storePassword=${req.password}")
                 appendLine("keyAlias=key0")
@@ -470,6 +511,22 @@ class KeystoreService(
             },
         )
         runCatching { setPerm(props, "rw-------") }
+
+        // v1.160.0 — 디버그 빌드 전용 properties. loadSigning(debug=true) 가 이 파일을 SSOT 로
+        // 참조해 `<pkg>-debug.keystore`(alias key0-debug)로 assembleDebug 를 서명한다.
+        // 이게 없으면 디버그가 릴리즈 키를 추측하거나 AGP 가 임의 debug.keystore 를 만들었다.
+        Files.writeString(
+            debugProps,
+            buildString {
+                appendLine("# v1.160.0 — auto-generated by vibe-coder-server /settings/keystores")
+                appendLine("# Android Gradle signing config (DEBUG) — 고정 디버그 지문(assembleDebug)")
+                appendLine("storeFile=/home/vibe/keystores/${req.packageName}-debug.keystore")
+                appendLine("storePassword=${req.password}")
+                appendLine("keyAlias=key0-debug")
+                appendLine("keyPassword=${req.password}")
+            },
+        )
+        runCatching { setPerm(debugProps, "rw-------") }
 
         if (req.admob != null && !req.admob.isBlank) {
             Files.writeString(admob, admobFileBody(req.admob))
@@ -637,6 +694,7 @@ class KeystoreService(
             "$packageName.keystore",
             "$packageName-debug.keystore",
             "$packageName-keystore.properties",
+            "$packageName-debug-keystore.properties",
             "$packageName-admob.properties",
         ).forEach { name ->
             runCatching { Files.deleteIfExists(keystoreDir.resolve(name)) }
