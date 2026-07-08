@@ -402,8 +402,7 @@
         compactBtn.addEventListener('click', function () {
           var cf = frameOf('console');
           if (!cf || !cf.contentWindow) return;
-          var confirmText = compactBtn.getAttribute('data-confirm') || 'Send /compact to the console?';
-          if (!window.confirm(confirmText)) return;
+          // v1.160.1 — 확인 다이얼로그 없이 즉시 송신(운영자 요청). 버튼 누르면 바로 /compact 전송.
           cf.contentWindow.postMessage({ type: 'vibe:send-prompt', text: '/compact' }, location.origin);
           compactBtn.classList.add('busy');
           compactBtn.disabled = true;

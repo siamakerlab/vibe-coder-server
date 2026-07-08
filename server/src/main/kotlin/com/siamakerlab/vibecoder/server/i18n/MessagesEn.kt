@@ -2006,7 +2006,6 @@ internal object MessagesEn {
         "tabs.rail.context.create" to "New cache",
         "tabs.rail.context.input" to "Input",
         "tabs.rail.compact.hint" to "/compact — summarize to shrink context (keeps gist). Sent to console.",
-        "tabs.rail.compact.confirm" to "Send /compact to the console? It summarizes the conversation to shrink context while keeping the gist.",
         "tabs.rail.autocompact" to "auto",
         "tabs.rail.autocompact.hint" to "Auto compact — ON (default): when context crosses the threshold, automatically runs /compact after the turn and continues. OFF: only when you click /compact.",
         "tabs.rail.history.empty" to "No prompts yet",

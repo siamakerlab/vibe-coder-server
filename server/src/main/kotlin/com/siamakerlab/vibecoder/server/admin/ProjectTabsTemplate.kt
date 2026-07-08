@@ -171,7 +171,6 @@ internal object ProjectTabsTemplate {
         <span class="pt-ctx-actions">
           <button type="button" class="pt-compact-btn" id="pt-compact-btn"
                   aria-label="${esc(t("tabs.rail.compact.hint"))}"
-                  data-confirm="${esc(t("tabs.rail.compact.confirm"))}"
                   title="${esc(t("tabs.rail.compact.hint"))}">/compact</button>
           <label class="pt-autocompact" title="${esc(t("tabs.rail.autocompact.hint"))}">
             <input type="checkbox" id="pt-autocompact"${if (autoCompact) " checked" else ""}>${esc(t("tabs.rail.autocompact"))}
@@ -1139,7 +1138,7 @@ $railHtml
   </div>
 </div>
 
-<script src="/static/project-tabs.js?v=1.157.0" defer></script>
+<script src="/static/project-tabs.js?v=1.160.1" defer></script>
 <!-- v1.56.0 — 콤보박스 상태칩 실시간 동기. 목록 페이지와 동일하게 `/ws/projects`
      (단방향) 의 ProjectBusyChanged 로 responding↔ready patch. -->
 <script>
