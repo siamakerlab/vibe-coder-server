@@ -223,7 +223,7 @@ class EnvSetupService(
         SetupComponent.GRADLE -> probeGradle(c, lang)
         SetupComponent.FLUTTER -> probeFlutter(c, lang)
         SetupComponent.CODEX -> probeCmd(c, listOf("codex", "--version"), lang)
-        SetupComponent.OPENCODE -> probeCmd(c, listOf("opencode", "--version"), lang)
+        SetupComponent.OPENCODE -> probeCmd(c, listOf(resolveOpenCodeCmd(), "--version"), lang)
         SetupComponent.SSH_SERVER -> probeSshServer(c, lang)
     }
 
@@ -737,9 +737,15 @@ class EnvSetupService(
         // API key 는 로그에 남기지 않는다 (민감정보).
     }
 
-    private fun resolveOpenCodeCmd(): String =
-        System.getenv("OPENCODE_CMD")?.takeIf { it.isNotBlank() }
-            ?: if (com.siamakerlab.vibecoder.server.core.OsType.detect() == com.siamakerlab.vibecoder.server.core.OsType.WINDOWS) "opencode.cmd" else "opencode"
+    private fun resolveOpenCodeCmd(): String {
+        System.getenv("OPENCODE_CMD")?.takeIf { it.isNotBlank() }?.let { return it }
+        // v1.160.2 — opencode 는 공식 install 스크립트가 /home/vibe/.opencode/bin 에 설치하는데
+        // 이 경로가 서버 JVM 프로세스의 PATH 에 없어(=Dockerfile 이 .local/bin 만 추가) bare
+        // "opencode" 로는 detect/spawn 이 실패한다. 설치 위치가 실행 가능하면 절대경로를 우선 쓴다.
+        val installed = java.io.File("/home/vibe/.opencode/bin/opencode")
+        if (installed.canExecute()) return installed.absolutePath
+        return if (com.siamakerlab.vibecoder.server.core.OsType.detect() == com.siamakerlab.vibecoder.server.core.OsType.WINDOWS) "opencode.cmd" else "opencode"
+    }
 
     private fun submitDoctor(
         taskId: String,

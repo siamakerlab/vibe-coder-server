@@ -165,6 +165,10 @@ services:
       # 호스트 PC 의 ~/.android/debug.keystore 를 이 디렉토리에 복사해두면
       # 호스트 / 컨테이너 빌드가 같은 debug cert 공유.
       - ${VIBE_DATA_ROOT:-./vibe-coder-data}/dev-tools/android:/home/vibe/.android
+      # v1.160.2 — opencode CLI (선택 도구). 공식 install 스크립트가 /home/vibe/.opencode/bin
+      # 에 ~188MB 바이너리를 설치하는데, 이 경로를 영속하지 않으면 이미지 업데이트/컨테이너
+      # 재생성 시 설치가 사라진다. auth.json 은 별도로 .local/share/opencode 아래에 저장.
+      - ${VIBE_DATA_ROOT:-./vibe-coder-data}/dev-tools/opencode:/home/vibe/.opencode
 
       # ── Claude 인증 ─────────────────────────────────────────────
       # 기본: 통합 디렉토리 안의 vibe-coder-data/claude/.

@@ -2,9 +2,10 @@
 # opencode CLI 설치 — opencode (z.ai coding plan provider, https://opencode.ai).
 #
 # 공식 install 스크립트(curl ... | bash)로 /home/vibe/.opencode/bin/opencode 에 설치.
-# 이미지 업데이트 후에도 영속(.opencode 디렉토리가 bind mount 안에 있음). auth.json
-# (~/.local/share/opencode/auth.json)에 z.ai coding plan API key 저장 — 빌드환경
-# "OpenCode (z.ai)" 카드의 API key 입력으로 작성.
+# 영속: compose.yml 이 dev-tools/opencode:/home/vibe/.opencode 볼륨을 마운트해야 이미지
+# 업데이트/컨테이너 재생성 후에도 유지된다 (v1.160.2 에서 볼륨 추가 — 이전엔 임시 레이어라
+# 재생성 시 사라졌음). auth.json 은 .local 볼륨의 ~/.local/share/opencode/auth.json 에 저장
+# — 빌드환경 "OpenCode (z.ai)" 카드의 API key 입력으로 작성.
 #
 # v1.156.0 — Phase 2 OpenCode provider 지원 (옵션). "모두 설치"에서는 제외, 개별 카드로만
 # (Android 빌드 필수 도구가 아님 — Codex/Flutter 와 같은 선택 컴포넌트 취급).

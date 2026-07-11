@@ -46,9 +46,14 @@ import kotlin.io.path.writeText
 
 private val log = KotlinLogging.logger {}
 
-private fun defaultOpenCodeCmd(): String =
-    System.getenv("OPENCODE_CMD")?.takeIf { it.isNotBlank() }
-        ?: if (OsType.detect() == OsType.WINDOWS) "opencode.cmd" else "opencode"
+private fun defaultOpenCodeCmd(): String {
+    System.getenv("OPENCODE_CMD")?.takeIf { it.isNotBlank() }?.let { return it }
+    // v1.160.2 — 설치 위치(/home/vibe/.opencode/bin)가 서버 PATH 에 없어 bare "opencode" spawn 이
+    // 실패하는 문제 회수. 설치 바이너리가 실행 가능하면 절대경로 우선(EnvSetupService 와 동형).
+    val installed = java.io.File("/home/vibe/.opencode/bin/opencode")
+    if (installed.canExecute()) return installed.absolutePath
+    return if (OsType.detect() == OsType.WINDOWS) "opencode.cmd" else "opencode"
+}
 
 /**
  * v1.150.0 — Phase 2 OpenCode provider 세션 매니저. [AgentSessionManager] 를 직접 구현

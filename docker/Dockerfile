@@ -257,6 +257,11 @@ ENV CODEX_HOME=/home/vibe/.config/codex
 # /home/vibe/.local/bin 을 PATH 에 추가 (Claude CLI 가 MCP 명령을 찾도록).
 ENV PATH=/home/vibe/.local/bin:${PATH}
 
+# v1.160.2 — opencode CLI 는 공식 install 스크립트가 /home/vibe/.opencode/bin 에 설치한다.
+# 이 경로를 서버 프로세스 PATH 에 넣어야 detect(`opencode --version`)·에이전트 spawn·터미널
+# 사용이 모두 동작한다 (누락 시 설치돼 있어도 "미설치"로 오탐 → API key 입력 차단).
+ENV PATH=/home/vibe/.opencode/bin:${PATH}
+
 # JVM 옵션 (사용자가 .env로 덮어쓰기 가능)
 ENV JAVA_OPTS="-Xmx2g -XX:+UseG1GC -Dfile.encoding=UTF-8"
 
