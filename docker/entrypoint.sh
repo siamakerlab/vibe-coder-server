@@ -64,6 +64,8 @@ fi
 #   /home/vibe/.npm                  npx 캐시 (MCP 자주 사용)
 #   /home/vibe/.cache/ms-playwright  Playwright 브라우저
 #   /home/vibe/.local                vibe 의 npm 글로벌 prefix (MCP 영구 설치)
+# v1.160.4 — /home/vibe/.opencode 추가. opencode CLI 설치(~188MB) 영속 볼륨인데 신규
+#   마운트라 호스트 디렉토리가 root 소유로 생성됨 → 이 chown 없으면 vibe 가 설치 못함.
 for dir in \
     /workspace \
     /data \
@@ -75,6 +77,7 @@ for dir in \
     /home/vibe/.cache \
     /home/vibe/.cache/ms-playwright \
     /home/vibe/.local \
+    /home/vibe/.opencode \
     /home/vibe/.ssh \
     /home/vibe/keystores \
 ; do
