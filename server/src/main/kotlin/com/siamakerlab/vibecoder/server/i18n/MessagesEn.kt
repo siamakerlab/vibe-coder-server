@@ -984,8 +984,6 @@ internal object MessagesEn {
         "env.action.codexApiKeyConfirm" to "Use the entered API key for Codex CLI login. Continue?",
         "env.action.codexApiKeyBtn" to "Log in with API key",
         "env.action.codexNote" to "Optional. Persisted to the npm-global volume; login is kept in CODEX_HOME (.config volume) so it survives image updates. Device code is the default, with access token / API key fallbacks if needed.",
-        "env.action.opencodeLogin" to "Log in to OpenCode (z.ai)",
-        "env.action.opencodeLoginConfirm" to "Run opencode providers login. The z.ai coding plan subscription token is stored in auth.json. Runs inside the container; the server waits until completion. Continue?",
         "env.action.opencodeNote" to "v1.151.0. Use opencode CLI as the 3rd provider (z.ai coding plan). Login persists to ~/.local/share/opencode/auth.json and survives image updates.",
         "env.action.opencodeLabel.installed" to "Reinstall / update",
         "env.action.opencodeLabel.missing" to "Install",

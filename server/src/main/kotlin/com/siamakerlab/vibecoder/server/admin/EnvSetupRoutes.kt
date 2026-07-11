@@ -228,17 +228,8 @@ fun Routing.envSetupRoutes(
         call.respondRedirect("/env-setup/tasks/$taskId")
     }
 
-    // v1.151.0 — Phase 2 OpenCode provider 로그인 (opencode providers login spawn).
-    post("/env-setup/opencode-login/start") {
-        val sess = requireSessionOrRedirect(authDeps) ?: return@post
-        if (!requireAdminOrRedirect(sess)) return@post
-        requireCsrf()
-        val taskId = setupService.spawnOpenCodeLogin()
-        log.info { "env-setup opencode-login: $taskId by ${sess.username}" }
-        call.respondRedirect("/env-setup/tasks/$taskId")
-    }
-
     // v1.156.0 — z.ai coding plan API key 를 auth.json 에 직접 등록 (서버 무인 환경용).
+    // v1.160.3 — 대화형 opencode providers login 라우트 제거(헤드리스 hang → 큐 점유). API key 경로만.
     post("/env-setup/opencode-auth/api-key") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireAdminOrRedirect(sess)) return@post

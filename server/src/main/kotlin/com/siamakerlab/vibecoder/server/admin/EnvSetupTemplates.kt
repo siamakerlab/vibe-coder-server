@@ -425,7 +425,8 @@ docker exec -it vibe-coder-server codex login --device-auth</pre>
                 </details>"""
             }
 
-            // v1.156.0 — opencode CLI (z.ai coding plan). 설치 버튼 + API key 입력 + 브라우저 login.
+            // v1.156.0 — opencode CLI (z.ai coding plan). 설치 버튼 + API key 입력(auth.json).
+            //  대화형 providers login 은 v1.160.3 에서 제거(헤드리스 hang) — 터미널 안내로 대체.
             SetupComponent.OPENCODE -> {
                 val label = when (status) {
                     ComponentStatus.INSTALLED -> t("env.action.opencodeLabel.installed")
@@ -605,19 +606,16 @@ ssh -p $port vibe@${host}</pre>
     }
 
     /**
-     * v1.151.0/v1.156.0 — OpenCode(z.ai coding plan) 로그인. SetupComponent.OPENCODE 카드 안.
-     * ① 브라우저 기반 providers login, ② API key 직접 입력(auth.json 작성 — 서버 무인 환경용).
+     * v1.156.0 — OpenCode(z.ai coding plan) 자격증명 등록. SetupComponent.OPENCODE 카드 안.
+     * API key 직접 입력(auth.json 작성 — 서버 무인 환경용)만 노출한다. v1.160.3 에서 대화형
+     * `opencode providers login` 버튼 제거 — 헤드리스 컨테이너에서 stdin 대기로 hang 하며
+     * env-setup 태스크 큐를 점유하는 결함(다른 provider 로그인은 카드의 docker exec 안내로).
      */
     private fun renderOpenCodeLoginAction(status: ComponentStatus, csrf: String?, lang: String): String {
         val t = { key: String -> Messages.t(lang, key) }
         return if (status == ComponentStatus.INSTALLED) {
             """
-            <form method="post" action="/env-setup/opencode-login/start" style="margin-top:8px"
-                    onsubmit="return confirm(${jsLit(t("env.action.opencodeLoginConfirm"))})">
-              ${CsrfTokens.hiddenInput(csrf)}
-              <button type="submit" class="chip chip-action" style="padding:8px 16px">${esc(t("env.action.opencodeLogin"))}</button>
-            </form>
-            <details style="margin-top:8px">
+            <details style="margin-top:8px" open>
               <summary class="dim" style="cursor:pointer;font-size:12px">${esc(t("env.action.opencodeApiKeyTitle"))}</summary>
               <p class="hint" style="margin:6px 0 8px">${esc(t("env.action.opencodeApiKeyDesc"))}</p>
               <form method="post" action="/env-setup/opencode-auth/api-key"

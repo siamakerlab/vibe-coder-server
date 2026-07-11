@@ -637,44 +637,11 @@ class EnvSetupService(
             secret = apiKey,
         )
 
-    /**
-     * v1.151.0 — OpenCode provider 로그인. `opencode providers login` 을 spawn 하고 출력을
-     * 스트리밍. opencode login 은 provider/credential 종류에 따라 브라우저/device 흐름이 달라
-     * 서버가 흐름을 가정하지 않고 CLI 안내문을 그대로 로그로 전달한다(z.ai coding plan 은
-     * `opencode providers login` 시 auth.json 에 API key 저장 — 사전 조사 확인).
-     */
-    fun spawnOpenCodeLogin(): String {
-        val taskId = Ids.taskId()
-        queue.submit(
-            projectId = "env-setup",
-            taskId = taskId,
-            onStart = {
-                hub.publisher(taskId).emit(WsFrame.Log(taskId, "INFO", "▶ OpenCode 로그인 시작", clock.nowIso()))
-                hub.publisher(taskId).emit(WsFrame.Log(taskId, "INFO", "opencode providers login 실행 — 브라우저/터미널 안내에 따라 진행하세요.", clock.nowIso()))
-            },
-            executor = { _ ->
-                withContext(Dispatchers.IO) {
-                    val exit = runStreamingCommand(taskId, listOf(resolveOpenCodeCmd(), "providers", "login"))
-                    if (exit != 0) {
-                        hub.publisher(taskId).emit(WsFrame.Log(taskId, "WARN",
-                            "opencode login 이 종료코드 $exit 를 반환했습니다. 이미 로그인되었거나 컨테이너에서 직접 실행이 필요할 수 있습니다.", clock.nowIso()))
-                    }
-                }
-            },
-            onSuccess = {
-                hub.publisher(taskId).emit(WsFrame.Log(taskId, "INFO", "✓ OpenCode 로그인 완료", clock.nowIso()))
-                hub.publisher(taskId).emit(WsFrame.Done(taskId, "SUCCESS"))
-            },
-            onFailure = { e ->
-                hub.publisher(taskId).emit(WsFrame.Log(taskId, "ERROR", "✗ OpenCode 로그인 실패: ${e.message}", clock.nowIso()))
-                hub.publisher(taskId).emit(WsFrame.Done(taskId, "FAILED", e.message))
-            },
-            onCancel = {
-                hub.publisher(taskId).emit(WsFrame.Done(taskId, "CANCELED"))
-            },
-        )
-        return taskId
-    }
+    // v1.160.3 — spawnOpenCodeLogin(`opencode providers login`) 제거. 대화형 CLI 라 헤드리스
+    // 컨테이너에서 stdin 대기로 hang 하고, runStreamingCommand 가 타임아웃 없이 waitFor 하여
+    // env-setup 태스크 큐(projectId="env-setup")를 영구 점유 → 이후 API key 등록/설치 태스크가
+    // 실행되지 못했다. z.ai 자격증명은 spawnOpenCodeApiKeyLogin(auth.json 직접 작성)로, 다른
+    // provider 대화형 로그인은 카드 안내대로 `docker exec ... opencode providers login` 로.
 
     /**
      * v1.156.0 — z.ai coding plan API key 를 auth.json 에 직접 작성. opencode 의
