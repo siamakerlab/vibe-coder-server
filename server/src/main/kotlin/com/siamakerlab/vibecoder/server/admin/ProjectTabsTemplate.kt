@@ -150,6 +150,40 @@ internal object ProjectTabsTemplate {
                        title="${esc(preview + "\n\n" + t("tabs.rail.history.hint"))}"
                 >${esc(preview)}</button>"""
         }
+        // v1.161.1 — '프로젝트 설정' 드롭다운을 헤더 우상단에서 우측 개요 카드 안으로 이동(사용자 요청).
+        // 메타데이터 dl + 편집/zip/env-files 링크 + archive/delete 액션. 개요 카드 하단에 배치.
+        val projectSettingsMenu = """
+        <details class="pt-settings">
+          <summary>⚙ ${esc(t("tabs.settings.label"))}</summary>
+          <div class="pt-settings-menu">
+            <!-- v1.13.1 — 메타데이터는 헤더 chip 대신 이 드롭다운 상단에. -->
+            <div class="meta-block">
+              <dl>
+                <dt>${esc(t("projects.detail.package"))}</dt><dd>${esc(project.packageName)}</dd>
+                <dt>${esc(t("projects.detail.module"))}</dt><dd>${esc(project.moduleName)}</dd>
+                <dt>${esc(t("projects.detail.source"))}</dt><dd>${esc(project.sourcePath)}</dd>
+                <dt>${esc(t("projects.detail.debugTask"))}</dt><dd>${esc(project.debugTask)}</dd>
+                <dt>${esc(t("projects.lastBuild"))}</dt><dd>${esc(project.lastBuildStatus ?: "-")}</dd>
+                <dt>${esc(t("projects.detail.updated"))}</dt><dd>${esc(AdminTemplates.fmtTs(project.updatedAt, lang))}</dd>
+              </dl>
+            </div>
+            <!-- v1.81.0 — 이름/패키지명/폴더명 변경 폼이 있는 설정 페이지 링크. -->
+            <a href="/projects/${esc(project.id)}/overview" class="item">${esc(t("tabs.settings.editProject"))}</a>
+            <a href="/projects/${esc(project.id)}/zip" class="item">${esc(t("projects.detail.zip"))}</a>
+            <a href="/projects/${esc(project.id)}/env-files" target="${esc("tab-env-files")}" class="item">${esc(t("projects.detail.envFiles"))}</a>
+            <hr>
+            <form method="post" action="/projects/${esc(project.id)}/archive" style="margin:0"
+                  onsubmit="return confirm(${jsLit(t("project.action.archiveConfirm"))})">
+              ${CsrfTokens.hiddenInput(csrf)}
+              <button type="submit" class="item">🗄 ${esc(t("project.action.archive"))}</button>
+            </form>
+            <form method="post" action="/projects/${esc(project.id)}/delete" style="margin:0"
+                  onsubmit="return confirm(${jsLit(t("projects.detail.deleteConfirm"))})">
+              ${CsrfTokens.hiddenInput(csrf)}
+              <button type="submit" class="item danger">${esc(t("projects.detail.delete"))}</button>
+            </form>
+          </div>
+        </details>"""
         val railHtml = """
   <aside class="pt-rail" id="pt-rail" aria-label="${esc(t("tabs.rail.overview"))}">
     <div class="pt-rail-card" data-card="overview">
@@ -162,6 +196,7 @@ internal object ProjectTabsTemplate {
         <div class="pt-ov-row"><span class="k">${esc(t("tabs.rail.tokens"))}</span><span class="v">$tokensHtml</span></div>
         <div class="pt-ov-row"><span class="k">${esc(t("tabs.rail.prompts"))}</span><span class="v">${promptCount}</span></div>
       </div>
+      $projectSettingsMenu
     </div>
     <!-- v1.106.3 — 컨텍스트 점유율 카드(독립, 프롬프트 히스토리 카드 위). 우상단 /compact 버튼.
          콘솔 iframe 이 vibe:context-usage postMessage 로 매 turn 미터 갱신(project-tabs.js). -->
@@ -727,6 +762,15 @@ internal object ProjectTabsTemplate {
   #project-tabs-root .pt-settings .pt-settings-menu hr {
     border: 0; border-top: 1px solid var(--pt-line); margin: 4px 0;
   }
+  /* v1.161.1 — 헤더에서 우측 개요 카드 안으로 이동된 설정 드롭다운. rail 카드 맥락에 맞춰
+     summary 는 카드 폭 버튼, 드롭다운 메뉴는 좁은 rail 폭(min-width 320 대신)에 맞춘다. */
+  #project-tabs-root .pt-rail-card > .pt-settings { margin-top: 10px; }
+  #project-tabs-root .pt-rail-card > .pt-settings summary {
+    display: block; text-align: center; padding: 7px 10px;
+  }
+  #project-tabs-root .pt-rail-card > .pt-settings .pt-settings-menu {
+    left: 0; right: 0; min-width: 0; max-width: none;
+  }
   #project-tabs-root .tab-bar {
     /* v1.12.1 — overflow-x: auto 가 자식 absolute 의 .more-menu 까지 잘랐던 회귀
        해소. 내부 .tab-scroll 만 가로 스크롤, more-dropdown 은 외부에 둬서
@@ -1132,37 +1176,6 @@ internal object ProjectTabsTemplate {
     $providerSelector
     $modelSelector
     <span class="spacer"></span>
-    <details class="pt-settings">
-      <summary>⚙ ${esc(t("tabs.settings.label"))}</summary>
-      <div class="pt-settings-menu">
-        <!-- v1.13.1 — 메타데이터는 헤더 chip 대신 이 드롭다운 상단에. -->
-        <div class="meta-block">
-          <dl>
-            <dt>${esc(t("projects.detail.package"))}</dt><dd>${esc(project.packageName)}</dd>
-            <dt>${esc(t("projects.detail.module"))}</dt><dd>${esc(project.moduleName)}</dd>
-            <dt>${esc(t("projects.detail.source"))}</dt><dd>${esc(project.sourcePath)}</dd>
-            <dt>${esc(t("projects.detail.debugTask"))}</dt><dd>${esc(project.debugTask)}</dd>
-            <dt>${esc(t("projects.lastBuild"))}</dt><dd>${esc(project.lastBuildStatus ?: "-")}</dd>
-            <dt>${esc(t("projects.detail.updated"))}</dt><dd>${esc(AdminTemplates.fmtTs(project.updatedAt, lang))}</dd>
-          </dl>
-        </div>
-        <!-- v1.81.0 — 이름/패키지명/폴더명 변경 폼이 있는 설정 페이지 링크(이전엔 동선 누락). -->
-        <a href="/projects/${esc(project.id)}/overview" class="item">${esc(t("tabs.settings.editProject"))}</a>
-        <a href="/projects/${esc(project.id)}/zip" class="item">${esc(t("projects.detail.zip"))}</a>
-        <a href="/projects/${esc(project.id)}/env-files" target="${esc("tab-env-files")}" class="item">${esc(t("projects.detail.envFiles"))}</a>
-        <hr>
-        <form method="post" action="/projects/${esc(project.id)}/archive" style="margin:0"
-              onsubmit="return confirm(${jsLit(t("project.action.archiveConfirm"))})">
-          ${CsrfTokens.hiddenInput(csrf)}
-          <button type="submit" class="item">🗄 ${esc(t("project.action.archive"))}</button>
-        </form>
-        <form method="post" action="/projects/${esc(project.id)}/delete" style="margin:0"
-              onsubmit="return confirm(${jsLit(t("projects.detail.deleteConfirm"))})">
-          ${CsrfTokens.hiddenInput(csrf)}
-          <button type="submit" class="item danger">${esc(t("projects.detail.delete"))}</button>
-        </form>
-      </div>
-    </details>
   </div>
   $flashHtml
   <div class="tab-bar" role="tablist" aria-label="${esc(t("tabs.title"))}">

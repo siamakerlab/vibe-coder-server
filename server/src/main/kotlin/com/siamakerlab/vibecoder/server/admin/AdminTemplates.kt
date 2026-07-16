@@ -294,7 +294,7 @@ object AdminTemplates {
   <link rel="icon" type="image/png" href="/static/icon.png">
   <link rel="manifest" href="/static/manifest.json">
   <meta name="theme-color" content="#0b0d12">
-  <link rel="stylesheet" href="/static/admin.css?v=1.161.0">
+  <link rel="stylesheet" href="/static/admin.css?v=1.161.1">
   <script>
     // v1.6.2 — 사이드바 접힘 상태를 first paint 전에 :root data-attribute 로 적용 (FOUC 회피).
     // CSS 의 :root[data-sidebar-collapsed="1"] .layout 가 grid-template-columns 축소.
@@ -534,7 +534,7 @@ object AdminTemplates {
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
   function pad2(n) { return (n < 10 ? '0' : '') + n; }
-  // v1.161.0 — 리셋 시각을 locale 에 맞춰 "7월 18일 22:49" / "Jul 18, 10:49 PM" 으로 포맷.
+  // v1.161.1 — 리셋 시각을 locale 에 맞춰 "7월 18일 22:49" / "Jul 18, 10:49 PM" 으로 포맷.
   // GLM 의 ISO timestamp 와 Claude/Codex 의 free-form("Resets 10:20pm", "11:03 on 30 Jun") 모두 처리.
   function formatReset(reset) {
     if (!reset) return '';

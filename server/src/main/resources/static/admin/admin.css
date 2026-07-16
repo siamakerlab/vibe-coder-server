@@ -1150,13 +1150,26 @@ body.console-page .console-log {
         padding-top: 8px;
         padding-bottom: 8px;
     }
+    /* v1.161.1 — 키보드로 세로가 좁아지면 console-log 의 min-height(72px)가 flex 축소를
+       막아, console-log-wrap 이 압축돼도 console-log 가 wrap 밖으로 넘쳐 아래 입력창(textarea)
+       을 덮던 겹침(모바일/태블릿 "텍스트창이 콘솔 뒤로 가려짐")을 회수. min-height:0 으로
+       console-log 가 남는 세로만큼만 차지(내부 스크롤)하게 하고, wrap overflow:hidden 으로
+       넘침을 이중 차단. 압축 흡수는 여전히 console-log-wrap(flex:1, min-height:0)이 담당. */
     body.console-keyboard .console-log {
-        min-height: 72px;
+        min-height: 0;
+    }
+    body.console-keyboard .console-log-wrap {
+        overflow: hidden;
     }
     body.console-keyboard .prompt-form textarea {
-        min-height: 56px;
-        max-height: 96px;
+        min-height: 44px;
+        /* v1.161.1 — 96→64: 좁은 세로에서 입력폼이 로그 공간을 과하게 잠식하지 않도록 축소. */
+        max-height: 64px;
         resize: none;
+    }
+    /* v1.161.1 — 키보드 모드에선 입력창 아래 힌트 줄(전송/줄바꿈 안내)을 접어 로그 가시 공간 확보. */
+    body.console-keyboard #prompt-form > div:last-child {
+        display: none;
     }
     body.console-keyboard #quick-prompts {
         display: flex !important;
