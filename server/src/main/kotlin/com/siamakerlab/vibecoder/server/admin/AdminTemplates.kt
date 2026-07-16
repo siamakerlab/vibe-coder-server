@@ -44,6 +44,22 @@ object AdminTemplates {
         .withZone(java.time.ZoneId.systemDefault())
     private val EN_TS = java.time.format.DateTimeFormatter.ofPattern("MM/dd/yyyy HH:mm:ss")
         .withZone(java.time.ZoneId.systemDefault())
+    private val KO_QUOTA_RESET = java.time.format.DateTimeFormatter.ofPattern("M월 d일 HH:mm")
+    private val EN_QUOTA_RESET = java.time.format.DateTimeFormatter.ofPattern("MMM d, h:mm a", java.util.Locale.ENGLISH)
+    private val QUOTA_MONTHS = mapOf(
+        "jan" to 1, "january" to 1,
+        "feb" to 2, "february" to 2,
+        "mar" to 3, "march" to 3,
+        "apr" to 4, "april" to 4,
+        "may" to 5,
+        "jun" to 6, "june" to 6,
+        "jul" to 7, "july" to 7,
+        "aug" to 8, "august" to 8,
+        "sep" to 9, "sept" to 9, "september" to 9,
+        "oct" to 10, "october" to 10,
+        "nov" to 11, "november" to 11,
+        "dec" to 12, "december" to 12,
+    )
 
     /** v1.128.2 — ISO Instant 문자열 → 사람친화 표시. ko=yyyy/MM/dd, en=MM/dd/yyyy, 둘 다 KST HH:mm:ss(초까지, 마이크로초/T/Z 제거). null/blank→"-", 파싱실패→원본. */
     internal fun fmtTs(iso: String?, lang: String): String {
@@ -56,6 +72,114 @@ object AdminTemplates {
     internal fun fmtTsEpochMs(ms: Long, lang: String): String {
         val fmt = if (lang == "ko") KO_TS else EN_TS
         return runCatching { fmt.format(java.time.Instant.ofEpochMilli(ms)) }.getOrDefault(ms.toString())
+    }
+
+    /**
+     * Claude/Codex/GLM quota reset 시각 표시용.
+     *
+     * GLM 은 ISO timestamp 를 주지만 Claude/Codex CLI 는 "Resets 10:20pm (Asia/Seoul)",
+     * "11:03 on 30 Jun", "14:51" 같은 free-form 을 준다. 한국어 UI 에서는 모두
+     * "7월 18일 22:49" 꼴로 정규화한다. 날짜가 없는 시간-only 값은 다음 도래 시각으로 해석.
+     */
+    internal fun fmtQuotaReset(reset: String?, lang: String, now: java.time.ZonedDateTime = java.time.ZonedDateTime.now()): String {
+        if (reset.isNullOrBlank()) return ""
+        val zone = java.time.ZoneId.systemDefault()
+        val cleaned = reset.trim()
+            .replace(Regex("(?i)^resets\\s+"), "")
+            .replace(Regex("\\s*\\([^)]*\\)\\s*"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+        if (cleaned.isBlank()) return ""
+
+        val parsed = parseQuotaResetDateTime(cleaned, now, zone)
+        return if (parsed != null) {
+            val fmt = if (lang == "ko") KO_QUOTA_RESET else EN_QUOTA_RESET
+            parsed.format(fmt)
+        } else {
+            cleaned
+        }
+    }
+
+    private fun parseQuotaResetDateTime(
+        cleaned: String,
+        now: java.time.ZonedDateTime,
+        zone: java.time.ZoneId,
+    ): java.time.ZonedDateTime? {
+        if (cleaned.contains('T')) {
+            runCatching { return java.time.Instant.parse(cleaned).atZone(zone) }
+            runCatching { return java.time.OffsetDateTime.parse(cleaned).atZoneSameInstant(zone) }
+        }
+
+        Regex("""(?i)^([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$""")
+            .matchEntire(cleaned)?.let { m ->
+                val month = quotaMonth(m.groupValues[1]) ?: return@let
+                val day = m.groupValues[2].toIntOrNull() ?: return@let
+                val hour = m.groupValues[3].toIntOrNull() ?: return@let
+                val minute = m.groupValues[4].ifBlank { "0" }.toIntOrNull() ?: return@let
+                return nextQuotaDateTime(month, day, hour, minute, m.groupValues[5], now)
+            }
+
+        Regex("""(?i)^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s+on\s+(\d{1,2})\s+([A-Za-z]{3,9})\.?$""")
+            .matchEntire(cleaned)?.let { m ->
+                val hour = m.groupValues[1].toIntOrNull() ?: return@let
+                val minute = m.groupValues[2].ifBlank { "0" }.toIntOrNull() ?: return@let
+                val day = m.groupValues[4].toIntOrNull() ?: return@let
+                val month = quotaMonth(m.groupValues[5]) ?: return@let
+                return nextQuotaDateTime(month, day, hour, minute, m.groupValues[3], now)
+            }
+
+        Regex("""(?i)^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$""")
+            .matchEntire(cleaned)?.let { m ->
+                val hour = m.groupValues[1].toIntOrNull() ?: return@let
+                val minute = m.groupValues[2].ifBlank { "0" }.toIntOrNull() ?: return@let
+                val h = quotaHour(hour, m.groupValues[3]) ?: return@let
+                val date = now.toLocalDate()
+                var dt = date.atTime(h, minute).atZone(now.zone)
+                if (dt.isBefore(now.minusMinutes(1))) dt = dt.plusDays(1)
+                return dt
+            }
+
+        return null
+    }
+
+    private fun quotaMonth(raw: String): Int? =
+        QUOTA_MONTHS[raw.lowercase().removeSuffix(".")]
+
+    private fun quotaHour(hour: Int, ampm: String): Int? {
+        val meridiem = ampm.lowercase()
+        return when {
+            meridiem == "am" -> when (hour) {
+                12 -> 0
+                in 1..11 -> hour
+                else -> null
+            }
+            meridiem == "pm" -> when (hour) {
+                12 -> 12
+                in 1..11 -> hour + 12
+                else -> null
+            }
+            hour in 0..23 -> hour
+            else -> null
+        }
+    }
+
+    private fun nextQuotaDateTime(
+        month: Int,
+        day: Int,
+        hour: Int,
+        minute: Int,
+        ampm: String,
+        now: java.time.ZonedDateTime,
+    ): java.time.ZonedDateTime? {
+        val h = quotaHour(hour, ampm) ?: return null
+        if (minute !in 0..59) return null
+        var date = runCatching { java.time.LocalDate.of(now.year, month, day) }.getOrNull() ?: return null
+        var dt = date.atTime(h, minute).atZone(now.zone)
+        if (dt.isBefore(now.minusMinutes(1))) {
+            date = runCatching { java.time.LocalDate.of(now.year + 1, month, day) }.getOrNull() ?: return null
+            dt = date.atTime(h, minute).atZone(now.zone)
+        }
+        return dt
     }
 
     /**
@@ -170,7 +294,7 @@ object AdminTemplates {
   <link rel="icon" type="image/png" href="/static/icon.png">
   <link rel="manifest" href="/static/manifest.json">
   <meta name="theme-color" content="#0b0d12">
-  <link rel="stylesheet" href="/static/admin.css?v=1.158.10">
+  <link rel="stylesheet" href="/static/admin.css?v=1.161.0">
   <script>
     // v1.6.2 — 사이드바 접힘 상태를 first paint 전에 :root data-attribute 로 적용 (FOUC 회피).
     // CSS 의 :root[data-sidebar-collapsed="1"] .layout 가 grid-template-columns 축소.
@@ -410,28 +534,70 @@ object AdminTemplates {
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
   function pad2(n) { return (n < 10 ? '0' : '') + n; }
-  // v1.158.1 — 리셋 시각을 locale 에 맞춰 "7월 7일 15:30" / "Jul 7, 3:30 PM" 으로 포맷.
-  // ISO 8601 ("2026-07-07T15:30:00Z") 을 받아 브라우저 로컬 타임존으로 변환.
-  // 기존 텍스트 형식 ("Resets 10:20pm (Asia/Seoul)") 은 fallback 으로 strip 처리.
+  // v1.161.0 — 리셋 시각을 locale 에 맞춰 "7월 18일 22:49" / "Jul 18, 10:49 PM" 으로 포맷.
+  // GLM 의 ISO timestamp 와 Claude/Codex 의 free-form("Resets 10:20pm", "11:03 on 30 Jun") 모두 처리.
   function formatReset(reset) {
     if (!reset) return '';
-    // ISO 8601 감지 — 'T' 가 포함된 timestamp 만 Date 파싱 시도.
-    if (reset.indexOf('T') >= 0) {
-      var d = new Date(reset);
-      if (!isNaN(d.getTime())) {
-        var monthsEn = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-        if (QUOTA_LANG === 'ko') {
-          return (d.getMonth() + 1) + '월 ' + d.getDate() + '일 ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
-        } else {
-          var h = d.getHours();
-          var ampm = h >= 12 ? 'PM' : 'AM';
-          var h12 = h % 12 || 12;
-          return monthsEn[d.getMonth()] + ' ' + d.getDate() + ', ' + h12 + ':' + pad2(d.getMinutes()) + ' ' + ampm;
-        }
-      }
+    var clean = String(reset)
+      .replace(/^Resets\s+/i, '')
+      .replace(/\s*\([^)]*\)\s*/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!clean) return '';
+    var d = parseResetDate(clean);
+    return d ? formatResetDate(d) : clean;
+  }
+  function formatResetDate(d) {
+    var monthsEn = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    if (QUOTA_LANG === 'ko') {
+      return (d.getMonth() + 1) + '월 ' + d.getDate() + '일 ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
     }
-    // fallback: 기존 텍스트 형식 "Resets 10:20pm (Asia/Seoul)" → "10:20pm".
-    return reset.replace(/^Resets\s+/i, '').replace(/\s*\([^)]*\)\s*/g, '').trim();
+    var h = d.getHours();
+    var ampm = h >= 12 ? 'PM' : 'AM';
+    var h12 = h % 12 || 12;
+    return monthsEn[d.getMonth()] + ' ' + d.getDate() + ', ' + h12 + ':' + pad2(d.getMinutes()) + ' ' + ampm;
+  }
+  function parseResetDate(clean) {
+    if (clean.indexOf('T') >= 0) {
+      var iso = new Date(clean);
+      if (!isNaN(iso.getTime())) return iso;
+    }
+    var months = {
+      jan:0, january:0, feb:1, february:1, mar:2, march:2, apr:3, april:3, may:4,
+      jun:5, june:5, jul:6, july:6, aug:7, august:7, sep:8, sept:8, september:8,
+      oct:9, october:9, nov:10, november:10, dec:11, december:11
+    };
+    var m = clean.match(/^([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i);
+    if (m) return nextResetDate(months[m[1].toLowerCase().replace(/\.$/, '')], Number(m[2]), Number(m[3]), Number(m[4] || 0), m[5]);
+    m = clean.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s+on\s+(\d{1,2})\s+([A-Za-z]{3,9})\.?$/i);
+    if (m) return nextResetDate(months[m[5].toLowerCase().replace(/\.$/, '')], Number(m[4]), Number(m[1]), Number(m[2] || 0), m[3]);
+    m = clean.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i);
+    if (m) {
+      var hour = normalizedHour(Number(m[1]), m[3]);
+      var minute = Number(m[2] || 0);
+      if (hour == null || minute < 0 || minute > 59) return null;
+      var now = new Date();
+      var dt = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute, 0, 0);
+      if (dt.getTime() < now.getTime() - 60000) dt.setDate(dt.getDate() + 1);
+      return dt;
+    }
+    return null;
+  }
+  function normalizedHour(hour, ampm) {
+    var meridiem = String(ampm || '').toLowerCase();
+    if (meridiem === 'am') return hour === 12 ? 0 : (hour >= 1 && hour <= 11 ? hour : null);
+    if (meridiem === 'pm') return hour === 12 ? 12 : (hour >= 1 && hour <= 11 ? hour + 12 : null);
+    return hour >= 0 && hour <= 23 ? hour : null;
+  }
+  function nextResetDate(month, day, hour, minute, ampm) {
+    if (month == null || minute < 0 || minute > 59) return null;
+    var h = normalizedHour(hour, ampm);
+    if (h == null) return null;
+    var now = new Date();
+    var dt = new Date(now.getFullYear(), month, day, h, minute, 0, 0);
+    if (dt.getMonth() !== month || dt.getDate() !== day) return null;
+    if (dt.getTime() < now.getTime() - 60000) dt = new Date(now.getFullYear() + 1, month, day, h, minute, 0, 0);
+    return dt;
   }
   // v1.155.0 — 사용량 pill 색상/대표%/접기 헬퍼.
   function pctColor(pct) {
@@ -1138,8 +1304,9 @@ $gitIdentityBanner
         fun levelClass(p: Int): String = if (p >= 80) "warn" else "ok"
         fun renderBar(p: Int, label: String, resetLabel: String?, resetVal: String?): String {
             val w = p.coerceIn(0, 100)
-            val resetHtml = if (resetVal != null && resetLabel != null) {
-                """<div class="dim" style="font-size:11px;margin-top:2px">${esc(resetLabel)}: ${esc(resetVal)}</div>"""
+            val resetText = fmtQuotaReset(resetVal, lang)
+            val resetHtml = if (resetText.isNotBlank() && resetLabel != null) {
+                """<div class="dim" style="font-size:11px;margin-top:2px">${esc(resetLabel)}: ${esc(resetText)}</div>"""
             } else ""
             return """
       <div style="margin-bottom:10px">
@@ -1195,8 +1362,9 @@ $gitIdentityBanner
         }
         fun renderBar(p: Int, label: String, resetVal: String? = null): String {
             val w = p.coerceIn(0, 100)
-            val resetHtml = if (!resetVal.isNullOrBlank()) {
-                """<div class="dim" style="font-size:11px;margin-top:2px">${esc(resetVal)}</div>"""
+            val resetText = fmtQuotaReset(resetVal, lang)
+            val resetHtml = if (resetText.isNotBlank()) {
+                """<div class="dim" style="font-size:11px;margin-top:2px">${esc(resetText)}</div>"""
             } else ""
             return """
       <div style="margin-bottom:10px">

@@ -208,6 +208,23 @@ internal object ProjectTabsTemplate {
       <div class="pt-rail-h">⚙ ${esc(t("console.bgtasks.title"))} <span id="pt-bg-count" class="dim"></span></div>
       <div id="pt-bg-list" class="pt-bg-list"></div>
     </div>
+    <div class="pt-rail-card pt-prompt-tools-card" data-card="prompt-tools">
+      <div class="pt-rail-h">${esc(t("tabs.rail.promptTools"))}</div>
+      <div class="pt-prompt-tools">
+        <div class="pt-tool-row">
+          <select id="template-picker" class="pt-tool-select">
+            <option value="">${esc(t("console.template.placeholder"))}</option>
+          </select>
+          <button type="button" id="manage-templates-btn" class="pt-tool-btn">${esc(t("console.template.manage"))}</button>
+        </div>
+        <div class="pt-tool-row">
+          <select id="agent-picker" class="pt-tool-select" title="Dispatch a registered sub-agent into the prompt">
+            <option value="">${esc(t("console.agent.placeholder"))}</option>
+          </select>
+          <a href="/agents" class="pt-tool-btn">${esc(t("console.agent.manage"))}</a>
+        </div>
+      </div>
+    </div>
     <div class="pt-rail-card pt-hist-card" data-card="history">
       <div class="pt-rail-h">${esc(t("tabs.rail.history"))}</div>
       <div class="pt-hist-list" data-hist-hint="${esc(t("tabs.rail.history.hint"))}">$historyHtml</div>
@@ -832,7 +849,32 @@ internal object ProjectTabsTemplate {
      마스크 그라데이션으로 페이드아웃(5개 선명 + 2개 흐림). 스크롤이 끝(at-end)이거나
      스크롤할 내용이 없으면 JS 가 .at-end 를 붙여 페이드 제거. */
   #project-tabs-root .pt-rail { justify-content: flex-start; }
+  #project-tabs-root .pt-prompt-tools-card { display: flex; flex-direction: column; flex: 0 0 auto; }
   #project-tabs-root .pt-hist-card { display: flex; flex-direction: column; flex: 0 0 auto; }
+  #project-tabs-root .pt-prompt-tools {
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  #project-tabs-root .pt-tool-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  #project-tabs-root .pt-tool-select {
+    flex: 1; min-width: 0; height: 32px; box-sizing: border-box; padding: 4px 8px;
+    background: var(--pt-control); color: var(--text); border: 1px solid var(--pt-line);
+    border-radius: var(--pt-radius-md); font: inherit; font-size: 12px;
+  }
+  #project-tabs-root .pt-tool-btn {
+    flex: 0 0 auto; min-height: 32px; box-sizing: border-box; display: inline-flex;
+    align-items: center; justify-content: center; padding: 5px 9px; text-decoration: none;
+    white-space: nowrap; background: var(--pt-control-button-bg); color: var(--pt-control-button-text);
+    border: 1px solid var(--pt-control-button-line); border-radius: var(--pt-radius-md);
+    font: inherit; font-size: 11px; cursor: pointer;
+  }
+  #project-tabs-root .pt-tool-btn:hover,
+  #project-tabs-root .pt-tool-select:hover {
+    background: var(--pt-control-button-bg-hover); border-color: var(--pt-context-read); color: var(--text);
+  }
+  #project-tabs-root .pt-tool-select:focus-visible,
+  #project-tabs-root .pt-tool-btn:focus-visible {
+    outline: 2px solid var(--pt-context-read); outline-offset: 2px;
+  }
   /* v1.106.2/.3 — 우측 rail 컨텍스트 점유율 카드 */
   #project-tabs-root .pt-ctx-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
   #project-tabs-root .pt-ctx-head > span:first-child { min-width: 0; overflow-wrap: anywhere; }
@@ -1138,7 +1180,8 @@ $railHtml
   </div>
 </div>
 
-<script src="/static/project-tabs.js?v=1.160.1" defer></script>
+<script src="/static/project-tabs.js?v=1.161.0" defer></script>
+<script src="/static/prompt-templates.js?v=1.161.0" defer></script>
 <!-- v1.56.0 — 콤보박스 상태칩 실시간 동기. 목록 페이지와 동일하게 `/ws/projects`
      (단방향) 의 ProjectBusyChanged 로 responding↔ready patch. -->
 <script>

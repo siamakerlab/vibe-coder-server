@@ -3,7 +3,7 @@ package com.siamakerlab.vibecoder.server.build
 import com.siamakerlab.vibecoder.server.auth.AUTH_BEARER
 import com.siamakerlab.vibecoder.server.auth.requireApiWrite
 import com.siamakerlab.vibecoder.server.auth.requireProjectAcl
-import com.siamakerlab.vibecoder.server.claude.ClaudeSessionManager
+import com.siamakerlab.vibecoder.server.agent.AgentRouter
 import com.siamakerlab.vibecoder.server.error.ApiException
 import com.siamakerlab.vibecoder.server.projects.ProjectService
 import com.siamakerlab.vibecoder.shared.ApiPath
@@ -31,7 +31,7 @@ import kotlinx.coroutines.withContext
 fun Routing.jsonQualityRoutes(
     projects: ProjectService,
     svc: LintQualityService,
-    sessionManager: ClaudeSessionManager,
+    agentRouter: AgentRouter,
 ) {
     authenticate(AUTH_BEARER) {
         // Lint(:module:lintDebug) 실행 + 결과. 동기 실행(수십 초~수 분) — 클라가 로딩 표시.
@@ -61,7 +61,7 @@ fun Routing.jsonQualityRoutes(
             )
         }
 
-        // 선택 lint 이슈 → 콘솔(Claude 세션)로 수정요청 전송. 진행은 콘솔 WS 로.
+        // 선택 lint 이슈 → 현재 콘솔 provider 로 수정요청 전송. 진행은 콘솔 WS 로.
         post("/api/projects/{projectId}/quality/fix") {
             call.requireApiWrite()
             val projectId = call.parameters["projectId"]
@@ -75,7 +75,7 @@ fun Routing.jsonQualityRoutes(
             }
             val prompt = if (req.kind == "test") buildTestFixPrompt(module, selected)
                          else buildLintFixPrompt(module, selected)
-            sessionManager.sendPrompt(projectId, prompt)
+            agentRouter.sendPrompt(projectId, prompt)
             call.respond(HttpStatusCode.Accepted, QualityFixResponseDto(sent = selected.size))
         }
     }

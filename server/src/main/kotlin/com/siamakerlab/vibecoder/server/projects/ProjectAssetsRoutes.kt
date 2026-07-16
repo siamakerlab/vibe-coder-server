@@ -7,7 +7,7 @@ import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireWriteAccessOrRedirect
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens.requireCsrf
-import com.siamakerlab.vibecoder.server.claude.ClaudeSessionManager
+import com.siamakerlab.vibecoder.server.agent.AgentRouter
 import com.siamakerlab.vibecoder.server.core.WorkspacePath
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentType
@@ -47,7 +47,7 @@ private val ASSET_RAW_RE = Regex("""^(icon\.png|graphic\.png|screenshot-[a-z]{2}
 /**
  * v1.65.0 — 프로젝트 "스토어 자산" 탭 (`/projects/{id}/assets`).
  *
- *  - 앱 아이콘: 업로드 → 프로젝트 루트 `icon.png`. 다이얼로그로 컨펌 시 Claude 콘솔에
+ *  - 앱 아이콘: 업로드 → 프로젝트 루트 `icon.png`. 다이얼로그로 컨펌 시 현재 콘솔 provider 에
  *    "런처 아이콘 적용" prompt 전송(자동 변경). 취소 시 icon.png 복사만.
  *  - 피처 그래픽: 업로드 → 루트 `graphic.png` (1024×500 권장).
  *  - 스크린샷: 업로드 → 루트 `screenshot-<lang>-<n>.png` (언어별 자동 증가).
@@ -59,7 +59,7 @@ fun Routing.projectAssetsRoutes(
     authDeps: AdminRoutesDeps,
     projects: ProjectService,
     workspace: WorkspacePath,
-    sessionManager: ClaudeSessionManager,
+    agentRouter: AgentRouter,
     /** v1.66.0 — Play Console 업로드(MCP google-play-publisher 위임). */
     playPublishService: com.siamakerlab.vibecoder.server.publish.PlayPublishService,
 ) {
@@ -117,7 +117,7 @@ fun Routing.projectAssetsRoutes(
                 screenshotsByLang = screenshotsByLang(root),
             )
         }.onFailure { log.warn(it) { "play upload trigger failed: $id" } }.isSuccess
-        call.respondRedirect("/projects/$id/assets?flash=${if (sent) "play" else "err:claude"}")
+        call.respondRedirect("/projects/$id/assets?flash=${if (sent) "play" else "err:agent"}")
     }
 
     // 미리보기 serve — 루트의 허용된 asset 파일만.
@@ -135,7 +135,7 @@ fun Routing.projectAssetsRoutes(
         call.respondBytes(Files.readAllBytes(safe), ContentType.Image.PNG)
     }
 
-    // ── 앱 아이콘 업로드 (+ 선택적 Claude 적용) ──────────────────────────────
+    // ── 앱 아이콘 업로드 (+ 선택적 콘솔 provider 적용) ─────────────────────────
     post("/projects/{id}/assets/icon") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireWriteAccessOrRedirect(sess)) return@post
@@ -157,9 +157,9 @@ fun Routing.projectAssetsRoutes(
         if (parsed.apply) {
             val p = projects.get(id)
             val prompt = buildApplyIconPrompt(id, p.moduleName, root.resolve("icon.png"))
-            val sent = runCatching { sessionManager.sendPrompt(id, prompt) }
+            val sent = runCatching { agentRouter.sendPrompt(id, prompt) }
                 .onFailure { e -> log.warn(e) { "apply-icon prompt failed: $id" } }.isSuccess
-            call.respondRedirect("/projects/$id/assets?flash=${if (sent) "applied" else "err:claude"}")
+            call.respondRedirect("/projects/$id/assets?flash=${if (sent) "applied" else "err:agent"}")
         } else {
             call.respondRedirect("/projects/$id/assets?flash=copied")
         }
@@ -304,7 +304,7 @@ private suspend fun parseMultipart(multipart: io.ktor.http.content.MultiPartData
 }
 
 /**
- * v1.65.0 — Claude 콘솔에 보낼 "런처 아이콘 적용" 정형 prompt. 비밀값 없음.
+ * v1.65.0 — 현재 콘솔 provider 에 보낼 "런처 아이콘 적용" 정형 prompt. 비밀값 없음.
  */
 private fun buildApplyIconPrompt(projectId: String, moduleName: String, iconPath: Path): String = """
 [vibe-coder-server / 앱 아이콘 적용]

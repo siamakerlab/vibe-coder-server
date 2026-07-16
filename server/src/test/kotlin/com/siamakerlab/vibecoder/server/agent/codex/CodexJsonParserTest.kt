@@ -77,8 +77,18 @@ class CodexJsonParserTest {
             "--json",
             "--sandbox", "danger-full-access",
             "--skip-git-repo-check",
+            "--",
             "hello",
         )
+    }
+
+    @Test fun `builds Codex exec args with prompt delimiter before dash-leading prompt`() {
+        buildCodexExecArgs(
+            cmd = "codex",
+            text = "- fix the failing test",
+            threadId = null,
+            model = null,
+        ).takeLast(2) shouldBe listOf("--", "- fix the failing test")
     }
 
     @Test fun `builds Codex resume args after exec options`() {
@@ -96,6 +106,7 @@ class CodexJsonParserTest {
             "--skip-git-repo-check",
             "--model", "gpt-5.5",
             "resume", "019f0b7e-3a17-7520-8447-dbd7e1cc958d",
+            "--",
             "continue",
         )
     }

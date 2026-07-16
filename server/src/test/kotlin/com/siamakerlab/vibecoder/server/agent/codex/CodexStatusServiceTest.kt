@@ -85,6 +85,49 @@ class CodexStatusServiceTest {
         dto.usageSummary shouldBe null
     }
 
+    @Test
+    fun `parses newer Codex session label variants`() {
+        val raw = """
+            Context window:       91% left
+            5-hour limit:         [████████░░░░░░░░░░░░] 40% left (resets 17:20)
+            Weekly limit:         [██████████░░░░░░░░░░] 52% left (resets 11:03 on 30 Jun)
+        """.trimIndent()
+
+        val dto = parseCodexUsageCapture(raw)
+
+        dto.sessionUsagePercent shouldBe 60
+        dto.weeklyUsagePercent shouldBe 48
+        dto.sessionResetAt shouldBe "17:20"
+    }
+
+    @Test
+    fun `uses unknown non-weekly limit as session fallback when weekly is present`() {
+        val raw = """
+            Session quota:         91% left
+            Rolling limit:         [████████░░░░░░░░░░░░] 40% left (resets 17:20)
+            Weekly limit:         [██████████░░░░░░░░░░] 52% left (resets 11:03 on 30 Jun)
+        """.trimIndent()
+
+        val dto = parseCodexUsageCapture(raw)
+
+        dto.sessionUsagePercent shouldBe 60
+        dto.weeklyUsagePercent shouldBe 48
+        dto.usagePercent shouldBe 60
+    }
+
+    @Test
+    fun `parses session limit wording`() {
+        val raw = """
+            Session limit:         [████████████░░░░░░░░] 58% left (resets 14:51)
+            Weekly limit:         [███████████░░░░░░░░░] 56% left (resets 11:03 on 30 Jun)
+        """.trimIndent()
+
+        val dto = parseCodexUsageCapture(raw)
+
+        dto.sessionUsagePercent shouldBe 42
+        dto.weeklyUsagePercent shouldBe 44
+    }
+
     // ── v1.147.0 — AgentUsageProvider / 임계치 transition 순수 함수 ────────────────
 
     private fun dto(

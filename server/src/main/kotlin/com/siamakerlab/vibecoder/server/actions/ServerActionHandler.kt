@@ -1,7 +1,7 @@
 package com.siamakerlab.vibecoder.server.actions
 
 import com.siamakerlab.vibecoder.server.build.BuildService
-import com.siamakerlab.vibecoder.server.claude.ClaudeSessionManager
+import com.siamakerlab.vibecoder.server.agent.AgentRouter
 import com.siamakerlab.vibecoder.server.error.ApiException
 import com.siamakerlab.vibecoder.server.git.GitReader
 import com.siamakerlab.vibecoder.server.projects.ProjectService
@@ -15,7 +15,7 @@ private val log = KotlinLogging.logger {}
 
 /**
  * Dispatches whitelisted [ProjectAction.RunServerAction] keys to the appropriate service.
- * Also handles slash-command and prompt actions by routing back through the session manager.
+ * Also handles slash-command and prompt actions by routing back through the selected console provider.
  *
  * Every dispatch result is announced on the project's console topic as a [WsFrame.ConsoleSystem]
  * so the user sees what happened without a separate channel.
@@ -25,7 +25,7 @@ class ServerActionHandler(
     private val builds: BuildService,
     private val git: GitReader,
     private val hub: LogHub,
-    private val sessionManager: ClaudeSessionManager,
+    private val agentRouter: AgentRouter,
 ) {
 
     suspend fun dispatch(projectId: String, action: ProjectAction, params: JsonElement?) {
@@ -90,7 +90,7 @@ class ServerActionHandler(
     }
 
     private suspend fun sendPrompt(projectId: String, prompt: String) {
-        sessionManager.sendPrompt(projectId, prompt)
+        agentRouter.sendPrompt(projectId, prompt)
     }
 
     private suspend fun emitSystem(projectId: String, code: String, message: String) {

@@ -802,6 +802,21 @@ table.devices small.dim { font-size: 11px; }
     margin-bottom: 2px;
 }
 
+/* v1.161.0 — iframe(embed) 콘솔 레이아웃 회수(모바일/태블릿 소프트키보드).
+   iframe 안에서는 window.visualViewport 가 iframe 의 실제 렌더 높이가 아니라 "키보드에
+   가려지지 않고 실제로 보이는 부분"을 반영한다. 그래서 콘솔이 자체 계산한
+   --app-viewport-height 가 iframe 실제 높이보다 작아지는 경우(태블릿 가로에서 iframe
+   하단이 키보드에 가릴 때)가 있고, 그러면 .layout 이 iframe 보다 작아져 하단 공백 +
+   내부 압축(콘솔 로그와 입력창이 세로로 겹쳐 입력 글자가 로그에 가려짐)이 발생했다.
+   부모 ProjectTabs shell(project-tabs.js)이 이미 iframe 크기를 키보드에 맞춰 관리하므로,
+   embed 문서는 자체 뷰포트 계산 대신 iframe 실제 높이(100%)를 그대로 채운다. */
+body.pt-embed .layout { height: 100%; }
+/* v1.161.0 — 콘솔 .layout 은 grid 라 암묵 row 가 콘텐츠 높이(max-content)로 잡히면,
+   콘텐츠가 뷰포트보다 작을 때 .content 가 layout 전체를 못 채워 입력창 아래에 공백이
+   남았다. row 를 컨테이너 높이만큼 명시 stretch(minmax(0,1fr)) → .content 가 full
+   height → console-log(flex:1)가 남는 세로를 흡수하고 입력창/하단 바가 바닥에 붙는다. */
+body.console-page .layout { grid-template-rows: minmax(0, 1fr); }
+
 body.console-page .content {
     display: flex;
     flex-direction: column;

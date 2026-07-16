@@ -70,7 +70,7 @@ fun Routing.buildRoutes(
             service.cancel(buildId)
             call.respond(HttpStatusCode.Accepted)
         }
-        // v1.121.0 — Google Play 업로드 트리거(빌드→배포 완결). Claude 콘솔로 업로드 프롬프트 전송.
+        // v1.121.0 — Google Play 업로드 트리거(빌드→배포 완결). 현재 콘솔 provider 로 업로드 프롬프트 전송.
         post("/api/projects/{projectId}/play-upload") {
             call.requireApiWrite()
             val projectId = call.parameters["projectId"]

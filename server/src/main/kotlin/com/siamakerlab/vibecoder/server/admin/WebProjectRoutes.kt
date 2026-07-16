@@ -92,7 +92,7 @@ internal fun isProjectIdle(
  * v1.71.0 — 패키지명 변경 시 콘솔로 보내는 Claude 작업 지시 프롬프트.
  * vibe-coder 서버는 이미 (1) DB packageName 갱신 (2) /home/vibe/keystores 의
  * 키스토어 파일명(`<pkg>.keystore` 등)을 새 패키지로 rename 해 두었다. 나머지
- * 코드/디렉토리/매니페스트/signing 참조 갱신을 Claude 가 수행한다.
+ * 코드/디렉토리/매니페스트/signing 참조 갱신을 현재 콘솔 provider 가 수행한다.
  */
 private fun packageRenamePrompt(oldPkg: String?, newPkg: String): String {
     val from = oldPkg ?: "(현재 패키지)"
@@ -472,7 +472,8 @@ fun Routing.webProjectRoutes(
         val newPkg = params["packageName"]?.trim().orEmpty()
         // 대기중 가드: turn 진행 중 / 빌드 중 / 자동화 진행 중이면 거부.
         // (alive 메인 프로세스엔 프롬프트를 보낼 것이므로 허용. 자동화는 sendPrompt 와 충돌.)
-        if (!isProjectIdle(sessionManager, buildRepo, promptAutomationManager, id)) {
+        val consoleBusy = agentRouter?.isBusy(id) ?: sessionManager.isBusy(id)
+        if (consoleBusy || isBuildRunning(buildRepo, id) || promptAutomationManager.isActive(id)) {
             call.respondRedirect("/projects/$id/overview?err=${Messages.t(sess.language, "flash.project.rename.notIdle").encodeUrl()}")
             return@post
         }
@@ -488,9 +489,11 @@ fun Routing.webProjectRoutes(
             runCatching { keystoreService.renamePackage(oldPkg, newPkg) }
                 .onFailure { log.warn(it) { "keystore rename failed $oldPkg → $newPkg" } }
         }
-        // 코드/파일/디렉토리 구조 리네임은 콘솔 프롬프트로 Claude 에게 위임.
+        // 코드/파일/디렉토리 구조 리네임은 현재 콘솔 provider 에 위임.
         val prompt = packageRenamePrompt(oldPkg, newPkg)
-        runCatching { sessionManager.sendPrompt(id, prompt) }
+        runCatching {
+            if (agentRouter != null) agentRouter.sendPrompt(id, prompt) else sessionManager.sendPrompt(id, prompt)
+        }
             .onFailure { log.warn(it) { "package-rename prompt send failed for $id" } }
         call.respondRedirect("/projects/$id/overview?ok=${Messages.t(sess.language, "flash.project.package.changed").encodeUrl()}")
     }
@@ -961,7 +964,7 @@ fun Routing.webProjectRoutes(
     /**
      * v0.22.0 — Play Console (Internal/Alpha/Beta/Production) 업로드 트리거.
      *
-     * 사전조건이 충족되지 않아도 (예: MCP 미설치) 그대로 prompt 전송 — Claude 가
+     * 사전조건이 충족되지 않아도 (예: MCP 미설치) 그대로 prompt 전송 — 콘솔 provider 가
      * 첫 응답에서 즉시 오류를 보고하므로 사용자가 어디서 막혔는지 명확.
      * 단 ProjectService.get(id) 통과 + AAB 경로 입력 필수.
      */

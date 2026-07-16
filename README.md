@@ -90,7 +90,7 @@ For per-release history, see [CHANGELOG.md](CHANGELOG.md).
   Set `0` for unlimited. A queued prompt does **not** spawn its Claude process
   until a permit is free (v1.135.0), so stacking prompts across many projects
   costs no memory while waiting.
-- **Resident session cap** — `claude.maxResidentSessions` (default 6, `0` =
+- **Resident session cap** — `claude.maxResidentSessions` (default 3, `0` =
   disabled) bounds how many Claude child processes stay alive across main and
   sub-agent consoles — each session tree (CLI + MCP sidecars) holds roughly
   900 MB. When exceeded, the least-recently-used **idle** session is paused;
@@ -193,8 +193,8 @@ For per-release history, see [CHANGELOG.md](CHANGELOG.md).
   disk. Optional component — excluded from "Install all".
 - **Codex CLI installer (optional)** — the `/env-setup` "Codex CLI" card installs
   OpenAI's `@openai/codex` via npm into `/home/vibe/.local` (the npm-global volume),
-  so it survives image updates. Login/config is kept under `CODEX_HOME=/home/vibe/.config/codex`
-  (the `.config` volume), so `codex login` persists across redeploys. Optional —
+  so it survives image updates. Login/config is kept under `CODEX_HOME=/home/vibe/.codex`
+  (the `dev-tools/codex` volume), so `codex login` persists across redeploys. Optional —
   excluded from "Install all"; install via the card or `vibe-doctor codex`.
 - **SSH server installer (optional)** — the `/env-setup` "SSH server" card installs
   OpenSSH server, applies the selected container port, and starts `sshd` for
@@ -218,10 +218,11 @@ For per-release history, see [CHANGELOG.md](CHANGELOG.md).
   cancellable. Outputs are stored with meaningful names
   (`<packageName>-<variant>-v<versionName>.apk`, version read via `aapt`/`aapt2`
   best-effort), reflected in the download `Content-Disposition`.
-- **Keystore management** — Settings → Keystores generates release / debug /
-  `.properties` / AdMob files per package. Auto-applied to builds in two layers:
+- **Keystore management** — Settings → Keystores generates release / debug
+  keystores, release / debug `.properties`, and optional AdMob files per package.
+  Auto-applied to builds in two layers:
   `BuildService` injects `-Pandroid.injected.signing.*` for the release variant,
-  and "Apply to project" sends a Claude-console prompt that wires
+  and "Apply to project" sends a prompt to the selected project console provider that wires
   `signingConfigs` in `build.gradle.kts`. **Back up the release key — losing it
   blocks Play Store updates forever.**
 - **APK signature inspection** — `apksigner verify --print-certs` parsed inline
@@ -282,11 +283,12 @@ For per-release history, see [CHANGELOG.md](CHANGELOG.md).
   (independent of the keystore — App ID + **6 ad types**: banner / app-open /
   native advanced / interstitial / rewarded / rewarded-interstitial, each holding
   **multiple unit IDs** via comma-separated `<pkg>-admob.properties`), create /
-  delete, and a one-click "apply signing to build.gradle.kts" Claude prompt.
-  You can also **upload an existing keystore set** (release / debug / properties):
-  the server stages them under the canonical `<pkg>.*` names (properties `storeFile`
-  normalized to the host path), then a **single console prompt** has Claude move them
-  into place (backing up any existing file as `.bak.<ts>`), apply signing to
+  delete, and a one-click "apply signing to build.gradle.kts" console-provider prompt.
+  You can also **upload an existing keystore set** (release keystore / debug
+  keystore / release properties / debug properties): the server stages them under
+  the canonical `<pkg>.*` names (properties `storeFile` normalized to the host
+  path), then a **single console prompt** has the selected provider move them into
+  place (backing up any existing file as `.bak.<ts>`), apply signing to
   `build.gradle.kts`, and clean up the staging dir — all in one turn. Allowed
   **only when the console is idle** (it fires a prompt).
   Shares the same `KeystoreService` as the global `/settings/keystores` page.
@@ -452,7 +454,7 @@ services:
       - "2222:2222"
     volumes:
       # All persistent data lives under one host directory — tar it and you've
-      # backed up everything (workspace + PG + SDK + Gradle + MCP + Claude auth).
+      # backed up everything (workspace + PG + SDK + Gradle + MCP + AI provider auth/tools).
       - ./vibe-coder-data/workspace:/workspace
       - ./vibe-coder-data/server:/data
       - ./vibe-coder-data/dev-tools/android-sdk:/opt/android-sdk
@@ -461,12 +463,16 @@ services:
       - ./vibe-coder-data/dev-tools/npm-cache:/home/vibe/.npm
       - ./vibe-coder-data/dev-tools/playwright:/home/vibe/.cache/ms-playwright
       - ./vibe-coder-data/dev-tools/config:/home/vibe/.config
+      - ./vibe-coder-data/dev-tools/codex:/home/vibe/.codex
       # SSH key for git over SSH — entrypoint auto-generates an ED25519 keypair
       # on first boot and never overwrites it. View/regenerate at Settings → SSH Key.
       - ./vibe-coder-data/dev-tools/ssh:/home/vibe/.ssh
       # Android signing keystores — managed at Settings → Keystores.
       # BACK THIS UP: losing the release key blocks Play Store updates forever.
       - ./vibe-coder-data/dev-tools/keystores:/home/vibe/keystores
+      # Android Gradle plugin default debug.keystore — keeps debug fingerprints stable.
+      - ./vibe-coder-data/dev-tools/android:/home/vibe/.android
+      - ./vibe-coder-data/dev-tools/opencode:/home/vibe/.opencode
       - ./vibe-coder-data/claude:/home/vibe/.claude
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:17880/health"]
@@ -494,7 +500,7 @@ docker compose up -d --force-recreate
 
 Every persistent path lives under one host directory (`./vibe-coder-data/`), so
 `docker compose pull && up -d` never deletes your SDK, Gradle cache, MCP
-servers, Playwright browsers, or Claude auth.
+servers, Playwright browsers, Codex/OpenCode state, or Claude auth.
 
 | Data                              | Host path                                           | Container path                  | On recreate |
 |---|---|---|---|
@@ -508,8 +514,11 @@ servers, Playwright browsers, or Claude auth.
 | npx cache                         | `./vibe-coder-data/dev-tools/npm-cache/`            | `/home/vibe/.npm`               | ✅ kept |
 | Playwright browsers (optional)    | `./vibe-coder-data/dev-tools/playwright/`           | `/home/vibe/.cache/ms-playwright` | ✅ kept |
 | Other tool config                 | `./vibe-coder-data/dev-tools/config/`               | `/home/vibe/.config`            | ✅ kept |
+| Codex login/config/logs           | `./vibe-coder-data/dev-tools/codex/`                | `/home/vibe/.codex`             | ✅ kept |
 | SSH key                           | `./vibe-coder-data/dev-tools/ssh/`                  | `/home/vibe/.ssh`               | ✅ kept |
 | Android keystores ⚠️              | `./vibe-coder-data/dev-tools/keystores/`            | `/home/vibe/keystores`          | ✅ kept (back up!) |
+| Android debug keystore            | `./vibe-coder-data/dev-tools/android/`              | `/home/vibe/.android`           | ✅ kept |
+| OpenCode CLI install              | `./vibe-coder-data/dev-tools/opencode/`             | `/home/vibe/.opencode`          | ✅ kept |
 | Claude auth (OAuth / API key / MCP) | `./vibe-coder-data/claude/`                       | `/home/vibe/.claude`            | ✅ kept |
 | Server body (Ktor + Claude CLI + JDK + Node) | image layer                              | —                               | 🔄 replaced |
 
@@ -677,10 +686,14 @@ Highlights:
 - `POST /api/env-setup/claude-auth/upload` (multipart), `POST /api/env-setup/claude-auth/api-key`, `DELETE .../api-key/delete`
 - `POST /api/env-setup/claude-login/{start|submit|cancel}`, `GET .../status`
 - `GET /api/env-setup/mcp`, `POST /api/env-setup/mcp/{install|unregister}`, `POST /api/env-setup/mcp/{mcpId}/file/{fieldKey}` (multipart)
+- Provider status/quota: `GET /api/server/quota` (Claude), `GET /api/server/codex-quota`,
+  `GET /api/server/opencode-quota`, `GET /api/server/glm-quota` (z.ai coding plan monitor)
 
-**Notifications, push & emulator**
+**Notifications, push, terminal & emulator**
 - `GET /api/notifications`, `POST /api/notifications/{ack|ack-all}`
 - `GET /api/push/vapid-public-key`, `POST /api/push/subscribe`, `DELETE /api/push/subscriptions/{id}`
+- `GET /api/terminal/sessions`, `POST /api/terminal/sessions`, `DELETE /api/terminal/sessions/{id}`,
+  `WS /ws/terminal/{id}` (workspace PTY terminal; gated by `security.allowTerminal`)
 - `GET /api/emulator/status`, `GET /api/emulators`, `POST /api/emulators/{id}/{start|stop}`
 - `GET|POST|DELETE /api/projects/{id}/emulator/lease` (project-level emulator allocation)
 - `POST /emulator/{start|stop}` and `/emulator/{start|stop}/{id}` (SSR controls)
@@ -688,7 +701,8 @@ Highlights:
 
 **WebSocket**
 - `/ws/projects/{id}/console/logs`, `/ws/projects/{id}/builds/{buildId}/logs`,
-  `/ws/env-setup/{taskId}/logs`, `/ws/projects/{id}/agents/{agent}/console/logs`
+  `/ws/env-setup/{taskId}/logs`, `/ws/projects/{id}/agents/{agent}/console/logs`,
+  `/ws/projects`, `/ws/terminal/{id}`, `/ws/adb/logcat`
 
 ### Auth
 
@@ -713,7 +727,7 @@ Configure `server.webauthn.{rpId, rpName, origin}` to match the user-facing
 hostname (LAN e.g. `rpId: vibe.local`, `origin: http://vibe.local:17880`). An
 optional passwordless-only mode rejects password/TOTP for users with a passkey.
 
-**Session idle timeout** — `security.sessionIdleTimeoutMinutes` (default 30,
+**Session idle timeout** — `security.sessionIdleTimeoutMinutes` (default 0,
 `0` = unlimited); cookie and Bearer both delete the device row past the limit
 and redirect to `/login?err=session_timeout`.
 

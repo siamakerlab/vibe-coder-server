@@ -423,7 +423,7 @@ class McpService(
             val pb = ProcessBuilder(listOf(codexCmd(), "mcp", *args)).redirectErrorStream(true)
             pb.environment().putIfAbsent("HOME", "/home/vibe")
             pb.environment().putIfAbsent("XDG_CONFIG_HOME", "/home/vibe/.config")
-            pb.environment().putIfAbsent("CODEX_HOME", "/home/vibe/.config/codex")
+            pb.environment().putIfAbsent("CODEX_HOME", "/home/vibe/.codex")
             val proc = pb.start()
             val out = proc.inputStream.bufferedReader(Charsets.UTF_8).readText()
             if (!proc.waitFor(timeoutSec, TimeUnit.SECONDS)) { proc.destroyForcibly(); return -2 to "timeout" }

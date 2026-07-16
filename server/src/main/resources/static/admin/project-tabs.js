@@ -60,6 +60,25 @@
       }
     }
 
+    function postConsoleMessage(message, ensureConsole) {
+      if (ensureConsole) activate('console');
+      var tries = 0;
+      (function send() {
+        var cf = frameOf('console');
+        var ready = false;
+        try {
+          ready = !!(cf && cf.contentDocument && cf.contentDocument.readyState !== 'loading');
+        } catch (e) {
+          ready = true;
+        }
+        if (cf && cf.contentWindow && cf.getAttribute('src') && ready) {
+          cf.contentWindow.postMessage(message, location.origin);
+        } else if (tries++ < 50) {
+          setTimeout(send, 100);
+        }
+      })();
+    }
+
     // ── v1.50.0 — overview rail. Parent CSS reserves the rail column. ──
     // Inside each same-origin iframe: keep content left-aligned and wide. Rail reservation is now
     // owned by the parent tab pane CSS, so iframe documents don't receive fragile padding patches.
@@ -282,27 +301,56 @@
         clearTimeout(rzTimer);
         rzTimer = setTimeout(applyRailAll, 150);
       });
+      window.PromptTemplatesInsert = function (body) {
+        postConsoleMessage({ type: 'vibe:insert-prompt', text: String(body || ''), append: true }, true);
+      };
+
+      // v1.161.0 — Agent dispatch picker moved from the console iframe footer to
+      // the rail history card. Selection is forwarded to the console iframe so it
+      // can prefix the current prompt using the same input-state rules as before.
+      (function initAgentPicker() {
+        var aPicker = document.getElementById('agent-picker');
+        if (!aPicker || aPicker.dataset.ptWired) return;
+        aPicker.dataset.ptWired = '1';
+        fetch('/api/agents', { credentials: 'same-origin' })
+          .then(function (r) { return r.ok ? r.json() : { agents: [] }; })
+          .then(function (d) {
+            var arr = (d.agents || []).slice().sort(function (a, b) {
+              return String(a.name || '').localeCompare(String(b.name || ''));
+            });
+            if (arr.length === 0) {
+              var none = document.createElement('option');
+              none.value = '';
+              none.textContent = '(등록된 agent 없음 — /agents)';
+              none.disabled = true;
+              aPicker.appendChild(none);
+              return;
+            }
+            arr.forEach(function (a) {
+              if (!a || !a.name) return;
+              var opt = document.createElement('option');
+              opt.value = a.name;
+              opt.textContent = '@' + a.name;
+              opt.title = String(a.preview || '').substring(0, 200);
+              aPicker.appendChild(opt);
+            });
+          })
+          .catch(function () {});
+
+        aPicker.addEventListener('change', function () {
+          var opt = aPicker.options[aPicker.selectedIndex];
+          if (!opt || !opt.value) return;
+          postConsoleMessage({ type: 'vibe:agent-prefix', agent: opt.value }, true);
+          aPicker.selectedIndex = 0;
+        });
+      })();
+
       // 프롬프트 히스토리 항목 클릭 → 콘솔 탭으로 전환 + 프롬프트 입력창에 채움.
       root.addEventListener('click', function (e) {
         var item = e.target && e.target.closest ? e.target.closest('.pt-hist-item') : null;
         if (!item) return;
         var txt = item.getAttribute('data-prompt') || '';
-        activate('console');
-        var tries = 0;
-        (function fill() {
-          var input = null;
-          try {
-            var cf = frameOf('console');
-            input = cf && cf.contentDocument && cf.contentDocument.getElementById('prompt-input');
-          } catch (e2) {}
-          if (input) {
-            input.value = txt;
-            input.focus();
-            try { input.dispatchEvent(new Event('input', { bubbles: true })); } catch (e3) {}
-          } else if (tries++ < 50) {
-            setTimeout(fill, 100);
-          }
-        })();
+        postConsoleMessage({ type: 'vibe:insert-prompt', text: txt, append: false }, true);
       });
 
       // v1.59.2 — 콘솔 iframe 에서 프롬프트를 보내면 우측 히스토리에 즉시 prepend.

@@ -406,7 +406,7 @@ git config --global user.email "&lt;email&gt;"
             }
 
             // v1.145.0 — Codex CLI (OpenAI, 옵션). npm `@openai/codex` 를 /home/vibe/.local 에
-            // 설치(영속). 로그인은 CODEX_HOME(.config bind mount)에 저장 → 이미지 업데이트에도 유지.
+            // 설치(영속). 로그인은 CODEX_HOME(~/.codex bind mount)에 저장 → 이미지 업데이트에도 유지.
             SetupComponent.CODEX -> {
                 val label = when (status) {
                     ComponentStatus.INSTALLED -> t("env.action.codexLabel.installed")
@@ -1090,7 +1090,7 @@ $lastLinesBlock
         val t = { key: String -> Messages.t(lang, key) }
         val htmlLang = if (lang == "ko") "ko" else "en"
         return """<!doctype html><html lang="$htmlLang"><head><meta charset="utf-8"><title>${esc(t("env.error.title"))}</title>
-        <link rel="stylesheet" href="/static/admin.css?v=1.158.10"></head><body class="layout no-nav">
+        <link rel="stylesheet" href="/static/admin.css?v=1.161.0"></head><body class="layout no-nav">
         <main class="content"><div class="auth-card"><h1>${esc(t("env.error.installFailed"))}</h1>
         <div class="error">${esc(message)}</div>
         ${AdminTemplates.backButton("/env-setup", t("env.error.backToEnv"))}</div></main></body></html>"""

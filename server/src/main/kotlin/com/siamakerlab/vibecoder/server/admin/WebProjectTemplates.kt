@@ -1438,6 +1438,23 @@ $errHtml
   $textBtns
 </div>"""
         }
+        val consolePromptToolsHtml = if (embed) "" else """
+<!-- v1.6.3 — 프롬프트 템플릿 + 관리 버튼 (한 줄). 입력창 바로 아래. -->
+<div class="console-template-row" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px">
+  <select id="template-picker" style="flex:1;min-width:0;font-size:12px;padding:4px 8px;background:#1a1a1a;color:var(--text);border:1px solid #333">
+    <option value="">${esc(t("console.template.placeholder"))}</option>
+  </select>
+  <button type="button" id="manage-templates-btn" class="chip chip-link" style="font-size:11px;margin-left:0;flex-shrink:0">${esc(t("console.template.manage"))}</button>
+</div>
+
+<!-- v1.6.3 — Agent dispatch + 관리 버튼 (한 줄). -->
+<div class="console-agent-row" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px">
+  <select id="agent-picker" style="flex:1;min-width:0;font-size:12px;padding:4px 8px;background:#1a1a1a;color:var(--text);border:1px solid #333" title="Dispatch a registered sub-agent into the prompt">
+    <option value="">${esc(t("console.agent.placeholder"))}</option>
+  </select>
+  <a href="/agents" class="chip chip-link" style="font-size:11px;margin-left:0;flex-shrink:0">${esc(t("console.agent.manage"))}</a>
+</div>
+"""
 
         // v1.109.0 — 프롬프트 자동화 UI 를 부모 오버뷰 rail(ProjectTabsTemplate, 메모 카드 위)로
         // 이동했다(사용자 요청 — 별개 기능으로 분리, 메인 프롬프트 textarea 와 무관). 콘솔 인라인
@@ -1842,7 +1859,7 @@ ${if (embed) "" else contextMeterHtml}
   </div>
 </form>
 <script src="/static/voice-input.js?v=1.144.6" defer></script>
-<script src="/static/prompt-templates.js?v=1.158.8" defer></script>
+<script src="/static/prompt-templates.js?v=1.161.0" defer></script>
 <style>
   /* v1.15.0 — 음성 입력 listening 시각 강조. */
   #voice-btn.listening {
@@ -1858,21 +1875,7 @@ ${if (embed) "" else contextMeterHtml}
 <!-- v1.112.0 — 빠른프롬프트 바: 입력창 하단으로 이동(기존엔 입력창 위). -->
 $quickBarHtml
 
-<!-- v1.6.3 — 프롬프트 템플릿 + 관리 버튼 (한 줄). 입력창 바로 아래. -->
-<div class="console-template-row" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px">
-  <select id="template-picker" style="flex:1;min-width:0;font-size:12px;padding:4px 8px;background:#1a1a1a;color:var(--text);border:1px solid #333">
-    <option value="">${esc(t("console.template.placeholder"))}</option>
-  </select>
-  <button type="button" id="manage-templates-btn" class="chip chip-link" style="font-size:11px;margin-left:0;flex-shrink:0">${esc(t("console.template.manage"))}</button>
-</div>
-
-<!-- v1.6.3 — Agent dispatch + 관리 버튼 (한 줄). -->
-<div class="console-agent-row" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px">
-  <select id="agent-picker" style="flex:1;min-width:0;font-size:12px;padding:4px 8px;background:#1a1a1a;color:var(--text);border:1px solid #333" title="Dispatch a registered sub-agent into the prompt">
-    <option value="">${esc(t("console.agent.placeholder"))}</option>
-  </select>
-  <a href="/agents" class="chip chip-link" style="font-size:11px;margin-left:0;flex-shrink:0">${esc(t("console.agent.manage"))}</a>
-</div>
+$consolePromptToolsHtml
 
 <!-- v1.108.2/v1.112.0 — 콘솔 도구 바: 좌측 응답중 스피너(setInFlight 가 hidden 토글) +
      세션/모델/MCP/필터/자동 스크롤. v1.112.0 에서 입력창 위 → 가장 하단으로 이동(사용자 요청). -->
@@ -1942,6 +1945,12 @@ $quickBarHtml
   // 반영하고, 입력 포커스 중에는 보조 컨트롤을 접어 콘솔+입력창이 실제 보이는 영역 안에
   // 남도록 한다.
   function syncVisualViewport() {
+    // v1.161.0 — iframe(embed, ProjectTabs 탭) 문서에서는 visualViewport 가 iframe 의 실제
+    // 렌더 높이가 아니라 창 전체(소프트키보드 clip)를 반영해 --app-viewport-height 를 잘못
+    // 축소시킨다 → .layout 이 iframe 보다 작아져 콘솔 로그와 입력창이 겹치고 하단 공백 발생.
+    // 부모 ProjectTabs(project-tabs.js)가 이미 iframe 크기를 키보드에 맞춰 관리하므로, embed
+    // 문서는 .layout 을 100% 로 채우고(admin.css body.pt-embed .layout) 자체 계산을 건너뛴다.
+    if (document.body.classList.contains('pt-embed')) return;
     var vv = window.visualViewport;
     var h = vv && vv.height ? vv.height : window.innerHeight;
     if (h > 0) document.documentElement.style.setProperty('--app-viewport-height', Math.round(h) + 'px');
@@ -2110,6 +2119,35 @@ $quickBarHtml
     }
   });
 
+  function insertPromptBody(body, append) {
+    if (!input) return;
+    body = String(body || '');
+    if (append && input.value && input.value.trim().length > 0) {
+      input.value = input.value.replace(/\s+$/, '') + '\n\n' + body;
+    } else {
+      input.value = body;
+    }
+    input.focus();
+    try { input.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
+  }
+
+  function applyAgentPrefix(agent) {
+    if (!input || !agent) return;
+    var prefix = 'Use the ' + agent + ' sub-agent to ';
+    if (input.value && input.value.trim().length > 0) {
+      if (input.value.startsWith('Use the ')) {
+        input.value = input.value.replace(/^Use the [^ ]+ sub-agent to /, prefix);
+      } else {
+        input.value = prefix + input.value;
+      }
+    } else {
+      input.value = prefix;
+    }
+    input.focus();
+    input.selectionStart = input.selectionEnd = input.value.length;
+    try { input.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
+  }
+
   // v1.99.1 — 탭 전환으로 이 콘솔이 다시 보일 때(display:none→block) 최하단 재고정.
   //  applyInitialView 는 최초 1회뿐이라, 다른 탭(빌드/파일 등) 갔다 돌아오면 숨겨진 동안
   //  append 된 메시지로(display:none 이라 scrollHeight 기반 stick 무효) 스크롤이 어긋난 채
@@ -2127,6 +2165,16 @@ $quickBarHtml
         if (form && form.requestSubmit) form.requestSubmit();
         else if (typeof sendPrompt === 'function') sendPrompt(d.text);
       }
+      return;
+    }
+    // v1.161.0 — 부모 오버뷰 rail 의 템플릿/히스토리 선택 → 콘솔 입력창 반영.
+    if (d.type === 'vibe:insert-prompt' && typeof d.text === 'string') {
+      insertPromptBody(d.text, !!d.append);
+      return;
+    }
+    // v1.161.0 — 부모 오버뷰 rail 의 Agent dispatch 선택 → 현재 입력에 sub-agent prefix 적용.
+    if (d.type === 'vibe:agent-prefix' && typeof d.agent === 'string' && d.agent) {
+      applyAgentPrefix(d.agent);
       return;
     }
     // v1.108.0 — 부모 rail '자동(auto-compact)' 체크박스 → 서버 영속(fetch, 리로드 없음).
@@ -3239,10 +3287,9 @@ $quickBarHtml
   // /static/prompt-templates.js (window.PromptTemplates) 로 이관. 이 콘솔 페이지는
   // #template-picker / #manage-templates-btn 만 제공하면 모듈이 자동 와이어링한다.
 
-  // v0.41.0 — agent dispatch dropdown.
-  // GET /api/agents 결과로 등록된 sub-agent 목록을 채운 뒤 선택 시
-  // "Use the <agent> sub-agent to " prefix 를 input 에 삽입.
-  // Claude Code 의 표준 sub-agent dispatch 메커니즘을 1-click 으로 활용.
+  // v0.41.0 — standalone console agent dispatch dropdown.
+  // Project tabs embed moved this control to the parent overview rail; standalone console pages
+  // still wire the footer picker here.
   var aPicker = document.getElementById('agent-picker');
   if (aPicker) {
     fetch('/api/agents', { credentials: 'same-origin' })
@@ -3272,22 +3319,7 @@ $quickBarHtml
     aPicker.addEventListener('change', function() {
       var opt = aPicker.options[aPicker.selectedIndex];
       if (!opt || !opt.value) return;
-      var prefix = 'Use the ' + opt.value + ' sub-agent to ';
-      var input = document.getElementById('prompt-input');
-      if (input.value && input.value.trim().length > 0) {
-        // 이미 prefix 가 있으면 중복 안 함.
-        if (input.value.startsWith('Use the ')) {
-          // 기존 agent 이름만 교체.
-          input.value = input.value.replace(/^Use the [^ ]+ sub-agent to /, prefix);
-        } else {
-          input.value = prefix + input.value;
-        }
-      } else {
-        input.value = prefix;
-      }
-      input.focus();
-      // 커서를 맨 뒤로.
-      input.selectionStart = input.selectionEnd = input.value.length;
+      applyAgentPrefix(opt.value);
       aPicker.selectedIndex = 0;
     });
   }

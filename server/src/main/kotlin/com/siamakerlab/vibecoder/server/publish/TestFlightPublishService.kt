@@ -1,6 +1,6 @@
 package com.siamakerlab.vibecoder.server.publish
 
-import com.siamakerlab.vibecoder.server.claude.ClaudeSessionManager
+import com.siamakerlab.vibecoder.server.agent.AgentRouter
 import com.siamakerlab.vibecoder.server.env.McpService
 import io.github.oshai.kotlinlogging.KotlinLogging
 
@@ -12,7 +12,7 @@ private val log = KotlinLogging.logger {}
  * vibe-coder 자체는 iOS 빌드를 수행하지 않는다 (macOS + Xcode 필수, 컨테이너
  * 범위 밖). 대신 사용자가 별도 머신에서 빌드한 `.ipa` 를 워크스페이스 어딘가에
  * 올려 두고, 이 트리거가 MCP `app-store-connect` 를 통해 TestFlight 로
- * 업로드하도록 Claude 에게 지시한다.
+ * 업로드하도록 현재 콘솔 provider 에 지시한다.
  *
  * use case:
  *   - 회사 Mac mini 빌드 농장에서 산출된 .ipa 를 vibe-coder 워크스페이스에
@@ -25,7 +25,7 @@ private val log = KotlinLogging.logger {}
  */
 class TestFlightPublishService(
     private val mcpService: McpService,
-    private val sessionManager: ClaudeSessionManager,
+    private val agentRouter: AgentRouter,
 ) {
 
     data class Precheck(
@@ -102,6 +102,6 @@ class TestFlightPublishService(
         """.trimIndent()
 
         log.info { "TestFlight upload triggered: project=$projectId ipa=$ipaRelativePath" }
-        sessionManager.sendPrompt(projectId, prompt)
+        agentRouter.sendPrompt(projectId, prompt)
     }
 }

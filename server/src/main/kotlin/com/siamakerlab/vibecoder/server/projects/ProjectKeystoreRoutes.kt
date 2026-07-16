@@ -11,15 +11,14 @@ import com.siamakerlab.vibecoder.server.admin.KeystoreService
 import com.siamakerlab.vibecoder.server.admin.buildApplySigningPrompt
 import com.siamakerlab.vibecoder.server.admin.buildKeystorePlacementPrompt
 import com.siamakerlab.vibecoder.server.admin.isBuildRunning
-import com.siamakerlab.vibecoder.server.admin.isProjectIdle
 import com.siamakerlab.vibecoder.server.admin.isEmbeddedRequest
 import com.siamakerlab.vibecoder.server.admin.requireProjectAccessOrThrow
 import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireWriteAccessOrRedirect
+import com.siamakerlab.vibecoder.server.agent.AgentRouter
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens.requireCsrf
 import com.siamakerlab.vibecoder.server.automation.PromptAutomationManager
-import com.siamakerlab.vibecoder.server.claude.ClaudeSessionManager
 import com.siamakerlab.vibecoder.server.i18n.Messages
 import com.siamakerlab.vibecoder.server.repo.BuildRepository
 import com.siamakerlab.vibecoder.shared.dto.ProjectDto
@@ -52,29 +51,33 @@ private val log = KotlinLogging.logger {}
  *  - 상태(release/debug/properties/admob 존재 + 생성일)
  *  - SHA-1/SHA-256/MD5 지문 열람 (접어두기 — 펼칠 때 lazy fetch, keytool 1회)
  *  - AdMob 광고 ID 관리 (접어두기 — 키스토어 유무와 독립적으로 저장/삭제)
- *  - 키스토어 생성(미존재 시) / build.gradle.kts 서명 적용(Claude) / 삭제
+ *  - 키스토어 생성(미존재 시) / build.gradle.kts 서명 적용(현재 콘솔 provider) / 삭제
  *
  * SSR 라우트 (JSON wire 아님 — ApiPath 대상 아님, symbols/env-files 와 동일 컨벤션):
  *   GET  /projects/{id}/keystore               — 탭 페이지
  *   GET  /projects/{id}/keystore/fingerprints  — SHA 지문 HTML 조각 (lazy)
  *   POST /projects/{id}/keystore/create        — 키스토어 set 생성(패키지=프로젝트 강제)
  *   POST /projects/{id}/keystore/admob         — AdMob ID 저장/삭제
- *   POST /projects/{id}/keystore/apply         — Claude 콘솔에 서명 적용 prompt 전송
+ *   POST /projects/{id}/keystore/apply         — 현재 콘솔 provider 에 서명 적용 prompt 전송
  *   POST /projects/{id}/keystore/delete        — 키스토어 set 삭제
  */
 fun Routing.projectKeystoreRoutes(
     authDeps: AdminRoutesDeps,
     projects: ProjectService,
     keystore: KeystoreService,
-    sessionManager: ClaudeSessionManager,
+    agentRouter: AgentRouter,
     buildRepo: BuildRepository,
     promptAutomationManager: PromptAutomationManager,
 ) {
     // v1.101.0 — 콘솔이 유휴(응답중/빌드중/자동화중 모두 아님)인지. 업로드는 직후 콘솔
     // 프롬프트를 쏘므로 유휴일 때만 허용한다(파괴적/이동 라우트 idle 가드와 동일 체계).
-    // v1.114.0 — 단일 헬퍼 isProjectIdle 공유(가드 판정 일원화).
+    // v1.161.0 — 선택된 provider 의 busy 상태를 기준으로 idle 판정.
     fun consoleIdle(id: String): Boolean =
-        isProjectIdle(sessionManager, buildRepo, promptAutomationManager, id)
+        !agentRouter.isBusy(id) &&
+            !isBuildRunning(buildRepo, id) &&
+            !promptAutomationManager.isActive(id)
+
+    fun selectedProviderName(id: String): String = agentRouter.providerFor(id).displayName
 
     get("/projects/{id}/keystore") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
@@ -197,12 +200,13 @@ fun Routing.projectKeystoreRoutes(
         // 콘솔 프롬프트 발사. 광고 ID 원본은 <pkg>-admob.properties 가 단일 진실.
         val admobPropsPath = keystore.keystoreDirPath().resolve("${p.packageName}-admob.properties")
         val prompt = buildApplyAdmobPrompt(p.id, p.moduleName, p.packageName, admobPropsPath, ids)
-        val sent = runCatching { sessionManager.sendPrompt(id, prompt) }
+        val providerName = selectedProviderName(id)
+        val sent = runCatching { agentRouter.sendPrompt(id, prompt) }
             .onFailure { log.warn(it) { "apply-admob prompt failed for $id / ${p.packageName}" } }
             .isSuccess
         if (sent) {
             call.respondRedirect(
-                "/projects/$id/keystore?ok=${enc("AdMob ID 저장됨 — 앱 적용(광고 + 광고제거 구매) 요청을 Claude 콘솔로 보냈습니다. 콘솔 탭에서 진행 상황을 확인하세요.")}",
+                "/projects/$id/keystore?ok=${enc("AdMob ID 저장됨 — 앱 적용(광고 + 광고제거 구매) 요청을 $providerName 콘솔로 보냈습니다. 콘솔 탭에서 진행 상황을 확인하세요.")}",
             )
         } else {
             call.respondRedirect(
@@ -234,12 +238,13 @@ fun Routing.projectKeystoreRoutes(
         }
         val admobPropsPath = keystore.keystoreDirPath().resolve("${p.packageName}-admob.properties")
         val prompt = buildApplyAdmobPrompt(p.id, p.moduleName, p.packageName, admobPropsPath, ids)
-        val sent = runCatching { sessionManager.sendPrompt(id, prompt) }
+        val providerName = selectedProviderName(id)
+        val sent = runCatching { agentRouter.sendPrompt(id, prompt) }
             .onFailure { log.warn(it) { "apply-admob (manual) prompt failed for $id / ${p.packageName}" } }
             .isSuccess
         if (sent) {
             call.respondRedirect(
-                "/projects/$id/keystore?ok=${enc("앱 적용(광고 + 광고제거 구매) 요청을 Claude 콘솔로 보냈습니다. 콘솔 탭에서 진행 상황을 확인하세요.")}",
+                "/projects/$id/keystore?ok=${enc("앱 적용(광고 + 광고제거 구매) 요청을 $providerName 콘솔로 보냈습니다. 콘솔 탭에서 진행 상황을 확인하세요.")}",
             )
         } else {
             call.respondRedirect(
@@ -271,13 +276,14 @@ fun Routing.projectKeystoreRoutes(
             return@post
         }
         val prompt = buildApplySigningPrompt(p.id, p.moduleName, keystore, entry)
-        val sent = runCatching { sessionManager.sendPrompt(id, prompt) }
+        val providerName = selectedProviderName(id)
+        val sent = runCatching { agentRouter.sendPrompt(id, prompt) }
             .onFailure { log.warn(it) { "apply-signing prompt failed for $id / ${p.packageName}" } }
             .isSuccess
         if (sent) {
-            call.respondRedirect("/projects/$id/keystore?ok=${enc("서명 적용 요청을 Claude 콘솔로 보냈습니다 — 콘솔 탭에서 결과를 확인하세요.")}")
+            call.respondRedirect("/projects/$id/keystore?ok=${enc("서명 적용 요청을 $providerName 콘솔로 보냈습니다 — 콘솔 탭에서 결과를 확인하세요.")}")
         } else {
-            call.respondRedirect("/projects/$id/keystore?err=${enc("Claude 콘솔 전송 실패")}")
+            call.respondRedirect("/projects/$id/keystore?err=${enc("$providerName 콘솔 전송 실패")}")
         }
     }
 
@@ -304,10 +310,11 @@ fun Routing.projectKeystoreRoutes(
             )
             return@post
         }
-        // multipart 파트 수집 (release / debug / properties).
+        // multipart 파트 수집 (release / debug / release properties / debug properties).
         var releaseBytes: ByteArray? = null
         var debugBytes: ByteArray? = null
         var propsText: String? = null
+        var debugPropsText: String? = null
         val multipart = call.receiveMultipart()
         while (true) {
             val part = multipart.readPart() ?: break
@@ -318,6 +325,7 @@ fun Routing.projectKeystoreRoutes(
                         "release" -> releaseBytes = bytes
                         "debug" -> debugBytes = bytes
                         "properties" -> propsText = bytes.toString(Charsets.UTF_8)
+                        "debugProperties" -> debugPropsText = bytes.toString(Charsets.UTF_8)
                     }
                 }
             } finally {
@@ -325,7 +333,7 @@ fun Routing.projectKeystoreRoutes(
             }
         }
         // v1.102.0 — 서버는 staging 에만 규약 파일명으로 저장. 최종 이동배치는 콘솔 프롬프트가 수행.
-        val stage = runCatching { keystore.stageUploaded(p.packageName, releaseBytes, debugBytes, propsText) }
+        val stage = runCatching { keystore.stageUploaded(p.packageName, releaseBytes, debugBytes, propsText, debugPropsText) }
             .getOrElse { e ->
                 log.warn(e) { "keystore staging failed: $id / ${p.packageName}" }
                 call.respondRedirect("/projects/$id/keystore?err=${enc("업로드 실패: ${mapUploadError(e.message)}")}")
@@ -333,23 +341,25 @@ fun Routing.projectKeystoreRoutes(
             }
         if (!stage.stagedAny) {
             call.respondRedirect(
-                "/projects/$id/keystore?err=${enc("업로드된 파일이 없습니다 — release/debug/properties 중 최소 하나를 선택하세요.")}",
+                "/projects/$id/keystore?err=${enc("업로드된 파일이 없습니다 — release/debug/properties/debug properties 중 최소 하나를 선택하세요.")}",
             )
             return@post
         }
         // 콘솔에 이동배치(staging → keystores, 기존 백업) + build.gradle.kts 서명 적용 프롬프트 발사(한 turn).
         val prompt = buildKeystorePlacementPrompt(p.id, p.moduleName, p.packageName, keystore, stage)
-        val promptSent = runCatching { sessionManager.sendPrompt(id, prompt) }
+        val providerName = selectedProviderName(id)
+        val promptSent = runCatching { agentRouter.sendPrompt(id, prompt) }
             .onFailure { log.warn(it) { "post-upload placement prompt failed: $id" } }
             .isSuccess
         val staged = buildList {
             if (stage.releaseFile != null) add("release")
             if (stage.debugFile != null) add("debug")
-            if (stage.propertiesFile != null) add(".properties")
+            if (stage.propertiesFile != null) add("release properties")
+            if (stage.debugPropertiesFile != null) add("debug properties")
         }.joinToString(", ")
         if (promptSent) {
             call.respondRedirect(
-                "/projects/$id/keystore?ok=${enc("업로드 완료($staged) — Claude 콘솔이 키스토어를 최종 위치로 이동배치하고 build.gradle.kts 서명을 적용합니다. 콘솔 탭에서 진행 상황을 확인하세요.")}",
+                "/projects/$id/keystore?ok=${enc("업로드 완료($staged) — $providerName 콘솔이 키스토어를 최종 위치로 이동배치하고 build.gradle.kts 서명을 적용합니다. 콘솔 탭에서 진행 상황을 확인하세요.")}",
             )
         } else {
             call.respondRedirect(
@@ -387,7 +397,7 @@ private fun multi(form: io.ktor.http.Parameters, name: String): List<String> =
 
 /**
  * v1.105.0 — 저장된 AdMob 광고 ID 를 앱에 "공식문서 최신 권장 방식"으로 적용하고, 광고가
- * 하나라도 있으면 광고 제거 인앱결제(설정 화면)까지 함께 추가하도록 Claude 콘솔에 보내는 프롬프트.
+ * 하나라도 있으면 광고 제거 인앱결제(설정 화면)까지 함께 추가하도록 콘솔 provider 에 보내는 프롬프트.
  *
  * 광고 ID 원본은 `<pkg>-admob.properties` (단일 진실). 빌드 스크립트가 그 파일을 로드해 주입한다.
  * 버전/코드는 의도적으로 고정하지 않고 "공식문서 확인 후 최신 적용"을 지시한다(시간이 지나도 최신 유지).
@@ -641,7 +651,7 @@ internal object ProjectKeystoreTemplates {
     ${esc(t("ks.admob.cardIntro"))}<br>
     ${esc(t("ks.admob.savedAt"))}: <code>${esc(pkg)}-admob.properties</code><br>
     💡 저장하면 광고 ID 기록과 함께, 앱에 광고(적응형 하단 배너·전면)와 <b>광고 제거 인앱결제</b>까지
-    공식문서 최신 방식으로 적용하도록 Claude 콘솔에 요청합니다 (콘솔 유휴 시).
+    공식문서 최신 방식으로 적용하도록 현재 콘솔 provider 에 요청합니다 (콘솔 유휴 시).
   </p>
   $admobBusyNote
   <form id="admob-apply-form" method="post" action="/projects/${esc(p.id)}/keystore/admob/apply" style="display:none">$csrfHidden</form>
@@ -658,7 +668,7 @@ internal object ProjectKeystoreTemplates {
       <button type="submit" form="admob-apply-form" $admobApplyDisabled
               title="${esc(admobApplyTitle)}"
               style="background:#1f2937;color:#cbd5e1;border:0;padding:8px 14px;border-radius:6px;cursor:pointer"
-              onclick="return confirm('저장된 AdMob 광고 ID 로 앱 적용(광고 + 광고제거 구매) 프롬프트를 Claude 콘솔에 보냅니다. 진행할까요?')">↗ 광고 적용 프롬프트 보내기</button>
+              onclick="return confirm('저장된 AdMob 광고 ID 로 앱 적용(광고 + 광고제거 구매) 프롬프트를 현재 선택된 콘솔 provider 에 보냅니다. 진행할까요?')">↗ 광고 적용 프롬프트 보내기</button>
       <button type="submit" class="primary" $admobDisabled>${esc(t("ks.admob.save"))}</button>
       <span class="dim" style="font-size:11px">저장 시에도 적용 프롬프트가 전송됩니다.</span>
     </div>
@@ -772,9 +782,9 @@ internal object ProjectKeystoreTemplates {
   <h3 style="margin:0 0 8px;font-size:14px">빌드 적용 / 관리</h3>
   <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
     <form method="post" action="/projects/${esc(p.id)}/keystore/apply" style="margin:0"
-          onsubmit="return confirm('이 키스토어로 build.gradle.kts 의 signingConfigs 를 수정하도록 Claude 콘솔에 요청합니다. 진행할까요?')">
+          onsubmit="return confirm('이 키스토어로 build.gradle.kts 의 signingConfigs 를 수정하도록 현재 선택된 콘솔 provider 에 요청합니다. 진행할까요?')">
       $csrfHidden
-      <button type="submit" class="primary" $applySigningDisabled>build.gradle.kts 서명 적용 (Claude)</button>
+      <button type="submit" class="primary" $applySigningDisabled>build.gradle.kts 서명 적용</button>
     </form>
     <form method="post" action="/projects/${esc(p.id)}/keystore/delete" style="margin:0"
           onsubmit="return confirm('키스토어 set(release/debug/properties/admob) 을 삭제합니다. 복구 불가 — 진행할까요?')">
@@ -794,10 +804,11 @@ internal object ProjectKeystoreTemplates {
   <summary style="cursor:pointer;font-weight:600">⬆ 키스토어 업로드
     <span class="dim" style="font-weight:400;font-size:12px">(외부에서 만든 키 가져오기 — 콘솔 유휴 시)</span></summary>
   <p class="dim" style="font-size:12px;margin:8px 0 10px">
-    이미 가지고 있는 release / debug 키스토어와 signing properties 파일을 각 칸에 올립니다. 서버는
+    이미 가지고 있는 release / debug 키스토어와 release / debug signing properties 파일을 각 칸에 올립니다. 서버는
     파일을 임시(staging) 공간에 규약 파일명(<code>${esc(pkg)}.keystore</code> /
-    <code>${esc(pkg)}-debug.keystore</code> / <code>${esc(pkg)}-keystore.properties</code>)으로 저장한 뒤,
-    <b>한 번의 콘솔 프롬프트</b>로 Claude 가 최종 위치(<code>/home/vibe/keystores/</code>)로 이동배치
+    <code>${esc(pkg)}-debug.keystore</code> / <code>${esc(pkg)}-keystore.properties</code> /
+    <code>${esc(pkg)}-debug-keystore.properties</code>)으로 저장한 뒤,
+    <b>한 번의 콘솔 프롬프트</b>로 현재 선택된 provider 가 최종 위치(<code>/home/vibe/keystores/</code>)로 이동배치
     (기존 파일은 <code>.bak.&lt;시각&gt;</code> 백업)하고 build.gradle.kts 서명까지 적용합니다.
     properties 의 storeFile 은 서버 경로로 자동 보정됩니다. 콘솔 프롬프트를 전송하므로
     <b>콘솔이 유휴 상태일 때만</b> 가능합니다.
@@ -809,12 +820,14 @@ internal object ProjectKeystoreTemplates {
       <input id="ks-up-release" type="file" name="release" accept=".keystore,.jks,.p12,.pkcs12" $uploadDisabled>
       <label for="ks-up-debug">debug 키스토어</label>
       <input id="ks-up-debug" type="file" name="debug" accept=".keystore,.jks,.p12,.pkcs12" $uploadDisabled>
-      <label for="ks-up-props">properties</label>
+      <label for="ks-up-props">release properties</label>
       <input id="ks-up-props" type="file" name="properties" accept=".properties,.txt" $uploadDisabled>
+      <label for="ks-up-debug-props">debug properties</label>
+      <input id="ks-up-debug-props" type="file" name="debugProperties" accept=".properties,.txt" $uploadDisabled>
     </div>
     <p class="dim" style="font-size:11px;margin:8px 0">최소 1개 파일을 선택하세요. PKCS12/JKS 키스토어만 허용(256KB 이하).</p>
     <button type="submit" class="primary" $uploadDisabled
-            onclick="return confirm('업로드 파일을 staging 에 저장하고, Claude 콘솔이 최종 위치로 이동배치(기존 백업) + build.gradle.kts 서명 적용하도록 프롬프트를 보냅니다. 진행할까요?')">업로드 → 콘솔 이동배치</button>
+            onclick="return confirm('업로드 파일을 staging 에 저장하고, 현재 선택된 콘솔 provider 가 최종 위치로 이동배치(기존 백업) + build.gradle.kts 서명 적용하도록 프롬프트를 보냅니다. 진행할까요?')">업로드 → 콘솔 이동배치</button>
   </form>
 </details>"""
 

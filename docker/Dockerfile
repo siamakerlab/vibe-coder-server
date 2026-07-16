@@ -187,6 +187,7 @@ RUN userdel -r ubuntu 2>/dev/null || true \
         /workspace \
         /data \
         /home/vibe/.claude \
+        /home/vibe/.codex \
         /home/vibe/.gradle \
         /home/vibe/.config \
         /home/vibe/.npm \
@@ -194,6 +195,7 @@ RUN userdel -r ubuntu 2>/dev/null || true \
         /home/vibe/.cache/ms-playwright \
         /home/vibe/.local/bin \
         /home/vibe/.local/lib/node_modules \
+        /home/vibe/.opencode \
     && printf 'prefix=/home/vibe/.local\nfund=false\nupdate-notifier=false\n' > /home/vibe/.npmrc \
     && chown -R vibe:vibe /opt/android-sdk /workspace /data /home/vibe \
     && printf 'vibe ALL=(ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/vibe-nopasswd \
@@ -245,11 +247,10 @@ ENV CLAUDE_CONFIG_DIR=/home/vibe/.claude
 # (자식 git 프로세스 — clone / commit / log 모두 동일 파일을 global config 로 인식)
 ENV GIT_CONFIG_GLOBAL=/home/vibe/.config/git/config
 
-# v1.145.0 — Codex CLI(옵션) 로그인/설정 경로를 영속 위치(/home/vibe/.config/codex)로 강제.
-# `/home/vibe/.config` 는 `dev-tools/config` 볼륨에 영속화돼 있어, codex 를 vibe-doctor 로
-# 설치(.local 볼륨)하고 `codex login` 한 뒤에는 이미지 업데이트 / 컨테이너 재생성 후에도
-# 로그인 상태가 유지된다. Codex CLI 기본은 ~/.codex 이지만 CODEX_HOME 으로 override.
-ENV CODEX_HOME=/home/vibe/.config/codex
+# v1.161.0 — Codex CLI(옵션) 로그인/설정 경로를 기본 위치(/home/vibe/.codex)로 고정.
+# compose 는 dev-tools/codex 를 이 경로에 bind mount 하므로 `codex login` 뒤 이미지 업데이트 /
+# 컨테이너 재생성 후에도 로그인 상태가 유지된다.
+ENV CODEX_HOME=/home/vibe/.codex
 
 # v0.7.0 — vibe 사용자의 npm 글로벌 prefix 를 /home/vibe/.local 로 분리.
 # 이로써 `vibe-doctor mcp` 의 `npm install -g <pkg>` 가 시스템 디렉토리가 아닌

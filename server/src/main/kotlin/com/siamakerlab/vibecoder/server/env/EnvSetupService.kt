@@ -130,7 +130,7 @@ enum class SetupComponent(
     ),
     // v1.145.0 — Codex CLI (OpenAI). doctorCmd="codex" → vibe-doctor codex 가 npm `@openai/codex`
     // 를 /home/vibe/.local 에 글로벌 설치(이미지 업데이트 후에도 영속). 로그인/설정은 CODEX_HOME
-    // (/home/vibe/.config/codex, .config bind mount)에 영속. 선택적 컴포넌트 — "모두 설치"에서
+    // (/home/vibe/.codex, codex bind mount)에 영속. 선택적 컴포넌트 — "모두 설치"에서
     // 제외하고 개별 카드 버튼으로만 설치(Android 빌드 필수 도구가 아님).
     CODEX(
         id = "codex",
@@ -869,7 +869,7 @@ class EnvSetupService(
     private fun applyCodexProcessEnv(pb: ProcessBuilder) {
         pb.environment().putIfAbsent("HOME", "/home/vibe")
         pb.environment().putIfAbsent("XDG_CONFIG_HOME", "/home/vibe/.config")
-        pb.environment().putIfAbsent("CODEX_HOME", "/home/vibe/.config/codex")
+        pb.environment().putIfAbsent("CODEX_HOME", "/home/vibe/.codex")
     }
 
     companion object {

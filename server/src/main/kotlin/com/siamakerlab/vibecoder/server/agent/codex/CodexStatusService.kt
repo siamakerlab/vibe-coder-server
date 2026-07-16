@@ -142,7 +142,7 @@ class CodexStatusService(
         // v1.156.1 — putIfAbsent → put 강제 설정 (컨테이너 HOME=/root 회피).
         pb.environment()["HOME"] = "/home/vibe"
         pb.environment()["XDG_CONFIG_HOME"] = "/home/vibe/.config"
-        pb.environment()["CODEX_HOME"] = "/home/vibe/.config/codex"
+        pb.environment()["CODEX_HOME"] = "/home/vibe/.codex"
     }
 
     companion object {
@@ -159,8 +159,10 @@ internal fun parseCodexUsageCapture(raw: String): CodexUsageDto {
         Regex("(?i)Context\\s+window:\\s*(\\d{1,3})\\s*%\\s*left"),
     ) ?: Regex("(?i)(?:context|token)[^\\n]{0,80}?(\\d{1,3})%")
         .find(cleaned)?.groupValues?.getOrNull(1)?.toIntOrNull()?.coerceIn(0, 100)
-    val session = parseCodexLimitLine(cleaned, Regex("(?i)5h\\s+limit:\\s*(?:\\[[^\\]]+\\]\\s*)?(\\d{1,3})\\s*%\\s*left\\s*\\(resets\\s*([^)]*)\\)"))
-    val weekly = parseCodexLimitLine(cleaned, Regex("(?i)Weekly\\s+limit:\\s*(?:\\[[^\\]]+\\]\\s*)?(\\d{1,3})\\s*%\\s*left\\s*\\(resets\\s*([^)]*)\\)"))
+    val limitLines = parseCodexLimitLines(cleaned)
+    val session = limitLines.firstOrNull { it.kind == CodexLimitKind.SESSION }
+        ?: limitLines.firstOrNull { it.kind == CodexLimitKind.UNKNOWN && limitLines.any { known -> known.kind == CodexLimitKind.WEEKLY } }
+    val weekly = limitLines.firstOrNull { it.kind == CodexLimitKind.WEEKLY }
     val hasLimitGauges = session != null || weekly != null
     val reset = session?.resetAt ?: weekly?.resetAt ?: limitResetNotice ?: Regex("(?i)(?:reset|resets|limit reset)[^\\n.]{0,120}")
         .find(cleaned)?.value?.trim()
@@ -199,19 +201,44 @@ internal fun parseCodexUsageCapture(raw: String): CodexUsageDto {
     )
 }
 
+private enum class CodexLimitKind {
+    SESSION,
+    WEEKLY,
+    UNKNOWN,
+}
+
 private data class CodexLimitParse(
+    val kind: CodexLimitKind,
+    val label: String,
     val usagePercent: Int,
     val resetAt: String,
 )
 
-private fun parseCodexLimitLine(text: String, regex: Regex): CodexLimitParse? {
-    val match = regex.find(text) ?: return null
-    val left = match.groupValues.getOrNull(1)?.toIntOrNull()?.coerceIn(0, 100) ?: return null
-    val resetAt = match.groupValues.getOrNull(2)?.trim().orEmpty()
-    return CodexLimitParse(
-        usagePercent = 100 - left,
-        resetAt = resetAt,
-    )
+private fun parseCodexLimitLines(text: String): List<CodexLimitParse> =
+    Regex(
+        """(?im)^\s*([A-Za-z0-9][A-Za-z0-9\s._/-]{0,48}?\blimit)\s*:\s*(?:\[[^\]]+\]\s*)?(\d{1,3})\s*%\s*left\s*\(resets\s*([^)]+)\)""",
+    ).findAll(text).mapNotNull { match ->
+        val label = match.groupValues.getOrNull(1)?.trim().orEmpty()
+        val left = match.groupValues.getOrNull(2)?.toIntOrNull()?.coerceIn(0, 100) ?: return@mapNotNull null
+        val resetAt = match.groupValues.getOrNull(3)?.trim().orEmpty()
+        CodexLimitParse(
+            kind = codexLimitKind(label),
+            label = label,
+            usagePercent = 100 - left,
+            resetAt = resetAt,
+        )
+    }.toList()
+
+private fun codexLimitKind(label: String): CodexLimitKind {
+    val normalized = label.lowercase().replace(Regex("[_\\s-]+"), " ")
+    return when {
+        normalized.contains("weekly") || normalized.contains("week") || normalized.contains("7d") ||
+            normalized.contains("7 day") -> CodexLimitKind.WEEKLY
+        normalized.contains("session") || normalized.contains("5h") || normalized.contains("5 h") ||
+            normalized.contains("5 hour") || normalized.contains("five hour") ||
+            normalized.contains("hourly") -> CodexLimitKind.SESSION
+        else -> CodexLimitKind.UNKNOWN
+    }
 }
 
 private fun parseCodexLeftPercent(text: String, regex: Regex): Int? {

@@ -1,6 +1,6 @@
 package com.siamakerlab.vibecoder.server.publish
 
-import com.siamakerlab.vibecoder.server.claude.ClaudeSessionManager
+import com.siamakerlab.vibecoder.server.agent.AgentRouter
 import com.siamakerlab.vibecoder.server.env.McpService
 import io.github.oshai.kotlinlogging.KotlinLogging
 
@@ -10,22 +10,22 @@ private val log = KotlinLogging.logger {}
  * v0.22.0 — Play Console (Internal Track) 자동 업로드.
  *
  * 직접 Google Play Publishing API 를 호출하지 않고, **MCP `google-play-publisher`
- * 를 통해 Claude 에게 작업을 위임**한다. vibe-coder 의 일관된 디자인 원칙
- * (Claude + MCP 가 모든 외부 통신 담당) 을 유지하기 위함.
+ * 를 통해 현재 콘솔 provider 에 작업을 위임**한다. vibe-coder 의 일관된 디자인 원칙
+ * (콘솔 provider + MCP 가 외부 통신 담당) 을 유지하기 위함.
  *
  * 흐름:
  *   1. precheck() — MCP 설치/등록 여부 + Service Account JSON / packageName 일치
  *      여부 검사. 미충족 시 안내 메시지.
  *   2. trigger() — 콘솔 세션에 prompt 전송 ("이 .aab 를 Internal Track 업로드").
- *      Claude 가 MCP 도구를 호출해 실제 업로드 수행. 사용자는 콘솔 페이지에서
+ *      선택된 provider 가 MCP 도구를 호출해 실제 업로드 수행. 사용자는 콘솔 페이지에서
  *      진행 상황을 실시간 확인.
  *
- * 사용자 입력 (track 명 등) 은 prompt 안에 포함되어 Claude 가 그대로 MCP 인자로
+ * 사용자 입력 (track 명 등) 은 prompt 안에 포함되어 provider 가 그대로 MCP 인자로
  * 사용. 잘못된 값 (예: 존재하지 않는 track) 은 Claude 응답에서 즉시 노출.
  */
 class PlayPublishService(
     private val mcpService: McpService,
-    private val sessionManager: ClaudeSessionManager,
+    private val agentRouter: AgentRouter,
 ) {
 
     data class Precheck(
@@ -78,9 +78,9 @@ class PlayPublishService(
      *
      * @param projectId       프로젝트 id (`claude/console/prompt` 와 동일 라우팅).
      * @param aabRelativePath 프로젝트 root 기준 .aab 경로 (예: "app/build/outputs/bundle/release/app-release.aab").
-     *                        파일 존재 여부는 검사하지 않음 — Claude 가 진행 중 발견 안 되면 보고.
+     *                        파일 존재 여부는 검사하지 않음 — provider 가 진행 중 발견 안 되면 보고.
      * @param track           "internal" / "alpha" / "beta" / "production". 기본 internal.
-     * @param releaseNotes    optional. 비우면 Claude 가 git log 등으로 추론.
+     * @param releaseNotes    optional. 비우면 provider 가 git log 등으로 추론.
      */
     suspend fun trigger(
         projectId: String,
@@ -109,12 +109,12 @@ class PlayPublishService(
         """.trimIndent()
 
         log.info { "Play upload triggered: project=$projectId aab=$aabRelativePath track=$safeTrack" }
-        sessionManager.sendPrompt(projectId, prompt)
+        agentRouter.sendPrompt(projectId, prompt)
     }
 
     /**
      * v1.66.0 — 스토어 자산 탭에서 호출. release AAB 업로드 + (옵션) 스토어 listing
-     * 자산(피처 그래픽 / 언어별 스크린샷) 반영을 한 prompt 로 Claude 에 위임.
+     * 자산(피처 그래픽 / 언어별 스크린샷) 반영을 한 prompt 로 현재 콘솔 provider 에 위임.
      *
      * [screenshotsByLang] = lang → ["screenshot-ko-1.png", ...] (project root 기준).
      */
@@ -162,7 +162,7 @@ class PlayPublishService(
         """.trimIndent()
 
         log.info { "Play store upload triggered: project=$projectId track=$safeTrack listing=$includeListing" }
-        sessionManager.sendPrompt(projectId, prompt)
+        agentRouter.sendPrompt(projectId, prompt)
     }
 
     private fun sanitizeTrack(raw: String): String {

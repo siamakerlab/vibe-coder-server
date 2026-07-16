@@ -1,6 +1,6 @@
 # vibe-coder-server Container Global Rules
 
-This file is mounted as `/home/vibe/.claude/CLAUDE.md` inside the container and applies globally to Claude Code, Codex, and other AI coding sessions that run there. Codex reads the same content through the `/home/vibe/.config/codex/AGENTS.md` symlink. The host path is `./vibe-coder-data/claude/CLAUDE.md`.
+This file is mounted as `/home/vibe/.claude/CLAUDE.md` inside the container and applies globally to Claude Code, Codex, and other AI coding sessions that run there. Codex reads the same content through the `/home/vibe/.codex/AGENTS.md` symlink. The host path is `./vibe-coder-data/claude/CLAUDE.md`.
 
 > This is the default template auto-seeded on first server start. Feel free to edit it;
 > once it exists the server never overwrites it. (Global AI instructions tab: `/settings/claude-md`)

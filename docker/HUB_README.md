@@ -37,7 +37,7 @@ have stale bugs — please open a GitHub issue and they'll be fixed quickly.
   <https://github.com/siamakerlab/vibe-coder-server/wiki>
 - **Issues**: <https://github.com/siamakerlab/vibe-coder-server/issues>
 - **Architectures**: `linux/amd64` (multi-arch builds reserved for milestones).
-- **Latest tags**: `1.135.0`, `latest`
+- **Latest tags**: `1.160.1`, `latest`
 - **Base OS**: Ubuntu 26.04 LTS (Resolute Raccoon) since v0.38.0
 - **Image size**: ~750 MB (Android SDK / Gradle / MCP packages live in
   bind-mounted volumes — see below). v0.14.0+ runs alongside a small
@@ -70,7 +70,7 @@ docker compose up -d            # boots postgres + vibe-coder-server
 > [CHANGELOG.md](https://github.com/siamakerlab/vibe-coder-server/blob/main/CHANGELOG.md)
 > for the exact steps.
 
-## What's in the box (v1.135.0)
+## What's in the box (v1.160.1)
 
 **Claude orchestration**
 - One persistent Claude Code child per project — stream-json IO, live console
@@ -84,8 +84,11 @@ docker compose up -d            # boots postgres + vibe-coder-server
 - **Prompt automation** (repeat / sequence autopilot) + **one-shot scheduled
   prompts** (fire at a set time or when the Claude quota resets).
 - **Concurrency & memory guards** — concurrent-turn cap (default 3) and
-  resident-session cap (default 6, LRU pause + resume); queued prompts don't
+  resident-session cap (default 3, LRU pause + resume); queued prompts don't
   spawn Claude processes while waiting.
+- **Multi-provider console** — per-project provider selection across Claude,
+  Codex, and OpenCode/GLM, with isolated model settings and sidebar quota
+  pills for Claude, Codex, OpenCode, and direct z.ai coding-plan usage.
 - Conversation history persisted in PostgreSQL — cross-project search
   (Korean trigram, optional mecab-ko), memos / stars, export / import,
   token-usage & prompt-cache stats, console image attachments (vision).
@@ -150,6 +153,8 @@ docker compose up -d            # boots postgres + vibe-coder-server
 - Android SDK (~3-4 GB)
 - Gradle dependency cache (~1-2 GB on first build)
 - Claude OAuth credentials / API key
+- Codex login/config/logs (`~/.codex`)
+- OpenCode CLI install (`~/.opencode`)
 - MCP servers from the catalog (`npm install -g <pkg>`)
 - Playwright browsers (optional, ~300 MB)
 
@@ -157,7 +162,7 @@ docker compose up -d            # boots postgres + vibe-coder-server
 
 | Variable | Default | Description |
 |---|---|---|
-| `VIBECODER_IMAGE` | `siamakerlab/vibe-coder-server:latest` | Image tag to pull (pin to a specific `0.x.y` for reproducibility) |
+| `VIBECODER_IMAGE` | `siamakerlab/vibe-coder-server:latest` | Image tag to pull (pin to a specific version such as `1.160.1` for reproducibility) |
 | `VIBECODER_POSTGRES_IMAGE` | `postgres:17-alpine` | PG sidecar image (v0.14.0+) |
 | **`VIBECODER_DB_PASSWORD`** | (required) | **Must be set.** compose refuses to start with empty value |
 | `VIBECODER_DB_HOST` | `postgres` | DB host. Use `host:port` for an external PG |
@@ -172,17 +177,17 @@ docker compose up -d            # boots postgres + vibe-coder-server
 | `VIBECODER_ADMIN_PASSWORD` | (unset) | Pair with above. Change via `/password` immediately |
 | `JAVA_OPTS` | `-Xmx2g …` | JVM heap — tune to host RAM |
 
-### AI providers (v1.150.0+)
+### AI providers (v1.160.1)
 
 The server ships three first-class agent providers, selectable per-project from the console:
 
 - **Claude** (default) — Anthropic Claude Code CLI. OAuth or API key auth.
 - **Codex** (optional) — OpenAI Codex CLI. Device-code / access-token / API-key auth via the `/env-setup` page.
-- **OpenCode** (v1.150.0+) — [opencode](https://opencode.ai) CLI. Log in via the `/env-setup` → "OpenCode (z.ai)" card (`opencode providers login`). Credential persists to `${VIBE_DATA_ROOT}/.../opencode/auth.json` and survives image updates.
+- **OpenCode / GLM** — [opencode](https://opencode.ai) CLI, defaulting to the z.ai coding-plan model family. Log in via the `/env-setup` → "OpenCode (z.ai)" card (`opencode providers login`). Credentials persist under the config volume and survive image updates. v1.158.0+ also reads z.ai usage directly for the GLM quota pill.
 
 | Env | Default | Notes |
 |---|---|---|
-| `VIBECODER_OPENCODE_MODEL` | `default` | Default model (`provider/model`, e.g. `zai-coding-plan/glm-5.2`) |
+| `VIBECODER_OPENCODE_MODEL` | `zai-coding-plan/glm-5.2` | Default model (`provider/model`) |
 | `VIBECODER_OPENCODE_CMD` | `opencode` | Override the CLI path |
 | `VIBECODER_ZAI_ENFORCE_CODING_PLAN` | `false` | **Lock OpenCode to the z.ai coding plan subscription only** (v1.153.0+). When `true`, the server isolates `OPENCODE_CONFIG_HOME` to a z.ai-only config and rejects non-`zai-coding-plan/*` models — custom providers in the user's `opencode.jsonc` are ignored. Set `true` for subscription-billing isolation. |
 
@@ -204,13 +209,16 @@ ${VIBE_DATA_ROOT}/                          container
 │   ├── npm-global/             →  /home/vibe/.local                (MCP packages)
 │   ├── npm-cache/              →  /home/vibe/.npm                  (npx cache)
 │   ├── playwright/             →  /home/vibe/.cache/ms-playwright  (optional)
-│   ├── config/                 →  /home/vibe/.config               (tool config, Codex CODEX_HOME)
+│   ├── config/                 →  /home/vibe/.config               (tool config)
+│   ├── codex/                  →  /home/vibe/.codex                (Codex CODEX_HOME)
+│   ├── opencode/               →  /home/vibe/.opencode             (opencode CLI)
 │   ├── ssh/                    →  /home/vibe/.ssh                  (v1.2.0+ SSH key — auto-generated on first boot)
-│   └── keystores/              →  /home/vibe/keystores             (v1.5.0+ Android signing keys ⚠️ back up!)
+│   ├── keystores/              →  /home/vibe/keystores             (v1.5.0+ Android signing keys ⚠️ back up!)
+│   └── android/                →  /home/vibe/.android              (debug.keystore)
 └── claude/                     →  /home/vibe/.claude               (OAuth / API key / MCP registrations)
 ```
 
-Codex global instructions live at `/home/vibe/.config/codex/AGENTS.md`. On a new
+Codex global instructions live at `/home/vibe/.codex/AGENTS.md`. On a new
 install that file is symlinked to `/home/vibe/.claude/CLAUDE.md`, so Claude Code
 and Codex share the same global AI instructions. If you already created a regular
 `AGENTS.md`, the entrypoint preserves it.
@@ -223,8 +231,9 @@ and Codex share the same global AI instructions. If you already created a regula
 > and v1.3.0 had a missing-package regression — upgrade to v1.3.1 or later).
 
 > **v1.5.0+ Android keystore management** ⚠️. Settings → Keystores creates a
-> 4-file set per package (release / debug / Gradle properties / optional
-> AdMob IDs) under `dev-tools/keystores/`. Pre-fill the form by editing
+> 4-file signing set per package (release keystore / debug keystore / release
+> properties / debug properties) under `dev-tools/keystores/`. Optional AdMob
+> IDs are stored as a separate properties file. Pre-fill the form by editing
 > `keystore.defaults` in `server.yml` (CN / O / OU / country / city +
 > default password) — then only the package name has to be typed for each
 > new app. **Losing the release key blocks Play Store updates forever**, so
@@ -259,7 +268,7 @@ container (UID 70 in alpine images). On the host you may need `sudo` to read
 files directly. Either use `tar` with sudo, or do logical `pg_dump` against
 the running container.
 
-## Web UI routes (v1.135.0)
+## Web UI routes (v1.160.1)
 
 All routes sit at the root (no `/admin/*` prefix). Bearer token or session
 cookie required except `/setup`, `/login`, `/health`.
@@ -274,14 +283,15 @@ cookie required except `/setup`, `/login`, `/health`.
 | `/history` · `/usage` · `/audit` · `/logs` | Cross-project search / usage stats / audit / build-log grep |
 | `/env-setup` (+ `/mcp`, `/claude-login`) | Build environment installer, MCP catalog, Claude OAuth |
 | `/backup` · `/archive` | Workspace backup + project restore; archived projects |
-| `/emulator` · `/adb` | Headless AVD pool lifecycle; wireless ADB pairing |
+| `/terminal` | Workspace PTY terminal with server-side session persistence |
+| `/emulator` · `/adb` | Headless multi-slot AVD pool lifecycle; wireless ADB pairing |
 | `/settings…` · `/devices` · `/password` · `/2fa` · `/webauthn` | Operations & security |
 | `/metrics` | Prometheus exposition |
 
 Full route table: [GitHub README](https://github.com/siamakerlab/vibe-coder-server#web-routes).
 
 
-## JSON API (v1.135.0 — for clients)
+## JSON API (v1.160.1 — for clients)
 
 Full reference + curl examples in the
 [REST API Reference](https://github.com/siamakerlab/vibe-coder-server/wiki/REST-API-Reference)
@@ -294,8 +304,11 @@ Highlights:
 - `GET/POST /api/projects…` — register (clone / template / `projectType`), rename, reorder, archive
 - `POST /api/projects/{id}/build/{debug|release|bundle}`, builds list / cancel, artifact download, `play-upload`
 - `POST /api/projects/{id}/claude/console/{prompt|new|cancel|interrupt}` (+ image attachments), `GET …/claude/status`
+- `GET/POST /api/projects/{id}/agent/provider` — read/change Claude/Codex/OpenCode provider
 - `…/claude/automation/{start|stop}` + presets; `…/claude/schedule` (one-shot scheduled prompts)
 - `GET /api/projects/{id}/history`, `/api/history/search`, `/api/usage`, quality lint/fix, prompt suggestions
+- `GET /api/server/{quota|codex-quota|opencode-quota|glm-quota}` — provider usage snapshots
+- `GET /api/terminal/sessions`, `WS /ws/terminal/{id}` — workspace terminal sessions
 - `GET /api/env-setup/components`, MCP install / unregister, Claude auth upload / api-key / web OAuth
 - WebSocket: `/ws/projects/{id}/console/logs`, `/ws/builds/{buildId}/logs`, `/ws/env-setup/{taskId}/logs`
 
@@ -360,7 +373,8 @@ Full troubleshooting catalog:
 - 10 failed logins → 15-min account lock (timing-safe).
 - All disk operations validated by `PathSafety` (no `..` escape from
   workspace).
-- No raw shell endpoint; no web terminal emulator.
+- No raw host shell endpoint. The optional web terminal is a container PTY
+  gated by authentication and `security.allowTerminal`.
 
 Full model: <https://github.com/siamakerlab/vibe-coder-server/wiki/Security-Model>
 

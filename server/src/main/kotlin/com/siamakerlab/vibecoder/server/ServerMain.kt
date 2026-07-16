@@ -319,7 +319,7 @@ fun main(args: Array<String>) {
     val pluginService = com.siamakerlab.vibecoder.server.env.PluginService(clock, queue, hub)
     val status = StatusService(config, projectRepo, buildRepo, env)
     val actionRegistry = ProjectActionRegistry(workspace)
-    val actionHandler = ServerActionHandler(projects, build, git, hub, sessionManager)
+    val actionHandler = ServerActionHandler(projects, build, git, hub, agentRouter)
     val capabilityService = CapabilityService(env, actionRegistry)
     val claudeStatusService = ClaudeStatusService(config, workspace, sessionManager)
     // v0.21.0 — usage 백그라운드 폴링 + 임계치 알림.
@@ -364,12 +364,12 @@ fun main(args: Array<String>) {
     // v0.22.0 — Play Console 업로드 트리거 (MCP google-play-publisher 위임).
     val playPublishService = com.siamakerlab.vibecoder.server.publish.PlayPublishService(
         mcpService = mcp,
-        sessionManager = sessionManager,
+        agentRouter = agentRouter,
     )
     // v0.23.0 — TestFlight 업로드 트리거 (MCP app-store-connect 위임).
     val testFlightPublishService = com.siamakerlab.vibecoder.server.publish.TestFlightPublishService(
         mcpService = mcp,
-        sessionManager = sessionManager,
+        agentRouter = agentRouter,
     )
     // v0.28.0 — APK 서명 검사 + 빌드 캐시 관리.
     val apkSignerInspector = com.siamakerlab.vibecoder.server.artifacts.ApkSignerInspector()

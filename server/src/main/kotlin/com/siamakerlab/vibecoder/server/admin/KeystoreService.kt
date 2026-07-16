@@ -18,30 +18,31 @@ private const val MAX_KEYSTORE_BYTES = 256 * 1024
 
 /**
  * v1.102.0 — [KeystoreService.stageUploaded] 결과. 서버는 최종 배치를 직접 하지 않고
- * staging 디렉토리에 규약 파일명으로만 저장한 뒤, Claude 콘솔 프롬프트가 이동배치한다.
- * [stagingDir] = staging 절대경로, [releaseFile]/[debugFile]/[propertiesFile] = 저장된
- * 규약 파일명(없으면 null).
+ * staging 디렉토리에 규약 파일명으로만 저장한 뒤, 선택된 콘솔 provider 프롬프트가 이동배치한다.
+ * [stagingDir] = staging 절대경로, [releaseFile]/[debugFile]/[propertiesFile]/
+ * [debugPropertiesFile] = 저장된 규약 파일명(없으면 null).
  */
 data class KeystoreStageResult(
     val stagingDir: Path,
     val releaseFile: String?,
     val debugFile: String?,
     val propertiesFile: String?,
+    val debugPropertiesFile: String?,
 ) {
-    val stagedAny: Boolean get() = releaseFile != null || debugFile != null || propertiesFile != null
-    val stagedNames: List<String> get() = listOfNotNull(releaseFile, debugFile, propertiesFile)
+    val stagedAny: Boolean get() = stagedNames.isNotEmpty()
+    val stagedNames: List<String> get() = listOfNotNull(releaseFile, debugFile, propertiesFile, debugPropertiesFile)
 }
 
 /**
  * v1.5.0 — Android 앱 키스토어 관리.
  *
  * 디렉토리: [keystoreDir] (기본 `/home/vibe/keystores`). 패키지명 prefix 의 4개
- * 파일 set 으로 관리:
- *  - `<pkg>.keystore`            — 릴리즈 (PKCS12, RSA 4096, validity N년)
- *  - `<pkg>-debug.keystore`      — 디버그 (동일 정보 + alias suffix `-debug`)
- *  - `<pkg>-keystore.properties` — Gradle signing config 파일 (storeFile /
- *                                  storePassword / keyAlias / keyPassword)
- *  - `<pkg>-admob.properties`    — AdMob IDs (선택)
+ * 서명 파일 set 으로 관리하고, AdMob properties 는 선택 파일로 별도 관리한다:
+ *  - `<pkg>.keystore`                  — 릴리즈 (PKCS12, RSA 4096, validity N년)
+ *  - `<pkg>-debug.keystore`            — 디버그 (동일 정보 + alias suffix `-debug`)
+ *  - `<pkg>-keystore.properties`       — release Gradle signing config
+ *  - `<pkg>-debug-keystore.properties` — debug Gradle signing config
+ *  - `<pkg>-admob.properties`          — AdMob IDs (선택)
  *
  * keytool 호출은 비동기 / sync 양쪽 가능하나 본 service 는 sync (Ktor route
  * handler 가 IO dispatcher 안에서 호출). 100년 validity 가 기본 (v1.54.2) —
@@ -96,7 +97,7 @@ class KeystoreService(
     /** Host path of `<pkg>.keystore` (always under [keystoreDir]) — for build.gradle.kts inline reference. */
     fun storeFilePath(packageName: String): Path = keystoreDir.resolve("$packageName.keystore")
 
-    /** Host path of `<pkg>-keystore.properties` — Claude prompt 에 절대경로로 노출. */
+    /** Host path of `<pkg>-keystore.properties` — 콘솔 적용 prompt 에 절대경로로 노출. */
     fun propertiesPath(packageName: String): Path = keystoreDir.resolve("$packageName-keystore.properties")
 
     /**
@@ -546,25 +547,26 @@ class KeystoreService(
     /**
      * v1.102.0 — 사용자가 업로드한 키스토어 파일을 **staging 디렉토리에 규약 파일명으로** 저장.
      *
-     * 서버는 최종 위치([keystoreDir])로 직접 배치하지 않는다 — 대신 Claude 콘솔 프롬프트
+     * 서버는 최종 위치([keystoreDir])로 직접 배치하지 않는다 — 대신 콘솔 provider 프롬프트
      * ([buildKeystorePlacementPrompt])가 mv(기존 파일 백업 포함) + build.gradle.kts 서명
-     * 적용 + staging 정리를 한 turn 에 수행한다(사용자 요청 — 이동배치를 Claude 에 위임).
+     * 적용 + staging 정리를 한 turn 에 수행한다(사용자 요청 — 이동배치를 콘솔 provider 에 위임).
      *
-     * release/debug/properties 각각 선택적이되 최소 1개. keystore 바이트는 PKCS12/JKS
-     * 매직 + 256KB 1차 검증. properties 는 storePassword/keyAlias/keyPassword 추출 +
-     * `storeFile` 을 서버 표준 경로로 강제 정규화(업로드된 로컬 경로 무효화). 같은 패키지의
-     * 이전 staging 잔재는 비우고 새로 만든다.
+     * release/debug/release properties/debug properties 각각 선택적이되 최소 1개.
+     * keystore 바이트는 PKCS12/JKS 매직 + 256KB 1차 검증. properties 는
+     * storePassword/keyAlias/keyPassword 추출 + `storeFile` 을 서버 표준 경로로 강제
+     * 정규화(업로드된 로컬 경로 무효화). 같은 패키지의 이전 staging 잔재는 비우고 새로 만든다.
      */
     fun stageUploaded(
         packageName: String,
         releaseBytes: ByteArray?,
         debugBytes: ByteArray?,
         propertiesText: String?,
+        debugPropertiesText: String?,
     ): KeystoreStageResult {
         if (!packageNameRegex.matches(packageName)) {
             throw IllegalArgumentException("invalid_package_name: $packageName")
         }
-        if (releaseBytes == null && debugBytes == null && propertiesText.isNullOrBlank()) {
+        if (releaseBytes == null && debugBytes == null && propertiesText.isNullOrBlank() && debugPropertiesText.isNullOrBlank()) {
             throw IllegalArgumentException("no_files")
         }
         val staging = stagingDir(packageName)
@@ -584,20 +586,22 @@ class KeystoreService(
 
         val releaseFile = releaseBytes?.let { stageKeystore(it, "$packageName.keystore") }
         val debugFile = debugBytes?.let { stageKeystore(it, "$packageName-debug.keystore") }
-        var propertiesFile: String? = null
-        if (!propertiesText.isNullOrBlank()) {
-            val normalized = normalizeUploadedProperties(packageName, propertiesText)
-            val name = "$packageName-keystore.properties"
+        fun stageProperties(text: String, debug: Boolean): String {
+            val normalized = normalizeUploadedProperties(packageName, text, debug)
+            val name = if (debug) "$packageName-debug-keystore.properties" else "$packageName-keystore.properties"
             val f = staging.resolve(name)
             Files.writeString(f, normalized)
             runCatching { setPerm(f, "rw-------") }
-            propertiesFile = name
+            return name
         }
+        val propertiesFile = propertiesText?.takeIf { it.isNotBlank() }?.let { stageProperties(it, debug = false) }
+        val debugPropertiesFile = debugPropertiesText?.takeIf { it.isNotBlank() }?.let { stageProperties(it, debug = true) }
         log.info {
             "Keystore staged: $packageName at $staging " +
-                "(release=${releaseFile != null} debug=${debugFile != null} props=${propertiesFile != null})"
+                "(release=${releaseFile != null} debug=${debugFile != null} " +
+                "props=${propertiesFile != null} debugProps=${debugPropertiesFile != null})"
         }
-        return KeystoreStageResult(staging, releaseFile, debugFile, propertiesFile)
+        return KeystoreStageResult(staging, releaseFile, debugFile, propertiesFile, debugPropertiesFile)
     }
 
     /** PKCS12(DER SEQUENCE 0x30) 또는 JKS(magic 0xFEEDFEED) 매직 + 크기 1차 검증. */
@@ -615,7 +619,7 @@ class KeystoreService(
      * 업로드된 properties 에서 storePassword/keyAlias/keyPassword 를 추출하고 storeFile 을
      * 서버 표준 경로로 강제 재작성. create() 와 동일한 raw `key=value` 라인 형식(escape 안 함).
      */
-    private fun normalizeUploadedProperties(packageName: String, text: String): String {
+    private fun normalizeUploadedProperties(packageName: String, text: String, debug: Boolean): String {
         val map = text.lineSequence()
             .map { it.trim() }
             .filter { it.isNotEmpty() && !it.startsWith("#") && it.contains('=') }
@@ -631,7 +635,8 @@ class KeystoreService(
         }
         return buildString {
             appendLine("# v1.101.0 — uploaded via vibe-coder-server (storeFile normalized to host path)")
-            appendLine("storeFile=/home/vibe/keystores/$packageName.keystore")
+            val fileName = if (debug) "$packageName-debug.keystore" else "$packageName.keystore"
+            appendLine("storeFile=/home/vibe/keystores/$fileName")
             appendLine("storePassword=$storePassword")
             appendLine("keyAlias=$keyAlias")
             appendLine("keyPassword=$keyPassword")
@@ -685,7 +690,7 @@ class KeystoreService(
         runCatching { setPerm(lastInputFile, "rw-------") }
     }
 
-    /** 전체 set 삭제 — release / debug / properties / admob 모두. */
+    /** 전체 set 삭제 — release/debug keystore, release/debug properties, admob 모두. */
     fun delete(packageName: String) {
         if (!packageNameRegex.matches(packageName)) {
             throw IllegalArgumentException("invalid_package_name")
@@ -818,7 +823,7 @@ data class KeystoreFingerprints(
  * v1.8.0 — Gradle `android.injected.signing.*` inject 용 자격증명 + 원본 properties 경로.
  *
  * 호출자(BuildService)는 storePassword / keyPassword 가 log / CLI command line 에
- * echo 되지 않게 redact 책임. [propertiesFile] 은 Phase 2 (Claude 콘솔 prompt)에서
+ * echo 되지 않게 redact 책임. [propertiesFile] 은 Phase 2 (콘솔 provider prompt)에서
  * build.gradle.kts 영구 수정 안내용으로 참조.
  */
 data class SigningCredentials(

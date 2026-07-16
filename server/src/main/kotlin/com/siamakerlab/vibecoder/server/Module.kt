@@ -440,7 +440,7 @@ fun Application.module(ctx: ServerContext) {
         systemStatsRoutes(com.siamakerlab.vibecoder.server.metrics.SystemStatsService())
         // v1.5.0 — Android 키스토어 관리 (설정 → Keystores).
         // v1.8.0 — 같은 service 인스턴스를 BuildService 도 공유 (Gradle signing inject).
-        keystoreRoutes(adminDeps, ctx.keystoreService, ctx.projectRepo, ctx.sessionManager)
+        keystoreRoutes(adminDeps, ctx.keystoreService, ctx.projectRepo, ctx.agentRouter)
         // v1.6.0 — Workspace terminal (security.allowTerminal=true 일 때만 등록).
         // v1.27.0 — 글로벌 사이드바 메뉴 (/terminal) 로 이전. manager 는 ServerMain
         // 에서 hoist + ApplicationStopping 후크로 graceful 종료. admin role 가드 +
@@ -527,20 +527,20 @@ fun Application.module(ctx: ServerContext) {
         // v1.93.0 — 프로젝트 키스토어 탭 (키스토어/AdMob/ SHA 지문). 전역 페이지와 같은
         // KeystoreService 인스턴스 공유 — 빌드 서명 inject 와 SSOT.
         projectKeystoreRoutes(
-            adminDeps, ctx.projects, ctx.keystoreService, ctx.sessionManager,
+            adminDeps, ctx.projects, ctx.keystoreService, ctx.agentRouter,
             ctx.buildRepo, ctx.promptAutomationManager,
         )
         // v1.65.0 — 스토어 자산(앱 아이콘/그래픽/스크린샷) 탭.
-        projectAssetsRoutes(adminDeps, ctx.projects, ctx.workspace, ctx.sessionManager, ctx.playPublishService)
+        projectAssetsRoutes(adminDeps, ctx.projects, ctx.workspace, ctx.agentRouter, ctx.playPublishService)
         projectAgentRoutes(adminDeps, ctx.projects, ctx.workspace, ctx.agentRegistry)
         projectMcpRoutes(adminDeps, ctx.projects, ctx.workspace, ctx.mcp)
         projectSkillRoutes(adminDeps, ctx.projects, ctx.workspace, globalSkillRegistry)
         projectPluginRoutes(adminDeps, ctx.projects, ctx.workspace, ctx.plugins)
         dependencyAuditRoutes(adminDeps, ctx.projects, ctx.dependencyAudit)
         // v1.116.0 — 품질/접근성 검사 (Android Lint) + 인스트루먼트 테스트(에뮬레이터) + 콘솔 전송.
-        qualityRoutes(adminDeps, ctx.projects, ctx.lintQuality, ctx.instrumentedTest, ctx.sessionManager)
+        qualityRoutes(adminDeps, ctx.projects, ctx.lintQuality, ctx.instrumentedTest, ctx.agentRouter)
         // v1.119.0 — 품질(Lint) JSON API (Bearer, android `/quality`). 인스트루먼트 테스트(에뮬레이터) 제외.
-        jsonQualityRoutes(ctx.projects, ctx.lintQuality, ctx.sessionManager)
+        jsonQualityRoutes(ctx.projects, ctx.lintQuality, ctx.agentRouter)
         logSearchRoutes(adminDeps, ctx.logSearchService)
         // v0.33.0 — Cron 빌드 + webhook trigger.
         buildAutomationRoutes(

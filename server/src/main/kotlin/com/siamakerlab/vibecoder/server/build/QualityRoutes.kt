@@ -8,7 +8,7 @@ import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireWriteAccessOrRedirect
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens.requireCsrf
-import com.siamakerlab.vibecoder.server.claude.ClaudeSessionManager
+import com.siamakerlab.vibecoder.server.agent.AgentRouter
 import com.siamakerlab.vibecoder.server.projects.ProjectService
 import io.ktor.http.ContentType
 import io.ktor.server.application.call
@@ -29,7 +29,7 @@ import io.ktor.server.routing.post
  *  - GET  ?itest=1 → 인스트루먼트 테스트 실행 + 결과 SSR.
  *  - POST          → run=1 redirect (lint, write 권한).
  *  - POST /run-tests → itest=1 redirect (인스트루먼트, write 권한).
- *  - POST /fix     → 선택 항목(lint 이슈 또는 실패 테스트)을 콘솔(Claude 세션)로 전송.
+ *  - POST /fix     → 선택 항목(lint 이슈 또는 실패 테스트)을 현재 콘솔 provider 로 전송.
  *
  * 캐싱: 호출당 새로 실행(stale 결과 혼동 방지).
  */
@@ -38,7 +38,7 @@ fun Routing.qualityRoutes(
     projects: ProjectService,
     svc: LintQualityService,
     itestSvc: InstrumentedTestService,
-    sessionManager: ClaudeSessionManager,
+    agentRouter: AgentRouter,
 ) {
     get("/projects/{id}/quality") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
@@ -90,7 +90,7 @@ fun Routing.qualityRoutes(
         call.respondRedirect("/projects/$id/quality?module=$moduleName&itest=1")
     }
 
-    // 테스트 사전 준비작업(androidTest 인프라 주입) → 콘솔(Claude 세션)로 요청.
+    // 테스트 사전 준비작업(androidTest 인프라 주입) → 현재 콘솔 provider 로 요청.
     post("/projects/{id}/quality/prepare") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireWriteAccessOrRedirect(sess)) return@post
@@ -100,7 +100,7 @@ fun Routing.qualityRoutes(
         val moduleName = safeModule(form["module"], "app")
         val prep = runCatching { itestSvc.inspectPrep(id, moduleName) }.getOrNull()
         val prompt = buildPrepPrompt(moduleName, prep)
-        val ok = runCatching { sessionManager.sendPrompt(id, prompt) }.isSuccess
+        val ok = runCatching { agentRouter.sendPrompt(id, prompt) }.isSuccess
         if (!ok) {
             call.respondRedirect("/projects/$id/quality?module=$moduleName&itest=1&err=${enc("콘솔 전송에 실패했습니다.")}")
             return@post
@@ -108,7 +108,7 @@ fun Routing.qualityRoutes(
         call.respondRedirect("/projects/$id/quality?module=$moduleName&itest=1&prepared=1")
     }
 
-    // 선택 항목(lint 이슈 또는 실패 테스트) → 콘솔(Claude 세션)로 수정요청 전송.
+    // 선택 항목(lint 이슈 또는 실패 테스트) → 현재 콘솔 provider 로 수정요청 전송.
     post("/projects/{id}/quality/fix") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireWriteAccessOrRedirect(sess)) return@post
@@ -125,7 +125,7 @@ fun Routing.qualityRoutes(
         }
         val prompt = if (kind == "test") buildTestFixPrompt(moduleName, selected)
                      else buildLintFixPrompt(moduleName, selected)
-        val ok = runCatching { sessionManager.sendPrompt(id, prompt) }.isSuccess
+        val ok = runCatching { agentRouter.sendPrompt(id, prompt) }.isSuccess
         if (!ok) {
             call.respondRedirect("/projects/$id/quality?module=$moduleName&$backFlag&err=${enc("콘솔 전송에 실패했습니다.")}")
             return@post
@@ -189,7 +189,7 @@ $list
 """.trim() + omittedNote(omitted)
 }
 
-/** 인스트루먼트 테스트 사전 준비작업 → Claude 에게 보낼 환경 구성 프롬프트. */
+/** 인스트루먼트 테스트 사전 준비작업 → 현재 콘솔 provider 에 보낼 환경 구성 프롬프트. */
 private fun buildPrepPrompt(moduleName: String, prep: InstrumentedTestService.PrepStatus?): String {
     fun mark(b: Boolean?) = when (b) { true -> "이미 있음"; false -> "없음 — 추가 필요"; null -> "확인 불가" }
     val status = if (prep == null || !prep.inspectable) "현재 상태: 모듈($moduleName) 빌드 파일을 찾지 못했습니다. 모듈명을 먼저 확인해 주세요." else """
@@ -285,7 +285,7 @@ private object QualityTemplates {
     ): String {
         val flashHtml = buildString {
             if (prepared) {
-                append("""<div class="ok-banner">✓ 테스트 환경 준비작업을 콘솔로 요청했습니다. <b>콘솔</b> 탭에서 Claude 가 androidTest 구성을 완료하면 이 화면을 새로고침하세요.</div>""")
+                append("""<div class="ok-banner">✓ 테스트 환경 준비작업을 콘솔로 요청했습니다. <b>콘솔</b> 탭에서 provider 가 androidTest 구성을 완료하면 이 화면을 새로고침하세요.</div>""")
             }
             if (fixed != null && fixed > 0) {
                 append("""<div class="ok-banner">✓ ${fixed}개 항목을 콘솔로 전송했습니다. <b>콘솔</b> 탭에서 진행 상황을 확인하세요.</div>""")
@@ -485,7 +485,7 @@ $commonStyleAndScript
     ${CsrfTokens.hiddenInput(csrf)}
     <input type="hidden" name="module" value="${esc(moduleName)}">
     <button type="submit" class="ghost">$btnLabel</button>
-    <span class="dim" style="font-size:11px;margin-left:6px">Claude 가 androidTest 의존성·러너·AccessibilityChecks 샘플 테스트를 구성합니다.</span>
+    <span class="dim" style="font-size:11px;margin-left:6px">현재 콘솔 provider 가 androidTest 의존성·러너·AccessibilityChecks 샘플 테스트를 구성합니다.</span>
   </form>
 </div>
 """

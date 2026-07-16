@@ -713,7 +713,7 @@ class CodexSessionManager(
         // v1.156.1 — putIfAbsent → put 강제 설정 (컨테이너 HOME=/root 회피).
         pb.environment()["HOME"] = "/home/vibe"
         pb.environment()["XDG_CONFIG_HOME"] = "/home/vibe/.config"
-        pb.environment()["CODEX_HOME"] = "/home/vibe/.config/codex"
+        pb.environment()["CODEX_HOME"] = "/home/vibe/.codex"
     }
 
     companion object {
@@ -761,5 +761,6 @@ internal fun buildCodexExecArgs(
         if (threadId != null) {
             add("resume"); add(threadId)
         }
+        add("--")
         add(text)
     }

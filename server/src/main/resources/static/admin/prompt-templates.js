@@ -73,7 +73,12 @@
 
   function insertBody(body) {
     var input = inputEl();
-    if (!input) return;
+    if (!input) {
+      if (typeof window.PromptTemplatesInsert === 'function') {
+        window.PromptTemplatesInsert(body);
+      }
+      return;
+    }
     if (input.value && input.value.trim().length > 0) {
       input.value = input.value.replace(/\s+$/, '') + '\n\n' + body;
     } else {

@@ -73,7 +73,7 @@ services:
       # (Asia/Seoul)") 과 server-side timestamp / DB UTC 변환 일관성 유지.
       JAVA_OPTS: ${JAVA_OPTS:--Xmx2g -XX:+UseG1GC -Dfile.encoding=UTF-8 -Duser.timezone=${TZ:-Asia/Seoul}}
 
-      # 첫 실행 시 admin 자동 생성 (선택). 미지정 시 /admin/setup 화면.
+      # 첫 실행 시 admin 자동 생성 (선택). 미지정 시 /setup 화면.
       VIBECODER_ADMIN_USERNAME: ${VIBECODER_ADMIN_USERNAME:-}
       VIBECODER_ADMIN_PASSWORD: ${VIBECODER_ADMIN_PASSWORD:-}
 
@@ -149,8 +149,11 @@ services:
       - ${VIBE_DATA_ROOT:-./vibe-coder-data}/dev-tools/npm-cache:/home/vibe/.npm
       # Playwright 브라우저 (Playwright MCP 사용 시 ~300MB)
       - ${VIBE_DATA_ROOT:-./vibe-coder-data}/dev-tools/playwright:/home/vibe/.cache/ms-playwright
-      # 기타 도구 설정 (claude-code, npm config 등)
+      # 기타 도구 설정 (opencode config, npm config 등)
       - ${VIBE_DATA_ROOT:-./vibe-coder-data}/dev-tools/config:/home/vibe/.config
+      # Codex CLI config/auth/logs. v1.161.0+ uses the native ~/.codex path
+      # and migrates older /home/vibe/.config/codex state on first boot.
+      - ${VIBE_DATA_ROOT:-./vibe-coder-data}/dev-tools/codex:/home/vibe/.codex
       # v1.2.0 — SSH 키 (vibe-coder 가 git clone/push 시 사용). 첫 부팅 시
       # entrypoint 가 ED25519 키쌍 자동 생성. 이미 있으면 절대 덮어쓰지 않음 →
       # 서버 업데이트 시 동일 키 유지. 설정 → SSH Key 에서 공개키 복사.

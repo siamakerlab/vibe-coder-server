@@ -1,6 +1,6 @@
 package com.siamakerlab.vibecoder.server.admin
 
-import com.siamakerlab.vibecoder.server.claude.ClaudeSessionManager
+import com.siamakerlab.vibecoder.server.agent.AgentRouter
 import com.siamakerlab.vibecoder.server.config.KeystoreDefaults
 import com.siamakerlab.vibecoder.server.i18n.Messages
 import com.siamakerlab.vibecoder.server.repo.ProjectRepository
@@ -28,14 +28,14 @@ private fun String.enc(): String =
  *   GET  /settings/keystores                              — 목록 + create form
  *   POST /settings/keystores                              — 새 키스토어 set 생성
  *   POST /settings/keystores/{pkg}/delete                 — 키스토어 set 삭제
- *   POST /settings/keystores/{pkg}/apply/{projectId}      — v1.8.0 Claude 콘솔 prompt 로
+ *   POST /settings/keystores/{pkg}/apply/{projectId}      — v1.8.0 현재 콘솔 provider prompt 로
  *                                                            프로젝트 build.gradle.kts 자동 수정
  */
 fun Routing.keystoreRoutes(
     authDeps: AdminRoutesDeps,
     service: KeystoreService,
     projectRepo: ProjectRepository,
-    sessionManager: ClaudeSessionManager,
+    agentRouter: AgentRouter,
 ) {
     get("/settings/keystores") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
@@ -155,15 +155,15 @@ fun Routing.keystoreRoutes(
     }
 
     /**
-     * v1.8.0 — Phase 2: 프로젝트 build.gradle.kts 자동 수정 prompt 를 Claude 콘솔에 전송.
+     * v1.8.0 — Phase 2: 프로젝트 build.gradle.kts 자동 수정 prompt 를 현재 콘솔 provider 에 전송.
      *
      * 키스토어 set 이 존재하고 프로젝트가 존재하면, 정형화된 한국어 prompt 를
-     * [ClaudeSessionManager.sendPrompt] 으로 보내고 콘솔 페이지로 redirect.
-     * Claude 가 read/edit 도구로 build.gradle.kts 의 `signingConfigs.{debug,release}` 를
+     * [AgentRouter.sendPrompt] 으로 보내고 콘솔 페이지로 redirect.
+     * 선택된 provider 가 read/edit 도구로 build.gradle.kts 의 `signingConfigs.{debug,release}` 를
      * `/home/vibe/keystores/<pkg>-keystore.properties` 기반으로 영구 적용.
      *
      * 비밀번호는 prompt 본문에 절대 포함하지 않음 — properties 파일 경로만 전달.
-     * Claude 가 `Properties().load(FileInputStream(...))` 로 런타임에 읽도록 가이드.
+     * provider 가 `Properties().load(FileInputStream(...))` 로 런타임에 읽도록 가이드.
      */
     post("/settings/keystores/{pkg}/apply/{projectId}") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
@@ -190,21 +190,21 @@ fun Routing.keystoreRoutes(
 
         val prompt = buildApplySigningPrompt(project.id, project.moduleName, service, entry)
         val sent = runCatching {
-            sessionManager.sendPrompt(projectId, prompt)
+            agentRouter.sendPrompt(projectId, prompt)
         }.onFailure { log.warn(it) { "apply-signing prompt failed for $projectId / $pkg" } }
             .isSuccess
 
         if (sent) {
-            // 콘솔 페이지로 이동 — 사용자가 Claude 응답을 즉시 볼 수 있게.
+            // 콘솔 페이지로 이동 — 사용자가 선택 provider 응답을 즉시 볼 수 있게.
             call.respondRedirect("/projects/$projectId/console?flash=signing_applied:$pkg")
         } else {
-            call.respondRedirect("/settings/keystores?flash=err:claude_send_failed")
+            call.respondRedirect("/settings/keystores?flash=err:agent_send_failed")
         }
     }
 }
 
 /**
- * v1.8.0 — Claude 가 일관된 결과를 만들도록 정형화된 prompt.
+ * v1.8.0 — 선택된 console provider 가 일관된 결과를 만들도록 정형화된 prompt.
  *
  * 매개변수만 치환되고 본문은 고정 — 같은 (project, keystore) 조합엔 매번 같은
  * 지시가 전송됨. 비밀번호는 본문에 포함되지 않으며, properties 파일 경로 + 표준
@@ -312,7 +312,7 @@ $debugVariantLine
  * v1.102.0 — 업로드된 키스토어 staging 배치 + 서명 적용 프롬프트(한 turn 일괄).
  *
  * 서버는 파일을 [KeystoreStageResult.stagingDir] 에 규약 파일명으로만 저장했고, 이 프롬프트가
- * Claude 콘솔에게 (1) staging → 최종 키스토어 디렉토리로 이동(기존 파일 백업 포함),
+ * 선택된 콘솔 provider 에게 (1) staging → 최종 키스토어 디렉토리로 이동(기존 파일 백업 포함),
  * (2) staging 정리, (3) build.gradle.kts 서명 적용 을 한 번에 시킨다.
  */
 internal fun buildKeystorePlacementPrompt(
@@ -325,13 +325,18 @@ internal fun buildKeystorePlacementPrompt(
     val ksDir = service.keystoreDirPath()
     val staging = stage.stagingDir
     val finalProps = ksDir.resolve("$packageName-keystore.properties")
+    val finalDebugProps = ksDir.resolve("$packageName-debug-keystore.properties")
     val moves = stage.stagedNames.joinToString("\n") { name ->
         "   - \"$staging/$name\"  →  \"$ksDir/$name\""
     }
-    val signingStep = if (stage.propertiesFile != null || service.propertiesPath(packageName).let { java.nio.file.Files.exists(it) }) {
+    val hasReleaseProps = stage.propertiesFile != null || service.propertiesPath(packageName).let { java.nio.file.Files.exists(it) }
+    val hasDebugProps = stage.debugPropertiesFile != null || service.debugPropertiesPath(packageName).let { java.nio.file.Files.exists(it) }
+    val signingStep = if (hasReleaseProps || hasDebugProps) {
         """
-3) 서명 적용: `$moduleName/build.gradle.kts` 의 signingConfigs 를 properties 파일
-   `$finalProps` 로 적용 (storeFile / storePassword / keyAlias / keyPassword 4종 평문 포함).
+3) 서명 적용: `$moduleName/build.gradle.kts` 의 signingConfigs 를 properties 파일로 적용.
+   - release: `$finalProps`
+   - debug: `$finalDebugProps` 가 있으면 우선 사용하고, 없으면 release properties 로 fallback.
+   - properties 는 storeFile / storePassword / keyAlias / keyPassword 4종 평문 포함.
 
    - `android { ... }` 블록 위에 properties 로더 추가(이미 있으면 중복 방지):
 
@@ -342,6 +347,14 @@ internal fun buildKeystorePlacementPrompt(
      val signingPropsFile = file("$finalProps")
      val signingProps = Properties().apply {
          if (signingPropsFile.exists()) { FileInputStream(signingPropsFile).use { load(it) } }
+     }
+     val debugSigningPropsFile = file("$finalDebugProps")
+     val debugSigningProps = Properties().apply {
+         if (debugSigningPropsFile.exists()) {
+             FileInputStream(debugSigningPropsFile).use { load(it) }
+         } else if (signingPropsFile.exists()) {
+             putAll(signingProps)
+         }
      }
      ```
 
@@ -358,11 +371,11 @@ internal fun buildKeystorePlacementPrompt(
              }
          }
          getByName("debug") {
-             if (signingPropsFile.exists()) {
-                 storeFile = file(signingProps.getProperty("storeFile"))
-                 storePassword = signingProps.getProperty("storePassword")
-                 keyAlias = signingProps.getProperty("keyAlias")
-                 keyPassword = signingProps.getProperty("keyPassword")
+             if (debugSigningProps.isNotEmpty()) {
+                 storeFile = file(debugSigningProps.getProperty("storeFile"))
+                 storePassword = debugSigningProps.getProperty("storePassword")
+                 keyAlias = debugSigningProps.getProperty("keyAlias")
+                 keyPassword = debugSigningProps.getProperty("keyPassword")
              }
          }
      }

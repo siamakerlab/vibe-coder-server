@@ -1,6 +1,6 @@
 # vibe-coder-server 컨테이너 글로벌 규칙
 
-이 파일은 컨테이너 안의 `/home/vibe/.claude/CLAUDE.md` 로 마운트되어, 컨테이너에서 실행되는 Claude Code 및 Codex 등 AI 코딩 세션에 글로벌로 적용된다. Codex 는 `/home/vibe/.config/codex/AGENTS.md` symlink 를 통해 같은 내용을 읽는다. 호스트 경로는 `./vibe-coder-data/claude/CLAUDE.md`.
+이 파일은 컨테이너 안의 `/home/vibe/.claude/CLAUDE.md` 로 마운트되어, 컨테이너에서 실행되는 Claude Code 및 Codex 등 AI 코딩 세션에 글로벌로 적용된다. Codex 는 `/home/vibe/.codex/AGENTS.md` symlink 를 통해 같은 내용을 읽는다. 호스트 경로는 `./vibe-coder-data/claude/CLAUDE.md`.
 
 > 이 파일은 서버 최초 기동 시 자동 시드된 기본 템플릿이다. 자유롭게 수정해도 되며,
 > 한 번 존재하면 서버가 다시 덮어쓰지 않는다. (전역 AI 지침 탭: `/settings/claude-md`)

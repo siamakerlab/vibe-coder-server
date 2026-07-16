@@ -66,12 +66,15 @@ fi
 #   /home/vibe/.local                vibe 의 npm 글로벌 prefix (MCP 영구 설치)
 # v1.160.4 — /home/vibe/.opencode 추가. opencode CLI 설치(~188MB) 영속 볼륨인데 신규
 #   마운트라 호스트 디렉토리가 root 소유로 생성됨 → 이 chown 없으면 vibe 가 설치 못함.
+# v1.161.0 — /home/vibe/.codex 추가. CODEX_HOME 을 native ~/.codex 로 되돌리고 별도
+#   볼륨화했으므로 신규 호스트 디렉토리 권한을 정리한다.
 for dir in \
     /workspace \
     /data \
     /opt/android-sdk \
     /home/vibe/.gradle \
     /home/vibe/.claude \
+    /home/vibe/.codex \
     /home/vibe/.config \
     /home/vibe/.npm \
     /home/vibe/.cache \
@@ -86,11 +89,18 @@ for dir in \
     fi
 done
 
-# v1.145.1 — Codex CLI 로그인/사용량 캡처는 CODEX_HOME 아래에 auth/log/config 파일을 쓴다.
-# 과거에 root docker exec 또는 이전 이미지가 만든 /home/vibe/.config/codex 잔여물이 있으면
-# `codex login --device-auth` 가 log/auth 파일 생성에 실패하므로, 해당 하위 트리만 보정한다.
-CODEX_CFG_DIR="${CODEX_HOME:-/home/vibe/.config/codex}"
+# v1.161.0 — Codex CLI 로그인/사용량 캡처는 CODEX_HOME 아래에 auth/log/config 파일을 쓴다.
+# v1.145.0~v1.160.x 는 CODEX_HOME=/home/vibe/.config/codex 를 썼다. 새 native
+# ~/.codex 볼륨이 비어 있고 예전 state 가 남아 있으면 1회 복사해 로그인/설정을 보존한다.
+CODEX_CFG_DIR="${CODEX_HOME:-/home/vibe/.codex}"
+LEGACY_CODEX_CFG_DIR="/home/vibe/.config/codex"
 mkdir -p "$CODEX_CFG_DIR" 2>/dev/null || true
+if [[ "$CODEX_CFG_DIR" != "$LEGACY_CODEX_CFG_DIR" && -d "$LEGACY_CODEX_CFG_DIR" ]]; then
+    if [[ -z "$(find "$CODEX_CFG_DIR" -mindepth 1 -print -quit 2>/dev/null || true)" ]]; then
+        log "기존 Codex 설정 감지 — $LEGACY_CODEX_CFG_DIR → $CODEX_CFG_DIR 1회 복사"
+        cp -a "$LEGACY_CODEX_CFG_DIR"/. "$CODEX_CFG_DIR"/ 2>/dev/null || true
+    fi
+fi
 if [[ -d "$CODEX_CFG_DIR" ]]; then
     bad_codex_owner="$(find "$CODEX_CFG_DIR" -mindepth 0 ! -user vibe -print -quit 2>/dev/null || true)"
     if [[ -n "$bad_codex_owner" ]]; then
@@ -108,7 +118,7 @@ fi
 # AGENTS.md 를 CLAUDE.md 로 symlink 해서 두 provider 의 전역 규칙을 단일 파일로 관리한다.
 # 사용자가 이미 일반 파일로 AGENTS.md 를 직접 만들었다면 덮어쓰지 않는다.
 CODEX_AGENTS_FILE="$CODEX_CFG_DIR/AGENTS.md"
-SHARED_AI_INSTRUCTIONS="../../.claude/CLAUDE.md"
+SHARED_AI_INSTRUCTIONS="/home/vibe/.claude/CLAUDE.md"
 if [[ ! -e "$CODEX_AGENTS_FILE" || -L "$CODEX_AGENTS_FILE" ]]; then
     ln -sfn "$SHARED_AI_INSTRUCTIONS" "$CODEX_AGENTS_FILE" 2>/dev/null || true
     chown -h vibe:vibe "$CODEX_AGENTS_FILE" 2>/dev/null || true

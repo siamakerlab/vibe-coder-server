@@ -3,7 +3,7 @@
 #
 # vibe 사용자의 npm 글로벌 prefix(/home/vibe/.local — npm-global bind mount)에 설치되어
 # 이미지 업데이트(재배포) 후에도 보존된다 (gradle.sh / flutter.sh 와 동일한 .local 영속
-# 패턴). 로그인/설정은 CODEX_HOME(=/home/vibe/.config/codex, .config bind mount)에 저장
+# 패턴). 로그인/설정은 CODEX_HOME(=/home/vibe/.codex, codex bind mount)에 저장
 # 되므로 컨테이너 재생성·이미지 교체에도 로그인 상태가 유지된다.
 #
 # v1.145.0 — Codex CLI 지원 (옵션). "모두 설치"에는 포함하지 않고 개별 설치 카드로만 노출
@@ -25,7 +25,7 @@ install_codex() {
     fi
 
     # 로그인/설정 영속 디렉토리 보장 (.config bind mount 안). Dockerfile ENV 와 동일 경로.
-    : "${CODEX_HOME:=/home/vibe/.config/codex}"
+    : "${CODEX_HOME:=/home/vibe/.codex}"
     mkdir -p "$CODEX_HOME" 2>/dev/null || true
 
     # npm 글로벌 설치(vibe prefix=/home/vibe/.local). 신규 설치/업데이트 모두 같은 명령 — 멱등.
