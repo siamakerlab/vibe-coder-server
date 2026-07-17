@@ -520,12 +520,16 @@ class EmulatorService(
     }
 
     private fun buildSlots(defaultAvdName: String, defaultSystemImage: String, defaultDeviceProfile: String): List<EmulatorSlot> {
+        // v1.162.1 — deviceProfile 은 cmdline-tools(11076708)의 `avdmanager list device` id 여야 한다.
+        // pixel_6 / pixel_7_pro / pixel_tablet 은 유효하나 `pixel_fold` 는 이 SDK 에 없어(INVALID)
+        // AVD 생성이 실패→기본 프로파일 fallback(phone)로 잘못 만들어졌다. 유효한 fold device id
+        // ("7.6in Foldable" / "8in Foldable")로 교체 — 5개 슬롯 모두 정상 폼팩터 + google_apis.
         val profiles = listOf(
             EmulatorProfile("phone", "Phone", "phone", defaultAvdName, defaultSystemImage, defaultDeviceProfile),
             EmulatorProfile("phone-large", "Large phone", "phone", "vibe_phone_large_api35", defaultSystemImage, "pixel_7_pro"),
             EmulatorProfile("tablet", "Tablet", "tablet", "vibe_tablet_api35", defaultSystemImage, "pixel_tablet"),
-            EmulatorProfile("foldable", "Foldable", "foldable", "vibe_foldable_api35", defaultSystemImage, "pixel_fold"),
-            EmulatorProfile("fold7", "Foldable wide", "foldable", "vibe_fold7_api35", defaultSystemImage, "pixel_fold"),
+            EmulatorProfile("foldable", "Foldable", "foldable", "vibe_foldable_api35", defaultSystemImage, "7.6in Foldable"),
+            EmulatorProfile("fold7", "Foldable wide", "foldable", "vibe_fold7_api35", defaultSystemImage, "8in Foldable"),
         )
         return profiles.mapIndexed { idx, profile ->
             val port = 5554 + (idx * 2)
