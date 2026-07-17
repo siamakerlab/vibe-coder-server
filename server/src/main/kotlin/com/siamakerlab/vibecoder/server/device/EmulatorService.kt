@@ -27,7 +27,9 @@ private val log = KotlinLogging.logger {}
 class EmulatorService(
     private val adb: AdbService,
     val avdName: String = "vibe_pixel_api35",
-    val systemImage: String = "system-images;android-35;google_atd;x86_64",
+    // v1.162.0 — google_apis(하드웨어 렌더링 O)로 교체. 이전 google_atd 는 스크린샷/렌더링을
+    // 비활성화한 Automated Test Device 이미지라 adb screencap 이 검은 화면만 반환했다.
+    val systemImage: String = "system-images;android-35;google_apis;x86_64",
     private val deviceProfile: String = "pixel_6",
     private val workspace: WorkspacePath? = null,
 ) {
@@ -74,7 +76,7 @@ class EmulatorService(
         val label: String = "Phone",
         val kind: String = "phone",
         val avdName: String = "vibe_pixel_api35",
-        val systemImage: String = "system-images;android-35;google_atd;x86_64",
+        val systemImage: String = "system-images;android-35;google_apis;x86_64",
         val consolePort: Int = 5554,
         val leasedByProjectId: String? = null,
         val leaseExpiresAtIso: String? = null,
@@ -143,9 +145,11 @@ class EmulatorService(
     private fun systemImageDir(systemImage: String = this.systemImage): Path? =
         androidHome()?.resolve(systemImage.split(';').joinToString("/"))
 
+    // google_apis(렌더링 O) 우선. 구 설치에 google_atd 만 남아 있으면 최소 동작용으로 폴백
+    // (스크린샷은 안 되지만 logcat/설치는 가능) — 새 이미지를 받으면 자동으로 google_apis 로 승격된다.
     private fun effectiveSystemImage(slot: EmulatorSlot): String? =
         slot.profile.systemImage.takeIf { systemImageDir(it)?.let(Files::isDirectory) == true }
-            ?: LEGACY_GOOGLE_APIS_IMAGE.takeIf { systemImageDir(it)?.let(Files::isDirectory) == true }
+            ?: FALLBACK_ATD_IMAGE.takeIf { systemImageDir(it)?.let(Files::isDirectory) == true }
 
     private fun avdHome(): Path {
         System.getenv("ANDROID_AVD_HOME")?.ifBlank { null }?.let { return Path.of(it) }
@@ -356,10 +360,36 @@ class EmulatorService(
         return Files.isDirectory(home.resolve("$avdName.avd")) || Files.exists(home.resolve("$avdName.ini"))
     }
 
+    /**
+     * v1.162.0 — 기존 AVD 의 config.ini `image.sysdir.1` 이 현재 목표 시스템 이미지와 일치하는지.
+     * 불일치(예: 구 google_atd 로 만들어진 AVD)면 stale 로 보고 재생성해야 한다 — 안 그러면
+     * 이미지를 google_apis 로 바꿔도 옛 AVD 가 재사용돼 screencap 이 계속 검은 화면이 된다.
+     */
+    private fun avdImageMatches(slot: EmulatorSlot): Boolean {
+        val target = (effectiveSystemImage(slot) ?: slot.profile.systemImage).split(';').joinToString("/")
+        val config = avdHome().resolve("${slot.profile.avdName}.avd").resolve("config.ini")
+        if (!Files.isRegularFile(config)) return false
+        return runCatching {
+            Files.readAllLines(config).any { it.startsWith("image.sysdir.1=") && it.contains(target) }
+        }.getOrDefault(false)
+    }
+
+    private fun deleteAvd(avdName: String) {
+        runCatching {
+            val home = avdHome()
+            home.resolve("$avdName.avd").toFile().deleteRecursively()
+            Files.deleteIfExists(home.resolve("$avdName.ini"))
+        }.onFailure { log.warn(it) { "AVD 삭제 실패: $avdName" } }
+    }
+
     suspend fun ensureAvd(): Boolean = ensureAvd(defaultSlot())
 
     private suspend fun ensureAvd(slot: EmulatorSlot): Boolean = withContext(Dispatchers.IO) {
-        if (avdExists(slot.profile.avdName)) return@withContext true
+        if (avdExists(slot.profile.avdName)) {
+            if (avdImageMatches(slot)) return@withContext true
+            log.info { "AVD '${slot.profile.avdName}' 시스템 이미지 불일치 → 삭제 후 재생성 (렌더링 가능한 이미지로 승격)" }
+            deleteAvd(slot.profile.avdName)
+        }
         val avdm = avdmanagerBin() ?: return@withContext false
         val image = effectiveSystemImage(slot) ?: slot.profile.systemImage
         val args = listOf(
@@ -520,6 +550,7 @@ class EmulatorService(
         const val LEASE_TTL_SECONDS = 4 * 60 * 60L
         const val BOOTED_TTL_MS = 4000L
         const val SERIAL_TTL_MS = 4000L
-        const val LEGACY_GOOGLE_APIS_IMAGE = "system-images;android-35;google_apis;x86_64"
+        // 구 설치 잔존 폴백(스크린샷 미지원 이미지). 기본은 google_apis(위 systemImage).
+        const val FALLBACK_ATD_IMAGE = "system-images;android-35;google_atd;x86_64"
     }
 }

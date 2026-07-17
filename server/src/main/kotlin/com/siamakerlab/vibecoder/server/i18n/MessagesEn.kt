@@ -925,7 +925,7 @@ internal object MessagesEn {
         "env.action.platformToolsNote" to "Included in the Android SDK install. Use the install button on the \"Android SDK\" card above.",
         // v1.73.0 — Android emulator (headless, for Claude Code log analysis)
         "env.comp.androidEmulator.name" to "Android Emulator",
-        "env.comp.androidEmulator.desc" to "Headless Android emulator + ATD system image (android-35 google_atd x86_64) so multiple projects can install APKs and read logcat without sharing one device. Installed together with the Android SDK (vibe-doctor android).",
+        "env.comp.androidEmulator.desc" to "Headless Android emulator + google_apis system image (android-35 google_apis x86_64). Hardware rendering is supported, so adb screencap / mobile-mcp screenshots actually capture the screen. Multiple projects can install APKs, read logcat, and review UI. Installed together with the Android SDK (vibe-doctor android).",
         "env.size.emulator" to "~1.5 GB (system image)",
         "env.action.emulatorLabel.installed" to "Reinstall / Update",
         "env.action.emulatorLabel.partial" to "Download System Image",

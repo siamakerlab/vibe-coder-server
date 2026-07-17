@@ -903,7 +903,7 @@ internal object MessagesKo {
         "env.action.platformToolsNote" to "Android SDK 설치에 포함됩니다. 위 \"Android SDK\" 카드의 설치 버튼을 사용하세요.",
         // v1.73.0 — 안드로이드 에뮬레이터(헤드리스, Claude Code 로그분석용)
         "env.comp.androidEmulator.name" to "안드로이드 에뮬레이터",
-        "env.comp.androidEmulator.desc" to "헤드리스 안드로이드 에뮬레이터 + ATD 시스템 이미지(android-35 google_atd x86_64). 여러 프로젝트가 APK 설치·logcat 분석에 나눠 사용할 수 있습니다. Android SDK 와 함께 설치(vibe-doctor android).",
+        "env.comp.androidEmulator.desc" to "헤드리스 안드로이드 에뮬레이터 + google_apis 시스템 이미지(android-35 google_apis x86_64). 하드웨어 렌더링을 지원해 adb screencap·mobile-mcp 스크린샷으로 화면을 실제로 확인할 수 있습니다. 여러 프로젝트가 APK 설치·logcat 분석·화면 검토에 나눠 사용. Android SDK 와 함께 설치(vibe-doctor android).",
         "env.size.emulator" to "~1.5 GB (시스템 이미지)",
         "env.action.emulatorLabel.installed" to "재설치 / 업데이트",
         "env.action.emulatorLabel.partial" to "시스템 이미지 다운로드",

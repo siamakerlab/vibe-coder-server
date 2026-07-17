@@ -94,9 +94,10 @@ enum class SetupComponent(
         description = "env.comp.platformTools.desc",
         sizeHint = "env.size.platformTools",
     ),
-    // v1.73.0 — 안드로이드 에뮬레이터(헤드리스, Claude 로그분석용). doctorCmd="android" 재사용:
-    // manifest.yml 에 emulator + system-images;android-35;google_atd;x86_64 가 들어가 있어
+    // v1.73.0 — 안드로이드 에뮬레이터(헤드리스). doctorCmd="android" 재사용:
+    // manifest.yml 에 emulator + system-images;android-35;google_apis;x86_64 가 들어가 있어
     // `vibe-doctor android` 가 SDK 와 함께 설치한다. 실행/AVD 생성은 EmulatorService(/emulator).
+    // v1.162.0 — google_apis(렌더링 O)로 교체: adb screencap / mobile-mcp 스크린샷이 실제로 찍힌다.
     ANDROID_EMULATOR(
         id = "android-emulator",
         displayName = "env.comp.androidEmulator.name",
@@ -330,8 +331,9 @@ class EnvSetupService(
     private fun probeAndroidEmulator(c: SetupComponent, lang: String): ComponentState {
         val sdk = androidSdkRoot() ?: return ComponentState(c, ComponentStatus.MISSING, t(lang, "probe.androidSdk.notSet"))
         val emulatorBin = sdk.resolve("emulator/emulator")
-        val imageDir = sdk.resolve("system-images/android-35/google_atd/x86_64")
-        val legacyImageDir = sdk.resolve("system-images/android-35/google_apis/x86_64")
+        // v1.162.0 — google_apis(렌더링 O) 우선. 구 설치의 google_atd 도 최소 동작용으로 인정.
+        val imageDir = sdk.resolve("system-images/android-35/google_apis/x86_64")
+        val legacyImageDir = sdk.resolve("system-images/android-35/google_atd/x86_64")
         val hasEmu = emulatorBin.exists()
         val hasImg = (imageDir.exists() && Files.isDirectory(imageDir)) ||
             (legacyImageDir.exists() && Files.isDirectory(legacyImageDir))
