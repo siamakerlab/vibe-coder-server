@@ -1161,10 +1161,15 @@ body.console-page .console-log {
     body.console-keyboard .console-log-wrap {
         overflow: hidden;
     }
+    /* v1.161.2 — max-height 제약 제거: 부모 row(align-items:stretch) 의 우측 버튼 컬럼
+       (voice/image/interrupt/send)이 이미 입력 row 높이를 지배하므로, textarea 를 그 높이
+       (=전송 버튼 하단)까지 stretch 시켜도 로그 공간을 추가로 잠식하지 않는다(오히려 textarea
+       아래 낭비 공간 회수). v1.161.1 의 max-height:64px 가 textarea 를 버튼 2개(마이크+이미지)
+       높이에 clamp 해 "입력창이 반토막" 나던 문제를 회수. min-height 는 버튼 컬럼이 예외적으로
+       작을 때의 하한. */
     body.console-keyboard .prompt-form textarea {
         min-height: 44px;
-        /* v1.161.1 — 96→64: 좁은 세로에서 입력폼이 로그 공간을 과하게 잠식하지 않도록 축소. */
-        max-height: 64px;
+        max-height: none;
         resize: none;
     }
     /* v1.161.1 — 키보드 모드에선 입력창 아래 힌트 줄(전송/줄바꿈 안내)을 접어 로그 가시 공간 확보. */
