@@ -22,6 +22,7 @@ object IPhonePlatformEngine : ProjectPlatformEngine {
         showIosBuildSettings = true,
         showIosSimulator = true,
         showIPhoneQuickPrompts = true,
+        showIosBuildEnvLink = true,
     )
 
     override fun matchesProject(root: Path): Boolean = hasIPhoneProjectMarker(root)

@@ -198,6 +198,15 @@ For per-release history, see [CHANGELOG.md](CHANGELOG.md).
   registers its public key, and offers the private key for download —
   `ssh -i vibe-access -p <port> vibe@<host>`). The card shows the ready `ssh` command
   and the fingerprints of authorized keys.
+- **iPhone (macOS) build environment** — when the server runs on macOS (local install
+  or a remote Mac agent over SSH), `/env-setup` shows an **"iPhone (macOS)" section** with a
+  preflight summary (mode, Xcode version, `simctl`, iOS runtimes, signing identities) and
+  cards for **Xcode**, **Command Line Tools**, **iOS Simulator runtime**, **SwiftLint/SwiftFormat**,
+  and **CocoaPods**. Xcode/CLT/Simulator-runtime cannot be auto-installed (they show detection
+  status plus the App Store / `xcode-select --install` / `xcodebuild -downloadPlatform iOS`
+  command); only SwiftLint/SwiftFormat install automatically via Homebrew. On a Linux-only
+  server the section is collapsed and marked "Mac required" — project creation, AI console,
+  and file editing still work, but builds and Simulator need a Mac. Excluded from "Install all".
 - **Pre-installed image tooling** — the runtime image ships ImageMagick,
   Pillow (`python3-pil` + NumPy), `rsvg-convert`, `cwebp`/`dwebp`,
   `poppler-utils`, Ghostscript, and `optipng`/`pngquant`/`jpegoptim` so Claude

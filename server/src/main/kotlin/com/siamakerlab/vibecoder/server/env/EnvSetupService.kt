@@ -157,7 +157,52 @@ enum class SetupComponent(
         description = "env.comp.sshServer.desc",
         sizeHint = "env.size.sshServer",
     ),
+    // v1.164.0 (Phase 9) — iPhone(macOS) 빌드환경 컴포넌트. 모두 doctorCmd=null:
+    // Xcode/CLT/Simulator runtime 은 자동 설치 불가(App Store/xcode-select/xcodebuild -downloadPlatform)
+    // → info-only 감지 + 안내. SWIFT_TOOLS 만 Homebrew 로 자동 설치(IosSwiftToolsInstallService 재사용,
+    // vibe-doctor 가 아니라 spawnSwiftToolsInstall 경로). 진단은 IosEnvComponentService(preflight SSOT).
+    // doctorCmd=null 이라 "모두 설치"(install-all) 에서 자동 제외되고, Linux 단독에선 mac_required 로 비활성.
+    XCODE(
+        id = "xcode",
+        displayName = "env.comp.xcode.name",
+        doctorCmd = null,
+        description = "env.comp.xcode.desc",
+        sizeHint = "env.size.xcode",
+    ),
+    XCODE_CLT(
+        id = "xcode-clt",
+        displayName = "env.comp.xcodeClt.name",
+        doctorCmd = null,
+        description = "env.comp.xcodeClt.desc",
+        sizeHint = "env.size.xcodeClt",
+    ),
+    IOS_SIMULATOR_RUNTIME(
+        id = "ios-simulator-runtime",
+        displayName = "env.comp.iosSimRuntime.name",
+        doctorCmd = null,
+        description = "env.comp.iosSimRuntime.desc",
+        sizeHint = "env.size.iosSimRuntime",
+    ),
+    SWIFT_TOOLS(
+        id = "swift-tools",
+        displayName = "env.comp.swiftTools.name",
+        doctorCmd = null,
+        description = "env.comp.swiftTools.desc",
+        sizeHint = "env.size.swiftTools",
+    ),
+    COCOAPODS(
+        id = "cocoapods",
+        displayName = "env.comp.cocoapods.name",
+        doctorCmd = null,
+        description = "env.comp.cocoapods.desc",
+        sizeHint = "env.size.cocoapods",
+    ),
     ;
+
+    /** v1.164.0 (Phase 9) — iPhone(macOS) 계열 컴포넌트. 빌드환경 페이지에서 별도 섹션으로 렌더. */
+    val isIphone: Boolean
+        get() = this == XCODE || this == XCODE_CLT || this == IOS_SIMULATOR_RUNTIME ||
+            this == SWIFT_TOOLS || this == COCOAPODS
 
     companion object {
         fun byId(id: String): SetupComponent? = entries.firstOrNull { it.id == id }
@@ -226,6 +271,75 @@ class EnvSetupService(
         SetupComponent.CODEX -> probeCmd(c, listOf("codex", "--version"), lang)
         SetupComponent.OPENCODE -> probeCmd(c, listOf(resolveOpenCodeCmd(), "--version"), lang)
         SetupComponent.SSH_SERVER -> probeSshServer(c, lang)
+        SetupComponent.XCODE -> probeIphone(c, lang)
+        SetupComponent.XCODE_CLT -> probeIphone(c, lang)
+        SetupComponent.IOS_SIMULATOR_RUNTIME -> probeIphone(c, lang)
+        SetupComponent.SWIFT_TOOLS -> probeIphone(c, lang)
+        SetupComponent.COCOAPODS -> probeIphone(c, lang)
+    }
+
+    // ── iPhone(macOS) 빌드환경 컴포넌트 (v1.164.0 Phase 9) ─────────────────
+    //
+    // 진단은 IosEnvComponentService(ios 패키지)에 위임 — env 계층은 xcrun/xcodebuild/brew 를
+    // 직접 실행하지 않는다(ROADMAP §18.3). 스냅샷은 30초 캐시라 detectAll 의 5개 호출이 한 번만 spawn.
+
+    private val iosEnvComponentService by lazy {
+        com.siamakerlab.vibecoder.server.ios.IosEnvComponentService()
+    }
+    private val iosSwiftToolsService by lazy {
+        com.siamakerlab.vibecoder.server.ios.IosSwiftToolsInstallService()
+    }
+
+    /** 빌드환경 페이지가 preflight 배너/섹션 open 상태 판정에 쓰는 스냅샷. */
+    fun iosEnvSnapshot(): com.siamakerlab.vibecoder.server.ios.IosEnvSnapshot = iosEnvComponentService.snapshot()
+
+    private fun probeIphone(c: SetupComponent, lang: String): ComponentState {
+        val snap = iosEnvComponentService.snapshot()
+        // Linux 단독 / 비-Mac: 실행 자체가 불가 → UNKNOWN + "Mac 필요" 메시지(설치 버튼은 렌더 단계에서 숨김).
+        if (!snap.isMac) {
+            return ComponentState(c, ComponentStatus.UNKNOWN, t(lang, "probe.ios.macRequired"))
+        }
+        // 원격 Mac agent(mac_ssh)가 응답 안 함 / 백그라운드 갱신 중: 개별 컴포넌트를
+        // "미설치"로 오표시하지 않는다. 진단 확정 전까지 UNKNOWN.
+        if (snap.blockedReason == "agent_unreachable" || snap.blockedReason == "refreshing") {
+            val key = if (snap.blockedReason == "refreshing") "probe.ios.refreshing" else "probe.ios.agentUnreachable"
+            return ComponentState(c, ComponentStatus.UNKNOWN, t(lang, key))
+        }
+        return when (c) {
+            SetupComponent.XCODE ->
+                if (snap.xcodeAvailable) ComponentState(c, ComponentStatus.INSTALLED, snap.xcodeVersion ?: t(lang, "probe.ios.xcode.ok"))
+                else ComponentState(c, ComponentStatus.MISSING, t(lang, "probe.ios.xcode.missing"))
+            SetupComponent.XCODE_CLT ->
+                if (snap.commandLineToolsAvailable) {
+                    val key = if (snap.commandLineToolsFullXcode) "probe.ios.clt.viaXcode" else "probe.ios.clt.ok"
+                    ComponentState(c, ComponentStatus.INSTALLED, t(lang, key, snap.xcodeSelectPath ?: ""))
+                } else ComponentState(c, ComponentStatus.MISSING, t(lang, "probe.ios.clt.missing"))
+            SetupComponent.IOS_SIMULATOR_RUNTIME ->
+                when {
+                    snap.simulatorRuntimeAvailable ->
+                        ComponentState(c, ComponentStatus.INSTALLED, snap.iosRuntimes.joinToString(", ").ifBlank { t(lang, "probe.ios.simRuntime.ok") })
+                    snap.simctlAvailable ->
+                        ComponentState(c, ComponentStatus.PARTIAL, t(lang, "probe.ios.simRuntime.none"))
+                    else ->
+                        ComponentState(c, ComponentStatus.MISSING, t(lang, "probe.ios.simRuntime.missing"))
+                }
+            SetupComponent.SWIFT_TOOLS -> {
+                val lint = snap.swiftLintVersion
+                val fmt = snap.swiftFormatVersion
+                when {
+                    lint != null && fmt != null ->
+                        ComponentState(c, ComponentStatus.INSTALLED, t(lang, "probe.ios.swiftTools.ok", lint, fmt))
+                    lint != null || fmt != null ->
+                        ComponentState(c, ComponentStatus.PARTIAL, t(lang, "probe.ios.swiftTools.partial", lint ?: "-", fmt ?: "-"))
+                    else ->
+                        ComponentState(c, ComponentStatus.MISSING, t(lang, "probe.ios.swiftTools.missing"))
+                }
+            }
+            SetupComponent.COCOAPODS ->
+                if (snap.cocoapodsVersion != null) ComponentState(c, ComponentStatus.INSTALLED, t(lang, "probe.ios.cocoapods.ok", snap.cocoapodsVersion))
+                else ComponentState(c, ComponentStatus.MISSING, t(lang, "probe.ios.cocoapods.missing"))
+            else -> ComponentState(c, ComponentStatus.UNKNOWN, "")
+        }
     }
 
     private fun t(lang: String, key: String, vararg args: Any?): String =
@@ -535,6 +649,9 @@ class EnvSetupService(
      * @throws ApiException 자동 설치가 불가능한 컴포넌트 (예: CLAUDE_AUTH OAuth).
      */
     fun spawnInstall(c: SetupComponent): String {
+        // v1.164.0 (Phase 9) — SWIFT_TOOLS 는 vibe-doctor 서브커맨드가 아니라 Homebrew 경로.
+        // SSR 전용 라우트뿐 아니라 JSON API(/api/env-setup/{id}/install)로도 설치되도록 위임.
+        if (c == SetupComponent.SWIFT_TOOLS) return spawnSwiftToolsInstall()
         val subcmd = c.doctorCmd
             ?: throw ApiException.localized(400, "manual_install_only",
                 messageKey = "api.envSetup.manualInstallOnly", args = listOf(c.displayName))
@@ -557,6 +674,54 @@ class EnvSetupService(
         // 경계가 열리는 선택 기능이라 개별 카드로만 설치. 나머지 (android / gradle / mcp) 만.
         SetupComponent.entries.forEach { c -> if (c.doctorCmd != null && c != SetupComponent.FLUTTER && c != SetupComponent.CODEX && c != SetupComponent.OPENCODE && c != SetupComponent.SSH_SERVER) lastTask[c] = taskId }
         submitDoctor(taskId, label = "모두 설치/업데이트", steps = steps.map { it.second }, displaySteps = steps.map { it.first.displayName })
+        return taskId
+    }
+
+    /**
+     * v1.164.0 (Phase 9) — SwiftLint / SwiftFormat 설치. vibe-doctor 가 아니라
+     * [com.siamakerlab.vibecoder.server.ios.IosSwiftToolsInstallService] (Homebrew) 를 재사용한다.
+     * Mac 로컬(local) 또는 원격 Mac agent(ssh) 에서만 실제 설치되고, Linux 단독/Homebrew 미설치는
+     * blocked 로 보고한다. 결과는 task 로그로 스트리밍.
+     */
+    fun spawnSwiftToolsInstall(installSwiftLint: Boolean = true, installSwiftFormat: Boolean = true): String {
+        val taskId = Ids.taskId()
+        lastTask[SetupComponent.SWIFT_TOOLS] = taskId
+        queue.submit(
+            projectId = "env-setup",
+            taskId = taskId,
+            onStart = {
+                hub.publisher(taskId).emit(WsFrame.Log(taskId, "INFO", "▶ Swift 도구(SwiftLint/SwiftFormat) 설치 시작", clock.nowIso()))
+                hub.publisher(taskId).emit(WsFrame.Log(taskId, "INFO", "Homebrew 로 설치합니다. macOS(로컬 또는 원격 Mac agent) 에서만 동작합니다.", clock.nowIso()))
+            },
+            executor = { _ ->
+                withContext(Dispatchers.IO) {
+                    val result = iosSwiftToolsService.install(
+                        com.siamakerlab.vibecoder.shared.dto.IosSwiftToolsInstallRequestDto(
+                            installSwiftLint = installSwiftLint,
+                            installSwiftFormat = installSwiftFormat,
+                        ),
+                    )
+                    result.swiftLintVersion?.let { hub.publisher(taskId).emit(WsFrame.Log(taskId, "INFO", "SwiftLint: $it", clock.nowIso())) }
+                    result.swiftFormatVersion?.let { hub.publisher(taskId).emit(WsFrame.Log(taskId, "INFO", "SwiftFormat: $it", clock.nowIso())) }
+                    if (!result.ok) {
+                        val reason = result.blockedReason ?: "swift_tools_install_failed"
+                        val detail = result.message?.takeIf { it.isNotBlank() }?.let { " — $it" }.orEmpty()
+                        throw RuntimeException("swift_tools 설치 실패: $reason$detail")
+                    }
+                }
+            },
+            onSuccess = {
+                hub.publisher(taskId).emit(WsFrame.Log(taskId, "INFO", "✓ Swift 도구 설치 완료", clock.nowIso()))
+                hub.publisher(taskId).emit(WsFrame.Done(taskId, "SUCCESS"))
+            },
+            onFailure = { e ->
+                hub.publisher(taskId).emit(WsFrame.Log(taskId, "ERROR", "✗ Swift 도구 설치 실패: ${e.message}", clock.nowIso()))
+                hub.publisher(taskId).emit(WsFrame.Done(taskId, "FAILED", e.message))
+            },
+            onCancel = {
+                hub.publisher(taskId).emit(WsFrame.Done(taskId, "CANCELED"))
+            },
+        )
         return taskId
     }
 

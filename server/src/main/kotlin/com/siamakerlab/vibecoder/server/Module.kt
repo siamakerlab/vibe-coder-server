@@ -424,6 +424,7 @@ fun Application.installVibeCoderServer(ctx: ServerContext) {
             deviceRepo = ctx.deviceRepo,
             statusService = ctx.status,
             envDiagnostics = ctx.env,
+            envSetup = ctx.envSetup,
             audit = ctx.auditLogger,
             claudeUsageMonitor = ctx.claudeUsageMonitor,
             codexUsageMonitor = ctx.codexUsageMonitor,

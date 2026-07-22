@@ -74,10 +74,22 @@ fun Routing.envSetupRoutes(
                 sshCard = sshCard,
                 csrf = sess.csrf,
                 lang = sess.language,
+                iosEnv = runCatching { setupService.iosEnvSnapshot() }.getOrNull(),
                 embed = call.isEmbeddedRequest(),
             ),
             ContentType.Text.Html,
         )
+    }
+
+    // v1.164.0 (Phase 9) — SwiftLint/SwiftFormat 설치 (Homebrew, macOS 전용). vibe-doctor 가 아니라
+    // IosSwiftToolsInstallService 재사용 → spawnSwiftToolsInstall 이 task 로 감싸 로그 스트리밍.
+    post("/env-setup/swift-tools/install") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireAdminOrRedirect(sess)) return@post
+        requireCsrf()
+        val taskId = setupService.spawnSwiftToolsInstall()
+        log.info { "env-setup swift-tools install: $taskId by ${sess.username}" }
+        call.respondRedirect("/env-setup/tasks/$taskId")
     }
 
     // v1.9.0 — Git global identity 등록 / 갱신. 미설정 / 빈 입력 시 ApiException → flash err.

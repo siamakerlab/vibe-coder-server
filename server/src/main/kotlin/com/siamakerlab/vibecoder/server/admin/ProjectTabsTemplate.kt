@@ -360,6 +360,12 @@ internal object ProjectTabsTemplate {
       </div>
       $projectSettingsMenu
 	    </div>
+    ${if (caps.showIosBuildEnvLink) """
+    <div class="pt-rail-card" data-card="ios-build-env">
+      <div class="pt-rail-h">${esc(t("tabs.rail.iosEnv"))}</div>
+      <p class="dim" style="font-size:12px;margin:0 0 8px">${esc(t("tabs.rail.iosEnv.body"))}</p>
+      <a href="/env-setup#iphone" class="pt-ios-sim-btn">${esc(t("tabs.rail.iosEnv.link"))}</a>
+    </div>""" else ""}
     $iosBuildSettingsHtml
     $iosSigningStatusHtml
 	    $simulatorRailHtml

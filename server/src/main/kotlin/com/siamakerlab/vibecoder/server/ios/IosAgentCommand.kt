@@ -15,7 +15,12 @@ enum class IosAgentCommand(val argv: List<String>) {
     SIMULATOR_SDK_VERSION(listOf("xcrun", "--sdk", "iphonesimulator", "--show-sdk-version")),
     SIMULATOR_DEVICE_TYPES(listOf("xcrun", "simctl", "list", "devicetypes", "-j")),
     SIMULATOR_DEVICES(listOf("xcrun", "simctl", "list", "-j", "devices", "available")),
+    SIMULATOR_RUNTIMES(listOf("xcrun", "simctl", "list", "runtimes", "-j")),
     CODESIGNING_IDENTITIES(listOf("security", "find-identity", "-v", "-p", "codesigning")),
+    // v1.164.0 (Phase 9) — 빌드환경(/env-setup) iPhone 카드 감지용. 모두 read-only version probe.
+    SWIFTLINT_VERSION(listOf("swiftlint", "version")),
+    SWIFTFORMAT_VERSION(listOf("swiftformat", "--version")),
+    COCOAPODS_VERSION(listOf("pod", "--version")),
 }
 
 class IosAgentCommandRunner(

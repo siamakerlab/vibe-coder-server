@@ -915,6 +915,9 @@ $errHtml
           <input type="radio" name="projectType" value="iphone">
           <span><strong>${esc(t("projects.new.typeIphone"))}</strong>${esc(t("projects.new.typeIphoneDesc"))}</span>
         </label>
+        <!-- v1.164.0 (Phase 9) — iPhone 빌드는 macOS 필요. Linux 서버에서도 생성/AI/파일 편집은 됨. -->
+        <p class="hint" style="margin:6px 0 0;font-size:12px">${esc(t("projects.new.typeIphoneMacNote"))}
+          <a href="/env-setup#iphone" class="chip-link" style="margin-left:4px">${esc(t("projects.new.typeIphoneEnvLink"))}</a></p>
       </fieldset>
 
       <!-- clone path: cloneUrl 만 필수 + branch optional. 다른 정보는 자동 도출. -->
@@ -5513,6 +5516,7 @@ $bodyHtml
             showIosBuildSettings = true,
             showIosSimulator = true,
             showIPhoneQuickPrompts = true,
+            showIosBuildEnvLink = true,
         )
         else -> PlatformUiCapabilities(projectType, "Kotlin", "#7F52FF", showPlayStoreLink = true)
     }

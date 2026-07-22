@@ -819,13 +819,13 @@ internal fun buildZaiEnforcedOpenCodeConfig(model: String): String = """
       "command": ["npx", "-y", "@mobilenext/mobile-mcp@latest"],
       "enabled": true
     },
-    "android-docs": {
+    "mobile-docs": {
       "type": "local",
       "command": [
         "/home/vibe/.local/node22/bin/node",
         "/home/vibe/.local/node22/lib/node_modules/npm/bin/npx-cli.js",
         "-y",
-        "@siamakerlab/android-docs-mcp-server@latest"
+        "mobile-docs-mcp@latest"
       ],
       "enabled": true
     }

@@ -173,7 +173,7 @@ class OpenCodeParsingTest {
         cfg.contains("\"context7\"") shouldBe true
         cfg.contains("\"playwright\"") shouldBe true
         cfg.contains("\"mobile-mcp\"") shouldBe true
-        cfg.contains("\"android-docs\"") shouldBe true
+        cfg.contains("\"mobile-docs\"") shouldBe true
     }
 
     // ── rate-limit 분류 (v1.154.0) ─────────────────────────────────────────────

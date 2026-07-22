@@ -53,6 +53,8 @@ object EnvSetupTemplates {
         sshCard: SshCardData = SshCardData(),
         csrf: String? = null,
         lang: String,
+        /** v1.164.0 (Phase 9) — iPhone(macOS) 빌드환경 섹션 배너/open 상태 판정용 preflight 스냅샷. */
+        iosEnv: com.siamakerlab.vibecoder.server.ios.IosEnvSnapshot? = null,
         embed: Boolean = false,
     ): String {
         val t = { key: String -> Messages.t(lang, key) }
@@ -64,10 +66,13 @@ object EnvSetupTemplates {
         // 페이지의 컴포넌트 grid·quick-link 에선 제외(install-all/진단에는 그대로 포함).
         val ordered = states.sortedBy { priorityRank(it.component) }
             .filterNot { it.component == SetupComponent.MCP_DEFAULTS }
-        val (coreStates, builtinStates) = ordered.partition { it.component.doctorCmd != null }
+        // v1.164.0 (Phase 9) — iPhone(macOS) 컴포넌트는 core/builtin partition 이전에 별도 섹션으로 분리.
+        val (iphoneStates, nonIphone) = ordered.partition { it.component.isIphone }
+        val (coreStates, builtinStates) = nonIphone.partition { it.component.doctorCmd != null }
         val coreCards = coreStates.joinToString("\n") { renderCard(it, csrf, lang, sshPort, sshCard) }
         val builtinCards = builtinStates.joinToString("\n") { renderCard(it, csrf, lang, sshPort, sshCard) }
         val builtinNeedsAttention = builtinStates.any { it.status != ComponentStatus.INSTALLED }
+        val iphoneSection = renderIphoneSection(iphoneStates, iosEnv, csrf, lang, sshPort, sshCard)
         val flashHtml = claudeFlashBlurb(claudeFlash, lang) + gitFlashBlurb(gitFlash, lang) + sshFlashBlurb(sshFlash, lang)
         val gitCard = renderGitIdentityCard(gitIdentity, csrf, lang)
         return AdminTemplates.shell(
@@ -97,6 +102,9 @@ $flashHtml
 
 <!-- ② Git identity -->
 $gitCard
+
+<!-- ②-b iPhone (macOS) 빌드환경 — Mac 로컬/원격 Mac agent 에서만 실행. Linux 단독은 "Mac 필요". -->
+$iphoneSection
 
 <!-- ③ 이미지 내장 — 보통 손댈 필요 없음. 문제 있을 때만 자동 펼침. -->
 <div class="card" style="margin-bottom:16px">
@@ -164,6 +172,83 @@ docker compose up -d --force-recreate</pre>
         SetupComponent.MCP_DEFAULTS -> 8
         SetupComponent.SSH_SERVER -> 9        // 원격 접속은 선택 기능 — 명시 설치만
         else -> 9                            // built-in (JDK/Git/Node/Claude CLI)
+    }
+
+    /**
+     * v1.164.0 (Phase 9) — iPhone(macOS) 빌드환경 섹션. preflight 배너 + iPhone 카드 grid.
+     *
+     * Mac(mac_local/mac_ssh) 이면 기본 펼침, Linux 단독/미판정이면 접힘 + "Mac 필요" 안내.
+     * 각 카드의 설치/안내 액션은 [renderIphoneAction] 이 담당한다.
+     */
+    private fun renderIphoneSection(
+        states: List<ComponentState>,
+        iosEnv: com.siamakerlab.vibecoder.server.ios.IosEnvSnapshot?,
+        csrf: String?,
+        lang: String,
+        sshPort: Int,
+        sshCard: SshCardData,
+    ): String {
+        if (states.isEmpty()) return ""
+        val t = { key: String -> Messages.t(lang, key) }
+        val isMac = iosEnv?.isMac == true
+        val (modeBadgeCls, modeBadgeText) = when (iosEnv?.mode) {
+            "mac_local" -> "ok" to t("env.ios.mode.macLocal")
+            "mac_ssh" -> "ok" to t("env.ios.mode.macSsh")
+            else -> "warn" to t("env.ios.mode.linux")
+        }
+        val cards = states.joinToString("\n") { renderCard(it, csrf, lang, sshPort, sshCard) }
+        val banner = renderIphonePreflightBanner(iosEnv, lang)
+        return """<div class="card" id="iphone" style="margin-bottom:16px">
+  <details ${if (isMac) "open" else ""}>
+    <summary style="cursor:pointer;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <strong>${esc(t("env.ios.section.title"))}</strong>
+      <span class="$modeBadgeCls" style="font-size:12px;white-space:nowrap">${esc(modeBadgeText)}</span>
+      <span class="dim" style="font-size:12px">— ${esc(t("env.ios.section.hint"))}</span>
+    </summary>
+    <div style="margin-top:12px">
+      $banner
+      <section class="grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr));margin-top:12px">
+        $cards
+      </section>
+    </div>
+  </details>
+</div>"""
+    }
+
+    /**
+     * v1.164.0 (Phase 9) — iPhone preflight 요약 배너. Mac 이면 Xcode/simctl/서명/런타임 상태를,
+     * Linux 단독이면 "Mac 필요 + 원격 Mac agent 연결" 안내를 표시한다. blocked 와 failed 를 구분.
+     */
+    private fun renderIphonePreflightBanner(iosEnv: com.siamakerlab.vibecoder.server.ios.IosEnvSnapshot?, lang: String): String {
+        val t = { key: String -> Messages.t(lang, key) }
+        if (iosEnv == null || !iosEnv.isMac) {
+            return """<div class="card" style="background:var(--warn-bg,#3a2e12);border-color:var(--warn)">
+  <p style="margin:0 0 4px"><strong>${esc(t("env.ios.banner.linux.title"))}</strong></p>
+  <p class="dim" style="font-size:12px;margin:0;line-height:1.6">${esc(t("env.ios.banner.linux.body"))}</p>
+</div>"""
+        }
+        fun row(labelKey: String, value: String): String =
+            """<tr><td style="padding:2px 12px 2px 0;color:var(--text-dim);white-space:nowrap">${esc(t(labelKey))}</td><td style="padding:2px 0">${esc(value)}</td></tr>"""
+        val xcode = if (iosEnv.xcodeAvailable) (iosEnv.xcodeVersion ?: t("env.ios.banner.yes")) else t("env.ios.banner.missing")
+        val simctl = if (iosEnv.simctlAvailable) t("env.ios.banner.yes") else t("env.ios.banner.no")
+        val runtimes = iosEnv.iosRuntimes.joinToString(", ").ifBlank { t("env.ios.banner.none") }
+        val signing = iosEnv.codesigningIdentityCount.toString()
+        val blocked = iosEnv.blockedReason?.let { reason ->
+            val key = "env.ios.blocked.${camelize(reason)}"
+            val msg = Messages.t(lang, key).takeIf { it != key } ?: reason
+            """<p class="hint" style="margin:8px 0 0;color:var(--warn)">${esc(t("env.ios.banner.blockedPrefix"))} $msg</p>"""
+        }.orEmpty()
+        return """<div class="card" style="background:var(--card-bg,#12151a)">
+  <table style="font-size:12px;border-collapse:collapse">
+    ${row("env.ios.banner.mode", if (iosEnv.mode == "mac_ssh") t("env.ios.mode.macSsh") else t("env.ios.mode.macLocal"))}
+    ${row("env.ios.banner.xcode", xcode)}
+    ${if (iosEnv.xcodeSelectPath != null) row("env.ios.banner.xcodeSelect", iosEnv.xcodeSelectPath!!) else ""}
+    ${row("env.ios.banner.simctl", simctl)}
+    ${row("env.ios.banner.runtimes", runtimes)}
+    ${row("env.ios.banner.signing", signing)}
+  </table>
+  $blocked
+</div>"""
     }
 
     /**
@@ -435,6 +520,57 @@ git config --global user.email "&lt;email&gt;"
             }
 
             SetupComponent.SSH_SERVER -> renderSshServerAction(status, csrf, lang, sshPort, sshCard)
+
+            // v1.164.0 (Phase 9) — iPhone(macOS) 빌드환경 카드 액션.
+            SetupComponent.XCODE,
+            SetupComponent.XCODE_CLT,
+            SetupComponent.IOS_SIMULATOR_RUNTIME,
+            SetupComponent.SWIFT_TOOLS,
+            SetupComponent.COCOAPODS -> renderIphoneAction(c, status, csrf, lang)
+        }
+    }
+
+    /**
+     * v1.164.0 (Phase 9) — iPhone(macOS) 컴포넌트 액션.
+     *
+     * - UNKNOWN(=Linux 단독/비-Mac): 설치 버튼 없이 "Mac 필요" 안내만.
+     * - SWIFT_TOOLS: 유일하게 자동 설치 가능(Homebrew) → 설치 버튼.
+     * - 나머지(Xcode/CLT/Simulator runtime/CocoaPods): 자동 설치 불가 → 안내 명령만.
+     */
+    private fun renderIphoneAction(c: SetupComponent, status: ComponentStatus, csrf: String?, lang: String): String {
+        val t = { key: String -> Messages.t(lang, key) }
+        if (status == ComponentStatus.UNKNOWN) {
+            return """<p class="hint" style="margin-top:8px;font-size:12px">${esc(t("env.ios.action.macRequired"))}</p>"""
+        }
+        return when (c) {
+            SetupComponent.SWIFT_TOOLS -> {
+                val label = if (status == ComponentStatus.INSTALLED)
+                    t("env.ios.action.swiftTools.reinstall") else t("env.ios.action.swiftTools.install")
+                """<form method="post" action="/env-setup/swift-tools/install" style="margin-top:10px"
+                        onsubmit="return confirm(${jsLit(t("env.ios.action.swiftTools.confirm"))})">
+                  ${CsrfTokens.hiddenInput(csrf)}
+                  <button type="submit" class="primary" style="width:auto;padding:8px 16px">${esc(label)}</button>
+                </form>
+                <p class="hint" style="margin-top:8px;font-size:12px">${esc(t("env.ios.action.swiftTools.note"))}</p>"""
+            }
+            SetupComponent.XCODE ->
+                if (status == ComponentStatus.INSTALLED) ""
+                else """<p class="hint" style="margin-top:8px;font-size:12px">${esc(t("env.ios.action.xcode.note"))}</p>
+                <details style="margin-top:6px"><summary class="dim" style="cursor:pointer;font-size:12px">${esc(t("env.action.cliHint"))}</summary>
+                  <pre class="diff-block" style="margin-top:6px">xcode-select --install</pre></details>"""
+            SetupComponent.XCODE_CLT ->
+                if (status == ComponentStatus.INSTALLED) ""
+                else """<p class="hint" style="margin-top:8px;font-size:12px">${esc(t("env.ios.action.clt.note"))}</p>
+                <pre class="diff-block" style="margin-top:6px">xcode-select --install</pre>"""
+            SetupComponent.IOS_SIMULATOR_RUNTIME ->
+                if (status == ComponentStatus.INSTALLED) ""
+                else """<p class="hint" style="margin-top:8px;font-size:12px">${esc(t("env.ios.action.simRuntime.note"))}</p>
+                <pre class="diff-block" style="margin-top:6px">xcodebuild -downloadPlatform iOS</pre>"""
+            SetupComponent.COCOAPODS ->
+                if (status == ComponentStatus.INSTALLED) ""
+                else """<p class="hint" style="margin-top:8px;font-size:12px">${esc(t("env.ios.action.cocoapods.note"))}</p>
+                <pre class="diff-block" style="margin-top:6px">sudo gem install cocoapods</pre>"""
+            else -> ""
         }
     }
 

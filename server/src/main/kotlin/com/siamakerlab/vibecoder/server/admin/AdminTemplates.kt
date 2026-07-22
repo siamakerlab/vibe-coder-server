@@ -1050,6 +1050,8 @@ object AdminTemplates {
         diskSnapshot: com.siamakerlab.vibecoder.server.disk.DiskMonitor.Snapshot? = null,
         /** v1.9.0 — git global identity 미설정 시 dashboard 상단에 yellow banner. */
         gitIdentityMissing: Boolean = false,
+        /** v1.164.0 (Phase 9) — Mac 설치인데 Xcode 미준비 시 iPhone 빌드환경 힌트 배너. */
+        iosBuildEnvHint: Boolean = false,
         csrf: String? = null,
         lang: String,
     ): String {
@@ -1064,6 +1066,16 @@ object AdminTemplates {
   <p style="margin:0 0 8px;font-size:13px;line-height:1.5">${esc(t("dashboard.gitIdentity.body"))}</p>
   <a href="/env-setup#git-identity" class="primary chip" style="display:inline-block;padding:8px 16px">
     ${esc(t("dashboard.gitIdentity.cta"))}
+  </a>
+</div>
+""" else ""
+        // v1.164.0 (Phase 9) — Mac 설치인데 Xcode 미준비 → iPhone 빌드환경 준비 안내(Xcode 준비되면 자동 사라짐).
+        val iosBuildEnvBanner = if (iosBuildEnvHint) """
+<div class="card" style="margin-bottom:16px;border-color:var(--accent,#3b82f6);background:rgba(59,130,246,0.06)">
+  <h2 style="margin:0 0 6px">${esc(t("dashboard.iosEnv.title"))}</h2>
+  <p style="margin:0 0 8px;font-size:13px;line-height:1.5">${esc(t("dashboard.iosEnv.body"))}</p>
+  <a href="/env-setup#iphone" class="primary chip" style="display:inline-block;padding:8px 16px">
+    ${esc(t("dashboard.iosEnv.cta"))}
   </a>
 </div>
 """ else ""
@@ -1092,6 +1104,7 @@ object AdminTemplates {
             body = """
 <header><h1>${esc(t("dashboard.heading"))}</h1></header>
 $gitIdentityBanner
+$iosBuildEnvBanner
 <section class="grid">
   <div class="card">
     <h2>${esc(t("dashboard.card.server"))}</h2>

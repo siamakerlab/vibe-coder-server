@@ -43,6 +43,8 @@ data class AdminRoutesDeps(
     val deviceRepo: DeviceRepository,
     val statusService: StatusService,
     val envDiagnostics: EnvDiagnostics,
+    /** v1.164.0 (Phase 9) — 대시보드 iPhone 빌드환경 힌트 + iPhone 컴포넌트 스냅샷(캐시) 소스. */
+    val envSetup: com.siamakerlab.vibecoder.server.env.EnvSetupService,
     val audit: AuditLogger,
     /** v0.21.0 — 대시보드 사용량 카드용 최신 snapshot 조회. */
     val claudeUsageMonitor: com.siamakerlab.vibecoder.server.claude.ClaudeUsageMonitor,
@@ -98,6 +100,13 @@ fun Routing.adminRoutes(deps: AdminRoutesDeps) {
         // v1.9.0 — git global identity 미설정 시 dashboard 상단에 yellow banner. graceful — git
         // CLI 호출 실패 / timeout 시 false 로 떨어뜨려 dashboard 자체가 막히지 않게.
         val gitIdentityMissing = runCatching { !deps.gitConfig.isConfigured() }.getOrDefault(false)
+        // v1.164.0 (Phase 9) — macOS 로컬 설치인데 Xcode 미준비면 iPhone 빌드환경 힌트.
+        // mac_local 로만 한정한다: mac_ssh 는 서버가 Linux(원격 Mac agent)라 "이 서버는 macOS" 문구가
+        // 틀리고, 원격 agent 준비는 env-setup 배너가 담당한다. Linux 단독은 즉시 false(명령 spawn 없음).
+        val iosBuildEnvHint = runCatching {
+            val s = deps.envSetup.iosEnvSnapshot()
+            s.mode == "mac_local" && !s.xcodeAvailable
+        }.getOrDefault(false)
         val html = AdminTemplates.dashboardPage(
             username = sess.username,
             status = status,
@@ -109,6 +118,7 @@ fun Routing.adminRoutes(deps: AdminRoutesDeps) {
             opencodeUsage = opencodeUsage,
             diskSnapshot = diskSnapshot,
             gitIdentityMissing = gitIdentityMissing,
+            iosBuildEnvHint = iosBuildEnvHint,
             csrf = sess.csrf,
             lang = sess.language,
         )
