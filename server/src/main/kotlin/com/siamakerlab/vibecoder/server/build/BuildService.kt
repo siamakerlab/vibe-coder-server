@@ -6,6 +6,8 @@ import com.siamakerlab.vibecoder.server.core.Clock
 import com.siamakerlab.vibecoder.server.core.Ids
 import com.siamakerlab.vibecoder.server.core.WorkspacePath
 import com.siamakerlab.vibecoder.server.error.ApiException
+import com.siamakerlab.vibecoder.server.platform.PlatformBuildToolchains
+import com.siamakerlab.vibecoder.server.platform.PlatformEngineRegistry
 import com.siamakerlab.vibecoder.server.projects.ProjectService
 import com.siamakerlab.vibecoder.server.repo.BuildRepository
 import com.siamakerlab.vibecoder.server.repo.BuildRow
@@ -13,10 +15,12 @@ import com.siamakerlab.vibecoder.server.tasks.TaskLogger
 import com.siamakerlab.vibecoder.server.tasks.TaskQueue
 import com.siamakerlab.vibecoder.server.ws.LogHub
 import com.siamakerlab.vibecoder.shared.dto.BuildDto
-import com.siamakerlab.vibecoder.shared.dto.ProjectTypes
 import com.siamakerlab.vibecoder.shared.dto.TaskStatus
 import com.siamakerlab.vibecoder.shared.ws.WsFrame
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.CancellationException
+import java.nio.file.Files
+import java.nio.file.Path
 
 private val log = KotlinLogging.logger {}
 
@@ -36,14 +40,19 @@ class BuildService(
      * `-Pandroid.injected.signing.*` inject. null 이면 비활성 (단위 테스트용).
      */
     private val keystores: com.siamakerlab.vibecoder.server.admin.KeystoreService? = null,
+    private val resourceGuard: com.siamakerlab.vibecoder.server.resources.ResourceGuard? = null,
+    private val platformEngines: PlatformEngineRegistry = PlatformEngineRegistry.default,
 ) {
 
-    // v1.126.0 (P3) — projectType 별 빌드 toolchain. builder/config 는 이미 생성자 주입 → DI 무변경.
-    // kotlin → Gradle(기존 동작 동일), flutter → flutter build apk/appbundle (Android 전용).
-    private val gradleToolchain: BuildToolchain = GradleToolchain(builder)
-    private val flutterToolchain: BuildToolchain = FlutterToolchain(config)
+    // v1.162.5 — BuildService 는 후보 toolchain 만 구성하고, projectType별 선택은
+    // PlatformEngineRegistry/ProjectPlatformEngine 이 소유한다.
+    private val buildToolchains = PlatformBuildToolchains(
+        gradle = GradleToolchain(builder),
+        flutter = FlutterToolchain(config),
+        ios = IosBuildToolchain({ config.ios.agent }),
+    )
     private fun toolchainFor(projectType: String): BuildToolchain =
-        if (projectType == ProjectTypes.FLUTTER) flutterToolchain else gradleToolchain
+        platformEngines.forType(projectType).buildToolchain(buildToolchains)
 
     /**
      * v1.26.1 — 운영 정책 "키스토어 임의 생성 금지" SSOT 가드. SSR / JSON API / WS
@@ -69,6 +78,7 @@ class BuildService(
      */
     fun enqueueDebug(projectId: String, hub: LogHub): BuildRow {
         val row = projects.rowOrThrow(projectId)
+        requireSupportedBuildTarget(row, BuildVariant.DEBUG)
         requireKeystoreOrThrow(row)   // v1.26.1 — SSOT 가드
         return enqueueBuild(row, hub, BuildVariant.DEBUG)
     }
@@ -79,6 +89,7 @@ class BuildService(
      */
     fun enqueueRelease(projectId: String, hub: LogHub): BuildRow {
         val row = projects.rowOrThrow(projectId)
+        requireSupportedBuildTarget(row, BuildVariant.RELEASE)
         requireKeystoreOrThrow(row)
         return enqueueBuild(row, hub, BuildVariant.RELEASE)
     }
@@ -89,8 +100,64 @@ class BuildService(
      */
     fun enqueueBundle(projectId: String, hub: LogHub): BuildRow {
         val row = projects.rowOrThrow(projectId)
+        requireSupportedBuildTarget(row, BuildVariant.BUNDLE)
         requireKeystoreOrThrow(row)
         return enqueueBuild(row, hub, BuildVariant.BUNDLE)
+    }
+
+    fun enqueueIosDebug(projectId: String, hub: LogHub): BuildRow {
+        val row = projects.rowOrThrow(projectId)
+        requireSupportedBuildTarget(row, BuildVariant.IOS_BUILD_DEBUG)
+        requireIPhoneBuildEnvironment()
+        return enqueueBuild(row, hub, BuildVariant.IOS_BUILD_DEBUG)
+    }
+
+    fun enqueueIosTest(projectId: String, hub: LogHub): BuildRow {
+        val row = projects.rowOrThrow(projectId)
+        requireSupportedBuildTarget(row, BuildVariant.IOS_TEST)
+        requireIPhoneBuildEnvironment()
+        return enqueueBuild(row, hub, BuildVariant.IOS_TEST)
+    }
+
+    fun enqueueIosArchive(projectId: String, hub: LogHub): BuildRow {
+        val row = projects.rowOrThrow(projectId)
+        requireSupportedBuildTarget(row, BuildVariant.IOS_ARCHIVE)
+        requireIPhoneBuildEnvironment()
+        return enqueueBuild(row, hub, BuildVariant.IOS_ARCHIVE)
+    }
+
+    fun enqueueIosExportIpa(projectId: String, hub: LogHub): BuildRow {
+        val row = projects.rowOrThrow(projectId)
+        requireSupportedBuildTarget(row, BuildVariant.IOS_EXPORT_IPA)
+        requireIPhoneBuildEnvironment()
+        return enqueueBuild(row, hub, BuildVariant.IOS_EXPORT_IPA)
+    }
+
+    private fun requireSupportedBuildTarget(row: com.siamakerlab.vibecoder.server.repo.ProjectRow, variant: BuildVariant) {
+        val engine = platformEngines.forType(row.projectType)
+        val projectRoot = Path.of(row.sourcePath)
+        if (!engine.supportsBuildVariant(variant, projectRoot)) {
+            if (variant.isIos) {
+                throw ApiException.localized(409, "iphone_build_target_required",
+                    messageKey = "api.build.iphoneTargetRequired")
+            }
+            throw ApiException.localized(409, "iphone_build_requires_xcode_pipeline",
+                messageKey = "api.build.iphoneRequiresXcodePipeline")
+        }
+    }
+
+    private fun requireIPhoneBuildEnvironment() {
+        val agent = config.ios.agent
+        val mode = agent.mode.trim().lowercase()
+        val osName = System.getProperty("os.name").orEmpty().lowercase()
+        if (mode !in setOf("ssh", "remote") && !osName.contains("mac")) {
+            throw ApiException.localized(409, "iphone_build_requires_mac_agent",
+                messageKey = "api.build.iphoneRequiresMacAgent")
+        }
+        if (mode in setOf("ssh", "remote") && !agent.enabled) {
+            throw ApiException.localized(409, "iphone_agent_disabled",
+                messageKey = "api.build.iphoneAgentDisabled")
+        }
     }
 
     /**
@@ -104,6 +171,7 @@ class BuildService(
         hub: LogHub,
         variant: BuildVariant,
     ): BuildRow {
+        resourceGuard?.ensureCanStart("build ${variant.wire}")
         val toolchain = toolchainFor(row.projectType)
         val projectId = row.id
         val buildId = Ids.buildId()
@@ -120,25 +188,43 @@ class BuildService(
             executor = { cancel ->
                 val logger = TaskLogger(buildId, logFile, hub, clock)
                 try {
-                    val exit = toolchain.runBuild(
-                        source = java.nio.file.Path.of(row.sourcePath),
-                        moduleName = row.moduleName,
-                        variant = variant,
-                        debugTask = row.debugTask,
-                        logger = logger,
-                        cancellation = cancel,
-                        signing = signing,
-                    )
-                    if (exit != 0) throw ApiException.localized(500, "build_failed",
-                        messageKey = "api.build.gradleExit", args = listOf(exit))
-                    val out = toolchain.findArtifact(java.nio.file.Path.of(row.sourcePath), row.moduleName, variant)
-                        ?: throw ApiException.localized(500, "artifact_not_found", messageKey = "api.build.apkNotFound")
-                    logger.info("Found output (${variant.wire}): $out")
-                    val artifact = artifactService.storeBuildArtifact(
-                        projectId, buildId, out, row.packageName, variant.wire, variant.ext, variant.artifactType,
-                    )
-                    buildRepo.attachArtifact(buildId, artifact.id)
-                    logger.info("Stored artifact ${artifact.id} (sha256=${artifact.sha256.take(12)}..., size=${artifact.sizeBytes} bytes)")
+                    val sourcePath = java.nio.file.Path.of(row.sourcePath)
+                    val exit = try {
+                        toolchain.runBuild(
+                            source = sourcePath,
+                            moduleName = row.moduleName,
+                            variant = variant,
+                            debugTask = row.debugTask,
+                            logger = logger,
+                            cancellation = cancel,
+                            signing = signing,
+                        )
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Throwable) {
+                        storeSupplementaryArtifacts(toolchain, sourcePath, row, buildId, variant, logger)
+                        throw e
+                    }
+                    if (exit != 0) {
+                        storeSupplementaryArtifacts(toolchain, sourcePath, row, buildId, variant, logger)
+                        throw ApiException.localized(500, "build_failed",
+                            messageKey = "api.build.gradleExit", args = listOf(exit))
+                    }
+                    val out = toolchain.findArtifact(sourcePath, row.moduleName, variant)
+                    if (out == null) {
+                        if (variant.artifactRequired) {
+                            throw ApiException.localized(500, "artifact_not_found", messageKey = "api.build.apkNotFound")
+                        }
+                        logger.info("No stored artifact expected for ${variant.wire}")
+                    } else {
+                        logger.info("Found output (${variant.wire}): $out")
+                        val artifact = artifactService.storeBuildArtifact(
+                            projectId, buildId, out, row.packageName, variant.wire, variant.ext, variant.artifactType,
+                        )
+                        buildRepo.attachArtifact(buildId, artifact.id)
+                        logger.info("Stored artifact ${artifact.id} (sha256=${artifact.sha256.take(12)}..., size=${artifact.sizeBytes} bytes)")
+                    }
+                    storeSupplementaryArtifacts(toolchain, sourcePath, row, buildId, variant, logger)
                 } finally {
                     logger.close()
                 }
@@ -149,7 +235,8 @@ class BuildService(
                 notifier?.buildResult(projectId, buildId, "SUCCESS", null)
             },
             onFailure = { e ->
-                buildRepo.setStatus(buildId, TaskStatus.FAILED, e.message)
+                val failureKind = (e as? BuildToolchainFailureException)?.failureKind
+                buildRepo.setStatus(buildId, TaskStatus.FAILED, e.message, failureKind = failureKind)
                 hub.publisher(buildId).emit(WsFrame.Done(buildId, TaskStatus.FAILED.name, e.message))
                 notifier?.buildResult(projectId, buildId, "FAILED", e.message)
             },
@@ -159,6 +246,50 @@ class BuildService(
             },
         )
         return build
+    }
+
+    private suspend fun storeSupplementaryArtifacts(
+        toolchain: BuildToolchain,
+        sourcePath: java.nio.file.Path,
+        row: com.siamakerlab.vibecoder.server.repo.ProjectRow,
+        buildId: String,
+        variant: BuildVariant,
+        logger: TaskLogger,
+    ) {
+        val artifacts = runCatching {
+            toolchain.findSupplementaryArtifacts(sourcePath, row.moduleName, variant)
+        }.onFailure {
+            logger.warn("Supplementary artifact lookup failed: ${it.message}")
+        }.getOrDefault(emptyList())
+        for (artifact in artifacts) {
+            runCatching {
+                if (Files.isDirectory(artifact.path)) {
+                    artifactService.storeBuildDirectoryArtifact(
+                        projectId = row.id,
+                        buildId = buildId,
+                        sourceDir = artifact.path,
+                        packageName = row.packageName,
+                        variant = "${variant.wire}-${artifact.type}",
+                        ext = artifact.ext,
+                        type = artifact.type,
+                    )
+                } else {
+                    artifactService.storeBuildArtifact(
+                        projectId = row.id,
+                        buildId = buildId,
+                        sourceFile = artifact.path,
+                        packageName = row.packageName,
+                        variant = "${variant.wire}-${artifact.type}",
+                        ext = artifact.ext,
+                        type = artifact.type,
+                    )
+                }
+            }.onSuccess {
+                logger.info("Stored supplementary artifact ${it.id} (${artifact.type}, size=${it.sizeBytes} bytes)")
+            }.onFailure {
+                logger.warn("Supplementary artifact store failed (${artifact.type}): ${it.message}")
+            }
+        }
     }
 
     // v1.26.2 — 이전 `runDebug` (Claude task autoBuild 용 inline build) 함수 제거.
@@ -331,7 +462,7 @@ class BuildService(
     private fun BuildRow.toDto() = BuildDto(
         id = id, projectId = projectId, variant = variant, status = status,
         startedAt = startedAt ?: createdAt, finishedAt = finishedAt,
-        artifactId = artifactId, errorMessage = errorMessage,
+        artifactId = artifactId, errorMessage = errorMessage, failureKind = failureKind,
         gitBranch = gitBranch, gitSha = gitSha,
     )
 

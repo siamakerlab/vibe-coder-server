@@ -55,7 +55,6 @@ class CodexSessionManager(
     private val parser: CodexJsonParser = CodexJsonParser(),
     private val history: ConversationHistoryService? = null,
     private val usageRecorder: CodexUsageRecorder? = null,
-    private val residentCapProvider: () -> Int = { config.codex.maxResidentSessions },
     private val codexCmdProvider: () -> String = { defaultCodexCmd() },
 ) : AgentSessionManager {
     override val provider: AgentProvider = AgentProvider.CODEX
@@ -300,7 +299,6 @@ class CodexSessionManager(
         runCatching { proc.outputStream.close() }
         processes[projectId] = proc
         setBusy(projectId, ProjectState.RESPONDING)
-        reapResidentProcesses(excludeProjectId = projectId)
         val stdout = BufferedReader(InputStreamReader(proc.inputStream, StandardCharsets.UTF_8))
         val stderr = BufferedReader(InputStreamReader(proc.errorStream, StandardCharsets.UTF_8))
         val stderrTail = Collections.synchronizedList(mutableListOf<String>())
@@ -590,8 +588,34 @@ class CodexSessionManager(
         busy[projectId] = state.busy
         lastTouched[projectId] = Instant.now()
         hub.emitConsole(topic(projectId)) { seq -> WsFrame.ConsoleBusyState(state.busy, seq, state.wire) }
-        hub.emitConsole("__projects__") { seq -> WsFrame.ProjectBusyChanged(projectId, state.busy, seq, state.wire) }
+        emitAgentStatus(projectId, state)
     }
+
+    private suspend fun emitAgentStatus(projectId: String, state: ProjectState) {
+        val now = Instant.now().toEpochMilli()
+        val frame: (Long) -> WsFrame = { seq ->
+            WsFrame.AgentStatusChanged(
+                projectId = projectId,
+                provider = provider.id,
+                state = agentStateWire(state),
+                activity = if (state == ProjectState.RESPONDING) "thinking" else null,
+                lastEventAt = now,
+                lastOutputAt = now,
+                seq = seq,
+            )
+        }
+        hub.emitConsole(topic(projectId), frame)
+        hub.emitConsole("__projects__", frame)
+    }
+
+    private fun agentStateWire(state: ProjectState): String =
+        when (state) {
+            ProjectState.READY -> "idle"
+            ProjectState.RESPONDING -> "running"
+            ProjectState.WAITING -> "waiting_input"
+            ProjectState.STOPPED -> "interrupted"
+            ProjectState.ERROR -> "error"
+        }
 
     private suspend fun emitSystem(projectId: String, code: String, message: String) {
         hub.emitConsole(topic(projectId)) { seq -> WsFrame.ConsoleSystem(code, message, seq) }
@@ -686,29 +710,6 @@ class CodexSessionManager(
         f.writeText(threadId)
     }
 
-    private fun reapResidentProcesses(excludeProjectId: String) {
-        val cap = residentCapProvider().coerceAtLeast(0)
-        if (cap <= 0) return
-        val alive = processes.filterValues { it.isAlive }
-        val excess = alive.size - cap
-        if (excess <= 0) return
-        alive.entries
-            .asSequence()
-            .filter { (projectId, _) -> projectId != excludeProjectId && busy[projectId] != true }
-            .sortedBy { (projectId, _) -> lastTouched[projectId] ?: Instant.EPOCH }
-            .take(excess)
-            .forEach { (projectId, proc) ->
-                runCatching {
-                    log.info { "[$projectId] reaping idle Codex process due to maxResidentSessions=$cap" }
-                    proc.destroy()
-                    if (!proc.waitFor(5, TimeUnit.SECONDS)) proc.destroyForcibly()
-                    processes.remove(projectId, proc)
-                    lastTouched.remove(projectId)
-                    busy.remove(projectId)
-                }.onFailure { log.warn(it) { "[$projectId] Codex resident process reap failed" } }
-            }
-    }
-
     private fun applyCodexProcessEnv(pb: ProcessBuilder) {
         // v1.156.1 — putIfAbsent → put 강제 설정 (컨테이너 HOME=/root 회피).
         pb.environment()["HOME"] = "/home/vibe"
@@ -750,12 +751,9 @@ internal fun buildCodexExecArgs(
 ): List<String> =
     buildList {
         add(cmd)
-        // `--ask-for-approval` is a top-level Codex option in v0.142.x. If it is
-        // placed after `exec`, Codex exits with status 2 before the turn starts.
-        add("--ask-for-approval"); add("never")
+        add("--dangerously-bypass-approvals-and-sandbox")
         add("exec")
         add("--json")
-        add("--sandbox"); add("danger-full-access")
         add("--skip-git-repo-check")
         model?.let { add("--model"); add(it) }
         if (threadId != null) {

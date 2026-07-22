@@ -73,7 +73,6 @@ class OpenCodeSessionManager(
     private val hub: LogHub,
     private val parser: OpenCodeJsonParser = OpenCodeJsonParser(),
     private val history: ConversationHistoryService? = null,
-    private val residentCapProvider: () -> Int = { config.opencode.maxResidentSessions },
     private val opencodeCmdProvider: () -> String = { defaultOpenCodeCmd() },
 ) : AgentSessionManager {
     override val provider: AgentProvider = AgentProvider.OPENCODE
@@ -122,6 +121,15 @@ class OpenCodeSessionManager(
 
         val lock = locks.computeIfAbsent(projectId) { Mutex() }
         lock.withLock {
+            if (text.trim() == "/compact") {
+                if (busy[projectId] == true) {
+                    val size = enqueuePrompt(projectId, text)
+                    emitSystem(projectId, "opencode_compact_queued", "OpenCode turn is already running. Queued context reset #$size.")
+                    return
+                }
+                compactByResetLocked(projectId)
+                return
+            }
             if (busy[projectId] == true) {
                 val size = enqueuePrompt(projectId, text)
                 emitSystem(projectId, "opencode_prompt_queued", "OpenCode turn is already running. Queued prompt #$size.")
@@ -289,7 +297,6 @@ class OpenCodeSessionManager(
         runCatching { proc.outputStream.close() }
         processes[projectId] = proc
         setBusy(projectId, ProjectState.RESPONDING)
-        reapResidentProcesses(excludeProjectId = projectId)
         val stdout = BufferedReader(InputStreamReader(proc.inputStream, StandardCharsets.UTF_8))
         val stderr = BufferedReader(InputStreamReader(proc.errorStream, StandardCharsets.UTF_8))
         val stderrTail = Collections.synchronizedList(mutableListOf<String>())
@@ -367,9 +374,32 @@ class OpenCodeSessionManager(
             val next = queue.removeFirst()
             val remaining = queue.size
             if (queue.isEmpty()) pendingPrompts.remove(projectId)
+            if (next.trim() == "/compact") {
+                emitSystem(projectId, "opencode_compact_dequeued", "Running queued OpenCode context reset. Remaining: $remaining.")
+                compactByResetLocked(projectId)
+                if (pendingPrompts[projectId]?.isNotEmpty() == true) {
+                    scope.launch { startNextQueuedPrompt(projectId) }
+                }
+                return
+            }
             emitSystem(projectId, "opencode_prompt_dequeued", "Running queued OpenCode prompt. Remaining: $remaining.")
             startPromptLocked(projectId, next)
         }
+    }
+
+    private suspend fun compactByResetLocked(projectId: String) {
+        cancelRateLimitRetry(projectId)
+        runCatching { sessionIdFile(projectId).deleteIfExists() }
+        runCatching { contextFile(projectId).deleteIfExists() }
+        knownSessions.remove(projectId)
+        hub.resetConsole(topic(projectId))
+        emitSystem(
+            projectId,
+            "opencode_compact_reset",
+            "OpenCode/GLM run mode does not provide a reliable /compact settle turn. Started a fresh session and cleared stored context tokens.",
+        )
+        fireInterrupt(projectId, "new_session")
+        setBusy(projectId, ProjectState.READY)
     }
 
     /**
@@ -516,8 +546,34 @@ class OpenCodeSessionManager(
         busy[projectId] = state.busy
         lastTouched[projectId] = Instant.now()
         hub.emitConsole(topic(projectId)) { seq -> WsFrame.ConsoleBusyState(state.busy, seq, state.wire) }
-        hub.emitConsole("__projects__") { seq -> WsFrame.ProjectBusyChanged(projectId, state.busy, seq, state.wire) }
+        emitAgentStatus(projectId, state)
     }
+
+    private suspend fun emitAgentStatus(projectId: String, state: ProjectState) {
+        val now = Instant.now().toEpochMilli()
+        val frame: (Long) -> WsFrame = { seq ->
+            WsFrame.AgentStatusChanged(
+                projectId = projectId,
+                provider = provider.id,
+                state = agentStateWire(state),
+                activity = if (state == ProjectState.RESPONDING) "thinking" else null,
+                lastEventAt = now,
+                lastOutputAt = now,
+                seq = seq,
+            )
+        }
+        hub.emitConsole(topic(projectId), frame)
+        hub.emitConsole("__projects__", frame)
+    }
+
+    private fun agentStateWire(state: ProjectState): String =
+        when (state) {
+            ProjectState.READY -> "idle"
+            ProjectState.RESPONDING -> "running"
+            ProjectState.WAITING -> "waiting_input"
+            ProjectState.STOPPED -> "interrupted"
+            ProjectState.ERROR -> "error"
+        }
 
     private suspend fun emitSystem(projectId: String, code: String, message: String) {
         hub.emitConsole(topic(projectId)) { seq -> WsFrame.ConsoleSystem(code, message, seq) }
@@ -651,29 +707,6 @@ class OpenCodeSessionManager(
         }.getOrElse { emptyList() }
     }
 
-    private fun reapResidentProcesses(excludeProjectId: String) {
-        val cap = residentCapProvider().coerceAtLeast(0)
-        if (cap <= 0) return
-        val alive = processes.filterValues { it.isAlive }
-        val excess = alive.size - cap
-        if (excess <= 0) return
-        alive.entries
-            .asSequence()
-            .filter { (projectId, _) -> projectId != excludeProjectId && busy[projectId] != true }
-            .sortedBy { (projectId, _) -> lastTouched[projectId] ?: Instant.EPOCH }
-            .take(excess)
-            .forEach { (projectId, proc) ->
-                runCatching {
-                    log.info { "[$projectId] reaping idle OpenCode process due to maxResidentSessions=$cap" }
-                    proc.destroy()
-                    if (!proc.waitFor(5, TimeUnit.SECONDS)) proc.destroyForcibly()
-                    processes.remove(projectId, proc)
-                    lastTouched.remove(projectId)
-                    busy.remove(projectId)
-                }.onFailure { log.warn(it) { "[$projectId] OpenCode resident process reap failed" } }
-            }
-    }
-
     private fun applyOpenCodeProcessEnv(pb: ProcessBuilder) {
         // v1.156.1 — HOME 를 /home/vibe 로 강제(putIfAbsent 금지). 컨테이너가 root 로
         // 실행되면 HOME=/root 가 이미 있어 putIfAbsent 가 무시되고, opencode 가
@@ -700,6 +733,10 @@ class OpenCodeSessionManager(
     /**
      * v1.153.0 — z.ai-only config 디렉토리 생성/유지. provider 블록을 비워 커스텀 provider 를
      * 숨기고, model 을 zai-coding-plan 으로 고정. 매 spawn 전 호출 — config 가 손상되면 자동 복구.
+     *
+     * v1.162.2 — 강제 config 에도 전역 skills/MCP 를 넣는다. OPENCODE_CONFIG_HOME 을 격리
+     * 디렉토리로 바꾸면 일반 `~/.config/opencode/opencode.jsonc` 의 `skills.paths` / `mcp`
+     * 블록이 보이지 않기 때문에 GLM worker 가 기본 capability 를 인식하지 못했다.
      */
     private fun ensureZaiEnforcedConfig(): Path {
         val dir = workspace.root.resolve(".opencode-zai-enforced")
@@ -708,13 +745,7 @@ class OpenCodeSessionManager(
         val zaiModel = config.opencode.model
             .takeIf { isZaiCodingPlanModel(it) }
             ?: (effectiveModel("__enforced__") ?: FALLBACK_ZAI_MODEL)
-        val configContent = buildString {
-            appendLine("{")
-            appendLine("  \"${'$'}schema\": \"https://opencode.ai/config.json\",")
-            appendLine("  \"model\": \"$zaiModel\",")
-            appendLine("  \"provider\": {}")
-            append("}")
-        }
+        val configContent = buildZaiEnforcedOpenCodeConfig(zaiModel)
         runCatching {
             val exists = Files.exists(configFile)
             if (!exists || configFile.readText() != configContent) {
@@ -752,6 +783,55 @@ class OpenCodeSessionManager(
 /** v1.153.0 — 모델 문자열이 z.ai coding plan provider 경로인지 판정 (순수 함수, 단위 테스트 가능). */
 internal fun isZaiCodingPlanModel(model: String): Boolean =
     model.startsWith("zai-coding-plan/", ignoreCase = true)
+
+/** v1.162.2 — z.ai 강제 모드용 OpenCode config. 커스텀 provider 는 숨기되 기본 능력은 유지한다. */
+internal fun buildZaiEnforcedOpenCodeConfig(model: String): String = """
+{
+  "${'$'}schema": "https://opencode.ai/config.json",
+  "model": "$model",
+  "provider": {},
+  "skills": {
+    "paths": ["/home/vibe/.claude/skills"]
+  },
+  "mcp": {
+    "memory": {
+      "type": "local",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-memory"],
+      "enabled": true
+    },
+    "sequentialthinking": {
+      "type": "local",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-sequential-thinking"],
+      "enabled": true
+    },
+    "context7": {
+      "type": "local",
+      "command": ["npx", "-y", "@upstash/context7-mcp"],
+      "enabled": true
+    },
+    "playwright": {
+      "type": "local",
+      "command": ["npx", "-y", "@playwright/mcp"],
+      "enabled": true
+    },
+    "mobile-mcp": {
+      "type": "local",
+      "command": ["npx", "-y", "@mobilenext/mobile-mcp@latest"],
+      "enabled": true
+    },
+    "android-docs": {
+      "type": "local",
+      "command": [
+        "/home/vibe/.local/node22/bin/node",
+        "/home/vibe/.local/node22/lib/node_modules/npm/bin/npx-cli.js",
+        "-y",
+        "@siamakerlab/android-docs-mcp-server@latest"
+      ],
+      "enabled": true
+    }
+  }
+}
+""".trimIndent()
 
 /** v1.150.0 — opencode CLI exec 인자 빌더 (`opencode run --format json --auto ...`). */
 internal fun buildOpenCodeExecArgs(

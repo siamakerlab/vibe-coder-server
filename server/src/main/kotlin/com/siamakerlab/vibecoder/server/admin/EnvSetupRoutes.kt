@@ -1,6 +1,5 @@
 package com.siamakerlab.vibecoder.server.admin
 
-import com.siamakerlab.vibecoder.server.auth.CsrfTokens
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens.requireCsrf
 import com.siamakerlab.vibecoder.server.env.ClaudeAuthService
 import com.siamakerlab.vibecoder.server.env.ClaudeLoginService
@@ -18,12 +17,9 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentDisposition
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
-import io.ktor.http.content.PartData
 import io.ktor.server.application.call
 import io.ktor.server.request.host
-import io.ktor.server.request.receiveMultipart
 import io.ktor.server.request.receiveParameters
-import io.ktor.utils.io.jvm.javaio.toInputStream
 import io.ktor.server.response.header
 import io.ktor.server.response.respondBytes
 import io.ktor.server.response.respondRedirect
@@ -39,8 +35,7 @@ private val log = KotlinLogging.logger {}
  *
  * v0.6.0 Phase A — 상태 진단 + 카드 UI + 명령 안내.
  * v0.6.1 Phase B — 원클릭 설치 (POST) + 일괄 설치 + 진행 페이지 + WS.
- * v0.7.0       — Claude 자격증명 파일 업로드 + ANTHROPIC_API_KEY 모드
- *                (raw-shell UI 정책 §3 미위반 — 단순 파일/폼 입력).
+ * v0.7.0       — Claude 웹 OAuth 로그인 카드.
  */
 fun Routing.envSetupRoutes(
     authDeps: AdminRoutesDeps,
@@ -248,42 +243,6 @@ fun Routing.envSetupRoutes(
         call.respondRedirect("/env-setup/tasks/$taskId")
     }
 
-    post("/env-setup/codex-auth/access-token") {
-        val sess = requireSessionOrRedirect(authDeps) ?: return@post
-        if (!requireAdminOrRedirect(sess)) return@post
-        val form = requireCsrf()
-        val token = form["accessToken"].orEmpty()
-        val taskId = runCatching { setupService.spawnCodexLoginWithAccessToken(token) }.getOrElse { e ->
-            val msg = (e as? ApiException)?.message ?: e.message ?: Messages.t(sess.language, "env.error.keyRejected")
-            call.respondText(
-                EnvSetupTemplates.errorBlurb(msg, sess.language),
-                ContentType.Text.Html,
-                HttpStatusCode.BadRequest,
-            )
-            return@post
-        }
-        log.info { "env-setup codex-access-token-login: $taskId by ${sess.username}" }
-        call.respondRedirect("/env-setup/tasks/$taskId")
-    }
-
-    post("/env-setup/codex-auth/api-key") {
-        val sess = requireSessionOrRedirect(authDeps) ?: return@post
-        if (!requireAdminOrRedirect(sess)) return@post
-        val form = requireCsrf()
-        val apiKey = form["apiKey"].orEmpty()
-        val taskId = runCatching { setupService.spawnCodexLoginWithApiKey(apiKey) }.getOrElse { e ->
-            val msg = (e as? ApiException)?.message ?: e.message ?: Messages.t(sess.language, "env.error.keyRejected")
-            call.respondText(
-                EnvSetupTemplates.errorBlurb(msg, sess.language),
-                ContentType.Text.Html,
-                HttpStatusCode.BadRequest,
-            )
-            return@post
-        }
-        log.info { "env-setup codex-api-key-login: $taskId by ${sess.username}" }
-        call.respondRedirect("/env-setup/tasks/$taskId")
-    }
-
     get("/env-setup/tasks/{taskId}") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
         if (!requireAdminOrRedirect(sess)) return@get
@@ -292,107 +251,6 @@ fun Routing.envSetupRoutes(
             EnvSetupTemplates.taskProgressPage(sess.username, taskId, lang = sess.language, embed = call.isEmbeddedRequest()),
             ContentType.Text.Html,
         )
-    }
-
-    // ───────────────────────────────────────────────────────────────
-    // v0.7.0 — Claude 자격증명 웹 등록 (터미널 접근 불가 환경 대응)
-    // ───────────────────────────────────────────────────────────────
-
-    /**
-     * 다른 머신에서 `claude login` 후 받은 `.credentials.json` 을 업로드.
-     * 업로드 후엔 즉시 vibe 홈에 atomic 배치 → 콘솔/빌드환경이 자동 인식.
-     */
-    post("/env-setup/claude-auth/upload") {
-        val sess = requireSessionOrRedirect(authDeps) ?: return@post
-        if (!requireAdminOrRedirect(sess)) return@post
-        CsrfTokens.verifyCsrfFromQueryOrHeader(call)
-        val multipart = call.receiveMultipart()
-        var bytes: ByteArray? = null
-        var fileName: String? = null
-        try {
-            while (true) {
-                val part = multipart.readPart() ?: break
-                try {
-                    if (part is PartData.FileItem && bytes == null) {
-                        fileName = part.originalFileName
-                        bytes = part.provider().toInputStream().use { it.readBytes() }
-                    }
-                } finally {
-                    part.dispose()
-                }
-            }
-        } catch (e: Throwable) {
-            call.respondText(
-                EnvSetupTemplates.errorBlurb(Messages.t(sess.language, "env.error.multipartParse", e.message ?: ""), sess.language),
-                ContentType.Text.Html, HttpStatusCode.BadRequest,
-            )
-            return@post
-        }
-        if (bytes == null) {
-            call.respondText(
-                EnvSetupTemplates.errorBlurb(Messages.t(sess.language, "env.error.noFile"), sess.language),
-                ContentType.Text.Html, HttpStatusCode.BadRequest,
-            )
-            return@post
-        }
-        val result = try {
-            claudeAuth.uploadCredentials(bytes!!)
-        } catch (e: ApiException) {
-            log.warn { "credentials upload rejected (${e.code}): ${e.message}" }
-            call.respondText(
-                EnvSetupTemplates.errorBlurb(e.message ?: Messages.t(sess.language, "env.error.uploadRejected"), sess.language),
-                ContentType.Text.Html, HttpStatusCode.fromValue(e.statusCode),
-            )
-            return@post
-        } catch (e: Throwable) {
-            log.error(e) { "credentials upload failed" }
-            call.respondText(
-                EnvSetupTemplates.errorBlurb(Messages.t(sess.language, "env.error.uploadFailed", e.message ?: ""), sess.language),
-                ContentType.Text.Html, HttpStatusCode.InternalServerError,
-            )
-            return@post
-        }
-        log.info { "credentials uploaded by ${sess.username}: file=$fileName → ${result.targetPath}" }
-        call.respondRedirect("/env-setup?claude=uploaded")
-    }
-
-    /**
-     * ANTHROPIC_API_KEY 등록 (OAuth 대신 API 키 모드). 폼 필드: `apiKey`.
-     * 이후 모든 claude 자식 프로세스가 이 키를 환경변수로 받아 동작.
-     */
-    post("/env-setup/claude-auth/api-key") {
-        val sess = requireSessionOrRedirect(authDeps) ?: return@post
-        if (!requireAdminOrRedirect(sess)) return@post
-        val form = requireCsrf()
-        val key = form["apiKey"].orEmpty()
-        try {
-            claudeAuth.registerApiKey(key)
-        } catch (e: ApiException) {
-            call.respondText(
-                EnvSetupTemplates.errorBlurb(e.message ?: Messages.t(sess.language, "env.error.keyRejected"), sess.language),
-                ContentType.Text.Html, HttpStatusCode.fromValue(e.statusCode),
-            )
-            return@post
-        } catch (e: Throwable) {
-            log.error(e) { "API key register failed" }
-            call.respondText(
-                EnvSetupTemplates.errorBlurb(Messages.t(sess.language, "env.error.keyFailed", e.message ?: ""), sess.language),
-                ContentType.Text.Html, HttpStatusCode.InternalServerError,
-            )
-            return@post
-        }
-        log.info { "API key registered by ${sess.username}" }
-        call.respondRedirect("/env-setup?claude=api-key")
-    }
-
-    /** API 키 모드 해제 → OAuth 자격증명 모드로 복귀. */
-    post("/env-setup/claude-auth/api-key/delete") {
-        val sess = requireSessionOrRedirect(authDeps) ?: return@post
-        if (!requireAdminOrRedirect(sess)) return@post
-        requireCsrf()
-        claudeAuth.deleteApiKey()
-        log.info { "API key deleted by ${sess.username}" }
-        call.respondRedirect("/env-setup?claude=api-key-deleted")
     }
 
     // ───────────────────────────────────────────────────────────────

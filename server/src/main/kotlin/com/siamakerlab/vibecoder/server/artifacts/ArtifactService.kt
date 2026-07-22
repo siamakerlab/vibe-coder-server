@@ -16,6 +16,8 @@ import kotlinx.serialization.json.Json
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 import kotlin.io.path.fileSize
 import kotlin.io.path.writeText
 
@@ -88,6 +90,54 @@ class ArtifactService(
             .onFailure { log.warn(it) { "[$projectId] artifact prune raised; latest store unaffected" } }
 
         return artifact
+    }
+
+    fun storeBuildDirectoryArtifact(
+        projectId: String,
+        buildId: String,
+        sourceDir: Path,
+        packageName: String,
+        variant: String,
+        ext: String,
+        type: String,
+    ): ArtifactRow {
+        require(Files.isDirectory(sourceDir)) { "artifact source is not a directory: $sourceDir" }
+        val targetDir = workspace.debugArtifactDir(projectId, buildId)
+        val fileName = artifactFileName(packageName, variant, null, ext)
+        val targetZip = targetDir.resolve(fileName)
+        zipDirectory(sourceDir, targetZip)
+        val sha = Sha256.hashFile(targetZip)
+        val size = targetZip.fileSize()
+        val artifact = repo.create(
+            id = Ids.artifactId(),
+            projectId = projectId,
+            buildId = buildId,
+            type = type,
+            fileName = targetZip.fileName.toString(),
+            filePath = targetZip.toString(),
+            sizeBytes = size,
+            sha256 = sha,
+        )
+        runCatching { pruneOldArtifacts(projectId, config.workspace.artifactKeepCount) }
+            .onFailure { log.warn(it) { "[$projectId] artifact prune raised; latest directory store unaffected" } }
+        return artifact
+    }
+
+    private fun zipDirectory(sourceDir: Path, targetZip: Path) {
+        Files.createDirectories(targetZip.parent)
+        ZipOutputStream(Files.newOutputStream(targetZip)).use { zip ->
+            Files.walk(sourceDir).use { stream ->
+                stream
+                    .filter { Files.isRegularFile(it) }
+                    .sorted()
+                    .forEach { file ->
+                        val relative = sourceDir.relativize(file).joinToString("/")
+                        zip.putNextEntry(ZipEntry(relative))
+                        Files.copy(file, zip)
+                        zip.closeEntry()
+                    }
+            }
+        }
     }
 
     /**

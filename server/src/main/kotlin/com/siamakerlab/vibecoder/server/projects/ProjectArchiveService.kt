@@ -4,9 +4,12 @@ import com.siamakerlab.vibecoder.server.admin.KeystoreService
 import com.siamakerlab.vibecoder.server.core.WorkspacePath
 import com.siamakerlab.vibecoder.server.repo.ArchivedProjectRepository
 import com.siamakerlab.vibecoder.server.repo.ArchivedProjectRow
+import com.siamakerlab.vibecoder.server.repo.ConversationTurnRepository
+import com.siamakerlab.vibecoder.server.repo.ConversationTurnRow
 import com.siamakerlab.vibecoder.server.repo.ProjectRepository
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.nio.file.Files
@@ -60,11 +63,21 @@ class ProjectArchiveService(
     private val keystore: KeystoreService,
     private val projectRepo: ProjectRepository,
     private val archivedRepo: ArchivedProjectRepository,
+    // v1.163.0 — 대화 이력(conversation_turns)을 아카이브/백업 tar 안에 함께 담고 복원한다.
+    // null 이면 대화 export/import 를 생략(테스트/구성상 부재 시 no-op).
+    private val conversationRepo: ConversationTurnRepository?,
     private val deleteProject: (String) -> Boolean,
 ) {
     private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }
+    // JSONL(1행=1turn)용 compact Json. content 개행/특수문자는 JSON 문자열 이스케이프로 안전.
+    private val jsonl = Json { ignoreUnknownKeys = true }
     private val tsFmt = DateTimeFormatter.ofPattern("yyyyMMddHHmmss").withZone(ZoneId.systemDefault())
     private val lock = Any()
+
+    private companion object {
+        const val CONV_FILE = "conversations.jsonl"
+        const val CONV_BATCH = 500
+    }
 
     fun list(): List<ArchivedProjectRow> = archivedRepo.list()
     fun get(id: String): ArchivedProjectRow? = archivedRepo.findById(id)
@@ -111,6 +124,10 @@ class ProjectArchiveService(
                 val ksStage = staging.resolve("keystores").also { Files.createDirectories(it) }
                 ksFiles.forEach { copyFile(it, ksStage.resolve(it.name)) }
             }
+
+            // 1b) v1.163.0 — 대화 이력 export. deleteProject(4) 로 conversation_turns 가 지워지기
+            //     전이라 아직 DB 에 존재 → staging 에 담아 tar 에 포함시키면 복원 시 되살아난다.
+            exportConversations(projectId, staging.resolve(CONV_FILE))
 
             // 2) tar.gz 생성 + 검증
             if (!run(listOf("tar", "czf", tar.toString(), "-C", staging.toString(), "."))) {
@@ -196,6 +213,8 @@ class ProjectArchiveService(
                 targetId, manifest.name, manifest.packageName,
                 projRoot.toString(), manifest.moduleName, manifest.debugTask, manifest.projectType,
             )
+            // v1.163.0 — 대화 이력 복원(projects row 삽입 후). 구 아카이브엔 파일이 없어 no-op.
+            importConversations(restore.resolve(CONV_FILE))
             archivedRepo.delete(archiveId)
             runCatching { Files.deleteIfExists(tar) }
             log.info { "project unarchived: $archiveId → $targetId" }
@@ -249,6 +268,8 @@ class ProjectArchiveService(
                 val ksStage = staging.resolve("keystores").also { Files.createDirectories(it) }
                 ksFiles.forEach { copyFile(it, ksStage.resolve(it.name)) }
             }
+            // v1.163.0 — 대화 이력도 함께 백업(원본/DB 불변, tar 안에만 추가). 다른 서버 복원 시 이력 유지.
+            exportConversations(projectId, staging.resolve(CONV_FILE))
             runCatching { Files.deleteIfExists(tar) }
             if (!run(listOf("tar", "czf", tar.toString(), "-C", staging.toString(), "."))) {
                 runCatching { Files.deleteIfExists(tar) }
@@ -308,11 +329,45 @@ class ProjectArchiveService(
                 targetId, manifest.name, manifest.packageName,
                 projRoot.toString(), manifest.moduleName, manifest.debugTask, manifest.projectType,
             )
+            // v1.163.0 — 대화 이력 복원(있으면). 대화 없이 만든 구 백업 tar 는 no-op.
+            importConversations(restore.resolve(CONV_FILE))
             log.info { "project restored from upload: $targetId" }
             return targetId
         } finally {
             rmrf(restore)
         }
+    }
+
+    // ── 대화 이력 export/import (v1.163.0) ─────────────────────────────────────
+    /**
+     * conversation_turns 를 tar 안 `conversations.jsonl`(1행=1turn) 로 export.
+     * archive 는 DB 삭제 **전에**, backup 은 원본 유지 상태에서 호출. repo 없으면 no-op.
+     */
+    private fun exportConversations(projectId: String, dest: Path) {
+        val repo = conversationRepo ?: return
+        Files.newBufferedWriter(dest).use { w ->
+            repo.exportForProject(projectId, CONV_BATCH) { batch ->
+                batch.forEach { row -> w.write(jsonl.encodeToString(row)); w.newLine() }
+            }
+        }
+    }
+
+    /**
+     * `conversations.jsonl` 을 conversation_turns 로 복원(원본 필드 보존). 파일 없으면(구
+     * 아카이브 / 대화 없던 프로젝트) no-op → 하위호환. repo 없으면 no-op.
+     */
+    private fun importConversations(src: Path) {
+        val repo = conversationRepo ?: return
+        if (!src.exists()) return
+        val buf = ArrayList<ConversationTurnRow>(CONV_BATCH)
+        Files.newBufferedReader(src).use { r ->
+            r.lineSequence().forEach { line ->
+                if (line.isBlank()) return@forEach
+                buf.add(jsonl.decodeFromString<ConversationTurnRow>(line))
+                if (buf.size >= CONV_BATCH) { repo.restoreRows(buf); buf.clear() }
+            }
+        }
+        if (buf.isNotEmpty()) repo.restoreRows(buf)
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────

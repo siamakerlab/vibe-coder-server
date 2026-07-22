@@ -403,10 +403,14 @@
       function updateRailContextMeter(d) {
         var el = document.getElementById('pt-ctx-meter'); if (!el) return;
         var empty = document.getElementById('pt-ctx-empty');
+        var card = document.querySelector('#project-tabs-root .pt-ctx-card');
+        var cardProvider = card ? (card.getAttribute('data-provider') || '') : '';
+        var incomingProvider = d && d.provider ? String(d.provider) : '';
+        if (cardProvider && incomingProvider && cardProvider !== incomingProvider) return;
         var input = Number(d.input) || 0, cacheRead = Number(d.cacheRead) || 0,
             cacheCreation = Number(d.cacheCreation) || 0, limit = Number(d.limit) || 0;
         var providerEl = document.getElementById('pt-ctx-provider');
-        if (providerEl) providerEl.textContent = d.provider ? '· ' + String(d.provider) : '';
+        if (providerEl) providerEl.textContent = (incomingProvider || cardProvider) ? '· ' + (incomingProvider || cardProvider) : '';
         var used = input + cacheRead + cacheCreation;
         function setMeterA11y(now, max, text) {
           max = Math.max(1, Math.round(Number(max) || 1));
@@ -419,6 +423,13 @@
         if (limit <= 0 || used <= 0) {
           el.hidden = true;
           if (empty) empty.hidden = false;
+          ['.ctx-seg-read', '.ctx-seg-create', '.ctx-seg-input'].forEach(function (sel) {
+            var seg = el.querySelector(sel); if (seg) seg.style.width = '0';
+          });
+          ['pt-ctx-used', 'pt-ctx-limit', 'pt-ctx-pct', 'pt-ctx-free'].forEach(function (id) {
+            var n = document.getElementById(id); if (n) n.textContent = id === 'pt-ctx-pct' ? '0%' : '–';
+          });
+          el.classList.remove('warn');
           setMeterA11y(0, 1, empty ? empty.textContent : '');
           return;
         }
@@ -443,6 +454,51 @@
         el.title = title;
         setMeterA11y(used, limit, title);
       }
+      // 서버가 알고 있는 직전 turn 스냅샷으로 rail 을 먼저 채운다. 이후 콘솔 iframe 의
+      // vibe:context-usage 메시지가 오면 같은 함수로 최신값을 덮어쓴다.
+      (function initRailContextMeter() {
+        var card = document.querySelector('#project-tabs-root .pt-ctx-card');
+        if (!card) return;
+        updateRailContextMeter({
+          provider: card.getAttribute('data-provider') || '',
+          input: card.getAttribute('data-input') || 0,
+          cacheRead: card.getAttribute('data-cache-read') || 0,
+          cacheCreation: card.getAttribute('data-cache-creation') || 0,
+          limit: card.getAttribute('data-limit') || 0
+        });
+        var contextUrl = card.getAttribute('data-context-url') || '';
+        var pollInFlight = false;
+        var pollController = null;
+        function pollContext() {
+          if (!contextUrl || pollInFlight || document.hidden) return;
+          pollInFlight = true;
+          pollController = window.AbortController ? new AbortController() : null;
+          var pollTimeout = window.setTimeout(function () {
+            if (pollController) {
+              try { pollController.abort(); } catch (e) {}
+            }
+          }, 10000);
+          fetch(contextUrl, {
+            method: 'GET',
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json' },
+            signal: pollController ? pollController.signal : undefined
+          }).then(function (r) {
+            return r.ok ? r.json() : null;
+          }).then(function (d) {
+            if (d) updateRailContextMeter(d);
+          }).catch(function () {}).finally(function () {
+            window.clearTimeout(pollTimeout);
+            pollController = null;
+            pollInFlight = false;
+          });
+        }
+        pollContext();
+        setInterval(pollContext, 15000);
+        document.addEventListener('visibilitychange', function () {
+          if (!document.hidden) pollContext();
+        });
+      })();
       // v1.106.3 — /compact 버튼: 콘솔 iframe 에 vibe:send-prompt 로 '/compact' 전달
       // (콘솔의 정상 전송 경로 사용 → busy 면 큐, 에코/미터 갱신 일관). 우측 rail 에 위치.
       var compactBtn = document.getElementById('pt-compact-btn');
@@ -472,6 +528,321 @@
           }
         });
       }
+      // iPhone Signing rail card: certificate/profile readiness from the same
+      // server-side source used by build prechecks. Rendered only for iPhone projects.
+      (function initIosSigningCard() {
+        var card = document.querySelector('.pt-ios-sign-card');
+        if (!card) return;
+        var statusEl = document.getElementById('pt-ios-sign-status');
+        var summaryEl = document.getElementById('pt-ios-sign-summary');
+        var profilesEl = document.getElementById('pt-ios-sign-profiles');
+        var refreshBtn = document.getElementById('pt-ios-sign-refresh');
+        function msg(name, fallback) { return card.getAttribute('data-' + name) || fallback || ''; }
+        function setStatus(text, state) {
+          if (!statusEl) return;
+          statusEl.textContent = text || '';
+          statusEl.dataset.state = state || '';
+        }
+        function escapeText(v) { return String(v == null ? '' : v); }
+        function profileLabel(p) {
+          var flags = [];
+          if (p.matchingBundleId) flags.push('bundle');
+          if (p.matchingTeamId) flags.push('team');
+          if (p.expired) flags.push('expired');
+          return [
+            p.name || p.uuid || '-',
+            p.bundleId || '-',
+            (p.teamIds || []).join(', ') || '-',
+            p.expiresAt || '-',
+            flags.join(' · ')
+          ].filter(Boolean).join(' · ');
+        }
+        function render(d) {
+          var ready = d && d.ready === true;
+          var blocked = d && d.blockedReason ? String(d.blockedReason) : '';
+          if (!d) {
+            setStatus('HTTP error', 'blocked');
+            return;
+          }
+          if (blocked === 'mac_required') setStatus(msg('mac-required', 'Mac agent required'), 'blocked');
+          else if (ready) setStatus(msg('ready', 'Ready'), 'ready');
+          else setStatus((msg('blocked', 'Blocked') + (blocked ? ': ' + blocked : '')).trim(), 'blocked');
+
+          if (summaryEl) {
+            var warnings = d.warnings || [];
+            var identities = (d.codesigningIdentities || []).slice(0, 3);
+            var lines = [
+              'mode: ' + escapeText(d.mode || '-'),
+              'bundle: ' + escapeText(d.bundleId || '-'),
+              'team: ' + escapeText(d.teamId || '-'),
+              'style: ' + escapeText(d.signingStyle || '-'),
+              msg('identities', 'Certificates') + ': ' + ((d.codesigningIdentities || []).length),
+              msg('profiles', 'Profiles') + ': ' + ((d.profiles || []).length)
+            ];
+            identities.forEach(function (identity) {
+              lines.push('cert: ' + escapeText(identity));
+            });
+            if (warnings.length) lines.push(msg('warnings', 'Warnings') + ': ' + warnings.join(' · '));
+            summaryEl.textContent = lines.join('\n');
+            summaryEl.hidden = false;
+          }
+          if (profilesEl) {
+            profilesEl.innerHTML = '';
+            var profiles = (d.profiles || []).slice(0, 6);
+            if (!profiles.length) {
+              var empty = document.createElement('div');
+              empty.className = 'pt-ios-sign-empty';
+              empty.textContent = msg('profile-empty', 'No matching provisioning profiles');
+              profilesEl.appendChild(empty);
+            } else {
+              profiles.forEach(function (p) {
+                var item = document.createElement('div');
+                item.className = 'pt-ios-sign-profile';
+                item.dataset.expired = p.expired ? 'true' : 'false';
+                item.dataset.match = (p.matchingBundleId && p.matchingTeamId) ? 'true' : 'false';
+                item.textContent = profileLabel(p);
+                profilesEl.appendChild(item);
+              });
+            }
+            profilesEl.hidden = false;
+          }
+        }
+        function loadSigning() {
+          if (refreshBtn) {
+            refreshBtn.disabled = true;
+            refreshBtn.classList.add('busy');
+          }
+          setStatus(msg('loading', 'Checking signing'), 'loading');
+          return fetch(card.getAttribute('data-signing-url'), {
+            method: 'GET',
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json' }
+          }).then(function (r) {
+            return r.ok ? r.json() : r.json().catch(function () { return { blockedReason: 'HTTP ' + r.status }; });
+          }).then(render).catch(function (e) {
+            setStatus(String(e), 'blocked');
+          }).finally(function () {
+            if (refreshBtn) {
+              refreshBtn.disabled = false;
+              refreshBtn.classList.remove('busy');
+            }
+          });
+        }
+        if (refreshBtn) refreshBtn.addEventListener('click', loadSigning);
+        loadSigning();
+      })();
+      // iPhone Simulator rail card: inventory, boot/shutdown, install+launch+screenshot,
+      // and bounded recent app logs. Rendered only for iPhone projects.
+      (function initIosSimulatorCard() {
+        var card = document.querySelector('.pt-ios-sim-card');
+        if (!card) return;
+        var statusEl = document.getElementById('pt-ios-sim-status');
+        var selectEl = document.getElementById('pt-ios-sim-device');
+        var refreshBtn = document.getElementById('pt-ios-sim-refresh');
+        var bootBtn = document.getElementById('pt-ios-sim-boot');
+        var shutdownBtn = document.getElementById('pt-ios-sim-shutdown');
+        var runBtn = document.getElementById('pt-ios-sim-run');
+        var logsBtn = document.getElementById('pt-ios-sim-logs');
+        var streamBtn = document.getElementById('pt-ios-sim-stream');
+        var shotEl = document.getElementById('pt-ios-sim-shot');
+        var logEl = document.getElementById('pt-ios-sim-log');
+        var logWs = null;
+        function msg(name, fallback) { return card.getAttribute('data-' + name) || fallback || ''; }
+        function selectedUdid() { return selectEl && selectEl.value ? selectEl.value : ''; }
+        function url(template) { return String(template || '').replace('__UDID__', encodeURIComponent(selectedUdid())); }
+        function streamUrl(template) {
+          var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+          return proto + '//' + location.host + url(template);
+        }
+        function setBusy(busy) {
+          [refreshBtn, bootBtn, shutdownBtn, runBtn, logsBtn, streamBtn].forEach(function (b) {
+            if (!b) return;
+            b.disabled = busy || (!selectedUdid() && b !== refreshBtn);
+            b.classList.toggle('busy', !!busy);
+          });
+          if (streamBtn && logWs) {
+            streamBtn.disabled = false;
+            streamBtn.classList.remove('busy');
+          }
+        }
+        function setStatus(text) { if (statusEl) statusEl.textContent = text || ''; }
+        function setOperationsVisible(visible) {
+          [bootBtn, shutdownBtn, runBtn, logsBtn, streamBtn].forEach(function (b) {
+            if (b) b.hidden = !visible;
+          });
+        }
+        function api(method, target) {
+          return fetch(target, {
+            method: method,
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json' },
+          }).then(function (r) {
+            return r.json().catch(function () { return {}; }).then(function (d) {
+              d.__status = r.status;
+              d.__ok = r.ok;
+              return d;
+            });
+          });
+        }
+        function syncButtons() { setBusy(false); }
+        function appendLog(line) {
+          if (!logEl) return;
+          logEl.hidden = false;
+          var text = logEl.textContent ? (logEl.textContent + '\n' + line) : line;
+          if (text.length > 80000) text = text.slice(text.length - 80000);
+          logEl.textContent = text;
+          logEl.scrollTop = logEl.scrollHeight;
+        }
+        function stopStream(manual) {
+          if (logWs) {
+            var ws = logWs;
+            logWs = null;
+            try { ws.close(); } catch (e) {}
+          }
+          if (streamBtn) streamBtn.textContent = msg('stream', 'Stream');
+          if (manual) setStatus('');
+          syncButtons();
+        }
+        function startStream() {
+          if (!selectedUdid()) return;
+          if (logWs) {
+            stopStream(true);
+            return;
+          }
+          if (logEl) {
+            logEl.hidden = false;
+            logEl.textContent = '';
+          }
+          setStatus(msg('streaming', 'Streaming logs'));
+          var ws = new WebSocket(streamUrl(card.getAttribute('data-log-stream-template')));
+          logWs = ws;
+          if (streamBtn) streamBtn.textContent = msg('stream-stop', 'Stop');
+          syncButtons();
+          ws.onmessage = function (event) {
+            var frame = null;
+            try { frame = JSON.parse(event.data); } catch (e) {}
+            if (!frame) return;
+            if (frame.type === 'log') {
+              appendLog('[' + (frame.level || 'INFO') + '] ' + (frame.message || ''));
+            } else if (frame.type === 'error') {
+              appendLog('[ERROR] ' + (frame.message || frame.code || 'error'));
+              setStatus(frame.code || frame.message || 'error');
+            } else if (frame.type === 'done') {
+              if (frame.errorMessage) setStatus(frame.errorMessage);
+            }
+          };
+          ws.onerror = function () {
+            appendLog('[ERROR] WebSocket failed');
+          };
+          ws.onclose = function () {
+            if (logWs === ws) logWs = null;
+            if (streamBtn) streamBtn.textContent = msg('stream', 'Stream');
+            syncButtons();
+          };
+        }
+        function renderDevices(devices) {
+          selectEl.innerHTML = '';
+          (devices || []).forEach(function (d) {
+            if (!d || !d.udid) return;
+            var opt = document.createElement('option');
+            opt.value = d.udid;
+            opt.textContent = (d.name || d.udid) + ' · ' + (d.runtime || '-') + ' · ' + (d.state || '-');
+            opt.dataset.state = d.state || '';
+            selectEl.appendChild(opt);
+          });
+          var booted = document.createElement('option');
+          booted.value = 'booted';
+          booted.textContent = 'booted';
+          selectEl.appendChild(booted);
+          selectEl.hidden = selectEl.options.length === 0;
+          syncButtons();
+        }
+        function loadDevices() {
+          stopStream(false);
+          setBusy(true);
+          setStatus(msg('loading', 'Loading...'));
+          return api('GET', card.getAttribute('data-simulators-url')).then(function (d) {
+            var capable = d.simulatorUiEnabled !== false && d.blockedReason !== 'mac_required';
+            setOperationsVisible(capable);
+            if (!capable) {
+              renderDevices([]);
+              setStatus(msg('mac-required', 'Mac agent required'));
+              return;
+            }
+            var devices = d.devices || [];
+            renderDevices(devices);
+            setStatus(devices.length ? ((d.mode || '') + ' · ' + devices.length) : msg('empty', 'No simulators'));
+          }).catch(function (e) {
+            setStatus(String(e));
+          }).finally(function () {
+            syncButtons();
+          });
+        }
+        function doAction(method, template, after) {
+          if (!selectedUdid()) return;
+          setBusy(true);
+          return api(method, url(template)).then(function (d) {
+            if (d.ok || d.__ok) {
+              setStatus((d.mode || '') + ' · ok');
+              if (after) after(d);
+            } else {
+              setStatus((d.blockedReason || d.message || ('HTTP ' + d.__status)));
+            }
+          }).catch(function (e) {
+            setStatus(String(e));
+          }).finally(function () {
+            syncButtons();
+          });
+        }
+        function loadLogs() {
+          if (!selectedUdid()) return;
+          setBusy(true);
+          return api('GET', url(card.getAttribute('data-logs-template'))).then(function (d) {
+            var lines = d.lines || [];
+            if (logEl) {
+              logEl.hidden = false;
+              logEl.textContent = lines.length ? lines.join('\n') : (d.blockedReason || d.message || msg('log-empty', 'No logs'));
+              logEl.scrollTop = logEl.scrollHeight;
+            }
+            if (!d.ok && (d.blockedReason || d.message)) setStatus(d.blockedReason || d.message);
+          }).catch(function (e) {
+            if (logEl) {
+              logEl.hidden = false;
+              logEl.textContent = String(e);
+            }
+          }).finally(function () {
+            syncButtons();
+          });
+        }
+        if (shotEl) {
+          shotEl.addEventListener('error', function () { shotEl.hidden = true; });
+        }
+        if (refreshBtn) refreshBtn.addEventListener('click', loadDevices);
+        if (selectEl) selectEl.addEventListener('change', function () {
+          stopStream(false);
+          syncButtons();
+        });
+        if (bootBtn) bootBtn.addEventListener('click', function () {
+          doAction('POST', card.getAttribute('data-boot-template'), loadDevices);
+        });
+        if (shutdownBtn) shutdownBtn.addEventListener('click', function () {
+          doAction('POST', card.getAttribute('data-shutdown-template'), loadDevices);
+        });
+        if (runBtn) runBtn.addEventListener('click', function () {
+          doAction('POST', card.getAttribute('data-run-template'), function (d) {
+            setStatus(d.ok ? msg('run-ok', 'Run complete') : msg('run-failed', 'Run failed'));
+            if (d.ok && shotEl) {
+              shotEl.hidden = false;
+              shotEl.src = (card.getAttribute('data-screenshot-url') || '') + '?t=' + Date.now();
+              loadLogs();
+            }
+          });
+        });
+        if (logsBtn) logsBtn.addEventListener('click', loadLogs);
+        if (streamBtn) streamBtn.addEventListener('click', startStream);
+        setOperationsVisible(false);
+        loadDevices();
+      })();
       // v1.110.0 — rail 카드 접기/펼치기(헤더 클릭). 카드별 상태 localStorage 영속.
       (function initRailCollapse() {
         var rail = document.querySelector('#project-tabs-root .pt-rail');
@@ -677,26 +1048,6 @@
           }).catch(function (e) { errEl.textContent = String(e); });
         });
       })();
-      // v1.111.0 — Todo 요약 + 백그라운드 작업 카드(콘솔에서 이동). 콘솔이 보낸 스냅샷 HTML 을
-      // rail 카드에 렌더하고, 내용 있을 때만 카드를 표시한다.
-      function renderRailTodo(d) {
-        var card = document.querySelector('#project-tabs-root .pt-todo-card');
-        if (!card) return;
-        var list = document.getElementById('pt-todo-list');
-        var summ = document.getElementById('pt-todo-summary');
-        if (list) list.innerHTML = d.html || '';
-        if (summ) summ.textContent = d.summary || '';
-        card.hidden = !(d.count > 0);
-      }
-      function renderRailBgTasks(d) {
-        var card = document.querySelector('#project-tabs-root .pt-bg-card');
-        if (!card) return;
-        var list = document.getElementById('pt-bg-list');
-        var cnt = document.getElementById('pt-bg-count');
-        if (list) list.innerHTML = d.html || '';
-        if (cnt) cnt.textContent = (d.running > 0) ? '· ' + d.running : '';
-        card.hidden = !(d.count > 0);
-      }
       window.addEventListener('message', function (ev) {
         if (ev.origin !== location.origin) return;
         var d = ev.data;
@@ -705,16 +1056,9 @@
         if (d.type === 'vibe:context-usage') { updateRailContextMeter(d); return; }
         // v1.109.0 — 콘솔 iframe 이 포워딩한 자동화 진행/종료 프레임 → rail 카드 즉시 갱신.
         if (d.type === 'vibe:automation') { if (window.__ptAutoRender) window.__ptAutoRender(d.state); return; }
-        // v1.111.0 — Todo / 백그라운드 작업 스냅샷 → rail 카드 렌더.
-        if (d.type === 'vibe:todo') { renderRailTodo(d); return; }
-        if (d.type === 'vibe:bgtasks') { renderRailBgTasks(d); return; }
-        // v1.103.0 — 콘솔 iframe 의 busy-badge 가 turn 상태를 헤더 칩으로 미러링.
+        // v1.162.3 — 헤더 상태칩은 /ws/projects ProjectBusyChanged 만 따른다.
+        // iframe-local console:busy 는 프로젝트 목록과 다른 원천이라 무시한다.
         if (d.type === 'console:busy') {
-          var badge = document.getElementById('console-busy-badge');
-          if (badge) {
-            badge.dataset.state = d.state || 'ready'; // v1.114.1 — 'idle' 별칭 폐지, 서버 wire 'ready' 통일
-            if (typeof d.text === 'string') { badge.textContent = d.text; badge.title = d.text; }
-          }
           return;
         }
       });

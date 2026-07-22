@@ -3,9 +3,9 @@ package com.siamakerlab.vibecoder.server.build
 import com.siamakerlab.vibecoder.server.auth.AUTH_BEARER
 import com.siamakerlab.vibecoder.server.auth.requireApiWrite
 import com.siamakerlab.vibecoder.server.auth.requireProjectAcl
-import com.siamakerlab.vibecoder.server.agent.AgentRouter
 import com.siamakerlab.vibecoder.server.error.ApiException
 import com.siamakerlab.vibecoder.server.projects.ProjectService
+import com.siamakerlab.vibecoder.server.terminal.ConsolePromptSender
 import com.siamakerlab.vibecoder.shared.ApiPath
 import com.siamakerlab.vibecoder.shared.dto.LintIssueDto
 import com.siamakerlab.vibecoder.shared.dto.LintResultDto
@@ -31,11 +31,11 @@ import kotlinx.coroutines.withContext
 fun Routing.jsonQualityRoutes(
     projects: ProjectService,
     svc: LintQualityService,
-    agentRouter: AgentRouter,
+    promptSender: ConsolePromptSender,
 ) {
     authenticate(AUTH_BEARER) {
         // Lint(:module:lintDebug) 실행 + 결과. 동기 실행(수십 초~수 분) — 클라가 로딩 표시.
-        post("/api/projects/{projectId}/quality/lint") {
+        post(ApiPath.qualityLint("{projectId}")) {
             call.requireApiWrite()
             val projectId = call.parameters["projectId"]
                 ?: throw ApiException.localized(400, "bad_request", messageKey = "api.common.projectIdRequired")
@@ -62,7 +62,7 @@ fun Routing.jsonQualityRoutes(
         }
 
         // 선택 lint 이슈 → 현재 콘솔 provider 로 수정요청 전송. 진행은 콘솔 WS 로.
-        post("/api/projects/{projectId}/quality/fix") {
+        post(ApiPath.qualityFix("{projectId}")) {
             call.requireApiWrite()
             val projectId = call.parameters["projectId"]
                 ?: throw ApiException.localized(400, "bad_request", messageKey = "api.common.projectIdRequired")
@@ -75,7 +75,7 @@ fun Routing.jsonQualityRoutes(
             }
             val prompt = if (req.kind == "test") buildTestFixPrompt(module, selected)
                          else buildLintFixPrompt(module, selected)
-            agentRouter.sendPrompt(projectId, prompt)
+            promptSender.send(projectId, prompt, source = "json_quality_fix")
             call.respond(HttpStatusCode.Accepted, QualityFixResponseDto(sent = selected.size))
         }
     }

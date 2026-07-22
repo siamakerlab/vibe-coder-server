@@ -3,6 +3,7 @@ package com.siamakerlab.vibecoder.server.repo
 import com.siamakerlab.vibecoder.server.core.Clock
 import com.siamakerlab.vibecoder.server.core.Ids
 import com.siamakerlab.vibecoder.server.db.ConversationTurns
+import kotlinx.serialization.Serializable
 import org.jetbrains.exposed.sql.Op
 import org.jetbrains.exposed.sql.QueryBuilder
 import org.jetbrains.exposed.sql.ResultRow
@@ -16,6 +17,7 @@ import org.jetbrains.exposed.sql.SqlExpressionBuilder.lessEq
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.like
 import org.jetbrains.exposed.sql.TextColumnType
 import org.jetbrains.exposed.sql.and
+import org.jetbrains.exposed.sql.batchInsert
 import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.max
@@ -23,6 +25,7 @@ import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.update
 
+@Serializable
 data class ConversationTurnRow(
     val id: String,
     val projectId: String,
@@ -277,6 +280,14 @@ class ConversationTurnRepository(private val clock: Clock) {
             .map { it.toRow() }
     }
 
+    fun listLatest(filter: Filter, limit: Int = 200): List<ConversationTurnRow> = transaction {
+        ConversationTurns.selectAll().where { filter.toCondition() }
+            .orderBy(ConversationTurns.ts to SortOrder.DESC)
+            .limit(limit.coerceIn(1, 1000))
+            .map { it.toRow() }
+            .asReversed()
+    }
+
     fun count(filter: Filter): Long = transaction {
         ConversationTurns.selectAll().where { filter.toCondition() }.count()
     }
@@ -286,21 +297,25 @@ class ConversationTurnRepository(private val clock: Clock) {
      * `/claude/console/image?turn=N&idx=M` 이 이 row 들에서 이미지 base64 를 꺼내 서빙.
      * turnIdx 가 race 로 중복될 수 있어(클래스 KDoc 참조) List 반환 — 호출자가
      * 이미지를 가진 첫 row 를 고른다. agent_name IS NULL(메인 콘솔)만.
+     * v1.x TUI: sessionId null 은 콘솔 history 의 provider-wide fallback 과 동일하게 세션
+     * 필터를 생략한다. active TUI PTY session 이 유실된 뒤 복원된 history 이미지용이다.
      */
     fun byTurnIdx(
         projectId: String,
-        sessionId: String,
+        sessionId: String?,
         turnIdx: Int,
         provider: String = PROVIDER_CLAUDE,
     ): List<ConversationTurnRow> = transaction {
+        var condition: Op<Boolean> =
+            (ConversationTurns.projectId eq projectId) and
+                (ConversationTurns.provider eq normalizeProvider(provider)) and
+                (ConversationTurns.turnIdx eq turnIdx) and
+                IsNullOp(ConversationTurns.agentName)
+        if (sessionId != null) {
+            condition = condition and (ConversationTurns.sessionId eq sessionId)
+        }
         ConversationTurns.selectAll()
-            .where {
-                (ConversationTurns.projectId eq projectId) and
-                    (ConversationTurns.provider eq normalizeProvider(provider)) and
-                    (ConversationTurns.sessionId eq sessionId) and
-                    (ConversationTurns.turnIdx eq turnIdx) and
-                    IsNullOp(ConversationTurns.agentName)
-            }
+            .where { condition }
             .orderBy(ConversationTurns.ts to SortOrder.ASC)
             .limit(10)
             .map { it.toRow() }
@@ -334,6 +349,67 @@ class ConversationTurnRepository(private val clock: Clock) {
     /** Project 통째 삭제 (ProjectService.delete cascade). */
     fun deleteForProject(projectId: String): Int = transaction {
         ConversationTurns.deleteWhere { ConversationTurns.projectId eq projectId }
+    }
+
+    /**
+     * v1.163.0 — 아카이브/백업용 프로젝트 전체 대화 export. 모든 provider·agent(메인+서브)
+     * 포함, `ts→turnIdx→id` 안정 정렬. content 가 큰 turn 이 수만 건일 수 있어 [batchSize]
+     * 단위 스트리밍으로 넘겨 메모리 상한을 유지한다([sink] 는 각 배치를 즉시 소비/파일 flush).
+     * (list() 는 UI 페이지네이션용 max 1000·필터 결합이라 복원용 raw 전량 export 에 부적합.)
+     */
+    fun exportForProject(
+        projectId: String,
+        batchSize: Int = 500,
+        sink: (List<ConversationTurnRow>) -> Unit,
+    ) {
+        var offset = 0L
+        while (true) {
+            val batch = transaction {
+                ConversationTurns.selectAll()
+                    .where { ConversationTurns.projectId eq projectId }
+                    .orderBy(
+                        ConversationTurns.ts to SortOrder.ASC,
+                        ConversationTurns.turnIdx to SortOrder.ASC,
+                        ConversationTurns.id to SortOrder.ASC,
+                    )
+                    .limit(batchSize).offset(offset)
+                    .map { it.toRow() }
+            }
+            if (batch.isEmpty()) break
+            sink(batch)
+            if (batch.size < batchSize) break
+            offset += batchSize
+        }
+    }
+
+    /**
+     * v1.163.0 — 아카이브/백업 복원용 raw 삽입. `insert()` 와 달리 id·ts·turnIdx·provider·
+     * agentName·userMemo·starred 를 export 시점 값 그대로 보존(재계산 안 함) → 복원 후 이력이
+     * 원본과 동일. `content_tsv` 는 generated 라 DB 가 자동 채운다. 이미 존재하는 id 는
+     * skip(ignore) 하여 중복/재실행에도 안전. @return 시도한 row 수.
+     */
+    fun restoreRows(rows: List<ConversationTurnRow>): Int {
+        if (rows.isEmpty()) return 0
+        return transaction {
+            ConversationTurns.batchInsert(rows, ignore = true, shouldReturnGeneratedValues = false) { r ->
+                this[ConversationTurns.id] = r.id
+                this[ConversationTurns.projectId] = r.projectId
+                this[ConversationTurns.provider] = r.provider
+                this[ConversationTurns.sessionId] = r.sessionId
+                this[ConversationTurns.turnIdx] = r.turnIdx
+                this[ConversationTurns.ts] = r.ts
+                this[ConversationTurns.role] = r.role
+                this[ConversationTurns.content] = r.content
+                this[ConversationTurns.toolName] = r.toolName
+                this[ConversationTurns.toolUseId] = r.toolUseId
+                this[ConversationTurns.tokensIn] = r.tokensIn
+                this[ConversationTurns.tokensOut] = r.tokensOut
+                this[ConversationTurns.raw] = r.raw
+                this[ConversationTurns.agentName] = r.agentName
+                this[ConversationTurns.userMemo] = r.userMemo
+                this[ConversationTurns.starred] = r.starred
+            }.size
+        }
     }
 
     /**
@@ -392,35 +468,6 @@ class ConversationTurnRepository(private val clock: Clock) {
             .groupBy(ConversationTurns.projectId)
             .mapNotNull { row -> row[agg]?.let { row[ConversationTurns.projectId] to it } }
             .toMap()
-    }
-
-    /**
-     * v1.60.0 — 상태칩 "중지됨" 판정용. 메인 콘솔(agent_name IS NULL)의 **최신 user
-     * 프롬프트 이후 완료 row(assistant/usage)가 없으면 true** (= 응답이 시작/완료되지
-     * 못하고 끊김: cancel / crash / 서버중단). user 프롬프트가 아예 없으면 false.
-     *
-     * ts 는 ISO 문자열이라 lexicographic max = chronological (lastTs 와 동일 가정).
-     */
-    fun lastPromptInterrupted(projectId: String): Boolean = transaction {
-        val agg = ConversationTurns.ts.max()
-        val lastUserTs = ConversationTurns.select(agg)
-            .where {
-                (ConversationTurns.projectId eq projectId) and
-                    (ConversationTurns.role eq "user") and
-                    IsNullOp(ConversationTurns.agentName)
-            }
-            .firstOrNull()?.get(agg)
-            ?: return@transaction false
-        val completed = ConversationTurns.selectAll()
-            .where {
-                (ConversationTurns.projectId eq projectId) and
-                    (ConversationTurns.role inList listOf("assistant", "usage")) and
-                    IsNullOp(ConversationTurns.agentName) and
-                    (ConversationTurns.ts greater lastUserTs)
-            }
-            .limit(1)
-            .firstOrNull() != null
-        !completed
     }
 
     private fun ResultRow.toRow() = ConversationTurnRow(
@@ -526,6 +573,47 @@ class ConversationTurnRepository(private val clock: Clock) {
             outputTokens = output,
             cacheReadTokens = cr,
             cacheCreationTokens = cc,
+        )
+    }
+
+    data class UsageContextSnapshot(
+        val inputTokens: Long,
+        val outputTokens: Long,
+        val cacheReadTokens: Long,
+        val cacheCreationTokens: Long,
+    ) {
+        val usedInput: Long get() = inputTokens + cacheReadTokens + cacheCreationTokens
+    }
+
+    fun latestUsageContext(projectId: String, provider: String, sessionId: String? = null): UsageContextSnapshot? = transaction {
+        val content = ConversationTurns
+            .selectAll()
+            .where {
+                var op =
+                    (ConversationTurns.projectId eq projectId) and
+                    (ConversationTurns.provider eq normalizeProvider(provider)) and
+                    (ConversationTurns.role eq "usage") and
+                    IsNullOp(ConversationTurns.agentName)
+                if (sessionId != null) {
+                    op = op and (ConversationTurns.sessionId eq sessionId)
+                }
+                op
+            }
+            .orderBy(ConversationTurns.ts to SortOrder.DESC)
+            .limit(1)
+            .firstOrNull()
+            ?.get(ConversationTurns.content)
+            ?: return@transaction null
+        val values = mutableMapOf<String, Long>()
+        val re = Regex("\"(input|output|cacheRead|cacheCreate)\":(\\d+)")
+        for (m in re.findAll(content)) {
+            values[m.groupValues[1]] = m.groupValues[2].toLongOrNull() ?: 0L
+        }
+        UsageContextSnapshot(
+            inputTokens = values["input"] ?: 0L,
+            outputTokens = values["output"] ?: 0L,
+            cacheReadTokens = values["cacheRead"] ?: 0L,
+            cacheCreationTokens = values["cacheCreate"] ?: 0L,
         )
     }
 }

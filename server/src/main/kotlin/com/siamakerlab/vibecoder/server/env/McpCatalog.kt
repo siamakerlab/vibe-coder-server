@@ -1,5 +1,7 @@
 package com.siamakerlab.vibecoder.server.env
 
+import com.siamakerlab.vibecoder.server.platform.PlatformEngineRegistry
+
 /**
  * Verified/community MCP server catalog — v0.8.0.
  *
@@ -113,8 +115,8 @@ object McpCatalog {
             id = "git",
             displayName = "Git",
             pkg = "@modelcontextprotocol/server-git",
-            description = "로컬 git 리포의 log/diff/status/show 등 readonly 조회.",
-            category = Category.DEV_TOOLS, trust = Trust.VERIFIED, recommended = true,
+            description = "로컬 git 리포의 log/diff/status/show 등 readonly 조회. 현재 npm 패키지 경로가 유효하지 않아 기본 설치에서 제외됨.",
+            category = Category.DEV_TOOLS, trust = Trust.VERIFIED, recommended = false, defaultInstall = false,
             homepage = "https://github.com/modelcontextprotocol/servers/tree/main/src/git",
             configFields = listOf(
                 ConfigField("repository", "리포지토리 경로", "/workspace",
@@ -141,7 +143,7 @@ object McpCatalog {
             displayName = "Time",
             pkg = "@modelcontextprotocol/server-time",
             description = "타임존 변환 + 현재 시각. 컨테이너의 TZ 환경 차이 보정에 유용.",
-            category = Category.AI_ASSIST, trust = Trust.VERIFIED,
+            category = Category.AI_ASSIST, trust = Trust.VERIFIED, defaultInstall = true,
         ))
         add(McpEntry(
             id = "everything",
@@ -398,7 +400,7 @@ object McpCatalog {
             displayName = "Playwright",
             pkg = "@playwright/mcp",
             description = "Microsoft Playwright 기반 브라우저 자동화 + screenshot. Chromium 자동 설치.",
-            category = Category.BROWSER, trust = Trust.VERIFIED, recommended = true, defaultInstall = true,
+            category = Category.BROWSER, trust = Trust.VERIFIED, recommended = true, defaultInstall = false,
             homepage = "https://github.com/microsoft/playwright-mcp",
         ))
         add(McpEntry(
@@ -422,7 +424,7 @@ object McpCatalog {
             displayName = "Mobile (Mobile-Next)",
             pkg = "@mobilenext/mobile-mcp",
             description = "iOS/Android 모바일 UI 자동화 — accessibility tree 기반 탭/스와이프/타이핑/스크린샷. adb(Android)·xcrun(iOS) 위에서 동작하므로 빌드환경 > Emulator 의 헤드리스 에뮬레이터와 연계해 Claude 가 빌드한 앱을 직접 조작·검증할 수 있다. zero-config (연결된 디바이스/에뮬레이터 자동 감지).",
-            category = Category.BROWSER, trust = Trust.COMMUNITY, recommended = true, defaultInstall = true,
+            category = Category.BROWSER, trust = Trust.COMMUNITY, recommended = true, defaultInstall = false,
             argsTemplate = listOf("-y", "@PKG@@latest"),
             homepage = "https://github.com/mobile-next/mobile-mcp",
         ))
@@ -731,6 +733,13 @@ object McpCatalog {
             category = Category.APP_PUBLISH, trust = Trust.EXPERIMENTAL,
         ))
         add(McpEntry(
+            id = "flutter-ios-bridge",
+            displayName = "Flutter iOS Bridge",
+            pkg = "flutter-ios-bridge-mcp",
+            description = "Flutter 프로젝트의 iOS target 생성/검증/빌드 전환을 돕는 opt-in MCP 후보. macOS/Xcode agent가 준비된 경우에만 사용.",
+            category = Category.APP_PUBLISH, trust = Trust.EXPERIMENTAL,
+        ))
+        add(McpEntry(
             id = "app-publish",
             displayName = "App Publish (Play + App Store)",
             pkg = "app-publish-mcp",
@@ -829,8 +838,10 @@ object McpCatalog {
     /** 추천 MCP 만 — 첫 사용자 onboarding 시 "추천 묶음 한번에 설치" 옵션. */
     val recommendedIds: List<String> = all.filter { it.recommended }.map { it.id }
 
-    /** v1.37.0 — zero-config 기본 설치 대상 (fetch / memory / sequential-thinking). 카탈로그 기본 선택. */
-    val defaultInstallIds: List<String> = all.filter { it.defaultInstall }.map { it.id }
+    /** v1.37.0 — platform-neutral zero-config 기본 설치 대상. 최종 SSOT 는 PlatformToolingProfile 공통 default MCP. */
+    val defaultInstallIds: List<String> = all
+        .filter { it.id in PlatformEngineRegistry.default.commonDefaultMcpIds() }
+        .map { it.id }
 
     /** 카탈로그 크기 보고용. */
     val size: Int = all.size

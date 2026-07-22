@@ -6,6 +6,7 @@ import com.siamakerlab.vibecoder.server.agent.AgentUsageProvider
 import com.siamakerlab.vibecoder.server.core.Clock
 import com.siamakerlab.vibecoder.server.repo.ScheduledPromptRepository
 import com.siamakerlab.vibecoder.server.repo.ScheduledPromptRow
+import com.siamakerlab.vibecoder.server.terminal.ConsolePromptSender
 import com.siamakerlab.vibecoder.server.ws.LogHub
 import com.siamakerlab.vibecoder.shared.dto.ScheduledPromptTriggers
 import com.siamakerlab.vibecoder.shared.ws.WsFrame
@@ -50,6 +51,7 @@ private val log = KotlinLogging.logger {}
 class ScheduledPromptManager(
     private val repo: ScheduledPromptRepository,
     private val router: AgentRouter,
+    private val promptSender: ConsolePromptSender,
     /**
      * v1.147.0 — provider별 usage provider 맵. [AgentRouter.providerFor] 로 조회한 현재
      * provider 의 [AgentUsageProvider] 로 SESSION_RESET/WEEKLY_RESET 을 판정한다.
@@ -118,7 +120,7 @@ class ScheduledPromptManager(
     private suspend fun fire(row: ScheduledPromptRow) {
         val label = row.triggerLabel ?: row.triggerType
         try {
-            router.sendPrompt(row.projectId, row.prompt)
+            promptSender.send(row.projectId, row.prompt, source = "scheduled_prompt")
             repo.markSent(row.id)
             log.info { "scheduled prompt fired: ${row.projectId} (${row.triggerType})" }
             emitSystem(row.projectId, "schedule_sent", "⏰ 예약 프롬프트 전송 — $label")

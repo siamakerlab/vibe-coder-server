@@ -2,10 +2,13 @@ package com.siamakerlab.vibecoder.server.admin
 
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens.requireCsrf
+import com.siamakerlab.vibecoder.server.agent.AgentContextSnapshot
 import com.siamakerlab.vibecoder.server.agent.AgentProvider
 import com.siamakerlab.vibecoder.server.agent.AgentRouter
 import com.siamakerlab.vibecoder.server.agent.ModelCatalogService
 import com.siamakerlab.vibecoder.server.build.BuildService
+import com.siamakerlab.vibecoder.server.build.XcodeBuildSettings
+import com.siamakerlab.vibecoder.server.build.XcodeProjectInspector
 import com.siamakerlab.vibecoder.server.claude.ClaudeSessionManager
 import com.siamakerlab.vibecoder.server.core.WorkspacePath
 import com.siamakerlab.vibecoder.server.error.ApiException
@@ -17,6 +20,10 @@ import com.siamakerlab.vibecoder.server.projects.ProjectService
 import com.siamakerlab.vibecoder.server.repo.ArtifactRepository
 import com.siamakerlab.vibecoder.server.repo.BuildRepository
 import com.siamakerlab.vibecoder.server.repo.ConversationTurnRepository
+import com.siamakerlab.vibecoder.server.terminal.ConsolePromptDispatcher
+import com.siamakerlab.vibecoder.server.terminal.AgentStatusStore
+import com.siamakerlab.vibecoder.server.terminal.ConsoleTuiSessionManager
+import com.siamakerlab.vibecoder.server.terminal.ConsoleTuiPreferenceStore
 import com.siamakerlab.vibecoder.server.ws.LogHub
 import com.siamakerlab.vibecoder.shared.ApiPath
 import com.siamakerlab.vibecoder.shared.dto.BuildDto
@@ -114,6 +121,33 @@ private fun packageRenamePrompt(oldPkg: String?, newPkg: String): String {
     """.trimIndent()
 }
 
+private fun iosBuildFailureFixPrompt(
+    projectName: String,
+    projectId: String,
+    buildId: String,
+    variant: String,
+    failureKind: String?,
+    errorMessage: String,
+    logPath: String?,
+): String = """
+    iPhone 프로젝트 `$projectName` 의 Xcode 빌드 실패를 정밀 분석하고 수정해 주세요.
+
+    - projectId: `$projectId`
+    - buildId: `$buildId`
+    - variant: `$variant`
+    - failureKind: `${failureKind ?: "unknown"}`
+    - classified failure:
+    ```
+    $errorMessage
+    ```
+    - build log: `${logPath ?: ".vibecoder/<projectId>/logs/<buildId>.log"}`
+
+    요청:
+    1. 빌드 로그와 Xcode 프로젝트 설정을 확인해 실제 원인을 특정하세요.
+    2. Swift/SwiftUI 코드, scheme, signing, simulator destination, export 설정 중 필요한 부분만 수정하세요.
+    3. 가능한 경우 동일 variant 빌드를 다시 실행해 검증하고, 실패가 남으면 다음 조치까지 요약하세요.
+""".trimIndent()
+
 fun Routing.webProjectRoutes(
     authDeps: AdminRoutesDeps,
     projects: ProjectService,
@@ -130,6 +164,7 @@ fun Routing.webProjectRoutes(
     playPublishService: com.siamakerlab.vibecoder.server.publish.PlayPublishService,
     /** v0.23.0 — TestFlight 업로드 트리거 (MCP app-store-connect 위임). */
     testFlightPublishService: com.siamakerlab.vibecoder.server.publish.TestFlightPublishService,
+    testFlightUploadJobRepo: com.siamakerlab.vibecoder.server.repo.TestFlightUploadJobRepository? = null,
     /** v0.28.0 — APK 서명 검사 (apksigner verify). */
     apkSignerInspector: com.siamakerlab.vibecoder.server.artifacts.ApkSignerInspector,
     /** v0.29.0 — 프로젝트 source zip stream. */
@@ -147,6 +182,10 @@ fun Routing.webProjectRoutes(
     promptAutomationManager: com.siamakerlab.vibecoder.server.automation.PromptAutomationManager,
     agentRouter: AgentRouter? = null,
     modelCatalog: ModelCatalogService? = null,
+    consoleTuiManager: ConsoleTuiSessionManager? = null,
+    consolePromptDispatcher: ConsolePromptDispatcher? = null,
+    consoleTuiPrefs: ConsoleTuiPreferenceStore? = null,
+    agentStatusStore: AgentStatusStore? = null,
 ) {
 
     // ── 목록 + 등록 폼 ────────────────────────────────────────────────
@@ -162,16 +201,16 @@ fun Routing.webProjectRoutes(
         val page = (call.request.queryParameters["page"]?.toIntOrNull() ?: 1).coerceIn(1, pageCount)
         val offset = (page - 1) * size
         val list = full.drop(offset).take(size)
-        // v1.60.0 — 상태칩 3-state (응답중/대기중/중지됨). 프로세스 생존이 아닌 대화 이력 기반.
-        val statuses = list.associate { it.id to projectStatus(it.id, sessionManager, conversationRepo) }
+        val statuses = list.associate { it.id to projectStatus(it.id, sessionManager, agentStatusStore) }
         // v1.64.0 — 행별 앱 버전(versionName) + 런처 아이콘 존재 여부(없으면 placeholder).
         val versions = list.associate { it.id to runCatching { projects.appVersionName(it.id, it.moduleName) }.getOrNull() }
         val appIcons = list.associate { it.id to runCatching { projects.resolveAppIcon(it.id, it.moduleName) != null }.getOrDefault(false) }
+        val uiCapabilities = list.associate { it.id to projects.uiCapabilities(it.projectType) }
         call.respondText(
             WebProjectTemplates.projectsPage(
                 sess.username, list, flashErr = err, flashOk = ok, csrf = sess.csrf, lang = sess.language,
                 statuses = statuses, page = page, size = size, total = total,
-                versions = versions, appIcons = appIcons,
+                versions = versions, appIcons = appIcons, uiCapabilities = uiCapabilities,
             ),
             ContentType.Text.Html,
         )
@@ -216,6 +255,42 @@ fun Routing.webProjectRoutes(
             return@get
         }
         call.respondBytes(entry.bytes, ContentType.parse(entry.contentType))
+    }
+
+    get("/projects/{id}/ios/simulator/screenshot") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@get
+        val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
+        val p = runCatching { projects.get(id) }.getOrNull()
+        if (p == null || !projects.uiCapabilities(p.projectType).showIosSimulator) {
+            call.respond(HttpStatusCode.NotFound)
+            return@get
+        }
+        val root = Path.of(p.sourcePath).normalize()
+        val screenshot = root.resolve(".vibecoder-ios-build")
+            .resolve("simulator")
+            .resolve("latest-screenshot.png")
+            .normalize()
+        if (!screenshot.startsWith(root) || !Files.isRegularFile(screenshot)) {
+            call.respond(HttpStatusCode.NotFound)
+            return@get
+        }
+        call.response.header(HttpHeaders.CacheControl, "private, no-cache")
+        call.respondFile(screenshot.toFile())
+    }
+
+    get(ApiPath.PROJECT_CONSOLE_CONTEXT_PATTERN) {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@get
+        val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
+        val provider = agentRouter?.providerFor(id) ?: AgentProvider.CLAUDE
+        val model = agentRouter?.effectiveModel(id) ?: sessionManager.effectiveModel(id)
+        val sessionId = agentRouter?.currentSessionId(id) ?: sessionManager.currentSessionId(id)
+        val snap = effectiveConsoleContextSnapshot(id, provider, model, sessionId, agentRouter, sessionManager, conversationRepo)
+        call.respondText(
+            """{"provider":"${provider.id}","input":${snap.input},"cacheRead":${snap.cacheRead},"cacheCreation":${snap.cacheCreation},"limit":${snap.limit}}""",
+            ContentType.Application.Json,
+        )
     }
 
     post("/projects") {
@@ -334,11 +409,10 @@ fun Routing.webProjectRoutes(
         // v1.49.0 — 헤더 프로젝트명 콤보박스(빠른 프로젝트 전환)용 전체 목록.
         val allProjects = runCatching { projects.listForUser(sess.userId, sess.isAdmin) }
             .getOrDefault(listOf(p))
-        // v1.56.0 — 콤보박스 각 항목 좌측 상태칩 (목록 페이지와 동일 체계).
-        //  responding(응답중) > ready(대기·세션활성) > idle(유휴). 진입 시점 snapshot.
-        // v1.60.0 — 3-state 상태칩 (대화 이력 기반). switcher 콤보의 각 항목 좌측 칩.
+        // 콤보박스 각 항목 좌측 상태칩. TUI/AgentStatusStore live snapshot 기준이며,
+        // 과거 대화 이력으로 stopped 를 되살리지 않는다.
         val projectStatuses = allProjects.associate { pr ->
-            pr.id to projectStatus(pr.id, sessionManager, conversationRepo)
+            pr.id to projectStatus(pr.id, sessionManager, agentStatusStore)
         }
         // v1.157.2 — 콤보박스 정렬은 세션 출력 활동이 아니라 사용자가 프롬프트를 송신한 시각 기준.
         val lastPromptTs = runCatching { conversationRepo.lastUserPromptTsByProject() }.getOrDefault(emptyMap())
@@ -354,6 +428,17 @@ fun Routing.webProjectRoutes(
             currentModel = selectedModel,
             effectiveModel = agentRouter?.effectiveModel(id) ?: sessionManager.effectiveModel(id),
         ).orEmpty()
+        val modelOptionsByProvider = availableAgentProviders.associateWith { provider ->
+            modelCatalog?.modelsFor(
+                provider = provider,
+                currentModel = if (provider == agentProvider) selectedModel else null,
+                effectiveModel = if (provider == agentProvider) {
+                    agentRouter?.effectiveModel(id) ?: sessionManager.effectiveModel(id)
+                } else {
+                    null
+                },
+            ).orEmpty()
+        }
         // v1.156.0 — opencode reasoning effort(--variant) 조회.
         val selectedVariant = (agentRouter?.managerFor(AgentProvider.OPENCODE) as? com.siamakerlab.vibecoder.server.agent.opencode.OpenCodeSessionManager)
             ?.effectiveVariant(id) ?: ""
@@ -363,6 +448,30 @@ fun Routing.webProjectRoutes(
         val keystoreReady = ksEntry != null
         val admobReady = ksEntry?.admobExists == true
         val usage = runCatching { conversationRepo.usageSummary(id) }.getOrNull()
+        val uiCapabilities = projects.uiCapabilities(p.projectType)
+        val iosBuildSettings = if (uiCapabilities.showIosBuildSettings) {
+            runCatching {
+                val source = Path.of(p.sourcePath)
+                val settings = XcodeBuildSettings.load(source)
+                val info = XcodeProjectInspector.inspect(source)
+                ProjectTabsTemplate.IosBuildSettingsView(
+                    scheme = settings.scheme,
+                    selectedScheme = info.selectedScheme,
+                    inferredScheme = info.inferredScheme,
+                    sharedSchemes = info.sharedSchemes,
+                    debugConfiguration = settings.debugConfiguration,
+                    releaseConfiguration = settings.releaseConfiguration,
+                    bundleIdentifier = settings.bundleIdentifier.ifBlank { p.packageName },
+                    teamId = settings.teamId,
+                    exportMethod = settings.exportMethod,
+                    signingStyle = settings.signingStyle,
+                    provisioningProfileSpecifier = settings.provisioningProfileSpecifier,
+                    containerName = info.containerName,
+                )
+            }.getOrNull()
+        } else null
+        val currentSessionId = agentRouter?.currentSessionId(id) ?: sessionManager.currentSessionId(id)
+        val ctxSnap = effectiveConsoleContextSnapshot(id, agentProvider, selectedModel, currentSessionId, agentRouter, sessionManager, conversationRepo)
         // v1.158.5 — 프롬프트 히스토리를 provider 무관하게 통합 조회.
         val promptFilter = ConversationTurnRepository.Filter(projectId = id, role = "user")
         val promptCount = runCatching { conversationRepo.count(promptFilter) }.getOrDefault(0L)
@@ -384,19 +493,79 @@ fun Routing.webProjectRoutes(
                 availableAgentProviders = availableAgentProviders,
                 model = selectedModel,
                 availableModelOptions = modelOptions,
+                modelOptionsByProvider = modelOptionsByProvider,
                 variant = selectedVariant,
                 keystoreReady = keystoreReady,
                 admobReady = admobReady,
                 tokensTotal = (usage?.let { it.inputTokens + it.outputTokens }) ?: 0L,
                 cacheHitRate = usage?.cacheHitRate,
+                contextInputTokens = ctxSnap.input,
+                contextCacheReadTokens = ctxSnap.cacheRead,
+                contextCacheCreationTokens = ctxSnap.cacheCreation,
+                contextLimit = ctxSnap.limit,
                 promptCount = promptCount,
                 recentPrompts = recentPrompts,
                 autoCompact = sessionManager.isAutoCompact(id),
+                iosBuildSettings = iosBuildSettings,
+                uiCapabilities = uiCapabilities,
                 flashErr = err, flashOk = ok,
                 csrf = sess.csrf, lang = sess.language,
             ),
             ContentType.Text.Html,
         )
+    }
+
+    post("/projects/{id}/ios/build-settings") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireWriteAccessOrRedirect(sess)) return@post
+        val form = requireCsrf()
+        val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
+        val p = runCatching { projects.get(id) }.getOrElse {
+            call.respondRedirect("/projects?err=${Messages.t(sess.language, "flash.project.notFound", id).encodeUrl()}")
+            return@post
+        }
+        if (!projects.uiCapabilities(p.projectType).showIosBuildSettings) {
+            call.respondRedirect("/projects/$id?err=${Messages.t(sess.language, "flash.iosBuildSettings.iphoneRequired").encodeUrl()}")
+            return@post
+        }
+        val source = Path.of(p.sourcePath).normalize()
+        val scheme = form["scheme"]?.trim().orEmpty()
+        val debugConfiguration = form["debugConfiguration"]?.trim().orEmpty().ifBlank { "Debug" }
+        val releaseConfiguration = form["releaseConfiguration"]?.trim().orEmpty().ifBlank { "Release" }
+        val bundleIdentifier = form["bundleIdentifier"]?.trim().orEmpty().ifBlank { p.packageName }
+        val teamId = form["teamId"]?.trim().orEmpty()
+        val exportMethod = form["exportMethod"]?.trim().orEmpty()
+        val signingStyle = form["signingStyle"]?.trim().orEmpty()
+        val provisioningProfileSpecifier = form["provisioningProfileSpecifier"]?.trim().orEmpty()
+        val info = runCatching { XcodeProjectInspector.inspect(source) }.getOrElse { e ->
+            call.respondRedirect("/projects/$id?err=${Messages.t(sess.language, "flash.iosBuildSettings.inspectFailed", e.message ?: "").encodeUrl()}")
+            return@post
+        }
+        if (scheme.isNotBlank() && info.sharedSchemes.isNotEmpty() && scheme !in info.sharedSchemes) {
+            call.respondRedirect("/projects/$id?err=${Messages.t(sess.language, "flash.iosBuildSettings.invalidScheme", scheme).encodeUrl()}")
+            return@post
+        }
+        runCatching {
+            XcodeBuildSettings.save(
+                source,
+                XcodeBuildSettings(
+                    scheme = scheme,
+                    debugConfiguration = debugConfiguration,
+                    releaseConfiguration = releaseConfiguration,
+                    bundleIdentifier = bundleIdentifier,
+                    teamId = teamId,
+                    exportMethod = exportMethod,
+                    signingStyle = signingStyle,
+                    provisioningProfileSpecifier = provisioningProfileSpecifier,
+                ),
+            )
+        }.onFailure { e ->
+            log.warn(e) { "iOS build settings save failed: project=$id" }
+            call.respondRedirect("/projects/$id?err=${Messages.t(sess.language, "flash.iosBuildSettings.saveFailed", e.message ?: "").encodeUrl()}")
+            return@post
+        }
+        call.respondRedirect("/projects/$id?ok=${Messages.t(sess.language, "flash.iosBuildSettings.saved").encodeUrl()}")
     }
 
     // v1.11.0 — 기존 detail (메타데이터 카드) 페이지 보존 — More 메뉴에서 link.
@@ -412,7 +581,7 @@ fun Routing.webProjectRoutes(
             BuildDto(
                 id = row.id, projectId = row.projectId, variant = row.variant, status = row.status,
                 startedAt = row.startedAt ?: row.createdAt, finishedAt = row.finishedAt,
-                artifactId = row.artifactId, errorMessage = row.errorMessage,
+                artifactId = row.artifactId, errorMessage = row.errorMessage, failureKind = row.failureKind,
                 gitBranch = row.gitBranch, gitSha = row.gitSha,
             )
         }
@@ -491,10 +660,20 @@ fun Routing.webProjectRoutes(
         }
         // 코드/파일/디렉토리 구조 리네임은 현재 콘솔 provider 에 위임.
         val prompt = packageRenamePrompt(oldPkg, newPkg)
-        runCatching {
-            if (agentRouter != null) agentRouter.sendPrompt(id, prompt) else sessionManager.sendPrompt(id, prompt)
+        val dispatcher = consolePromptDispatcher
+        if (dispatcher == null) {
+            log.warn { "package-rename prompt rejected for $id: console TUI dispatcher unavailable" }
+        } else {
+            runCatching {
+                dispatcher.send(
+                    ownerUserId = sess.userId,
+                    projectId = id,
+                    text = prompt,
+                    requestedProvider = null,
+                    source = "package_rename",
+                )
+            }.onFailure { log.warn(it) { "package-rename prompt send failed for $id" } }
         }
-            .onFailure { log.warn(it) { "package-rename prompt send failed for $id" } }
         call.respondRedirect("/projects/$id/overview?ok=${Messages.t(sess.language, "flash.project.package.changed").encodeUrl()}")
     }
 
@@ -540,16 +719,10 @@ fun Routing.webProjectRoutes(
         val agentProvider = agentRouter?.providerFor(id) ?: AgentProvider.CLAUDE
         val alive = agentRouter?.isAlive(id) ?: sessionManager.isAlive(id)
         val sid = agentRouter?.currentSessionId(id) ?: sessionManager.currentSessionId(id)
+        val tuiMode = true
+        val tuiSessionId = consoleTuiManager?.find(sess.userId, id, agentProvider)?.id
+        val historySessionId = if (tuiMode) tuiSessionId else sid
         val availableAgentProviders = agentRouter?.availableProviders() ?: listOf(AgentProvider.CLAUDE)
-        val ctxSnap = agentRouter?.contextSnapshot(id)
-            ?: sessionManager.contextSnapshot(id).let {
-                com.siamakerlab.vibecoder.server.agent.AgentContextSnapshot(
-                    input = it.input,
-                    cacheRead = it.cacheRead,
-                    cacheCreation = it.cacheCreation,
-                    limit = it.limit,
-                )
-            }
         // v0.18.0 — 등록 직후 첫 console 진입이면 starter prompt 를 자동 입력 (소비).
         val starterPrompt = projects.consumeStarterPrompt(id)
         // Claude CLI 인증 상태 진단. CLI 자체와 자격증명 파일 둘 다 검사.
@@ -562,15 +735,13 @@ fun Routing.webProjectRoutes(
         // v1.129.0 — 초기 30개만 로드(과거는 콘솔 최상단 "더보기" 로 페이지네이션). offset=total-30.
         // 30개 안에 user(현재/마지막 프롬프트)가 없으면(매우 긴 turn) 마지막 user 1개를 맨 앞에
         // 붙여, 현재 작업 중 프롬프트의 상단 고정(.cur sticky)을 30개 밖이어도 유지한다.
-        val history = if (sid != null) {
+        val history = if (historySessionId != null || tuiMode) {
             runCatching {
-                val f = ConversationTurnRepository.Filter(projectId = id, provider = agentProvider.id, sessionId = sid)
-                val off = (conversationRepo.count(f) - 30).coerceAtLeast(0)
-                val rows = conversationRepo.list(f, limit = 30, offset = off)
+                val f = ConversationTurnRepository.Filter(projectId = id, provider = agentProvider.id, sessionId = historySessionId)
+                val rows = conversationRepo.listLatest(f, limit = 30)
                 if (rows.none { it.role == "user" }) {
-                    val uf = ConversationTurnRepository.Filter(projectId = id, provider = agentProvider.id, sessionId = sid, role = "user")
-                    val uoff = (conversationRepo.count(uf) - 1).coerceAtLeast(0)
-                    conversationRepo.list(uf, limit = 1, offset = uoff) + rows
+                    val uf = ConversationTurnRepository.Filter(projectId = id, provider = agentProvider.id, sessionId = historySessionId, role = "user")
+                    conversationRepo.listLatest(uf, limit = 1) + rows
                 } else rows
             }.getOrDefault(emptyList())
         } else emptyList()
@@ -582,6 +753,8 @@ fun Routing.webProjectRoutes(
         } else {
             sessionManager.effectiveModel(id)
         }
+        val currentSessionId = agentRouter?.currentSessionId(id) ?: sessionManager.currentSessionId(id)
+        val ctxSnap = effectiveConsoleContextSnapshot(id, agentProvider, selectedModel, currentSessionId, agentRouter, sessionManager, conversationRepo)
         val modelOptions = modelCatalog?.modelsFor(
             provider = agentProvider,
             currentModel = selectedModel,
@@ -604,9 +777,11 @@ fun Routing.webProjectRoutes(
                 contextLimit = ctxSnap.limit,
                 contextWarnTokens = sessionManager.contextWarnTokens(),
                 mcpStrict = sessionManager.isMcpStrict(id),
+                tuiMode = tuiMode,
                 agentProvider = agentProvider,
                 availableAgentProviders = availableAgentProviders,
                 availableModelOptions = modelOptions,
+                uiCapabilities = projects.uiCapabilities(p.projectType),
                 lang = sess.language,
                 embed = call.isEmbeddedRequest(),
             ),
@@ -623,11 +798,13 @@ fun Routing.webProjectRoutes(
         val limit = (call.request.queryParameters["limit"]?.toIntOrNull() ?: 30).coerceIn(1, 100)
         val agentProvider = agentRouter?.providerFor(id) ?: AgentProvider.CLAUDE
         val sid = agentRouter?.currentSessionId(id) ?: sessionManager.currentSessionId(id)
-        val rows = if (sid != null && before != null) {
+        val tuiMode = true
+        val tuiSessionId = consoleTuiManager?.find(sess.userId, id, agentProvider)?.id
+        val historySessionId = if (tuiMode) tuiSessionId else sid
+        val rows = if ((historySessionId != null || tuiMode) && before != null) {
             runCatching {
-                val f = ConversationTurnRepository.Filter(projectId = id, provider = agentProvider.id, sessionId = sid, beforeTurnIdx = before)
-                val off = (conversationRepo.count(f) - limit).coerceAtLeast(0)
-                conversationRepo.list(f, limit = limit, offset = off)
+                val f = ConversationTurnRepository.Filter(projectId = id, provider = agentProvider.id, sessionId = historySessionId, beforeTurnIdx = before)
+                conversationRepo.listLatest(f, limit = limit)
             }.getOrDefault(emptyList())
         } else emptyList()
         call.respondText(WebProjectTemplates.renderInitialHistoryJson(rows), ContentType.Application.Json)
@@ -637,6 +814,8 @@ fun Routing.webProjectRoutes(
     // user 첨부 raw)에서 idx 번째 이미지를 실제 bytes 로 응답. inline history JSON 에는
     // base64 를 싣지 않고(페이지 비대 방지) <img src="...console/image?turn=N&idx=M"> 가
     // 세션 쿠키로 이 endpoint 를 부른다. 현재 세션의 turn 만 (이력 복원 범위와 동일).
+    // TUI-only console uses the active TUI PTY session. If the PTY session disappeared,
+    // fall back provider-wide like the console history view.
     get("/api/projects/{id}/claude/console/image") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
         val id = call.parameters["id"]!!
@@ -646,8 +825,14 @@ fun Routing.webProjectRoutes(
         val idx = (call.request.queryParameters["idx"]?.toIntOrNull() ?: 0).coerceAtLeast(0)
         val agentProvider = agentRouter?.providerFor(id) ?: AgentProvider.CLAUDE
         val sid = agentRouter?.currentSessionId(id) ?: sessionManager.currentSessionId(id)
-            ?: return@get call.respond(HttpStatusCode.NotFound)
-        val rows = runCatching { conversationRepo.byTurnIdx(id, sid, turn, provider = agentProvider.id) }.getOrDefault(emptyList())
+        val tuiMode = true
+        val tuiSessionId = consoleTuiManager?.find(sess.userId, id, agentProvider)?.id
+        val historySessionId = if (tuiMode) {
+            tuiSessionId
+        } else {
+            sid ?: return@get call.respond(HttpStatusCode.NotFound)
+        }
+        val rows = runCatching { conversationRepo.byTurnIdx(id, historySessionId, turn, provider = agentProvider.id) }.getOrDefault(emptyList())
         for (row in rows) {
             val images = when {
                 row.role == "user" ->
@@ -680,6 +865,7 @@ fun Routing.webProjectRoutes(
         requireProjectAccessOrThrow(sess, projects, id)
         runCatching {
             if (agentRouter != null) agentRouter.startNew(id) else sessionManager.startNew(id)
+            consoleTuiManager?.startNew(sess.userId, id)
         }
             .onFailure { log.warn(it) { "console reset failed for $id" } }
         log.info { "console reset: $id by ${sess.username}" }
@@ -715,6 +901,7 @@ fun Routing.webProjectRoutes(
             } else {
                 sessionManager.setProjectModelAndRestart(id, model)
             }
+            consoleTuiManager?.closeProject(sess.userId, id)
         }
             .onFailure { log.warn(it) { "set model failed for $id" } }
         log.info { "console model set: $id/${provider.id} -> '${model.ifBlank { "default" }}'${if (provider == AgentProvider.OPENCODE) " variant='${variant.ifBlank { "default" }}'" else ""} by ${sess.username}" }
@@ -763,6 +950,20 @@ fun Routing.webProjectRoutes(
         call.respondText("ok", ContentType.Text.Plain)
     }
 
+    // TUI-only migration compatibility endpoint. Older pages may still post here, but console mode
+    // can no longer be disabled.
+    post("/projects/{id}/console/tui-mode") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireWriteAccessOrRedirect(sess)) return@post
+        requireCsrf()
+        val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
+        runCatching { consoleTuiPrefs?.setTuiMode(id, true) }
+            .onFailure { log.warn(it) { "set console tui mode failed for $id" } }
+        log.info { "console tui mode forced on: $id by ${sess.username}" }
+        call.respondText("ok", ContentType.Text.Plain)
+    }
+
     post("/projects/{id}/console/provider") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@post
         if (!requireWriteAccessOrRedirect(sess)) return@post
@@ -780,6 +981,7 @@ fun Routing.webProjectRoutes(
             return@post
         }
         router.setProvider(id, provider)
+        consoleTuiManager?.closeProject(sess.userId, id)
         log.info { "console provider set: $id -> ${provider.id} by ${sess.username}" }
         call.respondRedirect("/projects/$id#console")
     }
@@ -798,7 +1000,7 @@ fun Routing.webProjectRoutes(
             BuildDto(
                 id = row.id, projectId = row.projectId, variant = row.variant, status = row.status,
                 startedAt = row.startedAt ?: row.createdAt, finishedAt = row.finishedAt,
-                artifactId = row.artifactId, errorMessage = row.errorMessage,
+                artifactId = row.artifactId, errorMessage = row.errorMessage, failureKind = row.failureKind,
                 gitBranch = row.gitBranch, gitSha = row.gitSha,
             )
         }
@@ -913,10 +1115,11 @@ fun Routing.webProjectRoutes(
         val dto = BuildDto(
             id = row.id, projectId = row.projectId, variant = row.variant, status = row.status,
             startedAt = row.startedAt ?: row.createdAt, finishedAt = row.finishedAt,
-            artifactId = row.artifactId, errorMessage = row.errorMessage,
+            artifactId = row.artifactId, errorMessage = row.errorMessage, failureKind = row.failureKind,
             gitBranch = row.gitBranch, gitSha = row.gitSha,
         )
         val artifact = row.artifactId?.let { artifactRepo.get(id, it) }
+        val testFlightUploads = testFlightUploadJobRepo?.listForProject(id, limit = 8).orEmpty()
 
         // 종료된 빌드면 디스크 로그 파일을 읽어 prerender. (WS ring 은 evicted 일 수 있음)
         val isTerminal = row.status.name in setOf("SUCCESS", "FAILED", "CANCELED", "TIMEOUT")
@@ -949,6 +1152,7 @@ fun Routing.webProjectRoutes(
                 playFlashOk = call.request.queryParameters["play_ok"],
                 playFlashErr = call.request.queryParameters["play_err"],
                 testFlightPrecheck = testFlightPrecheck,
+                testFlightUploads = testFlightUploads,
                 tfFlashOk = call.request.queryParameters["tf_ok"],
                 tfFlashErr = call.request.queryParameters["tf_err"],
                 signerInspection = signerInspection,
@@ -959,6 +1163,57 @@ fun Routing.webProjectRoutes(
             ),
             ContentType.Text.Html,
         )
+    }
+
+    post("/projects/{id}/builds/{buildId}/ios-fix-prompt") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireWriteAccessOrRedirect(sess)) return@post
+        requireCsrf()
+        val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
+        val buildId = call.parameters["buildId"]!!
+        val p = runCatching { projects.get(id) }.getOrElse {
+            call.respondRedirect("/projects?err=${Messages.t(sess.language, "flash.project.notFound", id).encodeUrl()}")
+            return@post
+        }
+        val row = buildRepo.get(buildId)
+        if (row == null || row.projectId != id) {
+            call.respondRedirect("/projects/$id/builds?err=${Messages.t(sess.language, "flash.build.notFound", buildId).encodeUrl()}")
+            return@post
+        }
+        if (row.status.name != "FAILED" || !row.variant.startsWith("ios-") || row.errorMessage.isNullOrBlank()) {
+            call.respondRedirect("/projects/$id/builds/$buildId")
+            return@post
+        }
+        val dispatcher = consolePromptDispatcher
+        if (dispatcher == null) {
+            call.respondRedirect("/projects/$id/builds?err=${Messages.t(sess.language, "flash.console.dispatcherUnavailable").encodeUrl()}")
+            return@post
+        }
+        val prompt = iosBuildFailureFixPrompt(
+            projectName = p.name,
+            projectId = id,
+            buildId = buildId,
+            variant = row.variant,
+            failureKind = row.failureKind,
+            errorMessage = row.errorMessage,
+            logPath = row.logPath,
+        )
+        runCatching {
+            dispatcher.send(
+                ownerUserId = sess.userId,
+                projectId = id,
+                text = prompt,
+                requestedProvider = null,
+                source = "ios_build_failure_fix",
+            )
+        }.onFailure { e ->
+            log.warn(e) { "iOS build failure fix prompt send failed: project=$id build=$buildId" }
+            call.respondRedirect("/projects/$id/builds?err=${Messages.t(sess.language, "flash.console.promptSendFailed").encodeUrl()}")
+            return@post
+        }
+        log.info { "iOS build failure fix prompt sent: project=$id build=$buildId by ${sess.username}" }
+        call.respondRedirect("/projects/$id/console")
     }
 
     /**
@@ -1019,10 +1274,12 @@ fun Routing.webProjectRoutes(
         val id = call.parameters["id"]!!
         requireProjectAccessOrThrow(sess, projects, id)
         val buildId = call.parameters["buildId"]!!
-        runCatching { projects.get(id) }.getOrElse {
+        val project = runCatching { projects.get(id) }.getOrElse {
             call.respondRedirect("/projects?err=${Messages.t(sess.language, "flash.project.notFound", id).encodeUrl()}")
             return@post
         }
+        val row = buildRepo.get(buildId)
+        val artifact = row?.artifactId?.let { artifactRepo.get(id, it) }
         val ipaPath = form["ipaPath"]?.trim().orEmpty()
         val groups = form["distributionGroups"]?.trim()?.takeIf { it.isNotBlank() }
         val notes = form["releaseNotes"]?.trim()
@@ -1031,11 +1288,21 @@ fun Routing.webProjectRoutes(
             return@post
         }
         runCatching {
+            val asc = testFlightPublishService.diagnoseApp(project.packageName)
+            val buildNumber = testFlightPublishService.nextBuildNumber(project.sourcePath)
             testFlightPublishService.trigger(
-                projectId = id,
-                ipaRelativePath = ipaPath,
-                distributionGroups = groups,
-                releaseNotes = notes,
+                com.siamakerlab.vibecoder.server.publish.TestFlightPublishService.UploadRequest(
+                    projectId = id,
+                    buildId = buildId,
+                    artifactId = artifact?.id,
+                    ipaRelativePath = ipaPath,
+                    bundleId = project.packageName,
+                    appId = asc?.matchingAppId,
+                    appName = asc?.matchingAppName,
+                    buildNumber = buildNumber,
+                    distributionGroups = groups,
+                    releaseNotes = notes,
+                )
             )
         }.onFailure { e ->
             log.warn(e) { "testflight upload trigger failed: $id $buildId" }
@@ -1644,7 +1911,9 @@ fun Routing.webProjectRoutes(
                 contextLimit = ctxSnap.limit,
                 contextWarnTokens = sessionManager.contextWarnTokens(),
                 mcpStrict = sessionManager.isMcpStrict(p.id),
+                tuiMode = true,
                 availableModelOptions = chatModelOptions,
+                uiCapabilities = projects.uiCapabilities(p.projectType),
                 lang = sess.language,
             ),
             ContentType.Text.Html,
@@ -1751,22 +2020,65 @@ private fun String.encodeUrl(): String =
 /**
  * 프로젝트 상태칩의 SSR 초기 렌더 값([ProjectState] wire).
  *
- * v1.114.0 — 이전엔 isBusy + lastPromptInterrupted 로 **3-state(responding/stopped/ready)** 를
- * 별도 재계산해, WS frame 이 쓰는 5-state(waiting/error 포함) live 진실([ClaudeSessionManager.
- * busyState])과 불일치했다(새로고침하면 waiting/error 가 사라지고 WS 푸시로만 잠깐 보임).
- * 이제 단일 소스로 통일:
- *  1. in-memory live 상태가 있으면 그것이 진실 — 5-state 전부 정확 반영(WS 와 동형).
- *  2. 없으면(서버 재시작 등) 대화 이력으로 폴백 — 끊긴 turn 은 stopped, 그 외 ready.
+ * TUI-only 상태 판정은 [AgentStatusStore] 를 우선한다. 상태 store 에 아직 live snapshot 이
+ * 없으면 구 Claude manager 의 in-memory 상태만 보조로 보고, 과거 대화 이력 기반 interrupted
+ * 추론은 사용하지 않는다. 종료된 세션은 idle 로 수렴해야 하며, 이전 user turn 이 미완료라는
+ * 이유만으로 SSR 초기 렌더가 stopped 를 되살리면 stale 보라색 상태가 재발한다.
  */
 private fun projectStatus(
     id: String,
     sessionManager: ClaudeSessionManager,
-    conversationRepo: ConversationTurnRepository,
+    agentStatusStore: AgentStatusStore?,
 ): String {
+    agentStatusStore?.get(id, AgentProvider.CLAUDE)?.legacyProjectState?.let { return it.wire }
     sessionManager.busyStateOrNull(id)?.let { return it.wire }
-    val interrupted = runCatching { conversationRepo.lastPromptInterrupted(id) }.getOrDefault(false)
-    return if (interrupted) ProjectState.STOPPED.wire else ProjectState.READY.wire
+    return ProjectState.READY.wire
 }
+
+private fun effectiveConsoleContextSnapshot(
+    projectId: String,
+    provider: AgentProvider,
+    model: String?,
+    sessionId: String?,
+    agentRouter: AgentRouter?,
+    sessionManager: ClaudeSessionManager,
+    conversationRepo: ConversationTurnRepository,
+): AgentContextSnapshot {
+    val live = agentRouter?.contextSnapshot(projectId)
+        ?: sessionManager.contextSnapshot(projectId).let {
+            AgentContextSnapshot(
+                input = it.input,
+                cacheRead = it.cacheRead,
+                cacheCreation = it.cacheCreation,
+                limit = it.limit,
+            )
+    }
+    if (live.used > 0 && live.limit > 0) return live
+    val latest = sessionId?.let { conversationRepo.latestUsageContext(projectId, provider.id, it) } ?: return live
+    val used = latest.usedInput
+    if (used <= 0) return live
+    return AgentContextSnapshot(
+        input = latest.inputTokens,
+        cacheRead = latest.cacheReadTokens,
+        cacheCreation = latest.cacheCreationTokens,
+        limit = contextLimitForProvider(provider, model, used + latest.outputTokens),
+    )
+}
+
+private fun contextLimitForProvider(provider: AgentProvider, model: String?, used: Long): Long =
+    when (provider) {
+        AgentProvider.CLAUDE -> {
+            val m = model?.lowercase().orEmpty()
+            if (m.contains("haiku")) 200_000L else 1_000_000L
+        }
+        AgentProvider.CODEX,
+        AgentProvider.OPENCODE -> when {
+            used <= 0L -> 0L
+            used <= 128_000L -> 128_000L
+            used <= 200_000L -> 200_000L
+            else -> used
+        }
+    }
 
 /** 종료된 빌드의 디스크 로그를 읽어 화면에 prerender 할 수 있게 가공한 결과. */
 data class BuildLogReplay(

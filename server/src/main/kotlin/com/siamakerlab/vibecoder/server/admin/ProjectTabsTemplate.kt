@@ -2,9 +2,9 @@ package com.siamakerlab.vibecoder.server.admin
 
 import com.siamakerlab.vibecoder.server.agent.AgentProvider
 import com.siamakerlab.vibecoder.server.agent.AgentModelOption
-import com.siamakerlab.vibecoder.server.agent.ModelCatalogService
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens
 import com.siamakerlab.vibecoder.server.i18n.Messages
+import com.siamakerlab.vibecoder.server.platform.PlatformUiCapabilities
 import com.siamakerlab.vibecoder.shared.dto.ProjectDto
 import com.siamakerlab.vibecoder.shared.dto.ProjectState
 
@@ -33,6 +33,20 @@ import com.siamakerlab.vibecoder.shared.dto.ProjectState
  * 자주 안 쓰는 페이지는 "More" 메뉴에 link 로 두어 별도 navigation 시 새 탭 open.
  */
 internal object ProjectTabsTemplate {
+    data class IosBuildSettingsView(
+        val scheme: String,
+        val selectedScheme: String,
+        val inferredScheme: String,
+        val sharedSchemes: List<String>,
+        val debugConfiguration: String,
+        val releaseConfiguration: String,
+        val bundleIdentifier: String,
+        val teamId: String,
+        val exportMethod: String,
+        val signingStyle: String,
+        val provisioningProfileSpecifier: String,
+        val containerName: String,
+    )
 
     private data class Tab(
         val id: String,
@@ -41,6 +55,17 @@ internal object ProjectTabsTemplate {
         /** iframe `name=` 속성 — sub-page navigation (예: build detail) 이 같은 iframe 안에 머묾. */
         val frameName: String,
     )
+
+    private fun agentStatusDots(projectId: String, claudeState: String = ProjectState.READY.wire): String {
+        fun dot(provider: AgentProvider, label: String, state: String) =
+            """<span class="agent-dot" data-provider="${escapeHtml(provider.id)}" data-state="${escapeHtml(state)}" title="$label: ${escapeHtml(state)}" aria-label="$label ${escapeHtml(state)}"></span>"""
+        return """
+          <span class="agent-status-dots" data-pid="${escapeHtml(projectId)}" role="group" aria-label="Claude Codex GLM status">
+            ${dot(AgentProvider.CLAUDE, "Claude", claudeState)}
+            ${dot(AgentProvider.CODEX, "Codex", ProjectState.READY.wire)}
+            ${dot(AgentProvider.OPENCODE, "GLM", ProjectState.READY.wire)}
+          </span>""".trimIndent()
+    }
 
     // v1.12.0 — 사용자 명시 요청으로 기존 모든 프로젝트 scope SSR 페이지를 prerender
     // 탭에 통합. 13개 iframe 모두 페이지 첫 진입 시 동시 fetch 라 첫 로드는 무거워
@@ -98,7 +123,7 @@ internal object ProjectTabsTemplate {
         allProjects: List<ProjectDto> = emptyList(),
         /**
          * v1.56.0 — projectId → 상태 키 ("responding" | "ready" | "idle"). 콤보박스
-         * 각 항목 좌측 상태칩(`.pstat`)에 사용. 누락 시 "idle". 목록 페이지와 동일 체계.
+         * 각 항목과 현재 프로젝트의 provider 상태점 seed 에 사용. 누락 시 "idle".
          */
         projectStatuses: Map<String, String> = emptyMap(),
         /**
@@ -110,6 +135,7 @@ internal object ProjectTabsTemplate {
         availableAgentProviders: List<AgentProvider> = listOf(AgentProvider.CLAUDE),
         model: String = "",
         availableModelOptions: List<AgentModelOption> = emptyList(),
+        modelOptionsByProvider: Map<AgentProvider, List<AgentModelOption>> = emptyMap(),
         /** v1.156.0 — opencode reasoning effort(--variant). opencode provider 일 때만 표시. */
         variant: String = "",
         /** v1.50.0 — 우측 overview rail 데이터. */
@@ -118,14 +144,23 @@ internal object ProjectTabsTemplate {
         admobReady: Boolean = false,
         tokensTotal: Long = 0,
         cacheHitRate: Double? = null,
+        /** 직전 turn 컨텍스트 스냅샷. 우측 rail 은 콘솔 iframe 메시지 전에도 이 값으로 먼저 렌더된다. */
+        contextInputTokens: Long = 0,
+        contextCacheReadTokens: Long = 0,
+        contextCacheCreationTokens: Long = 0,
+        contextLimit: Long = 0,
         promptCount: Long = 0,
         /** 최신순(latest-first) user 프롬프트 본문 — v1.134.0 부터 전체(상한 1000). */
         recentPrompts: List<String> = emptyList(),
         /** v1.108.0 — 자동 /compact ON 여부(기본 ON). 컨텍스트 카드 '자동' 체크박스 초기값. */
         autoCompact: Boolean = true,
+        iosBuildSettings: IosBuildSettingsView? = null,
+        uiCapabilities: PlatformUiCapabilities? = null,
     ): String {
         val t = { key: String -> Messages.t(lang, key) }
         val esc = ::escapeHtml
+        val currentStatus = projectStatuses[project.id]?.ifBlank { null } ?: ProjectState.READY.wire
+        val caps = uiCapabilities ?: fallbackUiCapabilities(project.projectType)
 
         // v1.50.0 — 우측 고정 overview rail (모든 탭 공통, 부모 레이어라 iframe 스크롤과 무관).
         val keystoreHtml = if (keystoreReady)
@@ -184,6 +219,133 @@ internal object ProjectTabsTemplate {
             </form>
           </div>
         </details>"""
+        val iosBuildSettingsHtml = if (caps.showIosBuildSettings && iosBuildSettings != null) {
+            val schemeOptions = if (iosBuildSettings.sharedSchemes.isEmpty()) {
+                """<option value="${esc(iosBuildSettings.selectedScheme)}">${esc(iosBuildSettings.selectedScheme)}</option>"""
+            } else {
+                iosBuildSettings.sharedSchemes.joinToString("") { scheme ->
+                    val selected = scheme == iosBuildSettings.selectedScheme
+                    """<option value="${esc(scheme)}"${if (selected) " selected" else ""}>${esc(scheme)}</option>"""
+                }
+            }
+            val exportMethodOptions = listOf("development", "ad-hoc", "app-store-connect", "enterprise").joinToString("") { method ->
+                """<option value="${esc(method)}"${if (method == iosBuildSettings.exportMethod) " selected" else ""}>${esc(method)}</option>"""
+            }
+            val signingStyleOptions = listOf("automatic", "manual").joinToString("") { style ->
+                """<option value="${esc(style)}"${if (style == iosBuildSettings.signingStyle) " selected" else ""}>${esc(style)}</option>"""
+            }
+            """
+    <div class="pt-rail-card pt-ios-build-card" data-card="ios-build-settings">
+      <div class="pt-rail-h">${esc(t("tabs.rail.iosBuild"))}</div>
+      <form method="post" action="/projects/${esc(project.id)}/ios/build-settings" class="pt-ios-build-form">
+        ${CsrfTokens.hiddenInput(csrf)}
+        <label class="pt-ios-build-field">
+          <span>${esc(t("tabs.rail.iosBuild.scheme"))}</span>
+          <select name="scheme">
+            <option value="">${esc(t("tabs.rail.iosBuild.autoScheme"))}</option>
+            $schemeOptions
+          </select>
+        </label>
+        <div class="pt-ios-build-grid">
+          <label class="pt-ios-build-field">
+            <span>${esc(t("tabs.rail.iosBuild.debugConfig"))}</span>
+            <input name="debugConfiguration" value="${esc(iosBuildSettings.debugConfiguration)}" autocomplete="off" spellcheck="false">
+          </label>
+          <label class="pt-ios-build-field">
+            <span>${esc(t("tabs.rail.iosBuild.releaseConfig"))}</span>
+            <input name="releaseConfiguration" value="${esc(iosBuildSettings.releaseConfiguration)}" autocomplete="off" spellcheck="false">
+          </label>
+        </div>
+        <div class="pt-ios-build-grid">
+          <label class="pt-ios-build-field">
+            <span>${esc(t("tabs.rail.iosBuild.exportMethod"))}</span>
+            <select name="exportMethod">$exportMethodOptions</select>
+          </label>
+          <label class="pt-ios-build-field">
+            <span>${esc(t("tabs.rail.iosBuild.signingStyle"))}</span>
+            <select name="signingStyle">$signingStyleOptions</select>
+          </label>
+        </div>
+        <label class="pt-ios-build-field">
+          <span>${esc(t("tabs.rail.iosBuild.bundleId"))}</span>
+          <input name="bundleIdentifier" value="${esc(iosBuildSettings.bundleIdentifier)}" autocomplete="off" spellcheck="false">
+        </label>
+        <label class="pt-ios-build-field">
+          <span>${esc(t("tabs.rail.iosBuild.teamId"))}</span>
+          <input name="teamId" value="${esc(iosBuildSettings.teamId)}" autocomplete="off" spellcheck="false" placeholder="ABCDE12345">
+        </label>
+        <label class="pt-ios-build-field">
+          <span>${esc(t("tabs.rail.iosBuild.profile"))}</span>
+          <input name="provisioningProfileSpecifier" value="${esc(iosBuildSettings.provisioningProfileSpecifier)}" autocomplete="off" spellcheck="false" placeholder="${esc(t("tabs.rail.iosBuild.profile.placeholder"))}">
+        </label>
+        <div class="pt-ios-build-meta">${esc(iosBuildSettings.containerName)} · ${esc(t("tabs.rail.iosBuild.inferred"))} ${esc(iosBuildSettings.inferredScheme)}</div>
+        <button type="submit" class="pt-ios-sim-btn primary">${esc(t("tabs.rail.iosBuild.save"))}</button>
+      </form>
+    </div>
+            """.trimIndent()
+        } else {
+            ""
+        }
+        val iosSigningStatusHtml = if (caps.showIosBuildSettings) {
+            val api = com.siamakerlab.vibecoder.shared.ApiPath
+            """
+    <div class="pt-rail-card pt-ios-sign-card" data-card="ios-signing"
+         data-signing-url="${esc(api.iosSigningStatus(project.id))}"
+         data-loading="${esc(t("tabs.rail.iosSigning.loading"))}"
+         data-ready="${esc(t("tabs.rail.iosSigning.ready"))}"
+         data-blocked="${esc(t("tabs.rail.iosSigning.blocked"))}"
+         data-mac-required="${esc(t("tabs.rail.iosSigning.macRequired"))}"
+         data-identities="${esc(t("tabs.rail.iosSigning.identities"))}"
+         data-profiles="${esc(t("tabs.rail.iosSigning.profiles"))}"
+         data-profile-empty="${esc(t("tabs.rail.iosSigning.profileEmpty"))}"
+         data-warnings="${esc(t("tabs.rail.iosSigning.warnings"))}">
+      <div class="pt-rail-h">${esc(t("tabs.rail.iosSigning"))}</div>
+      <div class="pt-ios-sign-status" id="pt-ios-sign-status">${esc(t("tabs.rail.iosSigning.loading"))}</div>
+      <div class="pt-ios-sign-summary" id="pt-ios-sign-summary" hidden></div>
+      <div class="pt-ios-sign-list" id="pt-ios-sign-profiles" hidden></div>
+      <button type="button" class="pt-ios-sim-btn" id="pt-ios-sign-refresh">${esc(t("tabs.rail.iosSigning.refresh"))}</button>
+    </div>
+            """.trimIndent()
+        } else {
+            ""
+        }
+        val simulatorRailHtml = if (caps.showIosSimulator) {
+            val api = com.siamakerlab.vibecoder.shared.ApiPath
+            """
+    <div class="pt-rail-card pt-ios-sim-card" data-card="ios-simulator"
+         data-simulators-url="${esc(api.IOS_SIMULATORS)}"
+         data-boot-template="${esc(api.iosSimulatorBoot("__UDID__"))}"
+         data-shutdown-template="${esc(api.iosSimulatorShutdown("__UDID__"))}"
+         data-run-template="${esc(api.iosSimulatorRun(project.id, "__UDID__"))}"
+         data-logs-template="${esc(api.iosSimulatorLogs(project.id, "__UDID__"))}"
+         data-log-stream-template="${esc(api.wsIosSimulatorLogs(project.id, "__UDID__"))}"
+         data-screenshot-url="/projects/${esc(project.id)}/ios/simulator/screenshot"
+         data-loading="${esc(t("tabs.rail.iosSim.loading"))}"
+         data-empty="${esc(t("tabs.rail.iosSim.empty"))}"
+         data-mac-required="${esc(t("tabs.rail.iosSim.macRequired"))}"
+         data-run-ok="${esc(t("tabs.rail.iosSim.runOk"))}"
+         data-run-failed="${esc(t("tabs.rail.iosSim.runFailed"))}"
+         data-stream="${esc(t("tabs.rail.iosSim.stream"))}"
+         data-stream-stop="${esc(t("tabs.rail.iosSim.streamStop"))}"
+         data-streaming="${esc(t("tabs.rail.iosSim.streaming"))}"
+         data-log-empty="${esc(t("tabs.rail.iosSim.logEmpty"))}">
+      <div class="pt-rail-h">${esc(t("tabs.rail.iosSim"))}</div>
+      <div class="pt-ios-sim-status" id="pt-ios-sim-status">${esc(t("tabs.rail.iosSim.loading"))}</div>
+      <select id="pt-ios-sim-device" class="pt-ios-sim-select" aria-label="${esc(t("tabs.rail.iosSim.device"))}" hidden></select>
+      <div class="pt-ios-sim-actions">
+        <button type="button" class="pt-ios-sim-btn" id="pt-ios-sim-refresh">${esc(t("tabs.rail.iosSim.refresh"))}</button>
+        <button type="button" class="pt-ios-sim-btn" id="pt-ios-sim-boot" disabled>${esc(t("tabs.rail.iosSim.boot"))}</button>
+        <button type="button" class="pt-ios-sim-btn" id="pt-ios-sim-shutdown" disabled>${esc(t("tabs.rail.iosSim.shutdown"))}</button>
+        <button type="button" class="pt-ios-sim-btn primary" id="pt-ios-sim-run" disabled>${esc(t("tabs.rail.iosSim.run"))}</button>
+        <button type="button" class="pt-ios-sim-btn" id="pt-ios-sim-logs" disabled>${esc(t("tabs.rail.iosSim.logs"))}</button>
+        <button type="button" class="pt-ios-sim-btn" id="pt-ios-sim-stream" disabled>${esc(t("tabs.rail.iosSim.stream"))}</button>
+      </div>
+      <img id="pt-ios-sim-shot" class="pt-ios-sim-shot" alt="${esc(t("tabs.rail.iosSim.screenshot"))}" hidden>
+      <pre id="pt-ios-sim-log" class="pt-ios-sim-log" hidden></pre>
+	    </div>"""
+        } else {
+            ""
+        }
         val railHtml = """
   <aside class="pt-rail" id="pt-rail" aria-label="${esc(t("tabs.rail.overview"))}">
     <div class="pt-rail-card" data-card="overview">
@@ -197,10 +359,19 @@ internal object ProjectTabsTemplate {
         <div class="pt-ov-row"><span class="k">${esc(t("tabs.rail.prompts"))}</span><span class="v">${promptCount}</span></div>
       </div>
       $projectSettingsMenu
-    </div>
+	    </div>
+    $iosBuildSettingsHtml
+    $iosSigningStatusHtml
+	    $simulatorRailHtml
     <!-- v1.106.3 — 컨텍스트 점유율 카드(독립, 프롬프트 히스토리 카드 위). 우상단 /compact 버튼.
          콘솔 iframe 이 vibe:context-usage postMessage 로 매 turn 미터 갱신(project-tabs.js). -->
-    <div class="pt-rail-card pt-ctx-card" data-card="context">
+    <div class="pt-rail-card pt-ctx-card" data-card="context"
+         data-provider="${esc(agentProvider.id)}"
+         data-input="$contextInputTokens"
+         data-cache-read="$contextCacheReadTokens"
+         data-cache-creation="$contextCacheCreationTokens"
+         data-limit="$contextLimit"
+         data-context-url="${esc(com.siamakerlab.vibecoder.shared.ApiPath.consoleContext(project.id))}">
       <div class="pt-rail-h pt-ctx-head">
         <span>${esc(t("tabs.rail.context"))} <span id="pt-ctx-provider" class="dim" style="font-size:11px"></span></span>
         <span class="pt-ctx-actions">
@@ -232,16 +403,6 @@ internal object ProjectTabsTemplate {
         </div>
         <div class="pt-ctx-sub">${esc(t("tabs.rail.context.free"))} <span id="pt-ctx-free">–</span> <span class="pt-ctx-legend"><i class="ctx-seg-read"></i>${esc(t("tabs.rail.context.reuse"))} <i class="ctx-seg-create"></i>${esc(t("tabs.rail.context.create"))} <i class="ctx-seg-input"></i>${esc(t("tabs.rail.context.input"))}</span></div>
       </div>
-    </div>
-    <!-- v1.111.0 — Todo 요약 + 백그라운드 작업 카드(콘솔에서 이동, 컨텍스트 카드 하단). 콘솔 iframe 이
-         vibe:todo / vibe:bgtasks postMessage 로 스냅샷 전달, project-tabs.js 가 렌더. 내용 있을 때만 표시. -->
-    <div class="pt-rail-card pt-todo-card" data-card="todo" hidden>
-      <div class="pt-rail-h">📋 ${esc(t("console.todo.title"))} <span id="pt-todo-summary" class="dim"></span></div>
-      <ul id="pt-todo-list" class="pt-todo-list"></ul>
-    </div>
-    <div class="pt-rail-card pt-bg-card" data-card="bgtasks" hidden>
-      <div class="pt-rail-h">⚙ ${esc(t("console.bgtasks.title"))} <span id="pt-bg-count" class="dim"></span></div>
-      <div id="pt-bg-list" class="pt-bg-list"></div>
     </div>
     <div class="pt-rail-card pt-prompt-tools-card" data-card="prompt-tools">
       <div class="pt-rail-h">${esc(t("tabs.rail.promptTools"))}</div>
@@ -385,11 +546,10 @@ internal object ProjectTabsTemplate {
             )
             .joinToString("") { pr ->
                 val active = pr.id == project.id
-                // v1.56.0 — 좌측 상태칩 (목록 페이지와 동일 .pstat / data-state, /ws/projects 로 실시간 patch).
-                // v1.60.0 — 5-state (응답중/대기중/중지됨/에러/유휴). 누락 시 READY.
+                // Provider order: Claude / Codex / GLM. Legacy project status seeds Claude only;
+                // provider-specific WS events update individual dots.
                 val state = projectStatuses[pr.id] ?: ProjectState.READY.wire
-                val chip = """<span class="pstat pstat-$state" data-pid="${esc(pr.id)}" data-state="$state"
-                                    title="${esc(t("projects.status.$state"))}">${esc(t("projects.status.$state"))}</span>"""
+                val chip = agentStatusDots(pr.id, claudeState = state)
                 // v1.75.0 — 프로젝트 간 이동 시 이전에 보던 탭과 무관하게 콘솔을 우선 표시
                 // (#console hash → project-tabs.js resolveInitialTab 이 localStorage 보다 hash 우선).
                 """<a href="/projects/${esc(pr.id)}#console" class="pt-switch-item${if (active) " active" else ""}"
@@ -413,63 +573,6 @@ internal object ProjectTabsTemplate {
         <a href="/projects" class="pt-switch-item pt-switch-all">${esc(t("tabs.switch.all"))}</a>
       </div>
     </details>"""
-        val providerClass = when (agentProvider) {
-            AgentProvider.CLAUDE -> "claude"
-            AgentProvider.CODEX -> "codex"
-            AgentProvider.OPENCODE -> "opencode"
-        }
-        val providerOptions = availableAgentProviders.joinToString("") { provider ->
-            val selected = if (provider == agentProvider) " selected" else ""
-            """<option value="${esc(provider.id)}"$selected>${esc(provider.displayName)}</option>"""
-        }
-        val providerSelector = """
-    <form method="post" action="/projects/${esc(project.id)}/console/provider" class="pt-provider-form" id="pt-provider-form">
-      ${CsrfTokens.hiddenInput(csrf)}
-      <select name="provider" class="pt-provider-select $providerClass"
-              title="AI provider"
-              onchange="document.getElementById('pt-provider-form').submit()">
-        $providerOptions
-      </select>
-    </form>"""
-        val normalizedModel = model.ifBlank { "default" }
-        // v1.156.0 — opencode reasoning effort(--variant). 기본 "max".
-        val normalizedVariant = variant.trim().ifBlank { "max" }
-        val knownModels = availableModelOptions.ifEmpty { ModelCatalogService.fallbackModels(agentProvider) }
-        val customModel = normalizedModel.takeIf { current ->
-            !current.equals("default", ignoreCase = true) &&
-                knownModels.none { it.value.equals(current, ignoreCase = true) }
-        }
-        val modelOptions = buildString {
-            knownModels.forEach { option ->
-                val value = option.value
-                val selected = if (normalizedModel.equals(value, ignoreCase = true)) " selected" else ""
-                append("""<option value="${esc(value)}"$selected>${esc(option.label)}</option>""")
-            }
-            val defaultSelected = if (normalizedModel.equals("default", ignoreCase = true)) " selected" else ""
-            append("""<option value="default"$defaultSelected>CLI 기본</option>""")
-            customModel?.let { append("""<option value="${esc(it)}" selected>${esc(it)}</option>""") }
-        }
-        val effortSelector = if (agentProvider == AgentProvider.OPENCODE) {
-            fun variantOpt(v: String): String {
-                val sel = if (normalizedVariant.equals(v, ignoreCase = true)) " selected" else ""
-                return """<option value="$v"$sel>$v</option>"""
-            }
-            """
-      <select name="variant" class="pt-model-select $providerClass" title="reasoning effort"
-              onchange="document.getElementById('pt-model-form').submit()">
-        ${variantOpt("max")}${variantOpt("high")}${variantOpt("minimal")}
-      </select>"""
-        } else ""
-        val modelSelector = """
-    <form method="post" action="/projects/${esc(project.id)}/console/model" class="pt-model-form" id="pt-model-form">
-      ${CsrfTokens.hiddenInput(csrf)}
-      <select name="model" class="pt-model-select $providerClass"
-              title="${esc(agentProvider.displayName)} model"
-              onchange="document.getElementById('pt-model-form').submit()">
-        $modelOptions
-      </select>$effortSelector
-    </form>"""
-
         // primary 탭만 상단 탭바에. overflow 는 더보기 드롭다운에 (아래 moreLinks).
         // v1.93.3 — 기본 활성 탭(console)을 서버에서 미리 active 로 마킹 → 첫 페인트부터
         // 올바른 탭이 보인다(이전엔 모든 pane 이 display:none 으로 시작해 JS activate 전까지
@@ -692,31 +795,27 @@ internal object ProjectTabsTemplate {
     color: var(--text-dim); font-size: 11px;
     font-family: ui-monospace, Menlo, monospace; flex-shrink: 0;
   }
-  /* v1.56.0 — 콤보 항목: [상태칩] 이름(신축) [id]. 이름이 남는 폭을 차지하고 id 는 우측. */
+  /* 콤보 항목: [Claude/Codex/GLM 상태점] 이름(신축) [id]. */
   #project-tabs-root .pt-switch-item .pt-si-name {
     flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  #project-tabs-root .pt-switch-item .pstat {
-    flex: none; font-size: 11px; padding: 2px 8px; gap: 5px;
+  #project-tabs-root .pt-switch-item .agent-status-dots {
+    flex: none;
+    padding: 3px 6px;
+    background: var(--pt-control);
+    border-color: var(--pt-line);
   }
-  /* active 항목이라도 칩 색은 유지 — accent 색 상속 차단. v1.100.0 5-state 일관 팔레트. */
-  #project-tabs-root .pt-switch-item.active .pstat-responding { color: var(--ok, #69db7c); }
-  #project-tabs-root .pt-switch-item.active .pstat-ready,
-  #project-tabs-root .pt-switch-item.active .pstat-idle { color: var(--text-dim); }
-  #project-tabs-root .pt-switch-item.active .pstat-waiting { color: var(--wait, #fab005); }
-  #project-tabs-root .pt-switch-item.active .pstat-stopped { color: var(--halt, #b197fc); }
-  #project-tabs-root .pt-switch-item.active .pstat-error { color: var(--danger); }
-  /* v1.103.0 — 헤더 콘솔 상태칩(콘솔 busy-badge 미러). 콤보박스 좌측. 5-state 동일 팔레트. */
-  #project-tabs-root #console-busy-badge {
-    flex: none; font-size: 12px; padding: 3px 10px; border-radius: var(--pt-radius-pill);
-    font-weight: 500; white-space: nowrap; transition: background .2s, color .2s;
+  #project-tabs-root .pt-switch-item.active .agent-status-dots {
+    border-color: color-mix(in srgb, var(--pt-primary) 35%, var(--pt-line));
+    background: color-mix(in srgb, var(--pt-primary) 9%, var(--pt-control));
   }
-  #console-busy-badge[data-state="responding"] { background: var(--pt-state-responding-fill); color: var(--ok); }
-  #console-busy-badge[data-state="idle"],
-  #console-busy-badge[data-state="ready"] { background: var(--pt-idle-fill); color: var(--text-dim); }
-  #console-busy-badge[data-state="waiting"] { background: var(--pt-state-waiting-fill); color: var(--wait); }
-  #console-busy-badge[data-state="stopped"] { background: var(--pt-state-stopped-fill); color: var(--halt); }
-  #console-busy-badge[data-state="error"] { background: var(--pt-state-error-fill); color: var(--danger); }
+  /* 콤보박스 좌측 현재 프로젝트 상태점. 드롭다운 항목과 동일 DOM/WS 갱신 경로를 사용한다. */
+  #project-tabs-root .pt-current-agent-status {
+    flex: none;
+    padding: 3px 6px;
+    background: var(--pt-control);
+    border-color: var(--pt-line);
+  }
   #project-tabs-root .pt-switcher-menu hr {
     border: 0; border-top: 1px solid var(--pt-line); margin: 6px 0;
   }
@@ -919,6 +1018,88 @@ internal object ProjectTabsTemplate {
   #project-tabs-root .pt-tool-btn:focus-visible {
     outline: 2px solid var(--pt-context-read); outline-offset: 2px;
   }
+  #project-tabs-root .pt-ios-sim-card { display: flex; flex-direction: column; gap: 8px; }
+  #project-tabs-root .pt-ios-sign-card { display: flex; flex-direction: column; gap: 8px; }
+  #project-tabs-root .pt-ios-build-card { display: flex; flex-direction: column; gap: 8px; }
+  #project-tabs-root .pt-ios-build-form { display: flex; flex-direction: column; gap: 8px; }
+  #project-tabs-root .pt-ios-build-field { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--text-dim); }
+  #project-tabs-root .pt-ios-build-field select,
+  #project-tabs-root .pt-ios-build-field input {
+    width: 100%; min-height: 34px; box-sizing: border-box; padding: 5px 8px;
+    background: var(--pt-control); color: var(--text); border: 1px solid var(--pt-line);
+    border-radius: var(--pt-radius-md); font: inherit; font-size: 12px;
+  }
+  #project-tabs-root .pt-ios-build-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  #project-tabs-root .pt-ios-build-meta { font-size: 11px; color: var(--text-dim); overflow-wrap: anywhere; }
+  #project-tabs-root .pt-ios-sim-status {
+    min-height: 16px; font-size: 11px; line-height: 1.4; color: var(--text-dim);
+    overflow-wrap: anywhere;
+  }
+  #project-tabs-root .pt-ios-sign-status {
+    min-height: 18px; display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11px; line-height: 1.4; color: var(--text-dim); overflow-wrap: anywhere;
+  }
+  #project-tabs-root .pt-ios-sign-status::before {
+    content: ''; width: 7px; height: 7px; border-radius: 999px; flex: 0 0 auto;
+    background: var(--pt-muted);
+  }
+  #project-tabs-root .pt-ios-sign-status[data-state="ready"] { color: var(--ok, #69db7c); }
+  #project-tabs-root .pt-ios-sign-status[data-state="ready"]::before { background: var(--ok, #69db7c); }
+  #project-tabs-root .pt-ios-sign-status[data-state="blocked"] { color: var(--danger); }
+  #project-tabs-root .pt-ios-sign-status[data-state="blocked"]::before { background: var(--danger); }
+  #project-tabs-root .pt-ios-sign-summary {
+    white-space: pre-wrap; word-break: break-word; font: 11px/1.45 ui-monospace, Menlo, monospace;
+    color: var(--text); background: var(--pt-control); border: 1px solid var(--pt-line);
+    border-radius: var(--pt-radius-md); padding: 8px;
+  }
+  #project-tabs-root .pt-ios-sign-list { display: flex; flex-direction: column; gap: 5px; }
+  #project-tabs-root .pt-ios-sign-profile,
+  #project-tabs-root .pt-ios-sign-empty {
+    padding: 6px 7px; font-size: 11px; line-height: 1.35; overflow-wrap: anywhere;
+    color: var(--text-dim); background: var(--pt-control-alt); border: 1px solid var(--pt-line);
+    border-radius: var(--pt-radius-sm);
+  }
+  #project-tabs-root .pt-ios-sign-profile[data-match="true"][data-expired="false"] {
+    color: var(--ok, #69db7c); border-color: color-mix(in srgb, var(--ok, #69db7c) 40%, var(--pt-line));
+  }
+  #project-tabs-root .pt-ios-sign-profile[data-expired="true"] {
+    color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, var(--pt-line));
+  }
+  #project-tabs-root .pt-ios-sim-select {
+    width: 100%; min-height: 34px; box-sizing: border-box; padding: 5px 8px;
+    background: var(--pt-control); color: var(--text); border: 1px solid var(--pt-line);
+    border-radius: var(--pt-radius-md); font: inherit; font-size: 12px;
+  }
+  #project-tabs-root .pt-ios-sim-actions {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px;
+  }
+  #project-tabs-root .pt-ios-sim-btn {
+    min-height: 34px; box-sizing: border-box; padding: 5px 8px; font: inherit; font-size: 11px;
+    background: var(--pt-control-button-bg); color: var(--pt-control-button-text);
+    border: 1px solid var(--pt-control-button-line); border-radius: var(--pt-radius-md);
+    cursor: pointer; white-space: nowrap;
+  }
+  #project-tabs-root .pt-ios-sim-btn.primary {
+    background: var(--pt-primary); color: var(--pt-ink-on-fill); border-color: var(--pt-primary);
+    font-weight: 600;
+  }
+  #project-tabs-root .pt-ios-sim-btn:hover:not(:disabled) {
+    background: var(--pt-control-button-bg-hover); border-color: var(--pt-context-read); color: var(--text);
+  }
+  #project-tabs-root .pt-ios-sim-btn.primary:hover:not(:disabled) { filter: brightness(1.08); color: var(--pt-ink-on-fill); }
+  #project-tabs-root .pt-ios-sim-btn:disabled { opacity: .45; cursor: default; }
+  #project-tabs-root .pt-ios-sim-btn.busy { cursor: progress; }
+  #project-tabs-root .pt-ios-sim-shot {
+    display: block; width: 100%; max-height: 260px; object-fit: contain; background: #05070b;
+    border: 1px solid var(--pt-line); border-radius: var(--pt-radius-md);
+  }
+  #project-tabs-root .pt-ios-sim-shot[hidden] { display: none; }
+  #project-tabs-root .pt-ios-sim-log {
+    margin: 0; max-height: 190px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+    background: var(--pt-control); border: 1px solid var(--pt-line); border-radius: var(--pt-radius-md);
+    color: var(--text); font: 11px/1.4 ui-monospace, Menlo, monospace; padding: 8px;
+  }
+  #project-tabs-root .pt-ios-sim-log[hidden] { display: none; }
   /* v1.106.2/.3 — 우측 rail 컨텍스트 점유율 카드 */
   #project-tabs-root .pt-ctx-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
   #project-tabs-root .pt-ctx-head > span:first-child { min-width: 0; overflow-wrap: anywhere; }
@@ -1019,21 +1200,6 @@ internal object ProjectTabsTemplate {
   #project-tabs-root .pt-auto-badge { font-size: 11px; color: var(--text-dim); }
   #project-tabs-root .pt-auto-badge.on { color: var(--pt-positive-accent); font-weight: 600; }
   #project-tabs-root .pt-sched-open { align-self: flex-start; }
-  /* v1.111.0 — Todo 요약 + 백그라운드 작업 카드(콘솔에서 이동, 컨텍스트 하단). */
-  #project-tabs-root .pt-todo-card, #project-tabs-root .pt-bg-card { display: flex; flex-direction: column; flex: 0 0 auto; }
-  #project-tabs-root .pt-todo-list { list-style: none; margin: 0; padding: 0; max-height: 30vh; overflow-y: auto; }
-  #project-tabs-root .pt-bg-list { display: flex; flex-direction: column; gap: 4px; max-height: 30vh; overflow-y: auto; }
-  #project-tabs-root .bg-task-card {
-    display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: var(--pt-radius-md);
-    background: var(--pt-list-fill); font-size: 12px;
-  }
-  #project-tabs-root .bg-task-icon { flex-shrink: 0; width: 16px; text-align: center; }
-  #project-tabs-root .bg-task-card[data-status="running"] .bg-task-icon { color: var(--ok); animation: vibe-busy-pulse 1.4s ease-in-out infinite; border-radius: 50%; }
-  #project-tabs-root .bg-task-card[data-status="completed"] .bg-task-icon { color: var(--ok); }
-  #project-tabs-root .bg-task-card[data-status="failed"] .bg-task-icon { color: var(--danger); }
-  #project-tabs-root .bg-task-card[data-status="completed"] { opacity: 0.7; transition: opacity 0.4s; }
-  #project-tabs-root .bg-task-desc { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #project-tabs-root .bg-task-meta { flex-shrink: 0; color: var(--text-dim); font-size: 10px; font-family: monospace; }
   /* v1.91.0 — 메모 위젯 (프롬프트 히스토리 하단). */
   #project-tabs-root .pt-memo-card { display: flex; flex-direction: column; flex: 0 0 auto; }
   #project-tabs-root .pt-memo-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -1169,12 +1335,9 @@ internal object ProjectTabsTemplate {
 <div id="project-tabs-root" data-project-id="${esc(project.id)}" data-rail="shown">
   <div class="pt-header">
     ${AdminTemplates.backButton("/projects", t("tabs.backToList"))}
-    <!-- v1.103.0 — 콘솔 turn 상태칩(콤보박스 좌측). 콘솔 iframe 의 busy-badge 가
-         postMessage(console:busy)로 미러링한다. 어느 탭에 있어도 콘솔 진행 상태 확인. -->
-    <span id="console-busy-badge" data-state="ready" title="${esc(t("console.busy.idle"))}">${esc(t("console.busy.idle"))}</span>
+    <!-- 현재 프로젝트 상태점은 드롭다운 항목과 같은 /ws/projects 이벤트를 원천으로 삼는다. -->
+    ${agentStatusDots(project.id, claudeState = currentStatus).replace("agent-status-dots", "agent-status-dots pt-current-agent-status")}
     $projectSwitcher
-    $providerSelector
-    $modelSelector
     <span class="spacer"></span>
   </div>
   $flashHtml
@@ -1193,7 +1356,7 @@ $railHtml
   </div>
 </div>
 
-<script src="/static/project-tabs.js?v=1.161.0" defer></script>
+<script src="/static/project-tabs.js?v=1.162.3" defer></script>
 <script src="/static/prompt-templates.js?v=1.161.0" defer></script>
 <!-- v1.56.0 — 콤보박스 상태칩 실시간 동기. 목록 페이지와 동일하게 `/ws/projects`
      (단방향) 의 ProjectBusyChanged 로 responding↔ready patch. -->
@@ -1208,14 +1371,38 @@ $railHtml
     stopped: ${jsLit(t("projects.status.stopped"))},
     error: ${jsLit(t("projects.status.error"))}
   };
-  function patch(pid, state) {
+  function legacyFromAgentState(state) {
+    if (state === 'running') return 'responding';
+    if (state === 'waiting_input' || state === 'waiting_approval') return 'waiting';
+    if (state === 'starting') return 'starting';
+    if (state === 'error') return 'error';
+    if (state === 'interrupted') return 'stopped';
+    return 'ready';
+  }
+  function providerKey(provider) {
+    return provider === 'opencode' ? 'opencode' : (provider || 'claude');
+  }
+  function forEachAgentDot(pid, provider, fn) {
+    var key = providerKey(provider);
+    document.querySelectorAll('.agent-status-dots').forEach(function(group) {
+      if (group.dataset.pid !== String(pid)) return;
+      group.querySelectorAll('.agent-dot').forEach(function(el) {
+        if (el.dataset.provider === key) fn(el);
+      });
+    });
+  }
+  function patchProvider(pid, provider, state) {
     if (!state) return;
-    var el = document.querySelector('.pstat[data-pid="' + (window.CSS && CSS.escape ? CSS.escape(pid) : pid) + '"]');
-    if (!el) return;
-    el.className = 'pstat pstat-' + state;
-    el.dataset.state = state;
-    el.textContent = LABELS[state] || state;
-    el.title = LABELS[state] || state;
+    var label = LABELS[state] || state;
+    forEachAgentDot(pid, provider, function(el) {
+      el.dataset.state = state;
+      var providerLabel = (el.getAttribute('aria-label') || '').split(' ')[0] || providerKey(provider);
+      el.title = providerLabel + ': ' + label;
+      el.setAttribute('aria-label', providerLabel + ' ' + label);
+    });
+  }
+  function patch(pid, state) {
+    patchProvider(pid, 'claude', state);
     // v1.157.2 — 상태칩만 갱신한다. 항목 순서는 user prompt 송신 시각 기준 SSR 정렬이 소유한다.
   }
   var ws = null;
@@ -1227,6 +1414,8 @@ $railHtml
         var f = JSON.parse(ev.data);
         if (f.type === 'project_busy_changed' && f.projectId != null) {
           patch(f.projectId, f.state || (f.busy ? 'responding' : 'ready'));
+        } else if (f.type === 'agent_status_changed' && f.projectId != null) {
+          patchProvider(f.projectId, f.provider || 'claude', legacyFromAgentState(f.state));
         }
       } catch (e) { /* ignore malformed frame */ }
     };
@@ -1365,4 +1554,17 @@ $railHtml
         "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"")
             .replace("<", "\\u003C").replace(">", "\\u003E")
             .replace("\n", "\\n") + "\""
+
+    private fun fallbackUiCapabilities(projectType: String): PlatformUiCapabilities = when (projectType) {
+        "flutter" -> PlatformUiCapabilities(projectType, "Flutter", "#02569B", showPlayStoreLink = true)
+        "iphone" -> PlatformUiCapabilities(
+            projectType = projectType,
+            displayName = "iPhone",
+            badgeColor = "#111827",
+            showIosBuildSettings = true,
+            showIosSimulator = true,
+            showIPhoneQuickPrompts = true,
+        )
+        else -> PlatformUiCapabilities(projectType, "Kotlin", "#7F52FF", showPlayStoreLink = true)
+    }
 }

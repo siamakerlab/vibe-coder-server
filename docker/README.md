@@ -31,6 +31,10 @@
 
 ## 빠른 시작 (3분)
 
+`latest` 와 버전 태그는 `linux/amd64` + `linux/arm64` 멀티아키로 게시됩니다.
+Intel/AMD PC, Linux 서버, Apple Silicon(M1/M2/M3/M4) Mac에서 같은 compose 파일을
+사용하면 Docker가 호스트에 맞는 이미지를 자동으로 받습니다.
+
 ```bash
 # 1) 이미지 받기 (또는 로컬 빌드)
 docker pull siamakerlab/vibe-coder-server:latest
@@ -107,7 +111,7 @@ OpenSSH 서버를 설치하세요. 기본 compose 는 `VIBE_SSH_PORT=2222` 를
 
 | 변수 | 기본값 | 설명 |
 |---|---|---|
-| `VIBECODER_IMAGE` | `siamakerlab/vibe-coder-server:latest` | pull 할 이미지 태그. 재현 가능성을 우선하면 특정 버전(예: `1.160.1`) 핀 |
+| `VIBECODER_IMAGE` | `siamakerlab/vibe-coder-server:latest` | pull 할 이미지 태그. 재현 가능성을 우선하면 특정 버전(예: `1.162.5`) 핀. `latest`/버전 태그는 amd64+arm64 멀티아키 |
 | `VIBECODER_POSTGRES_IMAGE` | `postgres:17-alpine` | PG 컨테이너 이미지 (v0.14.0+) |
 | **`VIBECODER_DB_PASSWORD`** | (필수) | **반드시 강력한 값으로 변경.** 비면 compose 가 부팅 거절 |
 | `VIBECODER_DB_HOST` | `postgres` | DB 호스트. 외부 PG 인스턴스면 host:port 로 |
@@ -121,6 +125,15 @@ OpenSSH 서버를 설치하세요. 기본 compose 는 `VIBE_SSH_PORT=2222` 를
 | `VIBECODER_ADMIN_USERNAME` | (미설정) | 첫 부팅 시 admin 자동 생성용 |
 | `VIBECODER_ADMIN_PASSWORD` | (미설정) | 위와 한 쌍. 부팅 직후 변경 권장 |
 | `JAVA_OPTS` | `-Xmx2g …` | JVM 힙. 호스트 RAM 보고 조정 |
+| `VIBECODER_SERVER_MEMORY_LIMIT` | `8g` | 서버 컨테이너 cgroup 메모리 hard limit. AI/빌드 자식 프로세스가 호스트 전체 RAM을 잠식하지 못하게 함 |
+| `VIBECODER_POSTGRES_MEMORY_LIMIT` | `1g` | PostgreSQL 컨테이너 메모리 hard limit |
+| `VIBECODER_RESOURCE_MEMORY_SOFT_PERCENT` / `_HARD_PERCENT` | `88` / `96` | 서버 내부 resource guard 임계값. soft는 idle TUI 세션 정리 트리거, hard는 새 AI/빌드 작업 시작 차단 기준 |
+| `VIBECODER_CONSOLE_TUI_IDLE_TIMEOUT_MINUTES` | `120` | 연결 끊긴 프로젝트 콘솔 TUI 세션 정리 유예. `0` = 무제한 |
+| `VIBECODER_IOS_AGENT_ENABLED` | `false` | iPhone/Xcode macOS agent 사용 여부 |
+| `VIBECODER_IOS_AGENT_MODE` | `local` | `local` = MacBook 로컬, `ssh` = 원격 macOS agent |
+| `VIBECODER_IOS_AGENT_HOST` / `_PORT` / `_USER` | empty / `22` / empty | SSH macOS agent 연결 정보 |
+| `VIBECODER_IOS_AGENT_WORKSPACE_ROOT` | empty | 원격 macOS agent 의 작업 루트 |
+| `VIBECODER_IOS_AGENT_XCODE_PATH` | `auto` | Xcode developer path override. 기본은 `xcode-select` |
 
 ### 볼륨 구조 (v0.7.0 통합)
 
@@ -323,26 +336,10 @@ RAM 여유가 있다면 `.env`에서 `JAVA_OPTS=-Xmx8g` 등으로 늘리세요.
 
 ## 빌드 / 푸시 (메인테이너용)
 
-### 일반 commit 푸시 (amd64-only, 빠름 · v0.6.3+ 기본)
+### 일반 commit 푸시 (multi-arch, amd64 + arm64)
 
 ```bash
 docker buildx create --name vibe-builder --driver docker-container --use  # 1회만
-docker buildx build \
-    --platform linux/amd64 \
-    -f docker/Dockerfile \
-    -t siamakerlab/vibe-coder-server:<버전> \
-    -t siamakerlab/vibe-coder-server:latest \
-    --push \
-    .
-```
-
-amd64-only 는 2~3분 안에 끝납니다. arm64 emulation 빌드를 생략하므로
-잦은 개발 push 에 적합. Apple Silicon Mac / Raspberry Pi 등 ARM 호스트에서도
-Docker Desktop 의 자동 emulation 으로 실행은 가능합니다 (느릴 뿐).
-
-### 마일스톤 multi-arch 푸시 (v0.7.0, v1.0.0 같은 큰 릴리즈)
-
-```bash
 docker buildx build \
     --platform linux/amd64,linux/arm64 \
     -f docker/Dockerfile \
@@ -352,9 +349,29 @@ docker buildx build \
     .
 ```
 
-cross-compile 이라 10~15분 소요. ARM 호스트에서 native 속도가 필요한 사용자
-대응용. CHANGELOG 의 "## [버전] 배포" 항목에 `linux/amd64 + linux/arm64`
-임을 명시.
+Apple Silicon Mac 사용자도 native 속도로 설치할 수 있도록 slim 기본 이미지는
+항상 `linux/amd64,linux/arm64` 로 게시합니다. x86_64 Linux builder에서 arm64를
+함께 만들려면 QEMU/binfmt가 필요합니다.
+
+```bash
+docker run --privileged --rm tonistiigi/binfmt --install arm64
+docker buildx inspect --bootstrap
+```
+
+### amd64-only 긴급 푸시
+
+```bash
+docker buildx build \
+    --platform linux/amd64 \
+    -f docker/Dockerfile \
+    -t siamakerlab/vibe-coder-server:<버전> \
+    --push \
+    .
+```
+
+보안 hotfix 등으로 빌드 시간을 극단적으로 줄여야 할 때만 사용합니다. 이 경우
+Apple Silicon Mac 사용자는 해당 태그를 native arm64로 받을 수 없으므로 CHANGELOG에
+반드시 amd64-only 임을 남깁니다.
 
 ---
 

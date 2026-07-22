@@ -1105,10 +1105,15 @@ $gitIdentityBanner
   </div>
 
   <!-- v1.74.0 — 서버 리소스 상태(CPU/RAM/프로세스 점유). /api/server/stats 폴링(5s). -->
-  <div class="card" id="sys-card">
+  <div class="card" id="sys-card"
+       data-scope-pc="${esc(t("dashboard.sys.scope.pc"))}"
+       data-scope-container="${esc(t("dashboard.sys.scope.container"))}"
+       data-scope-jvm="${esc(t("dashboard.sys.scope.jvm"))}"
+       data-scope-unlimited="${esc(t("dashboard.sys.scope.unlimited"))}"
+       data-scope-of-pc="${esc(t("dashboard.sys.scope.ofPc"))}">
     <h2>${esc(t("dashboard.sys.title"))}</h2>
-    <!-- v1.79.0 — CPU/메모리 도넛. 한 도넛에 2색 중첩: 파랑=서버 전체 사용량(total),
-         초록=vibe-coder 점유분(process, total 의 부분집합이라 위에 겹쳐 그림).
+    <!-- v1.79.0 — CPU/메모리 도넛. 한 도넛에 2색 중첩: 파랑=PC 전체 사용량(total),
+         초록=vibe-coder 컨테이너 점유분(cgroup, total 의 부분집합이라 위에 겹쳐 그림).
          r=15.915 → 둘레≈100 이라 stroke-dasharray="pct 100". /api/server/stats 폴링(5s). -->
     <div class="gauges">
       <div class="gauge-box">
@@ -1135,6 +1140,7 @@ $gitIdentityBanner
       <span class="lg lg-vibe">${esc(t("dashboard.sys.legendVibe"))}</span>
     </div>
     <dl class="sys-detail">
+      <dt>${esc(t("dashboard.sys.cpu"))}</dt><dd id="sys-cpu" class="dim">…</dd>
       <dt>${esc(t("dashboard.sys.ram"))}</dt><dd id="sys-ram" class="dim">…</dd>
       <dt>${esc(t("dashboard.sys.process"))}</dt><dd id="sys-proc" class="dim">…</dd>
       <dt>${esc(t("dashboard.sys.load"))}</dt><dd id="sys-load" class="dim">…</dd>
@@ -1215,21 +1221,32 @@ $gitIdentityBanner
     var d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
     return (d > 0 ? d + 'd ' : '') + (h > 0 ? h + 'h ' : '') + m + 'm';
   }
+  function fmtPct(v) { return v >= 0 ? v.toFixed(1) + '%' : 'N/A'; }
+  function scopeLabel(scope) {
+    if (scope === 'container') return card.dataset.scopeContainer;
+    if (scope === 'jvm') return card.dataset.scopeJvm;
+    return card.dataset.scopePc;
+  }
   function tick() {
     fetch('/api/server/stats', { credentials: 'same-origin' })
       .then(function(r) { return r.ok ? r.json() : null; })
       .then(function(s) {
         if (!s) return;
-        // CPU: 파랑=시스템 전체, 초록=vibe-coder 프로세스. 중앙 텍스트=전체%.
+        var vibeCpu = typeof s.vibeCpuPercent === 'number' ? s.vibeCpuPercent : s.processCpuPercent;
+        var vibeCpuScope = s.vibeCpuScope || 'jvm';
+        // CPU: 파랑=PC 전체, 초록=vibe-coder 컨테이너(cgroup) 또는 JVM 폴백. 중앙 텍스트=PC 전체%.
         setArc('g-cpu-total', s.cpuPercent);
-        setArc('g-cpu-vibe', s.processCpuPercent);
+        setArc('g-cpu-vibe', vibeCpu);
         set('g-cpu-txt', (s.cpuPercent >= 0 ? Math.round(s.cpuPercent) : '–') + '%');
-        // 메모리: 파랑=시스템/컨테이너 사용%, 초록=vibe-coder RSS 가 전체 대비 차지하는 %.
-        var ramVibe = s.ramTotalMb > 0 ? (s.processRssMb / s.ramTotalMb * 100) : 0;
+        set('sys-cpu', scopeLabel(s.cpuScope) + ' ' + fmtPct(s.cpuPercent) + ' · ' + scopeLabel(vibeCpuScope) + ' ' + fmtPct(vibeCpu));
+        // 메모리: 파랑=PC 전체 사용%, 초록=vibe-coder 컨테이너 메모리가 PC 전체에서 차지하는 비율.
+        var ramVibe = typeof s.vibeRamSharePercent === 'number' ? s.vibeRamSharePercent : (s.ramTotalMb > 0 ? (s.processRssMb / s.ramTotalMb * 100) : 0);
         setArc('g-ram-total', s.ramPercent);
         setArc('g-ram-vibe', ramVibe);
         set('g-ram-txt', (s.ramPercent >= 0 ? Math.round(s.ramPercent) : '–') + '%');
-        set('sys-ram', s.ramUsedMb + ' / ' + s.ramTotalMb + ' MB (' + (s.ramPercent >= 0 ? s.ramPercent.toFixed(1) + '%' : 'N/A') + ')');
+        var vibeRamUsed = typeof s.vibeRamUsedMb === 'number' ? s.vibeRamUsedMb : s.processRssMb;
+        var vibeRamLimit = s.vibeRamLimitMb > 0 ? (' / ' + s.vibeRamLimitMb + ' MB') : (' / ' + card.dataset.scopeUnlimited);
+        set('sys-ram', scopeLabel(s.ramScope) + ' ' + s.ramUsedMb + ' / ' + s.ramTotalMb + ' MB (' + fmtPct(s.ramPercent) + ') · ' + scopeLabel(s.vibeRamScope) + ' ' + vibeRamUsed + vibeRamLimit + ' (' + fmtPct(ramVibe) + ' ' + card.dataset.scopeOfPc + ')');
         set('sys-proc', s.processRssMb + ' MB RSS · ' + (s.processCpuPercent >= 0 ? s.processCpuPercent.toFixed(1) + '% CPU · ' : '') + 'heap ' + s.heapUsedMb + '/' + s.heapMaxMb + ' MB');
         set('sys-load', (s.loadAvg >= 0 ? s.loadAvg.toFixed(2) : 'N/A') + ' · ' + s.cores + ' cores');
         set('sys-uptime', fmtUptime(s.uptimeSec));
@@ -1277,75 +1294,97 @@ $gitIdentityBanner
   </div>"""
     }
 
+    private fun usageLevelClass(p: Int): String = when {
+        p >= 95 -> "danger"
+        p >= 80 -> "warn"
+        else -> "ok"
+    }
+
+    private fun renderUsageMeter(
+        pct: Int,
+        label: String,
+        lang: String,
+        resetLabel: String? = null,
+        resetVal: String? = null,
+    ): String {
+        val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
+        val width = pct.coerceIn(0, 100)
+        val level = usageLevelClass(pct)
+        val resetText = fmtQuotaReset(resetVal, lang)
+        val resetHtml = if (resetText.isNotBlank()) {
+            val prefix = resetLabel ?: t("dashboard.usageReset")
+            """<div class="usage-reset">${esc(prefix)}: ${esc(resetText)}</div>"""
+        } else ""
+        return """
+      <div class="usage-meter">
+        <div class="usage-meter-row">
+          <span>${esc(label)}</span>
+          <span class="usage-pct $level">${pct}%</span>
+        </div>
+        <div class="usage-track"><div class="usage-fill $level" style="width:${width}%"></div></div>
+        $resetHtml
+      </div>"""
+    }
+
+    private fun renderUsageMeta(vararg rows: Pair<String, String?>): String {
+        val html = rows
+            .filter { it.first.isNotBlank() }
+            .joinToString("") { (label, value) ->
+                "<dt>${esc(label)}</dt><dd>${esc(value?.takeIf { it.isNotBlank() } ?: "-")}</dd>"
+            }
+        return if (html.isBlank()) "" else """<dl class="usage-meta">$html</dl>"""
+    }
+
+    private fun renderProviderStatus(text: String, level: String): String =
+        """<span class="usage-provider $level">${esc(text)}</span>"""
+
     /**
      * v0.21.0 — 대시보드 Claude 사용량 카드.
-     *
-     * `ClaudeUsageMonitor` 의 마지막 snapshot 이 없거나 percent 추출 실패 시 비활성
-     * 안내. 추출된 percent 가 있으면 80%↑ 노랑 / 95%↑ 빨강 strip + reset 시각.
      */
     private fun renderClaudeUsageCard(snapshot: com.siamakerlab.vibecoder.shared.dto.ClaudeStatusDto?, lang: String): String {
         val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
         if (snapshot == null) {
-            return ""
+            return """
+  <div class="card usage-card">
+    <div class="usage-card-head">
+      <h2>${esc(t("dashboard.claude.title"))}</h2>
+      ${renderProviderStatus("Claude", "warn")}
+    </div>
+    <p class="hint usage-empty">${t("dashboard.claude.empty")}</p>
+  </div>"""
         }
-        // v1.0.1 — Pro/Max plan 의 세션 (5h) + 주간 (7d) 분리 표시.
         val sessionPct = snapshot.sessionUsagePercent
         val weeklyPct = snapshot.weeklyUsagePercent
         val pct = snapshot.usagePercent
-        if (pct == null && sessionPct == null && weeklyPct == null) {
-            return ""
-        }
-
-        fun barColor(p: Int): String = when {
-            p >= 95 -> "#dc2626"
-            p >= 80 -> "#d97706"
-            else -> "#059669"
-        }
-        fun levelClass(p: Int): String = if (p >= 80) "warn" else "ok"
-        fun renderBar(p: Int, label: String, resetLabel: String?, resetVal: String?): String {
-            val w = p.coerceIn(0, 100)
-            val resetText = fmtQuotaReset(resetVal, lang)
-            val resetHtml = if (resetText.isNotBlank() && resetLabel != null) {
-                """<div class="dim" style="font-size:11px;margin-top:2px">${esc(resetLabel)}: ${esc(resetText)}</div>"""
-            } else ""
-            return """
-      <div style="margin-bottom:10px">
-        <div style="display:flex;justify-content:space-between;font-size:12px">
-          <span>${esc(label)}</span>
-          <span class="${levelClass(p)}">${p}%</span>
-        </div>
-        <div style="background:#e5e7eb;border-radius:4px;height:8px;overflow:hidden;margin-top:3px">
-          <div style="width:${w}%;background:${barColor(p)};height:100%"></div>
-        </div>
-        $resetHtml
-      </div>"""
-        }
-
         val sessionBar = if (sessionPct != null) {
-            renderBar(sessionPct, t("dashboard.usage.session"),
+            renderUsageMeter(sessionPct, t("dashboard.usage.session"), lang,
                 t("dashboard.usage.sessionReset"), snapshot.sessionResetAt)
         } else ""
         val weeklyBar = if (weeklyPct != null) {
-            renderBar(weeklyPct, t("dashboard.usage.weekly"),
+            renderUsageMeter(weeklyPct, t("dashboard.usage.weekly"), lang,
                 t("dashboard.usage.weeklyReset"), snapshot.weeklyResetAt)
         } else ""
-        // 둘 다 없고 legacy pct 만 있는 경우 — 한 줄 bar 만 (parsing 이 weekly/session
-        // 구분 못 한 경우 fallback).
         val legacyBar = if (sessionPct == null && weeklyPct == null && pct != null) {
-            renderBar(pct, t("dashboard.disk.usage"),
-                t("dashboard.usageReset"), snapshot.resetAt)
+            renderUsageMeter(pct, t("dashboard.disk.usage"), lang, t("dashboard.usageReset"), snapshot.resetAt)
         } else ""
+        val body = (sessionBar + weeklyBar + legacyBar).ifBlank {
+            """<p class="hint usage-empty">${t("dashboard.claude.empty")}</p>"""
+        }
+        val maxPct = listOfNotNull(sessionPct, weeklyPct, pct).maxOrNull()
+        val status = snapshot.plan ?: snapshot.model ?: "Claude"
+        val statusLevel = maxPct?.let(::usageLevelClass) ?: "ok"
 
         return """
-  <div class="card">
-    <h2>${esc(t("dashboard.claude.title"))}</h2>
-    $sessionBar
-    $weeklyBar
-    $legacyBar
-    <dl style="margin-top:6px;font-size:12px">
-      <dt>${esc(t("dashboard.claude.plan"))}</dt><dd>${esc(snapshot.plan ?: "-")}</dd>
-      <dt>${esc(t("dashboard.claude.model"))}</dt><dd>${esc(snapshot.model ?: "-")}</dd>
-    </dl>
+  <div class="card usage-card">
+    <div class="usage-card-head">
+      <h2>${esc(t("dashboard.claude.title"))}</h2>
+      ${renderProviderStatus(status, statusLevel)}
+    </div>
+    <div class="usage-body">$body</div>
+    ${renderUsageMeta(
+            t("dashboard.claude.plan") to snapshot.plan,
+            t("dashboard.claude.model") to snapshot.model,
+        )}
     <p class="hint">${t("dashboard.usageEmailHint")} <a href="/settings/email">/settings/email</a></p>
   </div>"""
     }
@@ -1353,56 +1392,45 @@ $gitIdentityBanner
     private fun renderCodexUsageCard(snapshot: com.siamakerlab.vibecoder.shared.dto.CodexUsageDto?, lang: String): String {
         val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
         if (snapshot == null) {
-            return ""
-        }
-        fun barColor(p: Int): String = when {
-            p >= 95 -> "#dc2626"
-            p >= 80 -> "#d97706"
-            else -> "#059669"
-        }
-        fun renderBar(p: Int, label: String, resetVal: String? = null): String {
-            val w = p.coerceIn(0, 100)
-            val resetText = fmtQuotaReset(resetVal, lang)
-            val resetHtml = if (resetText.isNotBlank()) {
-                """<div class="dim" style="font-size:11px;margin-top:2px">${esc(resetText)}</div>"""
-            } else ""
             return """
-      <div style="margin-bottom:10px">
-        <div style="display:flex;justify-content:space-between;font-size:12px">
-          <span>${esc(label)}</span>
-          <span class="${if (p >= 80) "warn" else "ok"}">${p}%</span>
-        </div>
-        <div style="background:#e5e7eb;border-radius:4px;height:8px;overflow:hidden;margin-top:3px">
-          <div style="width:${w}%;background:${barColor(p)};height:100%"></div>
-        </div>
-        $resetHtml
-      </div>"""
+  <div class="card usage-card">
+    <div class="usage-card-head">
+      <h2>${esc(t("dashboard.codex.title"))}</h2>
+      ${renderProviderStatus("Codex", "warn")}
+    </div>
+    <p class="hint usage-empty">${t("dashboard.codex.empty")}</p>
+  </div>"""
         }
         val sessionBar = snapshot.sessionUsagePercent?.let {
-            renderBar(it, t("dashboard.usage.session"), snapshot.sessionResetAt)
+            renderUsageMeter(it, t("dashboard.usage.session"), lang, t("dashboard.usage.sessionReset"), snapshot.sessionResetAt)
         } ?: ""
         val weeklyBar = snapshot.weeklyUsagePercent?.let {
-            renderBar(it, t("dashboard.usage.weekly"), snapshot.weeklyResetAt)
+            renderUsageMeter(it, t("dashboard.usage.weekly"), lang, t("dashboard.usage.weeklyReset"), snapshot.weeklyResetAt)
         } ?: ""
         val usageBar = if (sessionBar.isBlank() && weeklyBar.isBlank()) {
-            snapshot.usagePercent?.let { renderBar(it, t("dashboard.codex.usage"), snapshot.rateLimitResetAt) } ?: ""
+            snapshot.usagePercent?.let { renderUsageMeter(it, t("dashboard.codex.usage"), lang, t("dashboard.usageReset"), snapshot.rateLimitResetAt) } ?: ""
         } else ""
-        val contextBar = snapshot.contextUsagePercent?.let { renderBar(it, t("dashboard.codex.context")) } ?: ""
+        val contextBar = snapshot.contextUsagePercent?.let { renderUsageMeter(it, t("dashboard.codex.context"), lang) } ?: ""
         val summary = snapshot.usageSummary?.takeIf { snapshot.available }?.let {
-            """<p class="hint" style="margin-top:6px">${esc(it)}</p>"""
+            """<p class="usage-summary">${esc(it)}</p>"""
         } ?: ""
+        val body = (sessionBar + weeklyBar + usageBar + contextBar + summary).ifBlank {
+            """<p class="hint usage-empty">${t("dashboard.codex.empty")}</p>"""
+        }
+        val maxPct = listOfNotNull(snapshot.sessionUsagePercent, snapshot.weeklyUsagePercent, snapshot.usagePercent, snapshot.contextUsagePercent).maxOrNull()
+        val statusText = snapshot.loginStatus ?: if (snapshot.available) "Codex" else "-"
+        val statusLevel = maxPct?.let(::usageLevelClass) ?: if (snapshot.available) "ok" else "warn"
         return """
-  <div class="card">
-    <h2>${esc(t("dashboard.codex.title"))}</h2>
-    $sessionBar
-    $weeklyBar
-    $usageBar
-    $contextBar
-    $summary
-    <dl style="margin-top:6px;font-size:12px">
-      <dt>${esc(t("dashboard.claude.lastPolled"))}</dt><dd>${esc(fmtTs(snapshot.updatedAt, lang))}</dd>
-      <dt>${esc(t("dashboard.codex.login"))}</dt><dd>${esc(snapshot.loginStatus ?: "-")}</dd>
-    </dl>
+  <div class="card usage-card">
+    <div class="usage-card-head">
+      <h2>${esc(t("dashboard.codex.title"))}</h2>
+      ${renderProviderStatus(statusText, statusLevel)}
+    </div>
+    <div class="usage-body">$body</div>
+    ${renderUsageMeta(
+            t("dashboard.codex.login") to snapshot.loginStatus,
+            t("dashboard.claude.lastPolled") to fmtTs(snapshot.updatedAt, lang),
+        )}
   </div>"""
     }
 
@@ -1411,8 +1439,17 @@ $gitIdentityBanner
      * 노출하지 않아 credential 상태 + 토큰 사용량(통계)으로 구성. [renderCodexUsageCard] 와 대칭.
      */
     private fun renderOpenCodeUsageCard(snapshot: com.siamakerlab.vibecoder.shared.dto.OpenCodeUsageDto?, lang: String): String {
-        if (snapshot == null) return ""
         val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
+        if (snapshot == null) {
+            return """
+  <div class="card usage-card">
+    <div class="usage-card-head">
+      <h2>${esc(t("dashboard.opencode.title"))}</h2>
+      ${renderProviderStatus("OpenCode", "warn")}
+    </div>
+    <p class="hint usage-empty">${esc(t("dashboard.opencode.globalHint"))}</p>
+  </div>"""
+        }
         fun fmt(n: Long?): String = when (n) {
             null -> "-"
             else -> com.siamakerlab.vibecoder.server.agent.opencode.formatOpenCodeTokens(n)
@@ -1420,31 +1457,32 @@ $gitIdentityBanner
         val statusText = if (snapshot.loggedIn) {
             "${snapshot.provider ?: "OpenCode"}${snapshot.credentialType?.let { " · $it" } ?: ""}"
         } else {
-            t("dashboard.codex.login").let { "not logged in" }
+            t("dashboard.login.notLoggedIn")
         }
-        val statusColor = if (snapshot.loggedIn) "var(--ok)" else "var(--danger)"
+        val statusLevel = if (snapshot.loggedIn) "ok" else "danger"
         val summary = snapshot.usageSummary?.takeIf { snapshot.available }?.let {
-            """<p class="hint" style="margin-top:6px">${esc(it)}</p>"""
+            """<p class="usage-summary">${esc(it)}</p>"""
         } ?: ""
         return """
-  <div class="card">
-    <h2>${esc(t("dashboard.opencode.title"))}</h2>
-    <p class="hint" style="margin:4px 0 0;font-size:12px">${esc(t("dashboard.opencode.globalHint"))}</p>
-    <dl style="margin-top:4px;font-size:13px">
-      <dt style="display:inline;color:var(--text-dim)">${esc(t("dashboard.opencode.credential"))}</dt>
-      <dd style="display:inline;margin-left:6px;color:$statusColor">${esc(statusText)}</dd>
-    </dl>
-    <dl style="margin-top:8px;font-size:12px">
-      <dt>${esc(t("dashboard.opencode.tokens"))}</dt><dd>${fmt(snapshot.totalTokens)}</dd>
-      <dt>${esc(t("dashboard.opencode.input"))}</dt><dd>${fmt(snapshot.inputTokens)}</dd>
-      <dt>${esc(t("dashboard.opencode.output"))}</dt><dd>${fmt(snapshot.outputTokens)}</dd>
-      <dt>${esc(t("dashboard.opencode.cacheRead"))}</dt><dd>${fmt(snapshot.cacheReadTokens)}</dd>
-      <dt>${esc(t("dashboard.opencode.cost"))}</dt><dd>${esc(snapshot.totalCost ?: "-")}</dd>
-    </dl>
-    $summary
-    <dl style="margin-top:6px;font-size:12px">
-      <dt>${esc(t("dashboard.claude.lastPolled"))}</dt><dd>${esc(fmtTs(snapshot.updatedAt, lang))}</dd>
-    </dl>
+  <div class="card usage-card">
+    <div class="usage-card-head">
+      <h2>${esc(t("dashboard.opencode.title"))}</h2>
+      ${renderProviderStatus(statusText, statusLevel)}
+    </div>
+    <div class="usage-body">
+      <div class="usage-stat-grid">
+        <div><span>${esc(t("dashboard.opencode.tokens"))}</span><strong>${fmt(snapshot.totalTokens)}</strong></div>
+        <div><span>${esc(t("dashboard.opencode.input"))}</span><strong>${fmt(snapshot.inputTokens)}</strong></div>
+        <div><span>${esc(t("dashboard.opencode.output"))}</span><strong>${fmt(snapshot.outputTokens)}</strong></div>
+        <div><span>${esc(t("dashboard.opencode.cacheRead"))}</span><strong>${fmt(snapshot.cacheReadTokens)}</strong></div>
+        <div><span>${esc(t("dashboard.opencode.cost"))}</span><strong>${esc(snapshot.totalCost ?: "-")}</strong></div>
+      </div>
+      $summary
+    </div>
+    ${renderUsageMeta(
+            t("dashboard.opencode.credential") to statusText,
+            t("dashboard.claude.lastPolled") to fmtTs(snapshot.updatedAt, lang),
+        )}
   </div>"""
     }
 
@@ -1521,26 +1559,10 @@ $errHtml
 
   <fieldset>
     <legend>${esc(t("settings.legend.claude"))}</legend>
-    <label><input name="claude.enabled" type="checkbox" ${if (settings.claudeEnabled) "checked" else ""}> ${esc(t("common.enabled"))}</label>
-    <label>${esc(t("settings.field.path"))} <input name="claude.path" value="${esc(settings.claudePath)}"></label>
-    <label>${esc(t("settings.field.timeoutMin"))} <input name="claude.timeoutMinutes" type="number" value="${settings.claudeTimeoutMin}"></label>
-    <label>${esc(t("settings.field.maxConcurrentTurns"))} <input name="claude.maxConcurrentTurns" type="number" min="0" max="20" value="${settings.claudeMaxConcurrent}"></label>
-    <p class="hint">${esc(t("settings.field.maxConcurrentTurns.hint"))}</p>
-    <label>${esc(t("settings.field.maxResidentSessions"))} <input name="claude.maxResidentSessions" type="number" min="0" max="64" value="${settings.claudeMaxResident}"></label>
-    <p class="hint">${esc(t("settings.field.maxResidentSessions.hint"))}</p>
-  </fieldset>
-
-  <fieldset>
-    <legend>${esc(t("settings.legend.codex"))}</legend>
-    <label>${esc(t("settings.field.codexMaxResidentSessions"))} <input name="codex.maxResidentSessions" type="number" min="0" max="64" value="${settings.codexMaxResident}"></label>
-    <p class="hint">${esc(t("settings.field.codexMaxResidentSessions.hint"))}</p>
-  </fieldset>
-
-  <fieldset>
-    <legend>${esc(t("settings.legend.opencode"))}</legend>
-    <label>${esc(t("settings.field.opencodeMaxResidentSessions"))} <input name="opencode.maxResidentSessions" type="number" min="0" max="64" value="${settings.opencodeMaxResident}"></label>
-    <p class="hint">${esc(t("settings.field.opencodeMaxResidentSessions.hint"))}</p>
-  </fieldset>
+	    <label><input name="claude.enabled" type="checkbox" ${if (settings.claudeEnabled) "checked" else ""}> ${esc(t("common.enabled"))}</label>
+	    <label>${esc(t("settings.field.path"))} <input name="claude.path" value="${esc(settings.claudePath)}"></label>
+	    <label>${esc(t("settings.field.timeoutMin"))} <input name="claude.timeoutMinutes" type="number" value="${settings.claudeTimeoutMin}"></label>
+	  </fieldset>
 
   <fieldset>
     <legend>${esc(t("settings.legend.build"))}</legend>
@@ -1687,11 +1709,6 @@ $okHtml
         val claudeEnabled: Boolean,
         val claudePath: String,
         val claudeTimeoutMin: Int,
-        val claudeMaxConcurrent: Int,
-        val claudeMaxResident: Int,
-        val codexMaxResident: Int,
-        /** v1.157.0 — opencode(GLM) provider 전용 상주 세션 상한. */
-        val opencodeMaxResident: Int,
         val buildTimeoutMin: Int,
         val defaultDebugTask: String,
     )

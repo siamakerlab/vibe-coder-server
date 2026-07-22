@@ -1,10 +1,10 @@
 package com.siamakerlab.vibecoder.server.actions
 
 import com.siamakerlab.vibecoder.server.build.BuildService
-import com.siamakerlab.vibecoder.server.agent.AgentRouter
 import com.siamakerlab.vibecoder.server.error.ApiException
 import com.siamakerlab.vibecoder.server.git.GitReader
 import com.siamakerlab.vibecoder.server.projects.ProjectService
+import com.siamakerlab.vibecoder.server.terminal.ConsolePromptSender
 import com.siamakerlab.vibecoder.server.ws.LogHub
 import com.siamakerlab.vibecoder.shared.ws.WsFrame
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -25,7 +25,7 @@ class ServerActionHandler(
     private val builds: BuildService,
     private val git: GitReader,
     private val hub: LogHub,
-    private val agentRouter: AgentRouter,
+    private val promptSender: ConsolePromptSender,
 ) {
 
     suspend fun dispatch(projectId: String, action: ProjectAction, params: JsonElement?) {
@@ -90,7 +90,7 @@ class ServerActionHandler(
     }
 
     private suspend fun sendPrompt(projectId: String, prompt: String) {
-        agentRouter.sendPrompt(projectId, prompt)
+        promptSender.send(projectId, prompt, source = "server_action_prompt")
     }
 
     private suspend fun emitSystem(projectId: String, code: String, message: String) {

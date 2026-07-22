@@ -64,7 +64,7 @@ class TerminalSession(
      */
     private val connections = AtomicInteger(0)
     fun attach() { connections.incrementAndGet(); touch() }
-    fun detach() { connections.decrementAndGet() }
+    fun detach() { connections.updateAndGet { current -> (current - 1).coerceAtLeast(0) } }
     fun hasActiveConnection(): Boolean = connections.get() > 0
 
     /**
@@ -136,7 +136,7 @@ class TerminalSession(
                 }
             } finally {
                 val code = runCatching { process.waitFor() }.getOrDefault(-1)
-                _exit.emit(code)
+                _exit.tryEmit(code)
                 log.info { "[term $id] exited code=$code" }
             }
         }

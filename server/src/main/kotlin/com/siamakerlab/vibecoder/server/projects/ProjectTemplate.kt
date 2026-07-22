@@ -99,6 +99,20 @@ object ProjectTemplates {
                 만든 뒤 assembleDebug 가 통과하는지 확인해줘.
             """.trimIndent(),
         ),
+        ProjectTemplate(
+            id = "iphone-swiftui-basic",
+            title = "iPhone - SwiftUI 기본",
+            description = "SwiftUI iPhone 앱. Xcode project, ContentView, XCTest 골격을 기준으로 첫 화면을 구현.",
+            starterPrompt = """
+                iPhone SwiftUI 프로젝트를 점검하고 첫 화면을 구현해줘.
+                - Swift/SwiftUI/Xcode 규칙만 사용하고 Kotlin/Flutter/Android Gradle 파일은 만들지 마.
+                - bundle id 는 현재 CLAUDE.md 의 Bundle ID 를 기준으로 유지.
+                - ContentView 를 iPhone 세로 화면 기준으로 정돈하고 accessibility label 을 포함.
+                - XCTest scaffold 가 있으면 starter smoke test 를 보강.
+                - 가능한 경우 xcodebuild -scheme <scheme> -destination 'generic/platform=iOS Simulator' build 로 검증해줘.
+                - Linux 컨테이너 단독이면 MacBook local 또는 macOS agent 가 필요하다고 명확히 보고해줘.
+            """.trimIndent(),
+        ),
     )
 
     fun byId(id: String): ProjectTemplate? = all.firstOrNull { it.id == id }

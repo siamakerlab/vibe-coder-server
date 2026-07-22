@@ -621,24 +621,6 @@ class EnvSetupService(
         return taskId
     }
 
-    fun spawnCodexLoginWithAccessToken(accessToken: String): String =
-        spawnCodexSecretLogin(
-            title = "▶ Codex access token 로그인 시작",
-            confirmation = "✓ Codex access token 로그인 완료",
-            failPrefix = "access token",
-            cmd = listOf(resolveCodexCmd(), "login", "--with-access-token"),
-            secret = accessToken,
-        )
-
-    fun spawnCodexLoginWithApiKey(apiKey: String): String =
-        spawnCodexSecretLogin(
-            title = "▶ Codex API key 로그인 시작",
-            confirmation = "✓ Codex API key 로그인 완료",
-            failPrefix = "API key",
-            cmd = listOf(resolveCodexCmd(), "login", "--with-api-key"),
-            secret = apiKey,
-        )
-
     // v1.160.3 — spawnOpenCodeLogin(`opencode providers login`) 제거. 대화형 CLI 라 헤드리스
     // 컨테이너에서 stdin 대기로 hang 하고, runStreamingCommand 가 타임아웃 없이 waitFor 하여
     // env-setup 태스크 큐(projectId="env-setup")를 영구 점유 → 이후 API key 등록/설치 태스크가
@@ -771,21 +753,12 @@ class EnvSetupService(
     private suspend fun runStreamingCommand(
         taskId: String,
         cmd: List<String>,
-        stdinPayload: String? = null,
         onLine: (suspend (String) -> Unit)? = null,
     ): Int = withContext(Dispatchers.IO) {
         val pb = ProcessBuilder(cmd).redirectErrorStream(true)
         applyCodexProcessEnv(pb)
         val process = pb.start()
-        if (stdinPayload != null) {
-            process.outputStream.bufferedWriter(Charsets.UTF_8).use { writer ->
-                writer.write(stdinPayload)
-                writer.newLine()
-                writer.flush()
-            }
-        } else {
-            runCatching { process.outputStream.close() }
-        }
+        runCatching { process.outputStream.close() }
         process.inputStream.bufferedReader(Charsets.UTF_8).useLines { lines ->
             for (line in lines) {
                 val cleanLine = stripAnsi(line)
@@ -794,49 +767,6 @@ class EnvSetupService(
             }
         }
         process.waitFor()
-    }
-
-    private fun spawnCodexSecretLogin(
-        title: String,
-        confirmation: String,
-        failPrefix: String,
-        cmd: List<String>,
-        secret: String,
-    ): String {
-        val taskId = Ids.taskId()
-        val trimmed = secret.trim()
-        if (trimmed.isEmpty()) {
-            throw ApiException.localized(400, "empty", messageKey = "api.codexLogin.secretEmpty")
-        }
-        queue.submit(
-            projectId = "env-setup",
-            taskId = taskId,
-            onStart = {
-                hub.publisher(taskId).emit(WsFrame.Log(taskId, "INFO", title, clock.nowIso()))
-            },
-            executor = { _ ->
-                withContext(Dispatchers.IO) {
-                    val exit = runStreamingCommand(
-                        taskId,
-                        cmd,
-                        stdinPayload = trimmed,
-                    )
-                    if (exit != 0) throw RuntimeException("codex login with $failPrefix failed with exit $exit")
-                }
-            },
-            onSuccess = {
-                hub.publisher(taskId).emit(WsFrame.Log(taskId, "INFO", confirmation, clock.nowIso()))
-                hub.publisher(taskId).emit(WsFrame.Done(taskId, "SUCCESS"))
-            },
-            onFailure = { e ->
-                hub.publisher(taskId).emit(WsFrame.Log(taskId, "ERROR", "✗ Codex $failPrefix 로그인 실패: ${e.message}", clock.nowIso()))
-                hub.publisher(taskId).emit(WsFrame.Done(taskId, "FAILED", e.message))
-            },
-            onCancel = {
-                hub.publisher(taskId).emit(WsFrame.Done(taskId, "CANCELED"))
-            },
-        )
-        return taskId
     }
 
     private fun stripAnsi(line: String): String =

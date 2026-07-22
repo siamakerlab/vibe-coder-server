@@ -170,4 +170,59 @@ class PackageNameDetectorTest {
         write(base, "b/settings.gradle", "")
         PackageNameDetector.detectProjectType(base.resolve("b")) shouldBe "flutter"
     }
+
+    @Test
+    fun `detectProjectType — xcode markers and ios swift package are iphone`() {
+        val base = root()
+
+        Files.createDirectories(base.resolve("x/App.xcodeproj"))
+        PackageNameDetector.detectProjectType(base.resolve("x")) shouldBe "iphone"
+
+        write(base, "p/App.xcodeproj/project.pbxproj", "// !$*UTF8*$!\n")
+        PackageNameDetector.detectProjectType(base.resolve("p")) shouldBe "iphone"
+
+        write(
+            base,
+            "s/Package.swift",
+            """
+            // swift-tools-version: 5.10
+            import PackageDescription
+            let package = Package(
+                name: "Demo",
+                platforms: [.iOS(.v17)],
+                products: [.library(name: "Demo", targets: ["Demo"])],
+                targets: [.target(name: "Demo")]
+            )
+            """.trimIndent(),
+        )
+        PackageNameDetector.detectProjectType(base.resolve("s")) shouldBe "iphone"
+
+        write(
+            base,
+            "i/Info.plist",
+            """
+            <plist><dict>
+            <key>CFBundleIdentifier</key><string>kr.codr.demo</string>
+            <key>UILaunchScreen</key><dict/>
+            </dict></plist>
+            """.trimIndent(),
+        )
+        PackageNameDetector.detectProjectType(base.resolve("i")) shouldBe "iphone"
+    }
+
+    @Test
+    fun `detectProjectType — plain swift package remains ambiguous`() {
+        val base = root()
+
+        write(
+            base,
+            "pkg/Package.swift",
+            """
+            import PackageDescription
+            let package = Package(name: "ServerLib", targets: [.target(name: "ServerLib")])
+            """.trimIndent(),
+        )
+
+        PackageNameDetector.detectProjectType(base.resolve("pkg")) shouldBe null
+    }
 }

@@ -112,8 +112,7 @@ fun main(args: Array<String>) {
         server = loaded.server.copy(port = overrides.port ?: loaded.server.port),
         workspace = loaded.workspace.copy(root = overrides.workspace ?: loaded.workspace.root),
     )
-    // v1.90.0 — 런타임 설정 SSOT 초기화. /settings 저장 시 ConfigHolder.update 로 갱신돼
-    // 폼 표시 + 즉시 반영(동시성 한도 등)에 쓰인다.
+    // v1.90.0 — 런타임 설정 SSOT 초기화. /settings 저장 시 ConfigHolder.update 로 갱신된다.
     com.siamakerlab.vibecoder.server.config.ConfigHolder.init(config)
 
     val workspaceRoot = Path.of(config.workspace.root).toAbsolutePath().normalize()
@@ -128,6 +127,8 @@ fun main(args: Array<String>) {
     val projectRepo = ProjectRepository(clock)
     val buildRepo = BuildRepository(clock)
     val artifactRepo = ArtifactRepository(clock)
+    val testFlightUploadJobRepo =
+        com.siamakerlab.vibecoder.server.repo.TestFlightUploadJobRepository(clock)
     val uploadedRepo = UploadedFileRepository(clock)
 
     val tokens = TokenService()
@@ -197,29 +198,16 @@ fun main(args: Array<String>) {
     )
     // v0.49.0 — Project ACL persistence (member 가 일부 프로젝트만 보기).
     val projectAclRepo = com.siamakerlab.vibecoder.server.repo.ProjectAclRepository(clock)
-    // v1.69.0 — 동시 in-flight turn 제한 게이트. 메인 콘솔 + sub-agent 가 같은 인스턴스를
-    // 공유해 같은 Anthropic 계정으로 나가는 동시 turn 총수를 하나의 풀에서 제한 (throttle 회피).
-    val claudeGate = com.siamakerlab.vibecoder.server.claude.ClaudeConcurrencyGate(config.claude.maxConcurrentTurns)
-    if (claudeGate.enabled) {
-        log.info { "Claude concurrency gate enabled: max ${claudeGate.limit} concurrent turn(s)" }
-    }
-    // v1.135.0 — 상주 세션 상한은 매 집행 시 ConfigHolder 를 읽어 /settings 저장 즉시 반영.
-    val residentCap = { com.siamakerlab.vibecoder.server.config.ConfigHolder.current.claude.maxResidentSessions }
-    val codexResidentCap = { com.siamakerlab.vibecoder.server.config.ConfigHolder.current.codex.maxResidentSessions }
     val sessionManager = ClaudeSessionManager(
-        config, workspace, hub, history = conversationHistory, gate = claudeGate,
-        residentCapProvider = residentCap,
+        config, workspace, hub, history = conversationHistory,
     )
     val codexUsageRecorder = com.siamakerlab.vibecoder.server.agent.codex.CodexUsageRecorder()
     val codexSessionManager = CodexSessionManager(
         config, workspace, hub, history = conversationHistory, usageRecorder = codexUsageRecorder,
-        residentCapProvider = codexResidentCap,
     )
     // v1.150.0 — Phase 2 OpenCode provider (1등 시민 승격).
-    val opencodeResidentCap = { com.siamakerlab.vibecoder.server.config.ConfigHolder.current.opencode.maxResidentSessions }
     val opencodeSessionManager = com.siamakerlab.vibecoder.server.agent.opencode.OpenCodeSessionManager(
         config, workspace, hub, history = conversationHistory,
-        residentCapProvider = opencodeResidentCap,
     )
     // v1.153.0 — z.ai coding plan 강제 모드 부팅 audit. 활성 시 OpenCode provider 가
     // z.ai 구독 경로만 사용함을 로그로 명시 (위반 감지는 effectiveModel/spawn 이 자동 차단).
@@ -238,6 +226,7 @@ fun main(args: Array<String>) {
     val modelCatalog = com.siamakerlab.vibecoder.server.agent.ModelCatalogService(
         configProvider = { com.siamakerlab.vibecoder.server.config.ConfigHolder.current },
     )
+    val consolePromptSender = com.siamakerlab.vibecoder.server.terminal.ConsolePromptSender()
     // v1.1.0 — ProjectDto.busy 필드를 위해 sessionManager 를 lambda 로 주입.
     // 구성 순서: sessionManager 가 먼저 생성되어야 lambda 가 안전하게 호출 가능.
     // v0.33.0 — Cron 빌드 schedule + webhook secret. v1.43.0 — ProjectService 삭제 cascade
@@ -262,6 +251,7 @@ fun main(args: Array<String>) {
         buildWebhookSecretRepo = buildWebhookSecretRepo,
         promptAutomationRunRepo = promptAutomationRunRepo,
         scheduledPromptRepo = scheduledPromptRepo,
+        testFlightUploadJobRepo = testFlightUploadJobRepo,
         memoRepo = memoRepo,
         isBusyOf = sessionManager::isBusy,
     )
@@ -277,8 +267,7 @@ fun main(args: Array<String>) {
     // ClaudeSessionManager so a project can run its primary console plus multiple sub-agents
     // (reviewer / frontend / backend / ...) concurrently in the same workspace.
     val subAgentManager = com.siamakerlab.vibecoder.server.claude.SubAgentSessionManager(
-        config = config, workspace = workspace, hub = hub, history = conversationHistory, gate = claudeGate,
-        residentCapProvider = residentCap,
+        config = config, workspace = workspace, hub = hub, history = conversationHistory,
     )
     val gradle = GradleBuilder(config)
     val artifacts = ArtifactService(config, workspace, artifactRepo, buildRepo, clock)
@@ -289,9 +278,12 @@ fun main(args: Array<String>) {
     val keystoreService = com.siamakerlab.vibecoder.server.admin.KeystoreService(
         defaults = config.keystore.defaults,
     )
+    val resourceGuard = com.siamakerlab.vibecoder.server.resources.ResourceGuard(
+        configProvider = { com.siamakerlab.vibecoder.server.config.ConfigHolder.current.resources },
+    )
     val build = BuildService(
         config, workspace, projects, buildRepo, queue, gradle, artifacts, clock,
-        notifier = notifiers, keystores = keystoreService,
+        notifier = notifiers, keystores = keystoreService, resourceGuard = resourceGuard,
     )
     val git = GitReader()
     val gitWriter = com.siamakerlab.vibecoder.server.git.GitWriter()
@@ -312,14 +304,13 @@ fun main(args: Array<String>) {
     // v1.42.0 — 서버 기본 언어(en/ko) 템플릿으로 시드.
     globalClaudeMd.seedDefaultIfAbsent(config.i18n.defaultLanguage)
     val mcp = McpService(clock, queue, hub)
-    // v1.37.0 — 도커 첫 설치 시 기본 MCP(fetch/memory/sequential-thinking) 자동 등록.
-    // marker 기반 first-run only — 이미지 업데이트(재부팅) 시 사용자 선택 변경 안 함.
+    // 기본 MCP 는 first-run 과 이미지 업그레이드 모두에서 누락분만 user-scope 보강 등록한다.
     mcp.bootstrapDefaultsIfFirstRun()
     // v1.38.0 — Claude Code 플러그인/마켓플레이스 관리 (전역 + 프로젝트, admin 전용).
     val pluginService = com.siamakerlab.vibecoder.server.env.PluginService(clock, queue, hub)
     val status = StatusService(config, projectRepo, buildRepo, env)
     val actionRegistry = ProjectActionRegistry(workspace)
-    val actionHandler = ServerActionHandler(projects, build, git, hub, agentRouter)
+    val actionHandler = ServerActionHandler(projects, build, git, hub, consolePromptSender)
     val capabilityService = CapabilityService(env, actionRegistry)
     val claudeStatusService = ClaudeStatusService(config, workspace, sessionManager)
     // v0.21.0 — usage 백그라운드 폴링 + 임계치 알림.
@@ -364,13 +355,27 @@ fun main(args: Array<String>) {
     // v0.22.0 — Play Console 업로드 트리거 (MCP google-play-publisher 위임).
     val playPublishService = com.siamakerlab.vibecoder.server.publish.PlayPublishService(
         mcpService = mcp,
-        agentRouter = agentRouter,
+        promptSender = consolePromptSender,
     )
+    val appStoreConnectKeyStore = com.siamakerlab.vibecoder.server.ios.AppStoreConnectKeyStore(
+        workspace = workspace,
+        clock = clock,
+    )
+    val appStoreConnectDiagnostics =
+        com.siamakerlab.vibecoder.server.ios.AppStoreConnectDiagnosticService(appStoreConnectKeyStore, clock = clock)
     // v0.23.0 — TestFlight 업로드 트리거 (MCP app-store-connect 위임).
     val testFlightPublishService = com.siamakerlab.vibecoder.server.publish.TestFlightPublishService(
         mcpService = mcp,
-        agentRouter = agentRouter,
+        promptSender = consolePromptSender,
+        appStoreConnectKeyStore = appStoreConnectKeyStore,
+        uploadJobs = testFlightUploadJobRepo,
+        appStoreConnectDiagnostics = appStoreConnectDiagnostics,
     )
+    val testFlightUploadStatusPoller = com.siamakerlab.vibecoder.server.publish.TestFlightUploadStatusPoller(
+        uploadJobs = testFlightUploadJobRepo,
+        appStoreConnect = appStoreConnectDiagnostics,
+    )
+    testFlightUploadStatusPoller.start()
     // v0.28.0 — APK 서명 검사 + 빌드 캐시 관리.
     val apkSignerInspector = com.siamakerlab.vibecoder.server.artifacts.ApkSignerInspector()
     val buildCacheService = com.siamakerlab.vibecoder.server.build.BuildCacheService()
@@ -394,7 +399,7 @@ fun main(args: Array<String>) {
     val promptAutomationPresetStore =
         com.siamakerlab.vibecoder.server.automation.PromptAutomationPresetStore(workspace, clock)
     val promptAutomationManager = com.siamakerlab.vibecoder.server.automation.PromptAutomationManager(
-        agentRouter, promptAutomationRunRepo, hub,
+        agentRouter, consolePromptSender, promptAutomationRunRepo, hub,
     )
     // v1.130.0 — 프롬프트 예약(one-shot) 스케줄러. 지정 시각 / Claude 한도 해제 시점에 프롬프트
     // 1회 자동 전송(유휴 시). claudeStatusService(usage % 캐시) 는 위에서 이미 생성됨.
@@ -406,7 +411,7 @@ fun main(args: Array<String>) {
         put(com.siamakerlab.vibecoder.server.agent.AgentProvider.CODEX, codexStatusService)
     }
     val scheduledPromptManager = com.siamakerlab.vibecoder.server.automation.ScheduledPromptManager(
-        scheduledPromptRepo, agentRouter, scheduledUsageProviders, hub, clock,
+        scheduledPromptRepo, agentRouter, consolePromptSender, scheduledUsageProviders, hub, clock,
     )
     scheduledPromptManager.start()
     // turn 완료/중단 hook 주입 (순환의존 방지를 위해 생성 후 setter).
@@ -569,6 +574,53 @@ fun main(args: Array<String>) {
             config.security.terminalIdleTimeoutMinutes.toLong().coerceAtLeast(0),
         ),
     )
+    val agentStatusHookToken = java.util.UUID.randomUUID().toString()
+    val consoleTuiManager = com.siamakerlab.vibecoder.server.terminal.ConsoleTuiSessionManager(
+        commandBuilder = com.siamakerlab.vibecoder.server.terminal.ConsoleTuiCommandBuilder(
+            effectiveModel = { projectId ->
+                agentRouter.effectiveModel(projectId)
+            },
+            claudeHookUrl = { projectId, sessionId ->
+                "http://127.0.0.1:${config.server.port}${com.siamakerlab.vibecoder.shared.ApiPath.INTERNAL_CLAUDE_AGENT_EVENTS}?projectId=" +
+                    java.net.URLEncoder.encode(projectId, java.nio.charset.StandardCharsets.UTF_8) +
+                    "&token=" + java.net.URLEncoder.encode(agentStatusHookToken, java.nio.charset.StandardCharsets.UTF_8) +
+                    (sessionId?.let { "&sessionId=" + java.net.URLEncoder.encode(it, java.nio.charset.StandardCharsets.UTF_8) } ?: "")
+            },
+        ),
+        // Project console TUI sessions mirror provider-native CLIs and can keep large process
+        // trees resident. Active browser connections are preserved; disconnected idle sessions
+        // are reaped after the configured grace period.
+        idleTimeout = Duration.ofMinutes(
+            config.security.consoleTuiIdleTimeoutMinutes.toLong().coerceAtLeast(0),
+        ),
+        resourceGuard = resourceGuard,
+    )
+    val agentStatusStore = com.siamakerlab.vibecoder.server.terminal.AgentStatusStore()
+    val agentStatusBroadcaster = com.siamakerlab.vibecoder.server.terminal.AgentStatusBroadcaster(agentStatusStore, hub)
+    consoleTuiManager.agentStatusChangedListener = { raw ->
+        agentStatusBroadcaster.publish(raw)
+    }
+    consoleTuiManager.turnDoneListener = { pid, reason ->
+        val wasAutomation = promptAutomationManager.isActive(pid)
+        promptAutomationManager.onTurnDone(pid, reason)
+        if (!wasAutomation && !com.siamakerlab.vibecoder.server.projects.ProjectService.isGhost(pid)) {
+            runCatching { notificationService.emitClaudeTurnDone(pid, notifyProjectName(pid), notifyUserIds()) }
+                .onFailure { log.warn(it) { "[notify] console TUI turn-done emit failed for $pid" } }
+        }
+    }
+    val consoleTuiHistoryIngest = com.siamakerlab.vibecoder.server.terminal.ConsoleTuiHistoryIngestService(
+        workspace = workspace,
+        conversationRepo = conversationRepo,
+    )
+    val consolePromptDispatcher = com.siamakerlab.vibecoder.server.terminal.ConsolePromptDispatcher(
+        projects = projects,
+        agentRouter = agentRouter,
+        manager = consoleTuiManager,
+        conversationRepo = conversationRepo,
+        historyIngest = consoleTuiHistoryIngest,
+    )
+    consolePromptSender.bind(consolePromptDispatcher)
+    val consoleTuiPrefs = com.siamakerlab.vibecoder.server.terminal.ConsoleTuiPreferenceStore(workspace)
     // v1.40.0 — 무선 ADB 기기 logcat (admin). adb 없으면 기능 페이지가 안내.
     val adbService = com.siamakerlab.vibecoder.server.device.AdbService()
     // v1.73.0 — 안드로이드 에뮬레이터(헤드리스, Claude 로그분석용). 미설치/미가속이면 페이지가 안내.
@@ -585,10 +637,9 @@ fun main(args: Array<String>) {
 
     val ctx = ServerContext(
         config = config,
-        // v1.90.0 — /settings 저장 직후 런타임 반영: holder 갱신 + 동시성 한도 즉시 적용.
+        // /settings 저장 직후 런타임 반영. Heavy-work admission is owned by ResourceGuard.
         onConfigSaved = { saved ->
             com.siamakerlab.vibecoder.server.config.ConfigHolder.update(saved)
-            claudeGate.setLimit(saved.claude.maxConcurrentTurns)
         },
         workspace = workspace,
         deviceRepo = deviceRepo,
@@ -596,6 +647,7 @@ fun main(args: Array<String>) {
         projectRepo = projectRepo,
         buildRepo = buildRepo,
         artifactRepo = artifactRepo,
+        testFlightUploadJobRepo = testFlightUploadJobRepo,
         uploadedFileRepo = uploadedRepo,
         clock = clock,
         tokens = tokens,
@@ -640,6 +692,7 @@ fun main(args: Array<String>) {
         glmQuotaService = glmQuotaService,
         playPublishService = playPublishService,
         testFlightPublishService = testFlightPublishService,
+        appStoreConnectKeyStore = appStoreConnectKeyStore,
         apkSignerInspector = apkSignerInspector,
         buildCacheService = buildCacheService,
         projectArchiver = projectArchiver,
@@ -679,6 +732,14 @@ fun main(args: Array<String>) {
         globalClaudeMd = globalClaudeMd,
         plugins = pluginService,
         terminalManager = terminalManager,
+        consoleTuiManager = consoleTuiManager,
+        consoleTuiHistoryIngest = consoleTuiHistoryIngest,
+        consolePromptDispatcher = consolePromptDispatcher,
+        consolePromptSender = consolePromptSender,
+        consoleTuiPrefs = consoleTuiPrefs,
+        agentStatusStore = agentStatusStore,
+        agentStatusBroadcaster = agentStatusBroadcaster,
+        agentStatusHookToken = agentStatusHookToken,
         adb = adbService,
         emulator = emulatorService,
         promptAutomationPresetStore = promptAutomationPresetStore,
@@ -700,6 +761,7 @@ fun main(args: Array<String>) {
         runCatching { claudeUsageMonitor.shutdown() }
         runCatching { codexUsageMonitor.shutdown() }
         runCatching { opencodeUsageMonitor.shutdown() }
+        runCatching { testFlightUploadStatusPoller.shutdown() }
         runCatching { diskMonitor.shutdown() }
         runCatching { kotlinLspService.shutdown() }
         runCatching { buildScheduler.shutdown() }
@@ -715,6 +777,8 @@ fun main(args: Array<String>) {
         // cancel. 누락 시 docker stop 후에도 zombie bash 가 남아 다음 부팅에서 FD
         // 누수 가능.
         runCatching { terminalManager.shutdownAll() }
+        runCatching { consoleTuiManager.shutdownAll() }
+        runCatching { consoleTuiHistoryIngest.shutdown() }
         // v1.31.0 (B-BUG1) — 진행 중 claude OAuth 로그인 세션의 script/claude 자식
         // 프로세스 + drainOutput/watchProcess job graceful 종료.
         runCatching { claudeLogin.shutdown() }
@@ -729,9 +793,9 @@ fun main(args: Array<String>) {
 
     printBanner(config, workspaceRoot, pairing, authService.adminExists())
 
-    embeddedServer(Netty, port = config.server.port, host = config.server.host) {
-        module(ctx)
-    }.start(wait = true)
+    embeddedServer(Netty, port = config.server.port, host = config.server.host, module = {
+        installVibeCoderServer(ctx)
+    }).start(wait = true)
 }
 
 /**

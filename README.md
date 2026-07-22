@@ -83,20 +83,10 @@ For per-release history, see [CHANGELOG.md](CHANGELOG.md).
   stream-json over stdin/stdout, console relayed live over WebSocket. The ■
   stop button SIGTERMs a runaway turn while preserving the session-id, so the
   next prompt resumes the same conversation (`--resume`).
-- **Concurrent turn cap** — `claude.maxConcurrentTurns` (default 3) bounds how
-  many turns run at once across **all** project and sub-agent consoles, sharing
-  a single coroutine `Semaphore`. Excess prompts **queue** (never rejected),
-  avoiding Anthropic's server-side 429 throttle from bursting one account/IP.
-  Set `0` for unlimited. A queued prompt does **not** spawn its Claude process
-  until a permit is free (v1.135.0), so stacking prompts across many projects
-  costs no memory while waiting.
-- **Resident session cap** — `claude.maxResidentSessions` (default 3, `0` =
-  disabled) bounds how many Claude child processes stay alive across main and
-  sub-agent consoles — each session tree (CLI + MCP sidecars) holds roughly
-  900 MB. When exceeded, the least-recently-used **idle** session is paused;
-  its session-id is preserved, so the next prompt resumes the same conversation
-  (`--resume`). Sessions with a turn in progress are never reaped. Applies
-  immediately on `/settings` save.
+- **Resource guard** — memory-heavy child processes are admitted by the
+  `resources.*` memory policy instead of per-provider session caps. Under
+  pressure the server first closes disconnected idle TUI sessions, then blocks
+  new AI/build work before the container reaches OOM.
 - **Friendly console rendering** — every stream-json event renders as a
   human-readable line instead of raw JSON: tool results extract their text,
   every tool (including `mcp__*`, `Task`, `ToolSearch`, …) gets a one-line
@@ -182,10 +172,10 @@ For per-release history, see [CHANGELOG.md](CHANGELOG.md).
 
 ### Build & deploy
 
-- **One-click build environment installer** — Android SDK, Gradle binary &
-  cache, the Flutter SDK (Android-only), Node + Claude CLI, and MCP packages,
-  all persisted under one host directory. New projects' `CLAUDE.md` is wired to
-  use the installed Gradle to avoid redundant wrapper downloads.
+- **One-click build environment installer** — mobile build tools, Node +
+  provider CLIs, and MCP packages are persisted under one host directory.
+  New projects receive a project-local `CLAUDE.md` from their selected platform
+  engine so platform-specific rules do not live in global AI memory.
 - **Flutter (Android-only) SDK installer** — the `/env-setup` "Flutter" card
   clones the stable channel to `/home/vibe/.local/flutter` and precaches
   **Android artifacts only** (`flutter precache --android --no-ios --no-web …`),
@@ -238,8 +228,9 @@ For per-release history, see [CHANGELOG.md](CHANGELOG.md).
   (`HH:MM` / `*:MM` / `*:*`), plus an external `POST /api/webhooks/build/{id}`
   authenticated by secret-id + secret (+ optional HMAC-SHA256 signature).
 - **Publishing** — Play Console upload (via `google-play-publisher` MCP) and
-  TestFlight (via `app-store-connect` MCP). MCP-delegated, so signing secrets
-  stay off the server code path.
+  TestFlight (via `app-store-connect` MCP). App Store Connect key metadata and
+  `.p8` files can be kept in the server-owned secret store; private key content
+  is never returned by the API.
 - **Headless Android emulator pool** — `/emulator` manages up to five
   KVM-accelerated AVD slots (`/dev/kvm`) across phone, tablet, and foldable
   profiles. Project leases prevent two projects from targeting the same serial.
@@ -249,11 +240,15 @@ For per-release history, see [CHANGELOG.md](CHANGELOG.md).
 - **Register a project** — empty, git clone (public, or private via HTTPS PAT
   or auto-generated ed25519 SSH key), or a built-in template (`empty`,
   `compose-basic`, `compose-mvvm-hilt`, `compose-mvvm-room`, `wear-os`,
-  `android-tv`; each seeds a starter prompt). Project type is **Kotlin or
-  Flutter (Android-only)** — clones auto-detect the type (`pubspec.yaml` →
-  Flutter) with a mismatch-confirmation dialog, and builds route through the
-  matching toolchain (Gradle / `flutter build apk`). Flutter app version and
-  launcher icon are read from `pubspec.yaml` / `android/app/src/main/res`.
+  `android-tv`; each seeds a starter prompt). Project type is **Kotlin,
+  Flutter, or iPhone**. Each type has its own platform engine for project-local
+  `CLAUDE.md`, MCP/skill/agent recommendations, and build/tooling boundaries.
+  Clones auto-detect `pubspec.yaml` as Flutter and root `.xcodeproj` /
+  `.xcworkspace` as iPhone with a mismatch-confirmation dialog.
+- **iPhone macOS agent requirements** — see
+  [docs/iphone-macos-agent-requirements.md](docs/iphone-macos-agent-requirements.md)
+  for MacBook local mode, remote macOS SSH agent, Xcode/Simulator, signing, and
+  Apple Developer account prerequisites.
 - **Rename name / package / folder** — `/projects/{id}/overview` edits the
   display name (anytime), the `applicationId`, and the folder/project-id (the
   last two require the project to be idle). Renaming the package updates the DB,
@@ -261,8 +256,8 @@ For per-release history, see [CHANGELOG.md](CHANGELOG.md).
   renaming the folder moves workspace dirs and migrates the DB primary key
   across all child tables in one transaction.
 - **In-browser file tree + editor** — `/projects/{id}/tree` browses the
-  workspace; `/projects/{id}/view` toggles read-only (highlight.js: Kotlin /
-  Java / XML / JSON / YAML / Markdown / properties / shell) and edit. 1 MB /
+  workspace; `/projects/{id}/view` opens a CodeMirror editor with Kotlin / Java /
+  Swift / XML / JSON / YAML / Markdown / properties / shell modes. 1 MB /
   binary / symlink guards.
 - **Env files quick edit** — `/projects/{id}/env-files` edits a whitelist of 7
   files (`local.properties`, `gradle.properties`, `.env`, `.env.local`, the
@@ -271,6 +266,9 @@ For per-release history, see [CHANGELOG.md](CHANGELOG.md).
   per language across 35+ languages (no external `cloc`).
 - **Dependency audit** — `/projects/{id}/deps` runs
   `gradlew :{module}:dependencies` and extracts `group:name:version`.
+- **Symbol lookup** — `/projects/{id}/symbols` finds Kotlin/Java/Swift
+  declarations, including Swift `struct`, `class`, `protocol`, `enum`, `func`,
+  and SwiftUI `View` conformers, then links directly into the file editor line.
 - **Source zip download** — `/projects/{id}/zip` streams source only (excludes
   `.git`, `build`, `.gradle`, `node_modules`, `.idea`, APK/AAB).
 - **Settings persistence** — `/settings` writes `server.yml` with atomic move +
@@ -298,6 +296,10 @@ For per-release history, see [CHANGELOG.md](CHANGELOG.md).
 - **Catalog** — 60+ Model Context Protocol servers in 10 categories, checkbox
   multi-select, per-MCP token form, recommended ★, trust tiers. The marketplace
   view (`/env-setup/mcp`) has per-card Install/Remove + a status pill.
+- **Platform tooling profiles** — global default MCP installation stays
+  platform-neutral (`context7`, `memory`, `sequentialthinking`, `time`).
+  Kotlin, Flutter, and iPhone projects each expose different default,
+  conditional, and opt-in MCP/skill/agent bundles through their platform engine.
 - **User-scope registration** — `claude mcp add-json -s user` so the console,
   sub-agents, and `claude mcp list` all see them.
 - **Bundled Gitea MCP** — `gitea-mcp` ships as a Go binary.
@@ -377,6 +379,10 @@ detail.
 ---
 
 ## Quick start (Docker, 3 minutes)
+
+`latest` and version tags are published for both `linux/amd64` and `linux/arm64`.
+The same compose file works on Intel/AMD Linux hosts and Apple Silicon
+(M1/M2/M3/M4) Macs; Docker pulls the matching image automatically.
 
 ```bash
 mkdir -p ~/vibe-coder && cd ~/vibe-coder
@@ -568,11 +574,12 @@ required except `/setup`, `/login`, `/health`. Every SSR POST carries a CSRF
 | Path | Purpose |
 |---|---|
 | `/` | Dashboard (server / environment / activity summary + server-stats card) |
-| `/projects` | Project list + register form; drag-reorder (☰), page size 20/50/100, 3-state status chips, Kotlin/Flutter type badge |
+| `/projects` | Project list + register form; drag-reorder (☰), page size 20/50/100, provider status chips, Kotlin/Flutter/iPhone type badge |
 | `/projects/{id}` | Project tabs (console / builds / files / git / agents / history / …) |
-| `/projects/{id}/console` | Claude prompt input + live log (WS) + quick-prompt buttons + ▼ template dropdown + ■ stop |
+| `/projects/{id}/console` | Provider TUI console + live log (WS) + quick-prompt template dropdown + stop controls |
 | `/projects/{id}/builds` | Queue debug build + APK download + history chart + statistics; inline keystore-create form when none is linked |
 | `/projects/{id}/builds/{buildId}` | Build detail + live log + cancel + signature + comparison card |
+| `POST /projects/{id}/ios/build-settings` | Save per-project iPhone/Xcode scheme, Debug/Release configuration, bundle id, and export/signing choices |
 | `POST /projects/{id}/keystore` | Create a keystore for this project (package locked → auto-linked) |
 | `/projects/{id}/overview` | Edit display name / package / folder |
 | `/projects/{id}/tree` | Filesystem browser inside the project workspace |
@@ -625,14 +632,37 @@ Highlights:
 
 **Server & projects**
 - `GET /api/server/status`, `GET /api/server/stats`, `GET /api/server/environment[/check]`
+- `GET /api/ios/preflight` → local Linux/Mac/Xcode/simctl capability snapshot for iPhone features
+- `GET /api/ios/simulators` → iPhone/iPad Simulator inventory via local MacBook install or SSH macOS agent
+- `POST /api/ios/simulators/{udid}/boot`, `POST /api/ios/simulators/{udid}/shutdown` → boot or stop an iPhone/iPad Simulator on the Mac agent
+- `POST /api/projects/{id}/ios/simulators/{udid}/run` → install the latest iOS debug `.app`, launch it, and capture a screenshot
+- `GET /api/projects/{id}/ios/simulators/{udid}/logs` → fetch recent app logs from the iPhone/iPad Simulator with a bundle-id predicate
+- `GET /ws/projects/{id}/ios/simulators/{udid}/logs` → stream live Simulator app logs to the iPhone project rail
+- `GET /projects/{id}/ios/simulator/screenshot` → cookie-authenticated latest Simulator screenshot preview for the web project rail
+- `ios-test` build jobs keep the `.xcresult` bundle and up to five screenshot/image attachments as downloadable build artifacts
+- Flutter projects default to Android-only. Add `.vibecoder-flutter-targets.properties`
+  with `targets=iphone` or `targets=android,iphone` to opt into the macOS-agent iPhone build path
+  (`flutter create --platforms=ios .`, `flutter build ios --debug --simulator --no-codesign`,
+  `flutter build ipa --release`).
+- `GET|POST /api/ios/agent-config` → iPhone local/SSH macOS agent settings
+- `GET|POST /api/ios/app-store-connect-key` → App Store Connect key metadata and `.p8` private-key registration; responses never include private-key content
+- `GET /api/ios/app-store-connect/diagnostics?bundleId=<id>` → read-only App Store Connect JWT/authentication and app lookup diagnostics
+- `POST /api/ios/keychain/import` → admin-only macOS keychain `.p12` certificate import/unlock for iPhone signing; responses never include passwords
+- `POST /api/ios/swift-tools/install` → admin-only optional SwiftLint/SwiftFormat installation on the local or SSH macOS agent
+- `GET /api/projects/{id}/ios/signing-status` → Xcode signing snapshot: identities, provisioning profile metadata, bundle/team match, and expiration warnings
+- `POST /api/projects/{id}/builds/{buildId}/testflight-upload` → create a TestFlight upload job and delegate the upload prompt to the selected console provider
+- `GET /api/projects/{id}/testflight/uploads` → recent TestFlight upload jobs with `queued`, `uploading`, `processing`, `accepted`, or `failed` status; active uploads are also reconciled by App Store Connect build polling
+- `POST /api/projects/{id}/testflight/uploads/{jobId}/status` → update TestFlight upload status and normalize known failure messages into stable `errorCode` values
 - `GET /api/projects`, `POST /api/projects/register` (`sourceType=clone`, `templateId`)
+- `GET /api/projects/{id}/tooling-profile` → projectType-specific MCP/skill/agent profile
 - `POST /api/projects/{id}/rename` (body `{name}` — display-name rename), `DELETE /api/projects/{id}`
 - `POST /api/projects/reorder` (body `{offset, order:[id…]}` — persists custom order)
-
 **Build**
 - `POST /api/projects/{id}/build/debug`, `GET /api/projects/{id}/builds`
 - `POST /api/projects/{id}/build/release` (assembleRelease, APK), `POST /api/projects/{id}/build/bundle` (bundleRelease, AAB) — keystore-signed; `409 keystore_required` if no matching keystore
+- `POST /api/projects/{id}/ios/build/{debug|test|archive|export-ipa}` — iPhone/Xcode jobs via local MacBook install or SSH macOS agent; logs use the same build log WebSocket
 - `POST /api/projects/{id}/builds/{buildId}/cancel`
+- Build JSON responses include nullable `failureKind` for classified failures such as `swift_compile_failed`, `scheme_missing`, or `profile_missing`.
 - `POST /api/projects/{id}/play-upload` (body `{aabPath?, track?, releaseNotes?}` — triggers a Claude console prompt to upload the AAB to Google Play)
 - `GET /api/projects/{id}/artifacts/{artifactId}/download`
 - `POST /api/webhooks/build/{projectId}` (external trigger — `X-Vibe-Secret-Id` + `X-Vibe-Secret` + optional `X-Vibe-Signature`)
@@ -649,8 +679,24 @@ Highlights:
 **Claude console & automation**
 - `POST /api/projects/{id}/claude/console/{prompt|new|cancel|interrupt}`, `GET .../claude/status`
   (`interrupt` = stop the running turn and immediately send a new prompt — "interrupt & send")
-  - v1.133.0: `prompt`/`interrupt` body accepts optional `images:[{mediaType,data}]`
-    (base64, ≤4 images, ≤~5MB each) — sent to Claude as vision content blocks
+  - v1.162.5: `prompt`/`interrupt` are TUI-only text injection paths. Non-empty
+    `images` in `PromptRequestDto` are rejected with `images_unsupported`.
+- `GET|POST /api/projects/{id}/console/tui/session`,
+  `POST /api/projects/{id}/console/tui/prompt`,
+  `POST /api/projects/{id}/console/tui/interrupt`,
+  `POST /api/projects/{id}/console/tui/compact`,
+  `POST /api/projects/{id}/console/tui/mode`,
+  `DELETE /api/projects/{id}/console/tui/session/{sessionId}`,
+  `WS /ws/projects/{id}/console/tui/{sessionId}` — project-scoped provider CLI TUI
+  session over PTY/xterm.js. The prompt/compact endpoints record a user turn, then inject
+  text into the provider TUI via bracketed paste. The legacy `.../claude/console/prompt`
+  endpoint now routes to the same TUI runtime. `mode` is retained as a compatibility
+  endpoint and keeps TUI enabled.
+  Raw `terminal_input.data` is treated only as PTY stdin; clients that want a direct terminal
+  submission to appear in prompt history must set nullable `TerminalInput.recordPrompt` to the
+  user-visible prompt text.
+  Assistant history is ingested from provider-native stores where available: Claude JSONL,
+  OpenCode/GLM `opencode.db`, and Codex rollout JSONL paths referenced by `~/.codex/state_*.sqlite`.
 - `GET /api/projects/{id}/claude/console/image?turn=N&idx=M` — serves an image stored in a
   conversation turn (tool-result screenshots / user attachments) for console history restore
 - `POST /api/projects/{id}/claude/automation/{start|stop}`, `GET .../status`
@@ -683,7 +729,6 @@ Highlights:
 
 **Environment setup**
 - `GET /api/env-setup/components`, `POST /api/env-setup/install-all`, `POST /api/env-setup/{componentId}/install`
-- `POST /api/env-setup/claude-auth/upload` (multipart), `POST /api/env-setup/claude-auth/api-key`, `DELETE .../api-key/delete`
 - `POST /api/env-setup/claude-login/{start|submit|cancel}`, `GET .../status`
 - `GET /api/env-setup/mcp`, `POST /api/env-setup/mcp/{install|unregister}`, `POST /api/env-setup/mcp/{mcpId}/file/{fieldKey}` (multipart)
 - Provider status/quota: `GET /api/server/quota` (Claude), `GET /api/server/codex-quota`,
@@ -738,6 +783,13 @@ reaped after `security.terminalIdleTimeoutMinutes` (default `1440` = 24h, `0` =
 unlimited) of inactivity **with no live WebSocket** — a connected (visible) terminal
 is never reaped. The browser also auto-reconnects (exponential backoff plus on tab
 foreground / network resume).
+
+**Project console TUI sessions** — provider-native Claude/Codex/OpenCode PTYs are
+heavier than the workspace bash terminal. Disconnected idle project console TUI
+sessions are reaped after `security.consoleTuiIdleTimeoutMinutes` (default `120`;
+`0` = unlimited). Starting new TUI sessions is gated only by the ResourceGuard
+memory policy; under pressure it closes disconnected idle TUI sessions before
+blocking new heavy work.
 
 **Single-admin model** — this is a single-operator tool, so multi-user, the
 `admin`/`member`/`viewer` roles, the `/users` UI, the `/api/users*` endpoints

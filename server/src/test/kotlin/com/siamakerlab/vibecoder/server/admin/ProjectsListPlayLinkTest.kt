@@ -1,9 +1,12 @@
 package com.siamakerlab.vibecoder.server.admin
 
+import com.siamakerlab.vibecoder.server.platform.PlatformEngineRegistry
 import com.siamakerlab.vibecoder.shared.dto.ProjectDto
+import com.siamakerlab.vibecoder.shared.dto.ProjectTypes
 import io.kotest.matchers.ints.shouldBeGreaterThan
 import io.kotest.matchers.ints.shouldBeLessThan
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import org.junit.Test
 
 /**
@@ -29,6 +32,7 @@ class ProjectsListPlayLinkTest {
         lang = "ko",
         csrf = "csrf",
         total = 1,
+        uiCapabilities = mapOf("myapp" to PlatformEngineRegistry.default.forType(ProjectTypes.KOTLIN).uiCapabilities()),
     )
 
     @Test
@@ -51,5 +55,21 @@ class ProjectsListPlayLinkTest {
         pkgIdx shouldBeGreaterThan -1
         playIdx shouldBeGreaterThan pkgIdx        // 패키지 뒤
         playIdx shouldBeLessThan kotlinBadgeIdx   // 언어 배지 앞
+    }
+
+    @Test
+    fun `play link visibility follows engine ui capability`() {
+        val iphone = project("kr.codr.demo").copy(projectType = ProjectTypes.IPHONE)
+        val html = WebProjectTemplates.projectsPage(
+            username = "admin",
+            projects = listOf(iphone),
+            lang = "ko",
+            csrf = "csrf",
+            total = 1,
+            uiCapabilities = mapOf("myapp" to PlatformEngineRegistry.default.forType(ProjectTypes.IPHONE).uiCapabilities()),
+        )
+
+        html shouldContain ">iPhone<"
+        html shouldNotContain "play.google.com/store/apps/details"
     }
 }

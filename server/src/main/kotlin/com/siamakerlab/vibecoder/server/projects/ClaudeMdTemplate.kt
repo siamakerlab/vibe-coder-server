@@ -37,12 +37,28 @@ object ClaudeMdTemplate {
             }
             else -> "- **Source**: empty scaffold (no upstream)"
         }
-        // v1.127.0 — projectType 으로 Kotlin / Flutter(Android 전용) body 분기.
-        return if (info.projectType == ProjectTypes.FLUTTER) renderFlutter(info, cloneLine)
-        else renderKotlin(info, cloneLine)
+        return when (ProjectTypes.normalize(info.projectType)) {
+            ProjectTypes.FLUTTER -> renderFlutterProjectMemory(info, cloneLine)
+            ProjectTypes.IPHONE -> renderIPhoneProjectMemory(info, cloneLine)
+            else -> renderKotlinProjectMemory(info, cloneLine)
+        }
     }
 
-    private fun renderKotlin(info: ProjectInfo, cloneLine: String): String {
+    fun renderKotlinProjectMemory(info: ProjectInfo): String = renderKotlinProjectMemory(info, cloneLine(info))
+
+    fun renderFlutterProjectMemory(info: ProjectInfo): String = renderFlutterProjectMemory(info, cloneLine(info))
+
+    fun renderIPhoneProjectMemory(info: ProjectInfo): String = renderIPhoneProjectMemory(info, cloneLine(info))
+
+    private fun cloneLine(info: ProjectInfo): String = when {
+        info.sourceType == "clone" && !info.cloneUrl.isNullOrBlank() -> {
+            val branch = info.cloneBranch?.takeIf { it.isNotBlank() }?.let { " (branch: `$it`)" } ?: ""
+            "- **Source**: cloned from `${info.cloneUrl}`$branch"
+        }
+        else -> "- **Source**: empty scaffold (no upstream)"
+    }
+
+    private fun renderKotlinProjectMemory(info: ProjectInfo, cloneLine: String): String {
         val infoBlock = """# CLAUDE.md — ${info.appName}
 
 ## Project Info (auto-populated on project creation)
@@ -68,7 +84,7 @@ $cloneLine
 
     // v1.127.0 — Flutter(Android 앱 빌드 전용) 프로젝트 body. applicationId 는 android/app
     // 모듈의 defaultConfig.applicationId 이고, 플랫폼은 android 로만 제한(iOS/web/desktop 금지).
-    private fun renderFlutter(info: ProjectInfo, cloneLine: String): String {
+    private fun renderFlutterProjectMemory(info: ProjectInfo, cloneLine: String): String {
         val infoBlock = """# CLAUDE.md — ${info.appName}
 
 ## Project Info (auto-populated on project creation)
@@ -86,6 +102,26 @@ $cloneLine
 
 """
         val body = CONTENT_FLUTTER.substringAfter("# CLAUDE.md — Vibe Coder Flutter (Android-only) Project Rules\n\n")
+        return infoBlock + body
+    }
+
+    private fun renderIPhoneProjectMemory(info: ProjectInfo, cloneLine: String): String {
+        val infoBlock = """# CLAUDE.md — ${info.appName}
+
+## Project Info (auto-populated on project creation)
+
+- **App name (display)**: ${info.appName}
+- **Project ID (workspace folder)**: `${info.projectId}`
+- **Bundle ID**: `${info.packageName}`
+- **Project type**: iPhone — SwiftUI/Xcode project
+$cloneLine
+
+> iPhone project. Use Swift/SwiftUI/Xcode rules only. The bundle id above is canonical —
+> do not change it without explicit user request. Simulator actions require MacBook local
+> install or a connected macOS agent with `xcrun simctl` preflight passing.
+
+"""
+        val body = CONTENT_IPHONE.substringAfter("# CLAUDE.md — Vibe Coder iPhone Project Rules\n\n")
         return infoBlock + body
     }
 
@@ -138,32 +174,40 @@ CANNOT answer TUI prompts, menus, or stdin. Every turn is one-shot.
 - 한국어: 인터랙티브 입력 불가. 확인이 필요하면 응답 끝에 (A)(B)(C) + 권장안을 적고 멈추세요(다음 프롬프트에서 선택). 대기성 명령 금지, 한 턴은 자기완결.
 """
 
-    // v1.127.0 — Flutter(Android 앱 빌드 전용) 프로젝트 기본 CLAUDE.md. iOS/web/desktop 은
-    // 의도적으로 금지(로드맵 §4 정책). 신규 flutter 프로젝트 생성 시 적용.
-    const val CONTENT_FLUTTER = """# CLAUDE.md — Vibe Coder Flutter (Android-only) Project Rules
+    // v1.127.0 — Flutter 프로젝트 기본 CLAUDE.md. 기본 target 은 Android-only 이고,
+    // `.vibecoder-flutter-targets.properties` 가 iPhone 을 명시한 경우에만 iOS 빌드를 허용한다.
+    const val CONTENT_FLUTTER = """# CLAUDE.md — Vibe Coder Flutter Project Rules
 
 ## Project Rules
-- Flutter (Dart) project managed through Vibe Coder. **Android build target ONLY.**
+- Flutter (Dart) project managed through Vibe Coder.
+- Default target is Android only. iPhone target is opt-in through `.vibecoder-flutter-targets.properties`
+  (`targets=iphone` or `targets=android,iphone`).
 - Prefer Material 3. Clean architecture; keep business logic out of widgets.
 - Avoid unnecessary packages. Preserve existing structure unless asked.
 - Run `flutter analyze` and fix obvious build errors before finishing a task.
 
-## Platform Restriction (CRITICAL — Android only)
-- This project ships an Android APK/AAB only. Do NOT add or build iOS / web / desktop.
-- `flutter create` MUST pass `--platforms=android`. Never create ios/web/linux/windows/macos folders.
-- Never run `flutter build ios|web|macos|windows|linux` or enable those platforms.
+## Platform Target Policy
+- If the target file is absent, do not add or build iOS/web/desktop.
+- For Android-only projects, `flutter create` MUST pass `--platforms=android`.
+- If iPhone target is enabled, iOS work must run through the Vibe Coder macOS agent path:
+  `flutter create --platforms=ios .`, `flutter build ios --debug --simulator --no-codesign`,
+  or `flutter build ipa --release`.
+- web/linux/windows/macos remain out of scope.
 - applicationId lives in `android/app/build.gradle(.kts)` defaultConfig.applicationId.
 
 ## Build Rules
 - Build with `flutter build apk --debug` / `--release`, or `flutter build appbundle --release`.
 - The server build pipeline runs these; artifacts land in `build/app/outputs/flutter-apk/`
   (APK) and `build/app/outputs/bundle/release/` (AAB).
+- iPhone debug builds produce `build/ios/iphonesimulator/*.app`; release exports produce
+  `build/ios/ipa/*.ipa`.
 - Release signing: `android/key.properties` + `signingConfigs.release` in app/build.gradle
-  (flutter build does NOT use Gradle injected signing).
+  (flutter build does NOT use Gradle injected signing). iPhone signing uses Flutter/Xcode
+  project signing settings on the Mac agent.
 
 ## Installed Build Tools — USE THESE, DO NOT RE-DOWNLOAD
 Host provisioned these into bind-mounted volumes (via `/env-setup`). Use these exact paths.
-- Flutter SDK: `/home/vibe/.local/flutter` (on PATH as `flutter` / `dart`; Android-only precache).
+- Flutter SDK: `/home/vibe/.local/flutter` (on PATH as `flutter` / `dart`; Docker precache is Android-only).
 - Android SDK: `${'$'}ANDROID_HOME` (cmdline-tools, platform-tools/adb, platforms;android-35, build-tools).
 - JDK 17 (`java`) + Node 20 + Claude CLI (`claude`): bundled in image.
 - Flutter invokes `android/gradlew` internally — do not bypass it.
@@ -183,6 +227,42 @@ CANNOT answer TUI prompts, menus, or stdin. Every turn is one-shot.
 - No stdin-waiting commands (interactive `gh auth login`, `claude login`, `flutter create` prompts).
 - No watch/REPL/TUI or unbounded commands (`tail -f`, `adb logcat` without a stop condition,
   `flutter run` without an exit). One-shot `flutter build` is fine.
+- Never pause to ask "should I continue?". Proceed with a sensible default, OR list questions at the END as (A)(B)(C) with a "권장/Recommended" default — the user replies in the NEXT prompt.
+- 한국어: 인터랙티브 입력 불가. 확인이 필요하면 응답 끝에 (A)(B)(C) + 권장안을 적고 멈추세요(다음 프롬프트에서 선택). 대기성 명령 금지, 한 턴은 자기완결.
+"""
+
+    const val CONTENT_IPHONE = """# CLAUDE.md — Vibe Coder iPhone Project Rules
+
+## Project Rules
+- iPhone app project managed through Vibe Coder. Swift/SwiftUI/Xcode only.
+- Prefer SwiftUI, clear state ownership, accessibility labels, and predictable navigation.
+- Limit Simulator support to iPhone/iPad. Do not create watchOS/tvOS/visionOS/macOS app targets.
+- Avoid unnecessary packages. Preserve existing Xcode project structure unless asked.
+- Check obvious Swift compile/test errors before finishing a coding task.
+
+## Tooling Rules
+- Use `xcodebuild` for build/test verification when a MacBook local install or macOS agent is available.
+- Use `xcrun simctl` only after Mac preflight passes. Linux Docker alone cannot run Simulator.
+- Do not run Gradle, Play, Android keystore, or Flutter pubspec workflows for this project.
+- App Store Connect, fastlane, signing certificates, provisioning profiles, and `.p8` keys are release-only.
+  Use them only when the user explicitly asks for release/TestFlight work.
+
+## Secret Rules
+- Never print, commit, or log signing certificates, provisioning profiles, ASC private keys, issuer IDs,
+  key IDs, passwords, or session tokens.
+- Keep signing assets in the configured secret store/keychain path, not inside the app source tree.
+
+## Response Rules
+- Summarize modified files + key decisions; state whether Xcode build/test or Simulator verification ran.
+- If Mac preflight is unavailable, say which iPhone actions were skipped and why.
+
+## Non-Interactive Environment (CRITICAL)
+Claude runs as a non-interactive child process behind a web/mobile UI. The user
+CANNOT answer TUI prompts, menus, or stdin. Every turn is one-shot.
+- No AskUserQuestion / interactive menus / key-press affordances.
+- No stdin-waiting commands (`xcodebuild -allowProvisioningUpdates` that opens login prompts,
+  interactive `gh auth login`, `claude login`).
+- No watch/REPL/TUI or unbounded commands. Simulator commands must have a clear exit condition.
 - Never pause to ask "should I continue?". Proceed with a sensible default, OR list questions at the END as (A)(B)(C) with a "권장/Recommended" default — the user replies in the NEXT prompt.
 - 한국어: 인터랙티브 입력 불가. 확인이 필요하면 응답 끝에 (A)(B)(C) + 권장안을 적고 멈추세요(다음 프롬프트에서 선택). 대기성 명령 금지, 한 턴은 자기완결.
 """

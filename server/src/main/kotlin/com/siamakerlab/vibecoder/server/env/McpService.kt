@@ -76,22 +76,13 @@ class McpService(
     fun globalMcpJsonPath(): Path = userConfigPath()
 
     /**
-     * v1.37.0 — 도커 **첫 설치(first-run)** 시 기본 MCP 를 자동 등록. 영속 볼륨(`~/.claude`)에
-     * marker 파일을 두어 **딱 한 번만** 수행한다. 기본 대상은 [McpCatalog.defaultInstallIds]
-     * 가 단일 출처 — v1.40.2 기준 fetch/memory/sequential-thinking/context7/playwright 5개
-     * (모두 zero-config: 인증/필수 configField 없음).
-     *
-     * - marker 존재(= 이미지 업데이트 등 재부팅) → no-op. **사용자 선택 절대 변경 안 함.**
-     * - 기존 `.mcp.json` 에 server 가 이미 있으면(구버전에서 업그레이드) → 등록 skip + marker 만
-     *   기록(사용자 선택 보존).
-     * - 진짜 fresh(볼륨 비어있음) → 기본 MCP 를 `.mcp.json` 에 등록 + marker.
-     *
-     * npm install 은 하지 않는다 — argsTemplate 이 `npx -y <pkg>` 라 Claude 가 첫 사용 시
-     * 자동 fetch. 따라서 부팅 시 네트워크 의존/실패 위험 없음(파일 쓰기만).
+     * 기본 MCP user-scope 등록 보장. 첫 설치와 이미지 업그레이드 모두에서
+     * [McpCatalog.defaultInstallIds] 누락분을 보강 등록한다. 기존 사용자 MCP 는 보존하고,
+     * default 항목은 모두 zero-config / npx 기반이라 부팅 시 네트워크 설치는 하지 않는다.
      */
     fun bootstrapDefaultsIfFirstRun() {
-        // v1.66.5 — 표준 user-scope 등록으로 일원화. 멱등이라 marker 불필요(이미 등록된 건 skip).
-        //  레거시 .mcp.json(과거 설치분/기본값)을 user-scope 로 이관 + 진짜 첫 실행이면 기본 등록.
+        // 표준 user-scope 등록으로 일원화. 멱등이라 marker 불필요(이미 등록된 건 skip).
+        // 레거시 .mcp.json 이관 + defaultInstall 누락분 보강.
         ensureUserScopeRegistration()
     }
 
@@ -421,9 +412,12 @@ class McpService(
     private fun runCodexMcp(vararg args: String, timeoutSec: Long = 30): Pair<Int, String> {
         return try {
             val pb = ProcessBuilder(listOf(codexCmd(), "mcp", *args)).redirectErrorStream(true)
-            pb.environment().putIfAbsent("HOME", "/home/vibe")
-            pb.environment().putIfAbsent("XDG_CONFIG_HOME", "/home/vibe/.config")
-            pb.environment().putIfAbsent("CODEX_HOME", "/home/vibe/.codex")
+            val userHome = System.getProperty("user.home")
+            val codexHome = codexHomeForProcess()
+            runCatching { Files.createDirectories(codexHome) }
+            pb.environment().putIfAbsent("HOME", userHome)
+            pb.environment().putIfAbsent("XDG_CONFIG_HOME", Path.of(userHome, ".config").toString())
+            pb.environment()["CODEX_HOME"] = codexHome.toString()
             val proc = pb.start()
             val out = proc.inputStream.bufferedReader(Charsets.UTF_8).readText()
             if (!proc.waitFor(timeoutSec, TimeUnit.SECONDS)) { proc.destroyForcibly(); return -2 to "timeout" }
@@ -432,6 +426,12 @@ class McpService(
             -1 to (e.message ?: "exec failed")
         }
     }
+
+    private fun codexHomeForProcess(): Path =
+        SkillRegistry.resolveCodexGlobalRoot(
+            configuredHome = System.getenv("CODEX_HOME")?.ifBlank { null },
+            userHome = System.getProperty("user.home"),
+        ).parent
 
     /** v1.67.0 — 현재 인식 MCP + 연결 상태. cwd=프로젝트 root 면 user-scope + 그 프로젝트 scope 포함. */
     data class LiveServer(val name: String, val detail: String, val state: String)
@@ -472,6 +472,10 @@ class McpService(
     }
 
     private fun registerCodexScope(name: String, serverJson: JsonObject) {
+        if (isCodexScopeSynced(name, serverJson)) {
+            log.debug { "codex mcp add $name skip: unchanged" }
+            return
+        }
         val command = (serverJson["command"] as? JsonPrimitive)?.contentOrNull
         if (command.isNullOrBlank()) {
             log.warn { "codex mcp add $name skip: command 없음" }
@@ -494,8 +498,47 @@ class McpService(
             addAll(args)
         }.toTypedArray()
         val (exit, out) = runCodexMcp(*addArgs)
-        if (exit != 0) log.warn { "codex mcp add $name 실패(exit=$exit): ${out.take(300)}" }
+        if (exit != 0) {
+            log.warn { "codex mcp add $name 실패(exit=$exit): ${out.take(300)}" }
+        } else {
+            markCodexScopeSynced(name, serverJson)
+        }
     }
+
+    private fun isCodexScopeSynced(name: String, serverJson: JsonObject): Boolean {
+        val marker = codexSyncMarkerPath(name)
+        if (!marker.exists()) return false
+        val config = codexConfigPath()
+        if (!config.exists()) return false
+        val markerMtime = runCatching { Files.getLastModifiedTime(marker).toMillis() }.getOrDefault(0L)
+        val configMtime = runCatching { Files.getLastModifiedTime(config).toMillis() }.getOrDefault(0L)
+        if (configMtime > markerMtime) return false
+        return runCatching { Files.readString(marker, Charsets.UTF_8) == serverJson.toString() }
+            .getOrDefault(false)
+    }
+
+    private fun markCodexScopeSynced(name: String, serverJson: JsonObject) {
+        runCatching {
+            val marker = codexSyncMarkerPath(name)
+            Files.createDirectories(marker.parent)
+            Files.writeString(
+                marker,
+                serverJson.toString(),
+                Charsets.UTF_8,
+                StandardOpenOption.CREATE,
+                StandardOpenOption.TRUNCATE_EXISTING,
+                StandardOpenOption.WRITE,
+            )
+        }.onFailure { log.debug(it) { "codex mcp sync marker write failed for $name" } }
+    }
+
+    private fun codexSyncMarkerPath(name: String): Path =
+        codexHomeForProcess()
+            .resolve(".vibecoder-mcp-sync")
+            .resolve("${sanitizeName(name)}.json")
+
+    private fun codexConfigPath(): Path =
+        codexHomeForProcess().resolve("config.toml")
 
     private fun userConfigPath(): Path = claudeConfigDir().resolve(".claude.json")
 
@@ -512,23 +555,25 @@ class McpService(
     /**
      * v1.66.5 — 표준 user-scope 등록 보장(멱등). 매 startup 호출:
      *  - 레거시 `.mcp.json` 의 server 중 user-scope 에 없는 것을 이관(기존 설치 호환).
-     *  - 레거시도 user-scope 도 비어있으면(진짜 첫 실행) 기본 MCP 등록.
+     *  - first-run 과 이미지 업그레이드 모두에서 defaultInstall MCP 누락분을 보강 등록.
      */
     fun ensureUserScopeRegistration() {
         runCatching {
             val userServers = readUserScopeServers()
             val legacy = readMcpJson()?.get("mcpServers") as? JsonObject ?: buildJsonObject {}
-            if (userServers.isEmpty() && legacy.isEmpty()) {
-                McpCatalog.defaultInstallIds.forEach { id ->
-                    val e = McpCatalog.get(id) ?: return@forEach
-                    registerMcpServer(id, buildServerEntryJson(e, emptyMap()))
-                }
-                log.info { "MCP user-scope 기본 등록(first-run): ${McpCatalog.defaultInstallIds}" }
-                return@runCatching
-            }
             val migrate = legacy.filterKeys { it !in userServers.keys }
             migrate.forEach { (name, v) -> (v as? JsonObject)?.let { registerMcpServer(name, it) } }
             if (migrate.isNotEmpty()) log.info { "MCP 레거시 .mcp.json → user-scope 이관: ${migrate.keys}" }
+
+            val afterMigration = readUserScopeServers()
+            val missingDefaults = McpCatalog.defaultInstallIds.filterNot { it in afterMigration.keys }
+            missingDefaults.forEach { id ->
+                val e = McpCatalog.get(id) ?: return@forEach
+                registerMcpServer(id, buildServerEntryJson(e, emptyMap()))
+            }
+            if (missingDefaults.isNotEmpty()) {
+                log.info { "MCP user-scope 기본 등록/보강: $missingDefaults" }
+            }
 
             // Claude user-scope 에 직접 추가된 MCP 도 Codex 에 동기화한다. Codex 는 Claude 설정을
             // 읽지 않으므로 이 단계가 없으면 Claude 콘솔에서는 보이고 Codex 콘솔에서는 빠진다.

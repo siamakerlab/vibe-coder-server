@@ -3,6 +3,7 @@ package com.siamakerlab.vibecoder.server.automation
 import com.siamakerlab.vibecoder.server.agent.AgentRouter
 import com.siamakerlab.vibecoder.server.error.ApiException
 import com.siamakerlab.vibecoder.server.repo.PromptAutomationRunRepository
+import com.siamakerlab.vibecoder.server.terminal.ConsolePromptSender
 import com.siamakerlab.vibecoder.server.ws.LogHub
 import com.siamakerlab.vibecoder.shared.dto.PromptAutomationMode
 import com.siamakerlab.vibecoder.shared.dto.PromptAutomationStatus
@@ -33,6 +34,7 @@ private val log = KotlinLogging.logger {}
  */
 class PromptAutomationManager(
     private val router: AgentRouter,
+    private val promptSender: ConsolePromptSender,
     private val runRepo: PromptAutomationRunRepository,
     private val hub: LogHub,
 ) {
@@ -82,7 +84,7 @@ class PromptAutomationManager(
 
         val first = run.queue.removeFirst()
         try {
-            router.sendPrompt(projectId, first)
+            promptSender.send(projectId, first, source = "prompt_automation_start")
             run.sent = 1
             runRepo.updateSent(run.runId, 1)
             emitSystem(projectId, "automation_started", systemMsg("자동화 시작", spec.name, 1, run.total))
@@ -116,7 +118,7 @@ class PromptAutomationManager(
             return@withLock
         }
         try {
-            router.sendPrompt(projectId, next)
+            promptSender.send(projectId, next, source = "prompt_automation_next")
             run.sent += 1
             runRepo.updateSent(run.runId, run.sent)
             emitProgress(run, PromptAutomationStatus.RUNNING, active = true, lastPrompt = next)

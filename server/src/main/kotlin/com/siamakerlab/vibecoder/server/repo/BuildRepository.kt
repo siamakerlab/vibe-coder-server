@@ -23,6 +23,7 @@ data class BuildRow(
     val logPath: String?,
     val artifactId: String?,
     val errorMessage: String?,
+    val failureKind: String?,
     val startedAt: String?,
     val finishedAt: String?,
     val createdAt: String,
@@ -48,7 +49,7 @@ class BuildRepository(private val clock: Clock) {
             it[Builds.gitBranch] = gitBranch
             it[Builds.gitSha] = gitSha
         }
-        BuildRow(id, projectId, variant, TaskStatus.PENDING, logPath, null, null, null, null, now,
+        BuildRow(id, projectId, variant, TaskStatus.PENDING, logPath, null, null, null, null, null, now,
             gitBranch = gitBranch, gitSha = gitSha)
     }
 
@@ -72,7 +73,7 @@ class BuildRepository(private val clock: Clock) {
         }
     }
 
-    fun setStatus(id: String, status: TaskStatus, errorMessage: String? = null) = transaction {
+    fun setStatus(id: String, status: TaskStatus, errorMessage: String? = null, failureKind: String? = null) = transaction {
         val now = clock.nowIso()
         Builds.update({ Builds.id eq id }) {
             it[Builds.status] = status.name
@@ -81,6 +82,7 @@ class BuildRepository(private val clock: Clock) {
                 TaskStatus.SUCCESS, TaskStatus.FAILED, TaskStatus.CANCELED, TaskStatus.TIMEOUT -> {
                     it[finishedAt] = now
                     if (errorMessage != null) it[Builds.errorMessage] = errorMessage
+                    if (failureKind != null) it[Builds.failureKind] = failureKind
                 }
                 else -> Unit
             }
@@ -148,6 +150,7 @@ class BuildRepository(private val clock: Clock) {
             it[status] = TaskStatus.FAILED.name
             it[finishedAt] = now
             it[errorMessage] = "orphaned_by_restart"
+            it[failureKind] = "orphaned_by_restart"
         }
     }
 
@@ -167,6 +170,7 @@ class BuildRepository(private val clock: Clock) {
         logPath = this[Builds.logPath],
         artifactId = this[Builds.artifactId],
         errorMessage = this[Builds.errorMessage],
+        failureKind = this[Builds.failureKind],
         startedAt = this[Builds.startedAt],
         finishedAt = this[Builds.finishedAt],
         createdAt = this[Builds.createdAt],

@@ -50,6 +50,19 @@ fun Routing.projectRoutes(service: ProjectService) {
             call.respond(service.get(id))
         }
 
+        get(ApiPath.projectToolingProfile("{projectId}")) {
+            val p = call.requireDevice()
+            val id = call.parameters["projectId"]
+                ?: throw com.siamakerlab.vibecoder.server.error.ApiException.localized(400, "bad_request", messageKey = "api.common.projectIdRequired")
+            val uid = p.device.userId
+            if (uid != null && !service.canUserAccess(uid, p.isAdmin, id)) {
+                throw com.siamakerlab.vibecoder.server.error.ApiException.localized(
+                    403, "project_forbidden", messageKey = "api.auth.projectForbidden",
+                )
+            }
+            call.respond(service.toolingProfile(id))
+        }
+
         // v1.122.0 — 프로젝트 표시 이름 변경(P2). 폴더/패키지 무관.
         post("/api/projects/{projectId}/rename") {
             call.requireApiWrite()

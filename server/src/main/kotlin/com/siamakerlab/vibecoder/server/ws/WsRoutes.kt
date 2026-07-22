@@ -10,8 +10,14 @@ import com.siamakerlab.vibecoder.server.projects.ProjectService
 import com.siamakerlab.vibecoder.server.repo.AdminUserRepository
 import com.siamakerlab.vibecoder.server.claude.ClaudeSessionManager
 import com.siamakerlab.vibecoder.server.claude.SubAgentSessionManager
+import com.siamakerlab.vibecoder.server.ios.IosSimulatorLogStreamService
 import com.siamakerlab.vibecoder.server.repo.DeviceRepository
+import com.siamakerlab.vibecoder.server.terminal.ConsolePromptDispatcher
+import com.siamakerlab.vibecoder.server.terminal.AgentStatusStore
+import com.siamakerlab.vibecoder.server.terminal.validatedConsoleTuiPromptText
 import com.siamakerlab.vibecoder.shared.ApiPath
+import com.siamakerlab.vibecoder.shared.dto.ProjectTypes
+import com.siamakerlab.vibecoder.shared.dto.PromptRequestDto
 import com.siamakerlab.vibecoder.shared.ws.WsFrame
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.server.routing.Routing
@@ -28,6 +34,7 @@ import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
+import java.time.Instant
 
 private val log = KotlinLogging.logger {}
 
@@ -58,6 +65,9 @@ fun Routing.wsRoutes(
     /** v0.51.0 — Project ACL check on console + sub-agent WebSocket handshake. */
     projects: ProjectService,
     agentRouter: AgentRouter? = null,
+    consolePromptDispatcher: ConsolePromptDispatcher? = null,
+    agentStatusStore: AgentStatusStore? = null,
+    iosSimulatorLogStream: IosSimulatorLogStreamService = IosSimulatorLogStreamService(),
 ) {
     // v1.31.1 (A-Q2) — WS path 를 ApiPath SSOT 상수로 (Android client wire drift 방어).
     webSocket(ApiPath.wsBuildLogs("{projectId}", "{buildId}")) {
@@ -82,6 +92,16 @@ fun Routing.wsRoutes(
         handleConsoleStream(
             hub, deviceRepo, tokens, sessionManager,
             actionRegistry, actionHandler, projectId, since, provider, userRepo, projects, agentRouter,
+            consolePromptDispatcher, agentStatusStore,
+        )
+    }
+    webSocket(ApiPath.wsIosSimulatorLogs("{projectId}", "{udid}")) {
+        val projectId = call.parameters["projectId"]
+            ?: return@webSocket close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "missing projectId"))
+        val udid = call.parameters["udid"]
+            ?: return@webSocket close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "missing udid"))
+        handleIosSimulatorLogStream(
+            iosSimulatorLogStream, deviceRepo, tokens, projects, projectId, udid,
         )
     }
     // v1.3.0 — cross-project busy state push (workspaces 목록 / 대시보드 실시간 동기).
@@ -107,10 +127,65 @@ fun Routing.wsRoutes(
     }
 }
 
+private suspend fun WebSocketServerSession.handleIosSimulatorLogStream(
+    service: IosSimulatorLogStreamService,
+    deviceRepo: DeviceRepository,
+    tokens: TokenService,
+    projects: ProjectService,
+    projectId: String,
+    udid: String,
+) {
+    authenticateFirstFrame(deviceRepo, tokens) ?: return
+
+    val row = runCatching { projects.rowOrThrow(projectId) }.getOrElse {
+        runCatching {
+            sendFrame(WsFrame.Error("project_not_found", "project not found"))
+            close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "project_not_found"))
+        }
+        return
+    }
+    if (ProjectTypes.normalize(row.projectType) != ProjectTypes.IPHONE) {
+        runCatching {
+            sendFrame(WsFrame.Error("iphone_project_required", "iPhone project required"))
+            close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "iphone_project_required"))
+        }
+        return
+    }
+
+    val taskId = "ios-sim-log:$projectId:$udid"
+    val result = runCatching {
+        service.stream(row.packageName, udid) { level, line ->
+            runCatching {
+                sendFrame(WsFrame.Log(
+                    taskId = taskId,
+                    level = level,
+                    message = line.take(MAX_IOS_SIMULATOR_LOG_LINE_LENGTH),
+                    ts = Instant.now().toString(),
+                ))
+            }.onFailure { log.debug { "ios simulator log ws send failed: ${it.message}" } }
+        }
+    }.getOrElse { e ->
+        val code = if (e is IllegalArgumentException) "invalid_request" else "simulator_log_stream_failed"
+        runCatching { sendFrame(WsFrame.Error(code, e.message ?: code)) }
+        IosSimulatorLogStreamService.StreamResult(exitCode = 1, blockedReason = code)
+    }
+    result.blockedReason?.let { reason ->
+        runCatching { sendFrame(WsFrame.Error(reason, reason)) }
+    }
+    runCatching {
+        sendFrame(WsFrame.Done(
+            taskId = taskId,
+            status = if (result.blockedReason == null && result.exitCode == 0) "SUCCESS" else "FAILED",
+            errorMessage = result.blockedReason,
+        ))
+    }
+    runCatching { close(CloseReason(CloseReason.Codes.NORMAL, "done")) }
+}
+
 private suspend fun WebSocketServerSession.authenticateFirstFrame(
     deviceRepo: DeviceRepository,
     tokens: TokenService,
-): Boolean {
+): String? {
     // ── v0.12.4: CSWSH 방어 — Origin 헤더 검증 ─────────────────────────────────
     // WebSocket 은 CORS preflight 미적용. cookie 가 첨부되는 cross-origin WS 가
     // 시도되면 SameSite=Lax 가 막아주긴 하지만, defense-in-depth 차원에서 Origin
@@ -134,7 +209,7 @@ private suspend fun WebSocketServerSession.authenticateFirstFrame(
                 sendFrame(WsFrame.Error("origin_denied", "WebSocket from unexpected origin"))
                 close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "origin_denied"))
             }
-            return false
+            return null
         }
     }
 
@@ -153,14 +228,14 @@ private suspend fun WebSocketServerSession.authenticateFirstFrame(
         val device = deviceRepo.findByTokenHash(tokens.hashOf(cookieToken))
         if (device != null) {
             deviceRepo.touchLastSeen(device.id)
-            return true
+            return device.userId
         }
         // 쿠키는 보내왔지만 hash 가 안 맞음 → 즉시 invalid_token 으로 끊음.
         runCatching {
             sendFrame(WsFrame.Error("invalid_token", "session cookie not recognized"))
             close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "invalid_token"))
         }
-        return false
+        return null
     }
 
     // Path 2 — 안드로이드 앱 등 쿠키가 없는 클라이언트: 첫 텍스트 프레임이 WsFrame.Auth.
@@ -170,33 +245,35 @@ private suspend fun WebSocketServerSession.authenticateFirstFrame(
             if (firstRaw == null) {
                 sendFrame(WsFrame.Error("auth_required", "first frame must be Auth (text)"))
                 close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "auth_required"))
-                return@withTimeout false
+                return@withTimeout null
             }
             val first = runCatching { wsJson.decodeFromString(WsFrame.serializer(), firstRaw) }
                 .getOrNull()
             if (first !is WsFrame.Auth) {
                 sendFrame(WsFrame.Error("auth_required", "first frame must be Auth"))
                 close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "auth_required"))
-                return@withTimeout false
+                return@withTimeout null
             }
             val device = deviceRepo.findByTokenHash(tokens.hashOf(first.token))
             if (device == null) {
                 sendFrame(WsFrame.Error("invalid_token", "bearer token not recognized"))
                 close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "invalid_token"))
-                return@withTimeout false
+                return@withTimeout null
             }
             deviceRepo.touchLastSeen(device.id)
-            true
+            device.userId
         }
     } catch (_: TimeoutCancellationException) {
         runCatching { close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "auth_timeout")) }
-        false
+        null
     } catch (e: Throwable) {
         log.debug { "ws auth failed: ${e.message}" }
         runCatching { close(CloseReason(CloseReason.Codes.INTERNAL_ERROR, "auth_failed")) }
-        false
+        null
     }
 }
+
+private const val MAX_IOS_SIMULATOR_LOG_LINE_LENGTH = 8_000
 
 private suspend fun WebSocketServerSession.handleLegacyLogStream(
     hub: LogHub,
@@ -209,7 +286,7 @@ private suspend fun WebSocketServerSession.handleLegacyLogStream(
     userRepo: AdminUserRepository? = null,
     projects: ProjectService? = null,
 ) {
-    if (!authenticateFirstFrame(deviceRepo, tokens)) return
+    authenticateFirstFrame(deviceRepo, tokens) ?: return
 
     // v1.45.0 — 단일 admin 화: Project ACL 검사 제거(인증만으로 충분, 모든 프로젝트 접근).
 
@@ -240,8 +317,10 @@ private suspend fun WebSocketServerSession.handleConsoleStream(
     userRepo: AdminUserRepository,
     projects: ProjectService,
     agentRouter: AgentRouter?,
+    consolePromptDispatcher: ConsolePromptDispatcher?,
+    agentStatusStore: AgentStatusStore?,
 ) {
-    if (!authenticateFirstFrame(deviceRepo, tokens)) return
+    val ownerUserId = authenticateFirstFrame(deviceRepo, tokens) ?: return
 
     // v1.45.0 — 단일 admin 화: role 조회 / viewer 게이트 / Project ACL 검사 제거.
     // 인증(authenticateFirstFrame)만으로 충분 — 모든 프로젝트 접근 + write 허용.
@@ -280,11 +359,12 @@ private suspend fun WebSocketServerSession.handleConsoleStream(
     // SSOT 를 직접 읽어 정확했던 것과의 불일치. busyStateOrNull 을 권위로 1회 내려보내 ring
     // window 와 무관하게 정확한 turn 상태로 수렴시킨다. null(부팅 직후 turn 이력 없음)이면
     // 클라이언트 기본값 ready 유지. seq=0L — 클라이언트는 busy_state 처리에 seq 를 쓰지 않는다.
-    val busyState = if (provider == AgentProvider.CLAUDE) {
-        sessionManager.busyStateOrNull(projectId)
-    } else {
-        agentRouter?.managerFor(provider)?.takeIf { it.isBusy(projectId) }?.let { com.siamakerlab.vibecoder.shared.dto.ProjectState.RESPONDING }
-    }
+    val busyState = agentStatusStore?.get(projectId, provider)?.legacyProjectState
+        ?: if (provider == AgentProvider.CLAUDE) {
+            sessionManager.busyStateOrNull(projectId)
+        } else {
+            agentRouter?.managerFor(provider)?.takeIf { it.isBusy(projectId) }?.let { com.siamakerlab.vibecoder.shared.dto.ProjectState.RESPONDING }
+        }
     busyState?.let { st ->
         runCatching { sendFrame(WsFrame.ConsoleBusyState(busy = st.busy, seq = 0L, state = st.wire)) }
     }
@@ -301,9 +381,16 @@ private suspend fun WebSocketServerSession.handleConsoleStream(
                 when (parsed) {
                     is WsFrame.UserPrompt -> {
                         runCatching {
-                            if (provider == AgentProvider.CLAUDE) sessionManager.sendPrompt(projectId, parsed.text)
-                            else agentRouter?.managerFor(provider)?.sendPrompt(projectId, parsed.text)
-                                ?: sessionManager.sendPrompt(projectId, parsed.text)
+                            val text = validatedConsoleTuiPromptText(PromptRequestDto(parsed.text))
+                            val dispatcher = consolePromptDispatcher
+                                ?: error("console TUI dispatcher unavailable")
+                            dispatcher.send(
+                                ownerUserId = ownerUserId,
+                                projectId = projectId,
+                                text = text,
+                                requestedProvider = provider.id,
+                                source = "ws_console_prompt",
+                            )
                         }
                             .onFailure { log.warn(it) { "[$projectId] ws prompt failed" } }
                     }
@@ -351,7 +438,7 @@ private suspend fun WebSocketServerSession.handleSubAgentConsoleStream(
     userRepo: AdminUserRepository,
     projects: ProjectService,
 ) {
-    if (!authenticateFirstFrame(deviceRepo, tokens)) return
+    authenticateFirstFrame(deviceRepo, tokens) ?: return
 
     // v1.45.0 — 단일 admin 화: Project ACL 검사 제거(인증만으로 충분).
 
@@ -418,7 +505,7 @@ private suspend fun WebSocketServerSession.handleProjectsStateStream(
     tokens: TokenService,
     since: Long,
 ) {
-    if (!authenticateFirstFrame(deviceRepo, tokens)) return
+    authenticateFirstFrame(deviceRepo, tokens) ?: return
 
     val view = hub.subscribeConsole(
         com.siamakerlab.vibecoder.server.claude.ClaudeSessionManager.PROJECTS_TOPIC,

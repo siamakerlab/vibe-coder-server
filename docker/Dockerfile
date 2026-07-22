@@ -9,20 +9,19 @@
 #
 # 빌드 (메인테이너용)
 #
-#   일반 commit push (amd64-only · v0.6.3+ 기본):
-#     docker buildx build --platform linux/amd64 \
-#         -f docker/Dockerfile -t siamakerlab/vibe-coder-server:1.145.0 --push .
-#
-#   마일스톤 multi-arch push (v0.7.0 / v1.0.0 등):
+#   일반 push (amd64 + arm64):
 #     docker buildx build --platform linux/amd64,linux/arm64 \
-#         -f docker/Dockerfile -t siamakerlab/vibe-coder-server:1.145.0 --push .
+#         -f docker/Dockerfile -t siamakerlab/vibe-coder-server:1.163.0 --push .
 
 # ------------------------------------------------------------------------------
 # Stage 1: 서버 빌드 (Gradle installDist)
 # v0.38.0 — Ubuntu 26.04 LTS (Resolute Raccoon) rebase. eclipse-temurin 의
 # resolute 태그가 26.04 LTS 매핑 확정 (`/etc/os-release`: Ubuntu 26.04 LTS).
+# JVM bytecode 산출물은 아키텍처 독립이므로 multi-arch build 때도 builder 는
+# BUILDPLATFORM 에서 한 번만 실행한다. arm64 타깃에서 Gradle/Kotlin 을 QEMU 로 다시
+# 컴파일하면 빌드 시간이 크게 늘어난다.
 # ------------------------------------------------------------------------------
-FROM eclipse-temurin:17-jdk-resolute AS builder
+FROM --platform=$BUILDPLATFORM eclipse-temurin:17-jdk-resolute AS builder
 
 WORKDIR /src
 

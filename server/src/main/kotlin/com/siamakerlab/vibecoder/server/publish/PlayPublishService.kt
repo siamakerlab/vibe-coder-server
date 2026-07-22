@@ -1,7 +1,7 @@
 package com.siamakerlab.vibecoder.server.publish
 
-import com.siamakerlab.vibecoder.server.agent.AgentRouter
 import com.siamakerlab.vibecoder.server.env.McpService
+import com.siamakerlab.vibecoder.server.terminal.ConsolePromptSender
 import io.github.oshai.kotlinlogging.KotlinLogging
 
 private val log = KotlinLogging.logger {}
@@ -25,7 +25,7 @@ private val log = KotlinLogging.logger {}
  */
 class PlayPublishService(
     private val mcpService: McpService,
-    private val agentRouter: AgentRouter,
+    private val promptSender: ConsolePromptSender,
 ) {
 
     data class Precheck(
@@ -109,7 +109,7 @@ class PlayPublishService(
         """.trimIndent()
 
         log.info { "Play upload triggered: project=$projectId aab=$aabRelativePath track=$safeTrack" }
-        agentRouter.sendPrompt(projectId, prompt)
+        promptSender.send(projectId, prompt, source = "play_publish_upload")
     }
 
     /**
@@ -162,7 +162,7 @@ class PlayPublishService(
         """.trimIndent()
 
         log.info { "Play store upload triggered: project=$projectId track=$safeTrack listing=$includeListing" }
-        agentRouter.sendPrompt(projectId, prompt)
+        promptSender.send(projectId, prompt, source = "play_publish_store_upload")
     }
 
     private fun sanitizeTrack(raw: String): String {

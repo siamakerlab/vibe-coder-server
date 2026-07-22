@@ -5,9 +5,8 @@ import kotlinx.serialization.Serializable
 /**
  * v1.136.0 — 프롬프트 일괄 전송 (`ApiPath.CLAUDE_BROADCAST`).
  *
- * 선택한 여러 프로젝트의 메인 콘솔에 같은 프롬프트를 한 번에 전송한다. 서버는 즉시
- * 202 로 응답하고 각 프로젝트 전송은 비동기로 진행 — 동시 turn 게이트
- * (`claude.maxConcurrentTurns`)가 한도 초과분을 순차 처리(큐)한다.
+ * 선택한 여러 프로젝트의 메인 콘솔에 같은 프롬프트를 한 번에 전송한다.
+ * 서버는 즉시 202 로 응답하고 각 프로젝트 전송은 비동기로 진행한다.
  */
 @Serializable
 data class BroadcastSendRequestDto(

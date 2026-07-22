@@ -5,6 +5,7 @@ import com.siamakerlab.vibecoder.server.agent.AgentProvider
 import com.siamakerlab.vibecoder.server.agent.AgentModelOption
 import com.siamakerlab.vibecoder.server.agent.ModelCatalogService
 import com.siamakerlab.vibecoder.server.files.ProjectFileBrowser
+import com.siamakerlab.vibecoder.server.platform.PlatformUiCapabilities
 import com.siamakerlab.vibecoder.server.repo.ArtifactRow
 import com.siamakerlab.vibecoder.shared.dto.BuildDto
 import com.siamakerlab.vibecoder.shared.dto.CheckItemDto
@@ -60,6 +61,17 @@ object WebProjectTemplates {
     /** v1.54.0 — URL path/query segment 안전 인코딩 (chat id 등). */
     private fun String.encodeUrlSeg(): String =
         java.net.URLEncoder.encode(this, Charsets.UTF_8).replace("+", "%20")
+
+    private fun agentStatusDots(projectId: String, claudeState: String = ProjectState.READY.wire): String {
+        fun dot(provider: AgentProvider, label: String, state: String) =
+            """<span class="agent-dot" data-provider="${esc(provider.id)}" data-state="${esc(state)}" title="$label: ${esc(state)}" aria-label="$label ${esc(state)}"></span>"""
+        return """
+          <span class="agent-status-dots" data-pid="${esc(projectId)}" role="group" aria-label="Claude Codex GLM status">
+            ${dot(AgentProvider.CLAUDE, "Claude", claudeState)}
+            ${dot(AgentProvider.CODEX, "Codex", ProjectState.READY.wire)}
+            ${dot(AgentProvider.OPENCODE, "GLM", ProjectState.READY.wire)}
+          </span>""".trimIndent()
+    }
 
     /**
      * v0.12.4 — JavaScript 문자열 리터럴 컨텍스트 전용 escape.
@@ -320,6 +332,7 @@ object WebProjectTemplates {
         csrf: String?,
         lang: String,
     ): String {
+        if (!b.variant.startsWith("ios-")) return ""
         val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
         val readyBadge = when {
             precheck == null -> """<span class="dim">${esc(t("publish.precheckNotRun"))}</span>"""
@@ -362,7 +375,48 @@ object WebProjectTemplates {
       <a href="/env-setup/mcp" class="chip chip-link">${esc(t("publish.mcpLink"))}</a>
     </div>
   </form>
-  <p class="hint" style="margin-top:8px">${esc(t("tf.hint"))}</p>
+        <p class="hint" style="margin-top:8px">${esc(t("tf.hint"))}</p>
+</div>"""
+    }
+
+    private fun renderTestFlightUploadHistory(
+        jobs: List<com.siamakerlab.vibecoder.shared.dto.TestFlightUploadJobDto>,
+        lang: String,
+    ): String {
+        if (jobs.isEmpty()) return ""
+        val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
+        val rows = jobs.joinToString("") { job ->
+            """
+            <tr>
+              <td><code>${esc(job.id.take(12))}</code></td>
+              <td><span class="badge">${esc(job.status)}</span></td>
+              <td><code>${esc(job.buildNumber ?: "-")}</code></td>
+              <td>${esc(job.appName ?: job.appId ?: "-")}</td>
+              <td><code>${esc(job.ipaPath)}</code></td>
+              <td>${esc(AdminTemplates.fmtTs(job.updatedAt, lang))}</td>
+              <td>${esc(job.message ?: job.errorCode ?: "-")}</td>
+            </tr>
+            """.trimIndent()
+        }
+        return """
+<div class="card" style="margin-bottom:16px">
+  <h2>${esc(t("tf.history.title"))}</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>${esc(t("tf.history.job"))}</th>
+          <th>${esc(t("tf.history.status"))}</th>
+          <th>${esc(t("tf.history.buildNumber"))}</th>
+          <th>${esc(t("tf.history.app"))}</th>
+          <th>${esc(t("tf.history.ipa"))}</th>
+          <th>${esc(t("tf.history.updated"))}</th>
+          <th>${esc(t("tf.history.message"))}</th>
+        </tr>
+      </thead>
+      <tbody>$rows</tbody>
+    </table>
+  </div>
 </div>"""
     }
 
@@ -659,7 +713,11 @@ object WebProjectTemplates {
         val tArgs = { key: String, a: String, b: String ->
             com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key, a, b)
         }
-        fun typeLabel(x: String): String = if (x == "flutter") "Flutter" else "Kotlin"
+        fun typeLabel(x: String): String = when (x) {
+            "flutter" -> "Flutter"
+            "iphone" -> "iPhone"
+            else -> "Kotlin"
+        }
         val hidden = """${CsrfTokens.hiddenInput(csrf)}
       <input type="hidden" name="sourceType" value="clone">
       <input type="hidden" name="projectId" value="${esc(projectId)}">
@@ -718,6 +776,7 @@ object WebProjectTemplates {
         /** v1.64.0 — 행별 앱 versionName(없으면 null) + 런처 아이콘 존재 여부(false면 placeholder). */
         versions: Map<String, String?> = emptyMap(),
         appIcons: Map<String, Boolean> = emptyMap(),
+        uiCapabilities: Map<String, PlatformUiCapabilities> = emptyMap(),
     ): String {
         val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
         val errHtml = if (flashErr != null) """<div class="error">${esc(flashErr)}</div>""" else ""
@@ -735,29 +794,27 @@ object WebProjectTemplates {
             projects.joinToString("\n") { p ->
                 val href = "/projects/${esc(p.id)}#console"
                 val cellLinkStyle = "display:block;color:inherit;text-decoration:none"
-                // v1.53.0 — 제일 왼쪽 상태칩. data-pid 로 WS patch 대상 식별, data-state 로 색 분기.
+                // Provider order: Claude / Codex / GLM. Legacy project state is used only as the
+                // initial Claude dot until provider-specific status events arrive.
                 val state = statuses[p.id] ?: ProjectState.READY.wire
-                val chip = """<span class="pstat pstat-$state" data-pid="${esc(p.id)}" data-state="$state">${esc(t("projects.status.$state"))}</span>"""
+                val chip = agentStatusDots(p.id, claudeState = state)
                 // v1.64.0 — 앱 아이콘(없으면 placeholder vibe-coder 아이콘) + 이름 우측 버전.
                 val iconSrc = if (appIcons[p.id] == true) "/projects/${p.id.encodeUrlSeg()}/app-icon" else "/static/icon.png"
+                val caps = uiCapabilities[p.id] ?: fallbackUiCapabilities(p.projectType)
                 val verBadge = versions[p.id]?.takeIf { it.isNotBlank() }
                     ?.let { ver ->
                         // v1.128.7 — versionName 에 이미 v/V 접두가 있으면 중복 'v' 를 붙이지 않음.
                         val label = if (ver.startsWith("v") || ver.startsWith("V")) ver else "v$ver"
                         """ <span class="proj-ver">${esc(label)}</span>"""
                     } ?: ""
-                // v1.128.1 — 패키지명 우측 프로젝트 타입 뱃지(Kotlin/Flutter). Flutter=브랜드 블루, Kotlin=퍼플.
-                val typeBadge = run {
-                    val isFlutter = p.projectType == "flutter"
-                    val label = if (isFlutter) "Flutter" else "Kotlin"
-                    val bg = if (isFlutter) "#02569B" else "#7F52FF"
-                    """<span style="margin-left:8px;font-size:10px;font-weight:600;padding:2px 7px;border-radius:4px;background:$bg;color:#fff;vertical-align:middle;white-space:nowrap">$label</span>"""
-                }
+                // v1.128.1 — 패키지명 우측 프로젝트 타입 뱃지.
+                val typeBadge = """<span style="margin-left:8px;font-size:10px;font-weight:600;padding:2px 7px;border-radius:4px;background:${esc(caps.badgeColor)};color:#fff;vertical-align:middle;white-space:nowrap">${esc(caps.displayName)}</span>"""
                 // v1.160.0 — 패키지명과 타입 뱃지 사이 Google Play 스토어 링크. 탭하면 새 탭에서
                 // play.google.com 앱 페이지로 이동. row-link 네비와 겹치지 않게 셀은 project href
                 // 로 감싸지 않고 stopPropagation. packageName 은 항상 존재(applicationId).
                 val playUrl = "https://play.google.com/store/apps/details?id=${esc(p.packageName)}"
-                val playCell = """<td style="width:44px;text-align:center;white-space:nowrap">
+                val playCell = if (caps.showPlayStoreLink) {
+                    """<td style="width:44px;text-align:center;white-space:nowrap">
                       <a href="$playUrl" target="_blank" rel="noopener noreferrer"
                          title="${esc(t("projects.playstore.title"))}" aria-label="${esc(t("projects.playstore.title"))}"
                          onclick="event.stopPropagation()"
@@ -767,8 +824,11 @@ object WebProjectTemplates {
                         </svg>
                       </a>
                     </td>"""
+                } else {
+                    """<td style="width:44px;text-align:center;white-space:nowrap"></td>"""
+                }
                 """<tr class="row-link proj-row" data-pid="${esc(p.id)}">
-                    <td><a href="$href" style="$cellLinkStyle">$chip</a></td>
+                    <td class="proj-status-cell"><a href="$href" style="$cellLinkStyle">$chip</a></td>
                     <td><a href="$href" style="$cellLinkStyle;display:flex;align-items:center;gap:10px">
                         <img class="proj-icon" src="$iconSrc" alt="" loading="lazy"
                              onerror="this.onerror=null;this.src='/static/icon.png'">
@@ -851,6 +911,10 @@ $errHtml
           <input type="radio" name="projectType" value="flutter">
           <span><strong>${esc(t("projects.new.typeFlutter"))}</strong>${esc(t("projects.new.typeFlutterDesc"))}</span>
         </label>
+        <label style="display:flex;gap:8px;align-items:center;cursor:pointer;margin-top:6px">
+          <input type="radio" name="projectType" value="iphone">
+          <span><strong>${esc(t("projects.new.typeIphone"))}</strong>${esc(t("projects.new.typeIphoneDesc"))}</span>
+        </label>
       </fieldset>
 
       <!-- clone path: cloneUrl 만 필수 + branch optional. 다른 정보는 자동 도출. -->
@@ -881,7 +945,7 @@ $errHtml
           </select>
         </label>
         <label>${esc(t("projects.new.idLabel"))}
-          <input name="projectId" required pattern="[a-z0-9][a-z0-9._-]*" maxlength="64"
+          <input name="projectId" required pattern="[a-z0-9][a-z0-9._\-]*" maxlength="64"
                  placeholder="my-android-app">
         </label>
         <label>${esc(t("projects.new.appName"))}
@@ -947,10 +1011,11 @@ $errHtml
         background:#11151e; border:1px solid #222; }
       .proj-ver { font-size:11px; color:var(--text-dim); margin-left:6px; font-weight:500;
         font-family:ui-monospace,Menlo,monospace; }
+      table.devices td.proj-status-cell a { display:flex !important; align-items:center; justify-content:center; }
     </style>
     <table class="devices">
       <thead>
-        <tr><th style="width:84px">${esc(t("projects.list.col.status"))}</th><th>${esc(t("projects.list.col.name"))}</th><th>${esc(t("projects.list.col.package"))}</th><th style="width:40px"></th></tr>
+        <tr><th style="width:72px">${esc(t("projects.list.col.status"))}</th><th>${esc(t("projects.list.col.name"))}</th><th>${esc(t("projects.list.col.package"))}</th><th style="width:40px"></th></tr>
       </thead>
       <tbody>
         $rowsHtml
@@ -967,7 +1032,8 @@ ${BroadcastModalTemplate.render(lang)}
      인증은 handshake 의 vibe_session 쿠키로 자동 처리 (콘솔 WS 와 동일 패턴). -->
 <script>
 (function() {
-  // v1.100.0 — 5-state(유휴/응답중/대기중/중단됨/에러). ProjectBusyChanged.state 우선, 없으면 busy 폴백.
+  // Provider status dots: Claude / Codex / GLM. ProjectBusyChanged is a Claude legacy fallback;
+  // agent_status_changed updates the exact provider dot.
   var LABELS = {
     responding: ${jsLit(t("projects.status.responding"))},
     ready: ${jsLit(t("projects.status.ready"))},
@@ -976,14 +1042,36 @@ ${BroadcastModalTemplate.render(lang)}
     stopped: ${jsLit(t("projects.status.stopped"))},
     error: ${jsLit(t("projects.status.error"))}
   };
-  function patch(pid, state) {
-    if (!state) return;
-    var el = document.querySelector('.pstat[data-pid="' + (window.CSS && CSS.escape ? CSS.escape(pid) : pid) + '"]');
-    if (!el) return;
-    el.className = 'pstat pstat-' + state;
-    el.dataset.state = state;
-    el.textContent = LABELS[state] || state;
+  function legacyFromAgentState(state) {
+    if (state === 'running') return 'responding';
+    if (state === 'waiting_input' || state === 'waiting_approval') return 'waiting';
+    if (state === 'starting') return 'starting';
+    if (state === 'error') return 'error';
+    if (state === 'interrupted') return 'stopped';
+    return 'ready';
   }
+	  function providerKey(provider) {
+	    return provider === 'opencode' ? 'opencode' : (provider || 'claude');
+	  }
+	  function forEachAgentDot(pid, provider, fn) {
+	    var key = providerKey(provider);
+	    document.querySelectorAll('.agent-status-dots').forEach(function(group) {
+	      if (group.dataset.pid !== String(pid)) return;
+	      group.querySelectorAll('.agent-dot').forEach(function(el) {
+	        if (el.dataset.provider === key) fn(el);
+	      });
+	    });
+	  }
+	  function patchProvider(pid, provider, state) {
+	    if (!state) return;
+	    forEachAgentDot(pid, provider, function(el) {
+	      el.dataset.state = state;
+	      var label = el.getAttribute('aria-label') || '';
+	      var providerLabel = label.split(' ')[0] || providerKey(provider);
+	      el.title = providerLabel + ': ' + (LABELS[state] || state);
+	      el.setAttribute('aria-label', providerLabel + ' ' + (LABELS[state] || state));
+	    });
+	  }
   var ws = null;
   function connect() {
     var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -992,7 +1080,9 @@ ${BroadcastModalTemplate.render(lang)}
       try {
         var f = JSON.parse(ev.data);
         if (f.type === 'project_busy_changed' && f.projectId != null) {
-          patch(f.projectId, f.state || (f.busy ? 'responding' : 'ready'));
+          patchProvider(f.projectId, 'claude', f.state || (f.busy ? 'responding' : 'ready'));
+        } else if (f.type === 'agent_status_changed' && f.projectId != null) {
+          patchProvider(f.projectId, f.provider || 'claude', legacyFromAgentState(f.state));
         }
       } catch (e) { /* ignore malformed frame */ }
     };
@@ -1110,7 +1200,7 @@ ${BroadcastModalTemplate.render(lang)}
             lang = lang,
             body = """
 <header>
-  <h1>${esc(p.name)} <small class="dim" style="font-size:14px;font-weight:400">${esc(p.id)}</small></h1>
+  <h1 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">${esc(p.name)} <small class="dim" style="font-size:14px;font-weight:400">${esc(p.id)}</small></h1>
 </header>
 $okHtml
 $errHtml
@@ -1157,7 +1247,7 @@ $errHtml
       <label style="font-size:12px;color:var(--text-dim)">${esc(t("projects.edit.folder"))}</label>
       <div style="display:flex;gap:6px;margin-top:4px">
         <input type="text" name="newId" value="${esc(p.id)}" maxlength="64"
-               pattern="[a-z0-9][a-z0-9._-]{0,63}" required
+               pattern="[a-z0-9][a-z0-9._\-]{0,63}" required
                style="flex:1;min-width:0" ${if (structuralEnabled) "" else "disabled"}>
         <button type="submit" class="danger" style="width:auto;padding:6px 14px;white-space:nowrap" ${if (structuralEnabled) "" else "disabled"}>${esc(t("projects.edit.save"))}</button>
       </div>
@@ -1246,13 +1336,17 @@ $errHtml
         contextWarnTokens: Int = 0,
         /** v1.106.0 (P1-a) — MCP 최소화(strict) 활성 여부. */
         mcpStrict: Boolean = false,
+        /** Project console is TUI-only. Kept as a binary-compatible template parameter for callers. */
+        tuiMode: Boolean = false,
         agentProvider: AgentProvider = AgentProvider.CLAUDE,
         availableAgentProviders: List<AgentProvider> = listOf(AgentProvider.CLAUDE),
         availableModelOptions: List<AgentModelOption> = emptyList(),
+        uiCapabilities: PlatformUiCapabilities? = null,
         lang: String,
         embed: Boolean = false,
     ): String {
         val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
+        val caps = uiCapabilities ?: fallbackUiCapabilities(p.projectType)
         val statusBadge = when {
             isAlive -> """<span class="ok">running</span>"""
             sessionId != null -> """<span class="dim">idle (will resume)</span>"""
@@ -1302,6 +1396,15 @@ $errHtml
         val providerOptions = availableAgentProviders.joinToString("") { provider ->
             val selected = if (provider == agentProvider) " selected" else ""
             """<option value="${esc(provider.id)}"$selected>${esc(provider.displayName)}</option>"""
+        }
+        val tuiProviderTabsHtml = availableAgentProviders.joinToString("") { provider ->
+            val active = if (provider == agentProvider) " active" else ""
+            val label = when (provider) {
+                AgentProvider.CLAUDE -> "Claude"
+                AgentProvider.CODEX -> "Codex"
+                AgentProvider.OPENCODE -> "GLM"
+            }
+            """<button type="button" class="console-provider-tab$active" data-provider="${esc(provider.id)}" data-state="idle" aria-pressed="${if (provider == agentProvider) "true" else "false"}"><span>${esc(label)}</span><small>idle</small></button>"""
         }
         val providerSelectorHtml = if (embed) "" else """
     <form method="post" action="/projects/${esc(p.id)}/console/provider" style="display:inline-flex;align-items:center;margin:0" id="agent-provider-form">
@@ -1369,9 +1472,11 @@ $errHtml
                 """<span class="dim" style="font-size:11px;white-space:nowrap">provider settings isolated</span>"""
             }
         }
-        // Claude CLI 미설치 또는 인증 누락 시 큰 안내 카드 + 프롬프트 폼 비활성화.
-        val cliMissing = claudeCli != null && claudeCli.status != CheckStatus.OK
-        val authMissing = claudeAuth != null && claudeAuth.status == CheckStatus.ERROR
+        // Claude provider 진입 전용 가드. TUI 세션이 이미 살아 있으면 transient
+        // `claude --version` 실패만으로 콘솔을 막지 않는다.
+        val shouldCheckClaudeRuntime = agentProvider == AgentProvider.CLAUDE && !isAlive
+        val cliMissing = shouldCheckClaudeRuntime && claudeCli != null && claudeCli.status == CheckStatus.ERROR
+        val authMissing = shouldCheckClaudeRuntime && claudeAuth != null && claudeAuth.status == CheckStatus.ERROR
         val blocking = cliMissing || authMissing
         val authBannerHtml = when {
             cliMissing -> renderClaudeBanner(
@@ -1395,9 +1500,9 @@ $errHtml
         // 통과하긴 하나 defense-in-depth.
         val projectIdJs = jsLit(p.id)
 
-        // v1.58.0 — 입력창 상단 빠른 프롬프트 버블 버튼. 클릭 시 input 에 채우고
-        // form.requestSubmit() → 기존 송신/큐잉 경로 그대로 재사용. blocking(인증 미비)
-        // 이면 비활성. 코드 전용(fixAll/review) 버튼은 대화 전용 General Chat 에선 제외.
+        // v1.58.0 — 빠른 프롬프트 버블 버튼. TUI-only 전환 후에는 터미널 하단에 배치한다.
+        // 클릭 시 input/form 호환 shim 을 거쳐 기존 TUI prompt 송신 경로를 그대로 재사용한다.
+        // blocking(인증 미비)이면 비활성. 코드 전용 버튼은 대화 전용 General Chat 에선 제외.
         val quickBarHtml = run {
             val dis = if (blocking) " disabled" else ""
             val optionBtns = listOf("A", "B", "C", "D").joinToString("") { o ->
@@ -1406,7 +1511,14 @@ $errHtml
             val textKeys = buildList {
                 add("continue")
                 // v1.91.3 — 코드 작업 전용 (대화 전용 General Chat 제외).
-                if (!isChat) { add("restart"); add("fixAll"); add("review") }
+                if (!isChat) { add("restart"); add("fixAll"); add("review"); add("gitCommitPush") }
+                if (!isChat && caps.showIPhoneQuickPrompts) {
+                    add("swiftuiScreen")
+                    add("xcodeBuildReview")
+                    add("iphoneSigningReview")
+                    add("iphoneSimulatorReview")
+                    add("testFlightReview")
+                }
                 add("recommended")
             }
             val textBtns = textKeys.joinToString("") { key ->
@@ -1417,6 +1529,9 @@ $errHtml
             """
 <style>
   .quick-prompts { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:0 0 8px; }
+  .quick-prompts.console-tui-quick-prompts {
+    margin:8px 0 10px; padding:0; background:transparent;
+  }
   .quick-prompts .qp-btn {
     font-size:12px; padding:5px 12px; background:#1a1a1a; color:var(--text);
     border:1px solid #333; border-radius:999px; cursor:pointer; white-space:nowrap;
@@ -1431,7 +1546,7 @@ $errHtml
   }
   .quick-prompts .qp-sep { width:1px; align-self:stretch; min-height:20px; background:#333; margin:0 2px; }
 </style>
-<div id="quick-prompts" class="quick-prompts" role="toolbar"
+<div id="quick-prompts" class="quick-prompts console-tui-quick-prompts" role="toolbar"
      aria-label="${esc(t("console.quick.title"))}" title="${esc(t("console.quick.title"))}">
   $optionBtns
   <span class="qp-sep" aria-hidden="true"></span>
@@ -1681,6 +1796,48 @@ $errHtml
     content:'${t("console.message.collapse")}'; display:block; text-align:center;
     font-size:11px; color:#74b9ff; padding:6px 0 2px;
   }
+  .console-provider-tabs { display:flex; align-items:center; gap:4px; flex-wrap:wrap; }
+  .console-provider-tab {
+    min-height:30px; padding:4px 10px; border:1px solid #252b38; border-radius:6px;
+    background:#11151d; color:var(--text-dim,#9aa0ad); font-size:12px; cursor:pointer;
+    display:inline-flex; align-items:center; gap:6px;
+  }
+  .console-provider-tab small { font-size:10px; opacity:.72; font-family:ui-monospace,Menlo,monospace; }
+  .console-provider-tab:hover { color:var(--text,#e5e7eb); border-color:#3a4253; background:#171c26; }
+  .console-provider-tab.active {
+    color:var(--text,#e5e7eb); background:#171c26; font-weight:600;
+  }
+  .console-provider-tab.active[data-provider="claude"] {
+    border-color:#f59e0b; box-shadow:0 0 0 1px rgba(245,158,11,0.38) inset;
+  }
+  .console-provider-tab.active[data-provider="codex"] {
+    border-color:#5e9eff; box-shadow:0 0 0 1px rgba(94,158,255,0.38) inset;
+  }
+  .console-provider-tab.active[data-provider="opencode"] {
+    border-color:#facc15; box-shadow:0 0 0 1px rgba(250,204,21,0.38) inset;
+  }
+  .console-provider-tab[data-state="running"] small { color:#69db7c; opacity:1; }
+  .console-provider-tab[data-state="waiting_input"] small,
+  .console-provider-tab[data-state="waiting_approval"] small,
+  .console-provider-tab[data-state="starting"] small { color:#fab005; opacity:1; }
+  .console-provider-tab[data-state="error"] small { color:#ff6b6b; opacity:1; }
+  .console-provider-tab[data-state="interrupted"] small { color:#b197fc; opacity:1; }
+  .console-provider-tab:disabled { opacity:.55; cursor:wait; }
+  .console-tui-selection-editor {
+    margin:8px 0 0; padding:8px; border:1px solid #242936; border-radius:8px;
+    background:#0b0e14; display:grid; gap:6px;
+  }
+  .console-tui-selection-editor[hidden] { display:none; }
+  .console-tui-selection-head { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .console-tui-selection-head strong { font-size:12px; color:var(--text,#e5e7eb); }
+  .console-tui-selection-text {
+    width:100%; min-height:86px; max-height:34vh; box-sizing:border-box; resize:vertical;
+    padding:8px 10px; border:1px solid #2b3446; border-radius:6px; background:#080a0f;
+    color:var(--text,#e5e7eb); font:12px/1.45 ui-monospace,Menlo,Consolas,monospace;
+    white-space:pre; overflow:auto;
+  }
+  .console-tui-selection-actions { display:flex; justify-content:flex-end; gap:6px; flex-wrap:wrap; }
+  .console-tui-selection-actions .chip { font-size:11px; padding:4px 10px; }
 </style>
 <header style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
   <h1 style="margin:0">$titleSuffix
@@ -1707,14 +1864,13 @@ $authBannerHtml
      로 옮겼다. 필터 모달(#filter-modal)과 그 스타일은 위치 독립적(fixed)이라 그대로 둔다.
      필터 체크박스 로직(.filter-cb / #filter-summary / #filter-reset)도 변동 없음. -->
 <style>
-  /* v1.134.1 — #image-modal(이미지 첨부 다이얼로그)도 같은 모달 스타일 공유. */
-  #filter-modal, #image-modal { position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.55); padding:16px; }
-  #filter-modal[hidden], #image-modal[hidden] { display:none; }
-  #filter-modal .filter-box, #image-modal .filter-box { background:#15171c; border:1px solid #2a2a2a; border-radius:10px; padding:16px 18px; width:100%; max-width:520px; max-height:85vh; overflow-y:auto; box-shadow:0 12px 40px rgba(0,0,0,0.5); box-sizing:border-box; }
-  #filter-modal .filter-head, #image-modal .filter-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
-  #filter-modal .filter-head strong, #image-modal .filter-head strong { font-size:14px; }
-  #filter-modal .filter-x, #image-modal .filter-x { background:transparent; border:0; color:var(--text-dim); font-size:16px; cursor:pointer; line-height:1; padding:2px 6px; }
-  #filter-modal .filter-x:hover, #image-modal .filter-x:hover { color:var(--text); }
+  #filter-modal { position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.55); padding:16px; }
+  #filter-modal[hidden] { display:none; }
+  #filter-modal .filter-box { background:#15171c; border:1px solid #2a2a2a; border-radius:10px; padding:16px 18px; width:100%; max-width:520px; max-height:85vh; overflow-y:auto; box-shadow:0 12px 40px rgba(0,0,0,0.5); box-sizing:border-box; }
+  #filter-modal .filter-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+  #filter-modal .filter-head strong { font-size:14px; }
+  #filter-modal .filter-x { background:transparent; border:0; color:var(--text-dim); font-size:16px; cursor:pointer; line-height:1; padding:2px 6px; }
+  #filter-modal .filter-x:hover { color:var(--text); }
 </style>
 
 <div id="filter-modal" hidden>
@@ -1751,30 +1907,60 @@ $authBannerHtml
   </div>
 </div>
 
-<!-- v1.134.1 — 이미지 첨부 다이얼로그. 입력창 우측 아이콘 클릭으로 열림(인라인 파일선택
-     박스/미리보기 strip 제거 → 우측 공간 컴팩트). 미리보기·개별 제거·파일 선택을 여기서. -->
-<div id="image-modal" hidden>
-  <div class="filter-box" role="dialog" aria-modal="true" aria-label="${esc(t("console.image.dialogTitle"))}">
-    <div class="filter-head">
-      <strong>📷 ${esc(t("console.image.dialogTitle"))}</strong>
-      <button type="button" id="image-close" class="filter-x" aria-label="${esc(t("memos.close"))}">✕</button>
-    </div>
-    <p class="hint" style="margin:0 0 10px;font-size:11px">${esc(t("console.image.dialogHint"))}</p>
-    <div id="image-empty" class="dim" style="font-size:12px;padding:4px 0 8px">${esc(t("console.image.empty"))}</div>
-    <div id="image-preview" style="display:none;gap:8px;flex-wrap:wrap;margin-bottom:10px"></div>
-    <div style="display:flex;justify-content:space-between;gap:8px">
-      <button type="button" id="image-pick" class="chip" style="font-size:11px;padding:4px 12px">${esc(t("console.image.pick"))}</button>
-      <button type="button" id="image-done" class="chip" style="font-size:11px;padding:4px 12px">${esc(t("memos.close"))}</button>
-    </div>
-  </div>
-</div>
-
 <!-- v1.106.1/.2 — 컨텍스트 점유율 미터. 임베드(ProjectTabs)에선 부모 우측 오버뷰 rail 에
      표시(postMessage)하므로 인라인은 비임베드(standalone/chat)에서만 렌더. -->
 ${if (embed) "" else contextMeterHtml}
 
-<!-- v1.6.4 — 스크롤 + 우하단 jump-to-bottom 버튼 wrapper. -->
-<div class="console-log-wrap">
+<!-- Console TUI — project-scoped provider CLI PTY. This is the only interactive console surface. -->
+<link rel="preload" href="/static/fonts/NotoSansSymbols2-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="stylesheet" href="/static/vendor/xterm/xterm.min.css?v=5.5.0">
+<div id="console-tui-shell" class="console-tui-shell">
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border-bottom:1px solid #1f2330;flex-wrap:wrap">
+    <div style="min-width:0">
+      <strong style="font-size:12px">TUI Console</strong>
+      <span id="console-tui-status" class="dim" style="font-size:11px;margin-left:6px">idle</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+      <div class="console-tui-actions" aria-label="Terminal clipboard actions">
+        <button type="button" id="console-tui-copy" class="console-tui-action" title="선택 텍스트 복사" aria-label="선택 텍스트 복사" disabled>⎘</button>
+        <button type="button" id="console-tui-copy-buffer" class="console-tui-action" title="터미널 버퍼 복사" aria-label="터미널 버퍼 복사">▤</button>
+        <button type="button" id="console-tui-paste" class="console-tui-action" title="클립보드 붙여넣기" aria-label="클립보드 붙여넣기">▣</button>
+        <button type="button" id="console-tui-search-toggle" class="console-tui-action" title="터미널 검색" aria-label="터미널 검색">⌕</button>
+      </div>
+      <div class="console-provider-tabs" role="tablist" aria-label="AI provider">
+        $tuiProviderTabsHtml
+      </div>
+    </div>
+  </div>
+  <div id="console-tui-pane" class="console-tui-pane">
+    <div class="console-tui-terminal-frame">
+      <div id="console-tui-terminal" class="console-tui-terminal"></div>
+    </div>
+    <div id="console-tui-search" class="console-tui-search" hidden>
+      <input id="console-tui-search-input" type="search" placeholder="Search terminal" autocomplete="off" spellcheck="false">
+      <button type="button" id="console-tui-search-prev" class="console-tui-action" title="이전 검색 결과" aria-label="이전 검색 결과">↑</button>
+      <button type="button" id="console-tui-search-next" class="console-tui-action" title="다음 검색 결과" aria-label="다음 검색 결과">↓</button>
+      <button type="button" id="console-tui-search-close" class="console-tui-action" title="검색 닫기" aria-label="검색 닫기">×</button>
+    </div>
+    <button type="button" id="console-tui-jump-bottom" class="console-tui-jump-bottom"
+            title="최하단으로 이동" aria-label="최하단으로 이동">⌄</button>
+  </div>
+</div>
+<div id="console-tui-selection-editor" class="console-tui-selection-editor" hidden>
+  <div class="console-tui-selection-head">
+    <strong>선택 텍스트</strong>
+    <span class="dim" style="font-size:11px">모바일에서는 여기서 영역을 조정한 뒤 복사</span>
+  </div>
+  <textarea id="console-tui-selection-text" class="console-tui-selection-text" spellcheck="false"></textarea>
+  <div class="console-tui-selection-actions">
+    <button type="button" id="console-tui-selection-copy" class="chip">복사</button>
+    <button type="button" id="console-tui-selection-close" class="chip">닫기</button>
+  </div>
+</div>
+$quickBarHtml
+
+<!-- Compatibility console log is retained hidden for DB history/image helpers only; TUI is the user-facing console. -->
+<div class="console-log-wrap" style="display:none">
   <div id="console-log" class="console-log" aria-live="polite">
     <!-- v1.129.1 — "더보기"를 콘솔 스크롤 영역의 첫 자식으로. 스크롤 콘텐츠의 일부라 최상단으로
          올렸을 때만 보이고(아래로 내려가면 화면 밖), 클릭 시 과거 30개를 이 버튼 다음에 prepend.
@@ -1797,111 +1983,15 @@ ${if (embed) "" else contextMeterHtml}
   </button>
 </div>
 
-<!-- v1.112.0 — 레이아웃 재배치(사용자 요청): 메시지 영역 바로 아래에 입력창이 오도록,
-     기존에 입력창 위에 있던 빠른프롬프트(quickBar)와 도구바(console-bottom-bar)를 모두
-     입력창 하단으로 이동했다. 순서: 메시지 → 입력창 → 빠른프롬프트 → 템플릿/에이전트 → 도구바. -->
-<form id="prompt-form" class="prompt-form" autocomplete="off">
-  <!-- v1.158.8 — 문서 수준 상향(32K → 100K). maxlength 는 char 단위라 ASCII 기준 100K.
-       한국어 등 multi-byte 입력은 실제 UTF-8 byte 가 MAX_PROMPT_BYTES(100K) 를 넘으면
-       서버에서 prompt_too_large (400) 로 거절. 템플릿 본문 한도(100K자)와 정렬. -->
-  <!-- v1.134.1 — 첨부 미리보기 strip 은 이미지 다이얼로그(#image-modal) 안으로 이동. -->
-  <!-- v1.16.1 — textarea + voice/send 버튼을 동일 row 에 가로 배치. send 가
-       textarea 의 우측 (사용자 요청). 버튼들은 column flex 로 stack, 하단 정렬. -->
-  <div style="display:flex;gap:8px;align-items:stretch">
-    <textarea id="prompt-input" rows="${if (starterPrompt != null) 8 else 3}" maxlength="100000"
-              placeholder="${esc(if (blocking) t("console.input.disabled") else t("console.input.placeholder")).replace("\n", "&#10;")}"
-              style="flex:1;width:auto;min-width:0"
-              ${if (blocking) "disabled" else "required"}>${esc(starterPrompt)}</textarea>
-    <div style="display:flex;flex-direction:column;gap:6px;justify-content:flex-end;flex-shrink:0">
-      <!-- v1.15.0 — Web Speech API 음성 입력. 미지원 브라우저는 voice-input.js 가 자동 hide. -->
-      <!-- v1.108.4 — 아이콘을 이모지(🎤) → Google Material 'mic' 인라인 SVG 로 교체(사용자 요청).
-           외부 CDN 미사용(§3) 위해 path 직접 인라인. 녹음 중 상태는 voice-input.js 의 .listening
-           클래스(빨강+pulse)로 표시하므로 textContent 이모지 스왑은 제거. -->
-      <button type="button" id="voice-btn" hidden
-              data-title-start="${esc(t("console.voice.start"))}"
-              data-title-stop="${esc(t("console.voice.stop"))}"
-              title="${esc(t("console.voice.start"))}"
-              style="width:auto;padding:8px 12px;background:#1a1a1a;color:var(--text);border:1px solid #2a2a2a;border-radius:6px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;line-height:0"
-              ${if (blocking) "disabled" else ""}><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg></button>
-       ${if (agentProvider == AgentProvider.CLAUDE) """
-       <!-- v1.133.0 — 이미지 첨부 (Lucide 'image' 아이콘 인라인 — 외부 CDN 미사용 §3).
-            v1.134.1 — 클릭 시 첨부 다이얼로그(#image-modal). 첨부 수 배지(#image-count).
-            v1.159.0 (M4.4) — Claude provider 만 노출. Codex/GLM 은 images_unsupported. -->
-       <button type="button" id="image-btn"
-               title="${esc(t("console.image.attach"))}" aria-label="${esc(t("console.image.attach"))}"
-               style="position:relative;width:auto;padding:8px 12px;background:#1a1a1a;color:var(--text);border:1px solid #2a2a2a;border-radius:6px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;line-height:0"
-               ${if (blocking) "disabled" else ""}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg><span id="image-count" style="display:none;position:absolute;top:-6px;right:-6px;min-width:16px;height:16px;line-height:16px;padding:0 4px;font-size:10px;font-weight:600;text-align:center;border-radius:8px;background:#1e40af;color:#fff;box-sizing:border-box"></span></button>
-       <!-- admin.css 의 input[type=file]{display:block}(0,1,1)이 [hidden](0,1,0)을 이겨
-            파일선택 박스가 노출되던 문제 → inline display:none 으로 확실히 숨김(v1.134.1). -->
-       <input type="file" id="image-file" accept="image/png,image/jpeg,image/webp,image/gif" multiple style="display:none">
-       """ else "<!-- image-btn hidden (M4.4): provider=${agentProvider.id} does not support images -->"}
-      <!-- v1.112.0 — "끼어들기": 진행 중 turn 을 interrupt 로 중단하고 입력창 내용을 즉시
-           새 prompt 로 보낸다(TUI Esc+입력 동형).
-           v1.139.0 — 상시 노출 + 게이트 만석 시 한도 무시 강제 전송 겸용("지금 당장"). -->
-      <button type="button" id="interrupt-btn" class="chip chip-danger"
-              style="display:inline-flex;width:auto;padding:8px 12px;white-space:nowrap;justify-content:center"
-              title="${esc(t("console.interrupt.title"))}"
-              ${if (blocking) "disabled" else ""}>${esc(t("console.interrupt"))}</button>
-      <button type="submit" class="primary" id="send-btn" style="width:auto;padding:8px 16px;white-space:nowrap" ${if (blocking) "disabled" else ""}>${esc(t("console.input.send"))}</button>
-    </div>
-  </div>
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;gap:8px;flex-wrap:wrap">
-    <!-- v1.7.4 — busy 뱃지 + hint 라벨 한 줄. busy 뱃지가 좌측 끝, 그 다음 hint. -->
-    <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1">
-      <!-- v1.108.4 — busy-badge 는 항상 숨김(사용자 요청). turn 상태는 콘솔 하단 '응답중'
-           스피너 + 부모 탭 헤더(#console-busy-badge, console:busy postMessage)로 노출되므로
-           힌트 라벨 좌측의 중복 칩은 제거. 단 JS(updateBusyBadge·부모 미러)가 dataset/text 를
-           계속 읽으므로 element/id 는 유지하고 display 만 끈다. -->
-      <span id="busy-badge" data-state="ready"
-            style="display:none;font-size:12px;padding:3px 10px;border-radius:12px;font-weight:500;white-space:nowrap;flex-shrink:0">${esc(t("console.busy.idle"))}</span>
-      <small class="dim" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(if (blocking) t("console.input.blockedHint") else t("console.input.hint"))}</small>
-    </div>
-  </div>
-</form>
-<script src="/static/voice-input.js?v=1.144.6" defer></script>
-<script src="/static/prompt-templates.js?v=1.161.0" defer></script>
-<style>
-  /* v1.15.0 — 음성 입력 listening 시각 강조. */
-  #voice-btn.listening {
-    background: #7f1d1d; color: #fff; border-color: #b91c1c;
-    animation: voice-pulse 1.2s ease-in-out infinite;
-  }
-  @keyframes voice-pulse {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(220,38,38,0.6); }
-    50% { box-shadow: 0 0 0 8px rgba(220,38,38,0); }
-  }
-</style>
-
-<!-- v1.112.0 — 빠른프롬프트 바: 입력창 하단으로 이동(기존엔 입력창 위). -->
-$quickBarHtml
-
-$consolePromptToolsHtml
-
-<!-- v1.108.2/v1.112.0 — 콘솔 도구 바: 좌측 응답중 스피너(setInFlight 가 hidden 토글) +
-     세션/모델/MCP/필터/자동 스크롤. v1.112.0 에서 입력창 위 → 가장 하단으로 이동(사용자 요청). -->
-<div class="console-bottom-bar" style="margin-top:8px">
-  <div id="console-spinner" class="console-spinner" hidden aria-hidden="true">
-    <span class="spinner"></span>
-    <span class="spinner-label">${esc(t("console.busy.responding"))}</span>
-  </div>
-  <div class="console-bottom-tools">
-    <!-- v1.110.0 — 세션 표시 + 모델 셀렉터 + MCP 최소화(헤더에서 이동). 메시지 필터 버튼 좌측. -->
-    <span class="dim" style="font-size:11px;white-space:nowrap">${esc(t("console.session"))} $statusBadge${if (sessionId != null) """ <span class="dim">${esc(sessionId.take(12))}…</span>""" else ""}</span>
-    $providerSelectorHtml
-    $claudeOnlyToolsHtml
-    <button type="button" id="filter-open" class="chip chip-link"
-            style="font-size:11px;padding:4px 11px;display:inline-flex;align-items:center;gap:5px"
-            title="${esc(t("console.filter.title"))}">
-      🔍 ${esc(t("console.filter.title"))} <span id="filter-summary" class="dim" style="font-size:11px"></span>
-    </button>
-  </div>
-</div>
-
 <!-- v1.90.12 — 코드블록 syntax highlight (assistant 마크다운 + tool 결과). 동기 로드해
      append 시점에 window.hljs 준비. 이전엔 콘솔이 highlight.js 를 로드하지 않아 hljs 부재로
      highlight 가 항상 skip 됐다. -->
 <link rel="stylesheet" href="/static/highlight-github-dark.min.css">
 <script src="/static/highlight.min.js"></script>
+<script src="/static/vendor/xterm/xterm.min.js?v=5.5.0"></script>
+<script src="/static/vendor/xterm/addon-fit.min.js?v=0.10.0"></script>
+<script src="/static/vendor/xterm/addon-clipboard.min.js?v=0.2.0"></script>
+<script src="/static/vendor/xterm/addon-search.min.js?v=0.16.0"></script>
 <!-- v1.70.0 — 콘솔 친화 렌더러 (tool_use/tool_result/unknown). inline 스크립트보다 먼저 동기 로드. -->
 <script src="/static/console-render.js?v=1.133.0"></script>
 <script>
@@ -1934,10 +2024,1098 @@ $consolePromptToolsHtml
 (function() {
   var projectId = $projectIdJs;
   var currentProvider = ${jsLit(agentProvider.id)};
+  var consoleTuiMode = true;
+  var CONSOLE_TUI_FONT_FAMILY = '"Cascadia Mono", "DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono", Consolas, "Courier New", "Noto Sans Symbols 2", "Noto Color Emoji", monospace';
   var logEl = document.getElementById('console-log');
-  var form = document.getElementById('prompt-form');
-  var input = document.getElementById('prompt-input');
-  var sendBtn = document.getElementById('send-btn');
+  var tuiDraftText = ${jsLit(starterPrompt)};
+  var form = {
+    hidden: true,
+    requestSubmit: function () {
+      var text = String(tuiDraftText || '').trim();
+      if (text) sendPromptTextToConsoleTui(text);
+    },
+    dispatchEvent: function () { this.requestSubmit(); },
+    addEventListener: function () {}
+  };
+  var input = {
+    hidden: true,
+    disabled: false,
+    get value() { return tuiDraftText || ''; },
+    set value(v) { tuiDraftText = String(v || ''); },
+    focus: function () { try { if (tui.term) tui.term.focus(); } catch (e) {} },
+    blur: function () {},
+    addEventListener: function () {},
+    dispatchEvent: function () {},
+    get selectionStart() { return this.value.length; },
+    set selectionStart(v) {},
+    get selectionEnd() { return this.value.length; },
+    set selectionEnd(v) {}
+  };
+  var sendBtn = null;
+  var tui = {
+    term: null,
+    fit: null,
+    clipboard: null,
+    search: null,
+    ws: null,
+    sessionId: null,
+    statusTimer: null,
+    reconnectTimer: null,
+    closing: false,
+    forceBottomOnConnect: false,
+    touchScroll: {
+      active: false,
+      moved: false,
+      lastY: 0,
+      lastT: 0,
+      velocity: 0,
+      lastScrollLogT: 0,
+      log: [],
+      debug: false
+    }
+  };
+  var tuiPane = document.getElementById('console-tui-pane');
+  var tuiShell = document.getElementById('console-tui-shell');
+  var tuiHost = document.getElementById('console-tui-terminal');
+  var tuiSend = document.getElementById('console-tui-send');
+  var tuiStatus = document.getElementById('console-tui-status');
+  var tuiModeToggle = document.getElementById('console-tui-mode');
+  var tuiJump = document.getElementById('console-tui-jump-bottom');
+  var tuiCopy = document.getElementById('console-tui-copy');
+  var tuiCopyBuffer = document.getElementById('console-tui-copy-buffer');
+  var tuiPaste = document.getElementById('console-tui-paste');
+  var tuiSearchToggle = document.getElementById('console-tui-search-toggle');
+  var tuiSearch = document.getElementById('console-tui-search');
+  var tuiSearchInput = document.getElementById('console-tui-search-input');
+  var tuiSearchPrev = document.getElementById('console-tui-search-prev');
+  var tuiSearchNext = document.getElementById('console-tui-search-next');
+  var tuiSearchClose = document.getElementById('console-tui-search-close');
+  var tuiSelectionEditor = document.getElementById('console-tui-selection-editor');
+  var tuiSelectionText = document.getElementById('console-tui-selection-text');
+  var tuiSelectionCopy = document.getElementById('console-tui-selection-copy');
+  var tuiSelectionClose = document.getElementById('console-tui-selection-close');
+  var consoleLogWrap = document.querySelector('.console-log-wrap');
+
+  function setTuiStatus(text) {
+    if (tuiStatus) tuiStatus.textContent = text;
+  }
+
+  function applyConsoleTuiModeUi() {
+    if (consoleLogWrap) consoleLogWrap.style.display = 'none';
+  }
+
+  function formatConsoleTuiStatus(body) {
+    if (!body || !body.alive) return 'idle · ' + currentProvider;
+    var state = body.turnState || 'idle';
+    var sid = body.sessionId ? (' · ' + body.sessionId) : '';
+    return state + ' · ' + (body.provider || currentProvider) + sid;
+  }
+
+  function syncBusyBadgeFromConsoleTuiStatus(body) {
+    if (!consoleTuiMode || !body) return;
+    var state = body.turnState || 'idle';
+    var active = !!body.alive && (
+      state === 'prompt_sent' ||
+      state === 'running' ||
+      state === 'assistant_output_detected' ||
+      state === 'stalled'
+    );
+    if (active || !body.alive) setInFlight(active);
+  }
+
+  async function consoleTuiFetchError(res) {
+    var fallback = 'HTTP ' + res.status;
+    try {
+      var text = await res.text();
+      if (!text) return fallback;
+      try {
+        var body = JSON.parse(text);
+        return body.message || body.error || body.code || body.detail || fallback;
+      } catch (e) {
+        return text.length > 240 ? fallback : text;
+      }
+    } catch (e) {
+      return fallback;
+    }
+  }
+
+  async function ensureConsoleTuiFonts() {
+    if (!document.fonts || !document.fonts.load) return;
+    try {
+      await Promise.all([
+        document.fonts.load('13px "Noto Sans Symbols 2"'),
+        document.fonts.ready
+      ]);
+    } catch (e) {}
+  }
+
+  function updateProviderTabFromConsoleTuiStatus(body) {
+    if (!body) return;
+    var turnState = body.turnState || 'idle';
+    var running = !!body.alive && (
+      turnState === 'prompt_sent' ||
+      turnState === 'running' ||
+      turnState === 'assistant_output_detected' ||
+      turnState === 'stalled'
+    );
+    if (!running && body.alive && body.sessionId) return;
+    updateProviderTabStatus({
+      provider: body.provider || currentProvider,
+      sessionId: body.sessionId || null,
+      state: running ? 'running' : 'idle',
+      activity: running ? (turnState === 'stalled' ? 'stalled' : 'responding') : undefined,
+      message: turnState
+    });
+  }
+
+  async function refreshConsoleTuiStatus() {
+    try {
+      var res = await fetch('/api/projects/' + projectId + '/console/tui/session?provider=' + encodeURIComponent(currentProvider), {
+        method:'GET',
+        credentials:'same-origin'
+      });
+      if (!res.ok) return;
+      var body = await res.json();
+      if (body && body.sessionId) tui.sessionId = body.sessionId;
+      setTuiStatus(formatConsoleTuiStatus(body));
+      syncBusyBadgeFromConsoleTuiStatus(body);
+      updateProviderTabFromConsoleTuiStatus(body);
+    } catch (e) {}
+  }
+
+  function startConsoleTuiStatusPolling() {
+    if (tui.statusTimer) return;
+    refreshConsoleTuiStatus();
+    tui.statusTimer = window.setInterval(refreshConsoleTuiStatus, 5000);
+  }
+
+  function consoleTuiViewportBounds() {
+    if (document.body.classList.contains('pt-embed')) {
+      var embedHeight = document.documentElement.clientHeight || document.body.clientHeight || window.innerHeight || 720;
+      return { top: 0, height: embedHeight, bottom: embedHeight, keyboardOverlap: 0 };
+    }
+    var vv = window.visualViewport;
+    var viewportTop = vv && typeof vv.offsetTop === 'number' ? vv.offsetTop : 0;
+    var viewportHeight = vv && vv.height ? vv.height : (window.innerHeight || document.documentElement.clientHeight || 720);
+    var viewportBottom = viewportTop + viewportHeight;
+    var keyboardOverlap = vv ? Math.max(0, (window.innerHeight || viewportHeight) - viewportHeight - viewportTop) : 0;
+    return { top: viewportTop, height: viewportHeight, bottom: viewportBottom, keyboardOverlap: keyboardOverlap };
+  }
+
+  function syncConsoleTuiLayout() {
+    if (!tuiPane || !tuiShell) return;
+    tuiShell.style.transform = '';
+    var viewport = consoleTuiViewportBounds();
+    var shellTop = tuiShell.getBoundingClientRect().top;
+    var paneTop = tuiPane.getBoundingClientRect().top;
+    var liftLimit = Math.max(0, shellTop - viewport.top - 8);
+    var lift = Math.min(viewport.keyboardOverlap, liftLimit);
+    if (lift > 0) {
+      tuiShell.style.transform = 'translateY(-' + Math.round(lift) + 'px)';
+    }
+    var adjustedPaneTop = paneTop - lift;
+    var reservedBottom = document.body.classList.contains('pt-embed') ? 64 : 56;
+    if (viewport.height < 460) reservedBottom = 44;
+    var availableHeight = viewport.bottom - adjustedPaneTop - reservedBottom;
+    var minHeight = viewport.height < 420 ? 96 : 160;
+    var maxHeight = Math.max(minHeight, viewport.height - reservedBottom - 64);
+    var nextHeight = Math.max(96, Math.min(maxHeight, availableHeight));
+    if (availableHeight >= minHeight) nextHeight = Math.max(minHeight, nextHeight);
+    tuiPane.style.height = Math.round(nextHeight) + 'px';
+  }
+
+  function fitConsoleTui() {
+    if (!tui.fit || !tui.term || !tuiPane || tuiPane.hidden) return;
+    if (tui.touchScroll && tui.touchScroll.active) {
+      logConsoleTuiTouch('fit-skip', {
+        active: !!tui.touchScroll.active
+      });
+      return;
+    }
+    requestAnimationFrame(function() {
+      try {
+        if (tui.touchScroll && tui.touchScroll.active) {
+          logConsoleTuiTouch('fit-skip-raf', {
+            active: !!tui.touchScroll.active
+          });
+          return;
+        }
+        syncConsoleTuiLayout();
+        tui.fit.fit();
+        if (tui.ws && tui.ws.readyState === 1) {
+          tui.ws.send(JSON.stringify({ type:'terminal_resize', cols:tui.term.cols, rows:tui.term.rows }));
+        }
+      } catch (e) {}
+    });
+  }
+  function isConsoleTuiAtBottom() {
+    if (!tui.term) return true;
+    try {
+      var buffer = tui.term.buffer && tui.term.buffer.active;
+      if (buffer) return buffer.viewportY >= buffer.baseY - 1;
+    } catch (e) {}
+    var viewport = tuiHost ? tuiHost.querySelector('.xterm-viewport') : null;
+    if (!viewport) return true;
+    return viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - 12;
+  }
+  function updateConsoleTuiJumpButton() {
+    if (!tuiJump) return;
+    var show = tui.term && !isConsoleTuiAtBottom();
+    tuiJump.classList.toggle('visible', !!show);
+  }
+  function initConsoleTuiTouchLog() {
+    if (!tui.touchScroll) return;
+    try { tui.touchScroll.debug = localStorage.getItem('vibe.console.tuiTouchDebug') === '1'; } catch (e) {}
+    window.VibeConsoleTuiTouchLog = {
+      entries: tui.touchScroll.log,
+      enable: function() { tui.touchScroll.debug = true; try { localStorage.setItem('vibe.console.tuiTouchDebug', '1'); } catch (e) {} },
+      disable: function() { tui.touchScroll.debug = false; try { localStorage.removeItem('vibe.console.tuiTouchDebug'); } catch (e) {} },
+      clear: function() { tui.touchScroll.log.length = 0; },
+      dump: function() { return tui.touchScroll.log.slice(); },
+      summary: function() {
+        var moves = tui.touchScroll.log.filter(function(e) { return e.type === 'move'; });
+        var scrolls = tui.touchScroll.log.filter(function(e) { return e.type === 'scroll'; });
+        if (!moves.length && !scrolls.length) return { moves: 0, scrolls: 0 };
+        var maxDt = 0, maxAbsVelocity = 0, prevented = 0;
+        moves.forEach(function(e) {
+          maxDt = Math.max(maxDt, e.dt || 0);
+          maxAbsVelocity = Math.max(maxAbsVelocity, Math.abs(e.velocity || 0));
+          if (e.prevented) prevented++;
+        });
+        return { moves: moves.length, scrolls: scrolls.length, maxDt: maxDt, maxAbsVelocity: maxAbsVelocity, prevented: prevented, nativeScroll: true };
+      }
+    };
+  }
+  function logConsoleTuiTouch(type, data) {
+    if (!tui.touchScroll) return;
+    var entry = Object.assign({ type: type, t: Math.round(performance.now()) }, data || {});
+    tui.touchScroll.log.push(entry);
+    if (tui.touchScroll.log.length > 400) tui.touchScroll.log.splice(0, tui.touchScroll.log.length - 400);
+    if (tui.touchScroll.debug && window.console && console.debug) console.debug('[tui-touch]', entry);
+  }
+  function setupConsoleTuiTouchScroll(viewport) {
+    if (!viewport || !tuiHost || !isConsoleTuiCoarsePointer()) return;
+    initConsoleTuiTouchLog();
+    tuiHost.style.touchAction = 'pan-y pinch-zoom';
+    viewport.style.touchAction = 'pan-y pinch-zoom';
+    viewport.style.webkitOverflowScrolling = 'touch';
+    viewport.style.overscrollBehavior = 'contain';
+    logConsoleTuiTouch('setup', {
+      hostTouchAction: tuiHost.style.touchAction,
+      viewportTouchAction: viewport.style.touchAction,
+      webkitOverflowScrolling: viewport.style.webkitOverflowScrolling,
+      overscrollBehavior: viewport.style.overscrollBehavior,
+      scrollTop: Math.round(viewport.scrollTop),
+      scrollHeight: viewport.scrollHeight,
+      clientHeight: viewport.clientHeight
+    });
+    var state = tui.touchScroll;
+    function touchY(ev) {
+      return ev.touches && ev.touches.length === 1 ? ev.touches[0].clientY : null;
+    }
+    tuiHost.addEventListener('touchstart', function(ev) {
+      var y = touchY(ev);
+      if (y == null) return;
+      state.active = true;
+      state.moved = false;
+      state.lastY = y;
+      state.lastT = performance.now();
+      state.velocity = 0;
+      logConsoleTuiTouch('start', {
+        y: Math.round(y),
+        touches: ev.touches ? ev.touches.length : 0,
+        cancelable: !!ev.cancelable,
+        scrollTop: Math.round(viewport.scrollTop)
+      });
+    }, { passive: true });
+    tuiHost.addEventListener('touchmove', function(ev) {
+      if (!state.active) return;
+      var y = touchY(ev);
+      if (y == null) return;
+      var now = performance.now();
+      var dy = state.lastY - y;
+      var dt = Math.max(1, now - state.lastT);
+      var beforeTop = viewport.scrollTop;
+      if (Math.abs(dy) > 1) {
+        state.moved = true;
+        state.velocity = dy / dt;
+      }
+      logConsoleTuiTouch('move', {
+        y: Math.round(y),
+        dy: Number(dy.toFixed(2)),
+        dt: Number(dt.toFixed(2)),
+        velocity: Number(state.velocity.toFixed(4)),
+        beforeTop: Math.round(beforeTop),
+        afterTop: Math.round(viewport.scrollTop),
+        maxTop: Math.max(0, viewport.scrollHeight - viewport.clientHeight),
+        prevented: false,
+        cancelable: !!ev.cancelable,
+        nativeScroll: true
+      });
+      state.lastY = y;
+      state.lastT = now;
+    }, { passive: true });
+    tuiHost.addEventListener('touchend', function() {
+      if (!state.active) return;
+      state.active = false;
+      logConsoleTuiTouch('end', {
+        moved: state.moved,
+        velocity: Number(state.velocity.toFixed(4)),
+        scrollTop: Math.round(viewport.scrollTop)
+      });
+    }, { passive: true });
+    tuiHost.addEventListener('touchcancel', function() {
+      state.active = false;
+      logConsoleTuiTouch('cancel', { scrollTop: Math.round(viewport.scrollTop) });
+    }, { passive: true });
+    viewport.addEventListener('scroll', function() {
+      updateConsoleTuiJumpButton();
+      var now = performance.now();
+      if (now - state.lastScrollLogT < 80) return;
+      state.lastScrollLogT = now;
+      logConsoleTuiTouch('scroll', {
+        scrollTop: Math.round(viewport.scrollTop),
+        maxTop: Math.max(0, viewport.scrollHeight - viewport.clientHeight),
+        active: !!state.active
+      });
+    }, { passive: true });
+  }
+  function updateConsoleTuiCopyButton() {
+    if (!tuiCopy || !tui.term) return;
+    var hasSelection = false;
+    try { hasSelection = !!tui.term.hasSelection(); } catch (e) {}
+    tuiCopy.disabled = !hasSelection;
+    tuiCopy.classList.toggle('active', hasSelection);
+    if (hasSelection && isConsoleTuiCoarsePointer()) openConsoleTuiSelectionEditor(false);
+    if (!hasSelection) closeConsoleTuiSelectionEditor(false);
+  }
+  function isConsoleTuiCoarsePointer() {
+    try { return window.matchMedia && window.matchMedia('(pointer: coarse)').matches; } catch (e) {}
+    return false;
+  }
+  function blurConsoleTuiFocus() {
+    try { if (tui.term && typeof tui.term.blur === 'function') tui.term.blur(); } catch (e) {}
+    try {
+      var active = document.activeElement;
+      if (active && typeof active.blur === 'function') active.blur();
+    } catch (e) {}
+  }
+  function currentConsoleTuiSelectionText() {
+    if (tuiSelectionEditor && !tuiSelectionEditor.hidden && tuiSelectionText) {
+      return tuiSelectionText.value || '';
+    }
+    if (!tui.term) return '';
+    try { return tui.term.getSelection() || ''; } catch (e) {}
+    return '';
+  }
+  function openConsoleTuiSelectionEditor(focusEditor) {
+    if (!tuiSelectionEditor || !tuiSelectionText || !tui.term) return false;
+    var text = '';
+    try { text = tui.term.getSelection() || ''; } catch (e) {}
+    if (!text) return false;
+    if (tuiSelectionEditor.hidden || tuiSelectionText.value !== text) tuiSelectionText.value = text;
+    tuiSelectionEditor.hidden = false;
+    if (focusEditor) {
+      try {
+        tuiSelectionText.focus();
+        tuiSelectionText.setSelectionRange(0, tuiSelectionText.value.length);
+      } catch (e) {}
+    }
+    return true;
+  }
+  function closeConsoleTuiSelectionEditor(clearTerminalSelection) {
+    if (tuiSelectionEditor) tuiSelectionEditor.hidden = true;
+    if (tuiSelectionText) tuiSelectionText.value = '';
+    if (clearTerminalSelection && tui.term) {
+      try { tui.term.clearSelection(); } catch (e) {}
+      updateConsoleTuiCopyButton();
+    }
+  }
+  function sendConsoleTuiInput(data, recordPrompt) {
+    if (tui.ws && tui.ws.readyState === 1) {
+      var frame = { type:'terminal_input', data:String(data || '') };
+      var prompt = sanitizeDirectTuiPromptLine(recordPrompt || '');
+      if (prompt) frame.recordPrompt = prompt;
+      tui.ws.send(JSON.stringify(frame));
+      return true;
+    }
+    return false;
+  }
+  function pasteConsoleTuiText(text) {
+    text = String(text || '');
+    if (!text) return false;
+    try {
+      if (tui.term && typeof tui.term.paste === 'function') {
+        tui.term.paste(text);
+        return true;
+      }
+    } catch (e) {}
+    return sendConsoleTuiInput(text.replace(/\r?\n/g, '\r'));
+  }
+  function fallbackCopyConsoleTuiSelection(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', 'readonly');
+    ta.style.position = 'fixed';
+    ta.style.left = '-1000px';
+    ta.style.top = '-1000px';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+  async function copyConsoleTuiSelection() {
+    if (!tui.term && (!tuiSelectionText || !tuiSelectionText.value)) return false;
+    var text = currentConsoleTuiSelectionText();
+    if (!text) return false;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        fallbackCopyConsoleTuiSelection(text);
+      }
+      if (tuiCopy) {
+        tuiCopy.classList.add('copied');
+        window.setTimeout(function(){ tuiCopy.classList.remove('copied'); }, 900);
+      }
+      return true;
+    } catch (e) {
+      fallbackCopyConsoleTuiSelection(text);
+      return true;
+    } finally {
+      if (!tuiSelectionEditor || tuiSelectionEditor.hidden) {
+        try { tui.term.focus(); } catch (e) {}
+      }
+    }
+  }
+  async function copyConsoleTuiBuffer() {
+    if (!tui.term) return false;
+    var text = '';
+    try {
+      var buffer = tui.term.buffer && tui.term.buffer.active;
+      if (buffer && buffer.length) {
+        var lines = [];
+        for (var i = 0; i < buffer.length; i++) {
+          var line = buffer.getLine(i);
+          if (line) lines.push(line.translateToString(true));
+        }
+        text = lines.join('\n').replace(/\n+$/, '');
+      }
+    } catch (e) {}
+    if (!text) {
+      try { text = tui.term.buffer.active.getLine(0).translateToString(true); } catch (e) {}
+    }
+    if (!text) return false;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(text);
+      else fallbackCopyConsoleTuiSelection(text);
+      if (tuiCopyBuffer) {
+        tuiCopyBuffer.classList.add('copied');
+        window.setTimeout(function(){ tuiCopyBuffer.classList.remove('copied'); }, 900);
+      }
+      return true;
+    } catch (e) {
+      fallbackCopyConsoleTuiSelection(text);
+      return true;
+    } finally {
+      try { tui.term.focus(); } catch (e) {}
+    }
+  }
+  async function cutConsoleTuiSelection() {
+    var ok = await copyConsoleTuiSelection();
+    if (ok && tui.term) {
+      try { tui.term.clearSelection(); } catch (e) {}
+      updateConsoleTuiCopyButton();
+    }
+    return ok;
+  }
+  async function readClipboardAndPasteConsoleTui() {
+    await openConsoleTui();
+    try {
+      if (navigator.clipboard && navigator.clipboard.readText) {
+        var text = await navigator.clipboard.readText();
+        pasteConsoleTuiText(text);
+      } else {
+        setTuiStatus('paste unavailable: browser blocked clipboard read');
+      }
+    } catch (e) {
+      setTuiStatus('paste unavailable: ' + e.message);
+    } finally {
+      try { if (tui.term) tui.term.focus(); } catch (e) {}
+    }
+  }
+  function showConsoleTuiSearch() {
+    if (!tuiSearch || !tuiSearchInput) return;
+    tuiSearch.hidden = false;
+    tuiSearchInput.focus();
+    tuiSearchInput.select();
+  }
+  function hideConsoleTuiSearch() {
+    if (!tuiSearch) return;
+    tuiSearch.hidden = true;
+    try { if (tui.term) tui.term.focus(); } catch (e) {}
+  }
+  function findConsoleTuiNext(reverse) {
+    if (!tui.search || !tuiSearchInput) return false;
+    var q = tuiSearchInput.value || '';
+    if (!q) return false;
+    try {
+      return reverse ? tui.search.findPrevious(q, { incremental: false }) : tui.search.findNext(q, { incremental: false });
+    } catch (e) {
+      return false;
+    }
+  }
+  function scrollConsoleTuiToBottom() {
+    if (!tui.term) return;
+    try { tui.term.scrollToBottom(); } catch (e) {}
+    updateConsoleTuiJumpButton();
+    try { tui.term.focus(); } catch (e) {}
+  }
+  function forceConsoleTuiBottom() {
+    if (!tui.term) return;
+    try { tui.term.scrollToBottom(); } catch (e) {}
+    updateConsoleTuiJumpButton();
+  }
+  function scheduleConsoleTuiBottom() {
+    if (!tui.term) return;
+    requestAnimationFrame(forceConsoleTuiBottom);
+    window.setTimeout(forceConsoleTuiBottom, 0);
+    window.setTimeout(forceConsoleTuiBottom, 60);
+    window.setTimeout(forceConsoleTuiBottom, 180);
+  }
+  function restoreConsoleTuiFocusSoon() {
+    if (!tui.term) return;
+    window.setTimeout(function() {
+      var active = document.activeElement;
+      var tag = active && active.tagName ? active.tagName.toLowerCase() : '';
+      if (tag === 'input' || tag === 'select' || tag === 'textarea' || (active && active.isContentEditable)) return;
+      try { tui.term.focus(); } catch (e) {}
+    }, 40);
+  }
+
+  var directTuiInput = '';
+  function sanitizeDirectTuiPromptLine(value) {
+    var raw = String(value || '');
+    var noisy = (raw.match(/[\ufeff\u200b-\u200f\u202a-\u202e\ue000-\uf8ff]/g) || []).length;
+    var text = raw
+      .replace(/\x1b\[200~/g, '')
+      .replace(/\x1b\[201~/g, '')
+      .replace(/\\x1b\[200~/g, '')
+      .replace(/\\x1b\[201~/g, '')
+      .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\ufeff\u200b-\u200f\u202a-\u202e\ue000-\uf8ff]/g, '')
+      .trim();
+    if (!text) return '';
+    if (noisy > text.replace(/\s/g, '').length) return '';
+    if (/^(?:\\x1b)?(?:\[[0-9;?<>]*[~A-Za-z]|\][\s\S]*|O[A-Za-z]|[0-9;?<>]+[~A-Za-z])$/.test(text)) return '';
+    return text;
+  }
+  function captureDirectTuiPrompt(data) {
+    var lines = [];
+    var i = 0;
+    while (i < data.length) {
+      var ch = data.charAt(i);
+      if (ch === '\x1b') {
+        i++;
+        if (i < data.length && data.charAt(i) === '[') {
+          i++;
+          while (i < data.length) {
+            var code = data.charCodeAt(i);
+            if (code >= 64 && code <= 126) break;
+            i++;
+          }
+        } else if (i < data.length && data.charAt(i) === ']') {
+          i++;
+          while (i < data.length && data.charAt(i) !== '\x07') {
+            if (data.charAt(i) === '\x1b' && data.charAt(i + 1) === '\\') {
+              i++;
+              break;
+            }
+            i++;
+          }
+        } else if (i < data.length && /[OP^_]/.test(data.charAt(i))) {
+          i++;
+          while (i < data.length) {
+            var ss3Code = data.charCodeAt(i);
+            if (ss3Code >= 64 && ss3Code <= 126) break;
+            i++;
+          }
+        }
+      } else if (ch === '\r' || ch === '\n') {
+        var line = sanitizeDirectTuiPromptLine(directTuiInput);
+        directTuiInput = '';
+        if (line) lines.push(line);
+      } else if (ch === '\b' || ch === '\x7f') {
+        directTuiInput = directTuiInput.slice(0, -1);
+      } else if (ch === '\x03' || ch === '\x15') {
+        directTuiInput = '';
+      } else if (ch >= ' ') {
+        directTuiInput += ch;
+      }
+      i++;
+    }
+    return lines;
+  }
+  async function writeConsoleTuiDraft(text) {
+    text = String(text || '');
+    if (!text) return false;
+    if (!await openConsoleTui()) return false;
+    var payload = '\x1b[200~' + text + '\x1b[201~';
+    captureDirectTuiPrompt(payload);
+    if (tui.ws && tui.ws.readyState === 1) {
+      tui.ws.send(JSON.stringify({ type:'terminal_input', data:payload }));
+      try { if (tui.term) tui.term.focus(); } catch (e) {}
+      return true;
+    }
+    return false;
+  }
+  function legacyComposerHidden() {
+    return !input || (form && form.hidden) || input.hidden;
+  }
+  function syncProviderTabs() {
+    document.querySelectorAll('.console-provider-tab').forEach(function(tab) {
+      var active = tab.getAttribute('data-provider') === currentProvider;
+      tab.classList.toggle('active', active);
+      tab.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+  }
+  function updateProviderTabStatus(status) {
+    if (!status || !status.provider) return;
+    var sel = '.console-provider-tab[data-provider="' + (window.CSS && CSS.escape ? CSS.escape(status.provider) : status.provider) + '"]';
+    var tab = document.querySelector(sel);
+    if (!tab) return;
+    var state = normalizeProviderTabState(status.state || 'idle');
+    tab.dataset.state = state;
+    var small = tab.querySelector('small');
+    if (small) small.textContent = normalizeProviderTabLabel(status.activity || state);
+    var title = (status.provider || '') + ' · ' + state;
+    if (status.activity) title += ' · ' + status.activity;
+    if (status.currentTool) title += ' · ' + status.currentTool;
+    if (status.message) title += ' · ' + status.message;
+    if (status.error) title += ' · ' + status.error;
+    tab.title = title;
+    if (status.provider === currentProvider) {
+      setTuiStatus(title);
+    }
+  }
+  function normalizeProviderTabState(state) {
+    state = String(state || 'idle');
+    if (state === 'completed' || state === 'disconnected' || state === 'ready') return 'idle';
+    if (state === 'responding') return 'running';
+    if (state === 'waiting') return 'waiting_input';
+    if (state === 'stopped') return 'interrupted';
+    return state;
+  }
+  function normalizeProviderTabLabel(label) {
+    label = String(label || 'idle');
+    if (label === 'completed' || label === 'disconnected' || label === 'ready') return 'idle';
+    if (label === 'responding') return 'running';
+    return label;
+  }
+  async function switchConsoleProvider(provider) {
+    provider = String(provider || '');
+    if (!provider || provider === currentProvider) return;
+    var tabs = Array.prototype.slice.call(document.querySelectorAll('.console-provider-tab'));
+    tabs.forEach(function(tab) { tab.disabled = true; });
+    setTuiStatus('switching · ' + provider);
+    try {
+      var tokenEl = document.querySelector('input[name=_csrf]');
+      var body = new FormData();
+      if (tokenEl) body.append('_csrf', tokenEl.value);
+      body.append('provider', provider);
+      var res = await fetch('/projects/' + projectId + '/console/provider', {
+        method:'POST',
+        credentials:'same-origin',
+        body: body
+      });
+      if (!res.ok) throw new Error(await consoleTuiFetchError(res));
+      currentProvider = provider;
+      tui.sessionId = null;
+      if (tui.reconnectTimer) {
+        window.clearTimeout(tui.reconnectTimer);
+        tui.reconnectTimer = null;
+      }
+      if (tui.ws) {
+        tui.closing = true;
+        try { tui.ws.close(1000, 'provider switch'); } catch (e) {}
+        tui.ws = null;
+      }
+      if (tui.term) {
+        try { tui.term.clear(); } catch (e) {}
+      }
+      syncProviderTabs();
+      await openConsoleTui();
+    } catch (e) {
+      setTuiStatus('provider switch failed: ' + e.message);
+    } finally {
+      tabs.forEach(function(tab) { tab.disabled = false; });
+    }
+  }
+
+  function connectConsoleTui(sessionId) {
+    if (tui.reconnectTimer) {
+      window.clearTimeout(tui.reconnectTimer);
+      tui.reconnectTimer = null;
+    }
+    tui.forceBottomOnConnect = true;
+    var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    tui.ws = new WebSocket(proto + '//' + location.host + '/ws/projects/' + projectId + '/console/tui/' + sessionId);
+    tui.ws.onopen = function() {
+      tui.closing = false;
+      setTuiStatus('connected · ' + currentProvider + ' · ' + sessionId);
+      startConsoleTuiStatusPolling();
+      fitConsoleTui();
+      scheduleConsoleTuiBottom();
+      window.setTimeout(function() { tui.forceBottomOnConnect = false; }, 1500);
+    };
+    tui.ws.onmessage = function(ev) {
+      try {
+        var f = JSON.parse(ev.data);
+        if (f.type === 'terminal_output' && tui.term) {
+          var stickToBottom = tui.forceBottomOnConnect || isConsoleTuiAtBottom();
+          tui.term.write(f.data, function() {
+            if (stickToBottom) {
+              scheduleConsoleTuiBottom();
+              tui.forceBottomOnConnect = false;
+            } else {
+              updateConsoleTuiJumpButton();
+            }
+          });
+        }
+        else if (f.type === 'terminal_exit' && tui.term) {
+          tui.term.write('\r\n\r\n[process exited code=' + f.exitCode + ']');
+          setTuiStatus(f.exitCode === 0 ? 'idle · ' + currentProvider : 'error · process exited');
+          updateProviderTabStatus({
+            provider: currentProvider,
+            state: f.exitCode === 0 ? 'idle' : 'error',
+            error: f.exitCode === 0 ? undefined : ('Process exited with code ' + f.exitCode)
+          });
+          updateConsoleTuiJumpButton();
+        } else if (f.type === 'agent_status_changed') {
+          updateProviderTabStatus(f);
+        }
+      } catch (e) {}
+    };
+    tui.ws.onclose = function(ev) {
+      if (ev.code === 1000 && (ev.reason === 'session not found' || ev.reason === 'exited')) {
+        tui.sessionId = null;
+        setTuiStatus('idle · ' + currentProvider);
+        updateProviderTabStatus({ provider: currentProvider, state: 'idle' });
+        return;
+      }
+      if (!tui.closing && ev.code !== 1000) {
+        setTuiStatus('disconnected · reconnecting');
+        if (!tui.reconnectTimer && tuiPane && !tuiPane.hidden && tui.sessionId) {
+          tui.reconnectTimer = window.setTimeout(function() {
+            tui.reconnectTimer = null;
+            connectConsoleTui(tui.sessionId);
+          }, 1500);
+        }
+      }
+    };
+  }
+
+  async function openConsoleTui() {
+    if (!tuiPane || !tuiHost) return false;
+    tuiPane.hidden = false;
+    applyConsoleTuiModeUi();
+    syncConsoleTuiLayout();
+    if (!window.Terminal || !window.FitAddon) {
+      setTuiStatus('xterm.js unavailable');
+      return false;
+    }
+    if (!tui.term) {
+      await ensureConsoleTuiFonts();
+      tui.term = new Terminal({
+        cursorBlink:true, convertEol:false, scrollback:5000,
+        fontFamily:CONSOLE_TUI_FONT_FAMILY, fontSize:13,
+        theme:{ background:'#000', foreground:'#e5e5e5', cursor:'#e5e5e5' }
+      });
+      tui.fit = new FitAddon.FitAddon();
+      tui.term.loadAddon(tui.fit);
+      if (window.ClipboardAddon && ClipboardAddon.ClipboardAddon) {
+        tui.clipboard = new ClipboardAddon.ClipboardAddon();
+        tui.term.loadAddon(tui.clipboard);
+      }
+      if (window.SearchAddon && SearchAddon.SearchAddon) {
+        tui.search = new SearchAddon.SearchAddon();
+        tui.term.loadAddon(tui.search);
+      }
+      tui.term.open(tuiHost);
+      scheduleConsoleTuiBottom();
+      tui.term.onScroll(updateConsoleTuiJumpButton);
+      tui.term.onSelectionChange(updateConsoleTuiCopyButton);
+      tui.term.attachCustomKeyEventHandler(function(ev) {
+        var key = String(ev.key || '').toLowerCase();
+        var clipboardChord = (ev.ctrlKey || ev.metaKey) && ev.shiftKey && !ev.altKey;
+        var copyKey = clipboardChord && key === 'c';
+        var pasteKey = clipboardChord && key === 'v';
+        var cutKey = clipboardChord && key === 'x';
+        var searchKey = (ev.ctrlKey || ev.metaKey) && !ev.shiftKey && !ev.altKey && key === 'f';
+        if (cutKey && tui.term && tui.term.hasSelection()) {
+          cutConsoleTuiSelection();
+          ev.preventDefault();
+          return false;
+        }
+        if (copyKey && tui.term && tui.term.hasSelection()) {
+          copyConsoleTuiSelection();
+          ev.preventDefault();
+          return false;
+        }
+        if (pasteKey) {
+          readClipboardAndPasteConsoleTui();
+          ev.preventDefault();
+          return false;
+        }
+        if (searchKey) {
+          showConsoleTuiSearch();
+          ev.preventDefault();
+          return false;
+        }
+        return true;
+      });
+      var tuiViewport = tuiHost.querySelector('.xterm-viewport');
+      if (tuiViewport) {
+        tuiViewport.style.touchAction = 'pan-y';
+        tuiViewport.style.webkitOverflowScrolling = 'touch';
+        tuiViewport.style.overscrollBehavior = 'contain';
+        setupConsoleTuiTouchScroll(tuiViewport);
+      }
+      tuiHost.addEventListener('copy', function(ev) {
+        if (!tui.term || !tui.term.hasSelection()) return;
+        var text = tui.term.getSelection();
+        if (!text) return;
+        if (ev.clipboardData) {
+          ev.clipboardData.setData('text/plain', text);
+          ev.preventDefault();
+        }
+      });
+      tuiHost.addEventListener('paste', function(ev) {
+        var text = ev.clipboardData && ev.clipboardData.getData('text/plain');
+        if (!text) return;
+        ev.preventDefault();
+        pasteConsoleTuiText(text);
+      });
+      tui.term.onData(function(d) {
+        var promptLines = captureDirectTuiPrompt(d);
+        var recordPrompt = promptLines.length === 1 ? promptLines[0] : '';
+        promptLines.forEach(function(line) {
+          updateProviderTabStatus({ provider: currentProvider, state: 'running', activity: 'responding', message: 'direct input submitted' });
+          try { window.parent.postMessage({ type: 'vibe:prompt-sent', text: line }, location.origin); } catch (e) {}
+        });
+        sendConsoleTuiInput(d, recordPrompt);
+      });
+      window.addEventListener('resize', fitConsoleTui);
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', fitConsoleTui);
+        window.visualViewport.addEventListener('scroll', fitConsoleTui);
+      }
+      if (tuiJump) {
+        tuiJump.addEventListener('pointerdown', function(ev) { ev.preventDefault(); });
+        tuiJump.addEventListener('click', scrollConsoleTuiToBottom);
+      }
+      if (tuiCopy) {
+        tuiCopy.addEventListener('pointerdown', function(ev) { ev.preventDefault(); });
+        tuiCopy.addEventListener('click', function() {
+          if (isConsoleTuiCoarsePointer() && openConsoleTuiSelectionEditor(true)) return;
+          copyConsoleTuiSelection();
+        });
+      }
+      if (tuiCopyBuffer) {
+        tuiCopyBuffer.addEventListener('pointerdown', function(ev) { ev.preventDefault(); });
+        tuiCopyBuffer.addEventListener('click', copyConsoleTuiBuffer);
+      }
+      if (tuiPaste) {
+        tuiPaste.addEventListener('pointerdown', function(ev) { ev.preventDefault(); });
+        tuiPaste.addEventListener('click', readClipboardAndPasteConsoleTui);
+      }
+      if (tuiSearchToggle) {
+        tuiSearchToggle.addEventListener('pointerdown', function(ev) { ev.preventDefault(); });
+        tuiSearchToggle.addEventListener('click', showConsoleTuiSearch);
+      }
+      if (tuiSearchClose) tuiSearchClose.addEventListener('click', hideConsoleTuiSearch);
+      if (tuiSearchPrev) tuiSearchPrev.addEventListener('click', function(){ findConsoleTuiNext(true); });
+      if (tuiSearchNext) tuiSearchNext.addEventListener('click', function(){ findConsoleTuiNext(false); });
+      if (tuiSelectionCopy) {
+        tuiSelectionCopy.addEventListener('click', function() {
+          copyConsoleTuiSelection().then(function(ok) {
+            if (ok) closeConsoleTuiSelectionEditor(true);
+          });
+        });
+      }
+      if (tuiSelectionClose) {
+        tuiSelectionClose.addEventListener('click', function() { closeConsoleTuiSelectionEditor(true); });
+      }
+      if (tuiSearchInput) {
+        tuiSearchInput.addEventListener('keydown', function(ev) {
+          if (ev.key === 'Escape') { hideConsoleTuiSearch(); ev.preventDefault(); return; }
+          if (ev.key === 'Enter') { findConsoleTuiNext(!!ev.shiftKey); ev.preventDefault(); }
+        });
+        tuiSearchInput.addEventListener('input', function() {
+          if (!tui.search) return;
+          var q = tuiSearchInput.value || '';
+          if (!q) return;
+          try { tui.search.findNext(q, { incremental: true }); } catch (e) {}
+        });
+      }
+    }
+    if (tui.ws && (tui.ws.readyState === 0 || tui.ws.readyState === 1)) {
+      fitConsoleTui();
+      scheduleConsoleTuiBottom();
+      try { tui.term.focus(); } catch (e) {}
+      return true;
+    }
+    setTuiStatus('starting · ' + currentProvider);
+    try {
+      var res = await fetch('/api/projects/' + projectId + '/console/tui/session', {
+        method:'POST',
+        credentials:'same-origin',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ provider: currentProvider, cols: 100, rows: 30 })
+      });
+      if (!res.ok) throw new Error(await consoleTuiFetchError(res));
+      var body = await res.json();
+      tui.sessionId = body.sessionId;
+      if (!tui.sessionId) throw new Error('missing sessionId');
+      setTuiStatus(formatConsoleTuiStatus(body));
+      startConsoleTuiStatusPolling();
+      connectConsoleTui(tui.sessionId);
+      try { tui.term.focus(); } catch (e) {}
+      return true;
+    } catch (e) {
+      setTuiStatus('failed: ' + e.message);
+      return false;
+    }
+  }
+
+  async function sendPromptToConsoleTui() {
+    if (!input) return;
+    var text = input.value.trim();
+    if (!text) return;
+    await sendPromptTextToConsoleTui(text);
+  }
+
+  async function sendPromptTextToConsoleTui(text, options) {
+    if (!input || !text) return false;
+    options = options || {};
+    var focusTerminal = options.focusTerminal !== false;
+    if (sendBtn) sendBtn.disabled = true;
+    if (!await openConsoleTui()) {
+      if (sendBtn) sendBtn.disabled = false;
+      return false;
+    }
+    setTuiStatus('sending · ' + currentProvider);
+    try {
+      var res = await fetch('/api/projects/' + projectId + '/console/tui/prompt?provider=' + encodeURIComponent(currentProvider), {
+        method:'POST',
+        credentials:'same-origin',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ text: text })
+      });
+      if (!res.ok) throw new Error(await consoleTuiFetchError(res));
+      var body = await res.json();
+      tui.sessionId = body.sessionId || tui.sessionId;
+      append('user', 'user', text, 'assistant', {});
+      setInFlight(true);
+      scrollToBottom();
+      input.value = '';
+      setTuiStatus('prompt sent · ' + currentProvider + ' · ' + tui.sessionId);
+      refreshConsoleTuiStatus();
+      if (focusTerminal) {
+        try { if (tui.term) tui.term.focus(); } catch (e) {}
+      } else {
+        blurConsoleTuiFocus();
+      }
+      try { window.parent.postMessage({ type: 'vibe:prompt-sent', text: text }, location.origin); } catch (e) {}
+      return true;
+    } catch (e) {
+      setTuiStatus('send failed: ' + e.message);
+      return false;
+    } finally {
+      if (sendBtn) sendBtn.disabled = false;
+      if (input) input.blur();
+      if (!focusTerminal) blurConsoleTuiFocus();
+    }
+  }
+
+  async function interruptPromptTextToConsoleTui(text) {
+    if (!input || !text) return false;
+    if (interruptBtn) interruptBtn.disabled = true;
+    if (sendBtn) sendBtn.disabled = true;
+    if (!await openConsoleTui()) {
+      if (interruptBtn) interruptBtn.disabled = false;
+      if (sendBtn) sendBtn.disabled = false;
+      return false;
+    }
+    setTuiStatus('interrupting · ' + currentProvider);
+    try {
+      var res = await fetch('/api/projects/' + projectId + '/console/tui/interrupt?provider=' + encodeURIComponent(currentProvider), {
+        method:'POST',
+        credentials:'same-origin',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ text: text })
+      });
+      if (!res.ok) throw new Error(await consoleTuiFetchError(res));
+      var body = await res.json();
+      tui.sessionId = body.sessionId || tui.sessionId;
+      append('sys', 'interrupt', ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.interrupt.sent"))}, 'system');
+      append('user', 'user', text, 'assistant', {});
+      setInFlight(true);
+      scrollToBottom();
+      input.value = '';
+      if (typeof clearPendingImages === 'function') clearPendingImages();
+      setTuiStatus('interrupt sent · ' + currentProvider + ' · ' + tui.sessionId);
+      refreshConsoleTuiStatus();
+      try { if (tui.term) tui.term.focus(); } catch (e) {}
+      try { window.parent.postMessage({ type: 'vibe:prompt-sent', text: text }, location.origin); } catch (e) {}
+      return true;
+    } catch (e) {
+      setTuiStatus('interrupt failed: ' + e.message);
+      return false;
+    } finally {
+      if (interruptBtn) interruptBtn.disabled = false;
+      if (sendBtn) sendBtn.disabled = false;
+      if (input) input.blur();
+    }
+  }
+
+  async function compactConsoleTui() {
+    if (!tui.sessionId && !await openConsoleTui()) return false;
+    if (!tui.sessionId) return false;
+    setTuiStatus('compacting · ' + currentProvider + ' · ' + tui.sessionId);
+    try {
+      var res = await fetch('/api/projects/' + projectId + '/console/tui/compact?provider=' + encodeURIComponent(currentProvider), {
+        method:'POST',
+        credentials:'same-origin'
+      });
+      if (!res.ok) throw new Error(await consoleTuiFetchError(res));
+      var body = await res.json();
+      tui.sessionId = body.sessionId || tui.sessionId;
+      refreshConsoleTuiStatus();
+      return true;
+    } catch (e) {
+      setTuiStatus('compact failed: ' + e.message);
+      return false;
+    }
+  }
+
+  function hideConsoleTui() {
+    if (!tuiPane) return;
+    tuiPane.hidden = true;
+    applyConsoleTuiModeUi();
+    if (tui.reconnectTimer) {
+      window.clearTimeout(tui.reconnectTimer);
+      tui.reconnectTimer = null;
+    }
+  }
+
+  applyConsoleTuiModeUi();
+  syncProviderTabs();
+  document.querySelectorAll('.console-provider-tab').forEach(function(tab) {
+    tab.addEventListener('click', function() {
+      switchConsoleProvider(tab.getAttribute('data-provider'));
+    });
+  });
+  window.setTimeout(function() { openConsoleTui(); }, 0);
 
   document.body.classList.add('console-page');
 
@@ -1950,10 +3128,14 @@ $consolePromptToolsHtml
     // 축소시킨다 → .layout 이 iframe 보다 작아져 콘솔 로그와 입력창이 겹치고 하단 공백 발생.
     // 부모 ProjectTabs(project-tabs.js)가 이미 iframe 크기를 키보드에 맞춰 관리하므로, embed
     // 문서는 .layout 을 100% 로 채우고(admin.css body.pt-embed .layout) 자체 계산을 건너뛴다.
-    if (document.body.classList.contains('pt-embed')) return;
+    if (document.body.classList.contains('pt-embed')) {
+      fitConsoleTui();
+      return;
+    }
     var vv = window.visualViewport;
     var h = vv && vv.height ? vv.height : window.innerHeight;
     if (h > 0) document.documentElement.style.setProperty('--app-viewport-height', Math.round(h) + 'px');
+    fitConsoleTui();
   }
   syncVisualViewport();
   if (window.visualViewport) {
@@ -1987,7 +3169,7 @@ $consolePromptToolsHtml
       if (document.activeElement === input) ev.preventDefault();
     });
   }
-  ['send-btn', 'interrupt-btn', 'voice-btn', 'image-btn'].forEach(function (id) {
+  ['send-btn', 'interrupt-btn', 'voice-btn'].forEach(function (id) {
     keepKeyboardOnTap(document.getElementById(id));
   });
 
@@ -2120,8 +3302,11 @@ $consolePromptToolsHtml
   });
 
   function insertPromptBody(body, append) {
-    if (!input) return;
     body = String(body || '');
+    if (legacyComposerHidden()) {
+      writeConsoleTuiDraft(body);
+      return;
+    }
     if (append && input.value && input.value.trim().length > 0) {
       input.value = input.value.replace(/\s+$/, '') + '\n\n' + body;
     } else {
@@ -2132,8 +3317,12 @@ $consolePromptToolsHtml
   }
 
   function applyAgentPrefix(agent) {
-    if (!input || !agent) return;
+    if (!agent) return;
     var prefix = 'Use the ' + agent + ' sub-agent to ';
+    if (legacyComposerHidden()) {
+      writeConsoleTuiDraft(prefix);
+      return;
+    }
     if (input.value && input.value.trim().length > 0) {
       if (input.value.startsWith('Use the ')) {
         input.value = input.value.replace(/^Use the [^ ]+ sub-agent to /, prefix);
@@ -2160,16 +3349,20 @@ $consolePromptToolsHtml
     // v1.106.3 — 부모 rail 의 /compact 버튼 등에서 프롬프트 전송 요청. 정상 제출 경로
     // (form submit → busy 면 큐, 아니면 sendPrompt)로 보내 에코/미터 갱신을 일관 처리.
     if (d.type === 'vibe:send-prompt' && typeof d.text === 'string' && d.text) {
+      if (d.text.trim() === '/compact') {
+        compactConsoleTui();
+        return;
+      }
       if (input) {
         input.value = d.text;
         if (form && form.requestSubmit) form.requestSubmit();
-        else if (typeof sendPrompt === 'function') sendPrompt(d.text);
+        else sendPromptTextToConsoleTui(d.text);
       }
       return;
     }
     // v1.161.0 — 부모 오버뷰 rail 의 템플릿/히스토리 선택 → 콘솔 입력창 반영.
     if (d.type === 'vibe:insert-prompt' && typeof d.text === 'string') {
-      insertPromptBody(d.text, !!d.append);
+      writeConsoleTuiDraft(d.text);
       return;
     }
     // v1.161.0 — 부모 오버뷰 rail 의 Agent dispatch 선택 → 현재 입력에 sub-agent prefix 적용.
@@ -2606,6 +3799,8 @@ $consolePromptToolsHtml
       if (f.state === 'stopped') showStopped();
       else if (f.state === 'waiting') showWaiting();
       else if (f.state === 'error') showError();
+    } else if (t === 'agent_status_changed') {
+      updateProviderTabStatus(f);
     } else if (t === 'console_background_task') {
       // v1.84.0 — 백그라운드 작업(Bash run_in_background) 진행 카드.
       handleBgTask(f);
@@ -2981,7 +4176,7 @@ $consolePromptToolsHtml
   function setInFlight(on) {
     inFlight = on;
     if (stopBtn) stopBtn.style.display = on ? 'inline-block' : 'none';
-    // v1.139.0 — 끼어들기 버튼 상시 노출(게이트 만석 강제 전송 겸용) — display 토글 제거.
+    // v1.139.0 — 끼어들기 버튼 상시 노출 — display 토글 제거.
     if (spinnerEl) spinnerEl.hidden = !on;
     updateBusyBadge();
   }
@@ -3002,263 +4197,41 @@ $consolePromptToolsHtml
 
   // v1.112.0 — 끼어들기: 진행 중 turn 을 interrupt 로 중단하고 입력창 내용을 즉시 새 prompt 로
   // 보낸다(TUI Esc+입력 동형). 서버가 interrupt → 정리 → sendPrompt 를 한 endpoint 에서 처리.
-  // ── v1.133.0 — 프롬프트 이미지 첨부 ───────────────────────────────────────
-  // 첨부 경로 3종: 📷 버튼(파일 선택) / 클립보드 붙여넣기 / 드래그&드롭. 최대 4장.
-  // 큰 이미지는 canvas 로 최대 변 1568px 다운스케일(비전 권장 해상도 + 토큰 절약).
-  var MAX_ATTACH_IMAGES = 4;
-  var pendingImages = [];  // [{mediaType, data(base64), dataUrl}]
-  var imageBtn = document.getElementById('image-btn');
-  var imageFile = document.getElementById('image-file');
-  var imagePreview = document.getElementById('image-preview');
-  // v1.134.1 — 첨부 다이얼로그 + 아이콘 배지(첨부 수). 인라인 strip 은 다이얼로그로 이동.
-  var imageModal = document.getElementById('image-modal');
-  var imageEmpty = document.getElementById('image-empty');
-  var imageCount = document.getElementById('image-count');
-
-  function renderImagePreview() {
-    if (imageCount) {
-      imageCount.textContent = String(pendingImages.length);
-      imageCount.style.display = pendingImages.length ? 'inline-block' : 'none';
-    }
-    if (imageBtn) imageBtn.style.borderColor = pendingImages.length ? '#1e40af' : '#2a2a2a';
-    if (imageEmpty) imageEmpty.style.display = pendingImages.length ? 'none' : 'block';
-    if (!imagePreview) return;
-    imagePreview.innerHTML = '';
-    for (var i = 0; i < pendingImages.length; i++) {
-      (function(idx) {
-        var box = document.createElement('div');
-        box.style.cssText = 'position:relative;display:inline-block';
-        var im = document.createElement('img');
-        im.src = pendingImages[idx].dataUrl;
-        im.alt = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.image.alt"))};
-        im.style.cssText = 'height:56px;max-width:96px;object-fit:cover;border:1px solid #2a2a2a;border-radius:6px;display:block';
-        var x = document.createElement('button');
-        x.type = 'button';
-        x.textContent = '✕';
-        x.setAttribute('aria-label', 'remove image');
-        x.style.cssText = 'position:absolute;top:-6px;right:-6px;width:18px;height:18px;line-height:15px;padding:0;font-size:10px;border-radius:50%;border:1px solid #444;background:#222;color:#ddd;cursor:pointer';
-        x.addEventListener('click', function() { pendingImages.splice(idx, 1); renderImagePreview(); });
-        box.appendChild(im); box.appendChild(x);
-        imagePreview.appendChild(box);
-      })(i);
-    }
-    imagePreview.style.display = pendingImages.length ? 'flex' : 'none';
-    // 이미지가 있으면 텍스트 없이도 제출 가능(기본 문구 자동 사용) — required 해제.
-    if (input && !input.disabled) input.required = pendingImages.length === 0;
-  }
-
-  // canvas 다운스케일. gif(애니메이션 보존)는 원본 유지. PNG 는 PNG 재인코딩 우선,
-  // 한도 초과 시 JPEG 폴백. 재인코딩이 원본보다 커지면 원본 유지.
-  function downscaleImage(file) {
-    return new Promise(function(resolve) {
-      var fr = new FileReader();
-      fr.onerror = function() { resolve(null); };
-      fr.onload = function() {
-        var dataUrl = String(fr.result || '');
-        var m = dataUrl.match(/^data:(image\/[a-z0-9+.-]+);base64,(.*)$/i);
-        if (!m) { resolve(null); return; }
-        var origType = m[1].toLowerCase(), origData = m[2];
-        var orig = { mediaType: origType, data: origData, dataUrl: dataUrl };
-        if (origType === 'image/gif') { resolve(orig); return; }
-        var img = new Image();
-        img.onerror = function() { resolve(orig); };
-        img.onload = function() {
-          var MAXD = 1568;
-          var w = img.naturalWidth, h = img.naturalHeight;
-          if ((w <= MAXD && h <= MAXD) && dataUrl.length <= 2000000) { resolve(orig); return; }
-          var scale = Math.min(1, MAXD / Math.max(w, h));
-          var cw = Math.max(1, Math.round(w * scale)), ch = Math.max(1, Math.round(h * scale));
-          var cv = document.createElement('canvas');
-          cv.width = cw; cv.height = ch;
-          try {
-            cv.getContext('2d').drawImage(img, 0, 0, cw, ch);
-            var keepPng = origType === 'image/png';
-            var outUrl = keepPng ? cv.toDataURL('image/png') : cv.toDataURL('image/jpeg', 0.85);
-            if (keepPng && outUrl.length > 7000000) outUrl = cv.toDataURL('image/jpeg', 0.85);
-            var m2 = outUrl.match(/^data:(image\/[a-z0-9+.-]+);base64,(.*)$/i);
-            if (!m2 || outUrl.length >= dataUrl.length) resolve(orig);
-            else resolve({ mediaType: m2[1].toLowerCase(), data: m2[2], dataUrl: outUrl });
-          } catch (e) { resolve(orig); }
-        };
-        img.src = dataUrl;
-      };
-      fr.readAsDataURL(file);
-    });
-  }
-
-  function addImageFile(file) {
-    if (!file || !/^image\//.test(file.type)) return;
-    if (pendingImages.length >= MAX_ATTACH_IMAGES) {
-      alert(${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.image.limitCount"))});
-      return;
-    }
-    downscaleImage(file).then(function(res) {
-      if (!res) { alert(${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.image.readFailed"))}); return; }
-      if (res.data.length > 7000000) {
-        alert(${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.image.limitSize"))});
-        return;
-      }
-      if (pendingImages.length >= MAX_ATTACH_IMAGES) return;
-      pendingImages.push(res);
-      renderImagePreview();
-    });
-  }
-
-  // v1.134.1 — 아이콘 클릭 → 다이얼로그 열기. 파일 선택은 다이얼로그 안 버튼(#image-pick).
-  function openImageModal() { if (imageModal) { renderImagePreview(); imageModal.hidden = false; } }
-  function closeImageModal() { if (imageModal) imageModal.hidden = true; }
-  if (imageBtn) imageBtn.addEventListener('click', openImageModal);
-  var imagePick = document.getElementById('image-pick');
-  if (imagePick && imageFile) imagePick.addEventListener('click', function() { imageFile.click(); });
-  var imageClose = document.getElementById('image-close');
-  var imageDone = document.getElementById('image-done');
-  if (imageClose) imageClose.addEventListener('click', closeImageModal);
-  if (imageDone) imageDone.addEventListener('click', closeImageModal);
-  if (imageModal) imageModal.addEventListener('click', function(e) { if (e.target === imageModal) closeImageModal(); });
-  document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape' && imageModal && !imageModal.hidden) closeImageModal();
-  });
-  if (imageFile) {
-    imageFile.addEventListener('change', function() {
-      var fs = imageFile.files || [];
-      for (var i = 0; i < fs.length; i++) addImageFile(fs[i]);
-      imageFile.value = '';
-    });
-  }
-  if (input) {
-    input.addEventListener('paste', function(ev) {
-      var items = (ev.clipboardData && ev.clipboardData.items) || [];
-      var got = false;
-      for (var i = 0; i < items.length; i++) {
-        if (items[i].kind === 'file' && /^image\//.test(items[i].type)) {
-          var f = items[i].getAsFile();
-          if (f) { addImageFile(f); got = true; }
-        }
-      }
-      if (got) ev.preventDefault();
-    });
-    input.addEventListener('dragover', function(ev) { ev.preventDefault(); });
-    input.addEventListener('drop', function(ev) {
-      var fs = (ev.dataTransfer && ev.dataTransfer.files) || [];
-      var got = false;
-      for (var i = 0; i < fs.length; i++) {
-        if (/^image\//.test(fs[i].type)) { addImageFile(fs[i]); got = true; }
-      }
-      if (got) ev.preventDefault();
-    });
-  }
-
-  // 전송 body / 에코 옵션 helpers — sendPrompt 와 interruptSend 공용.
-  function promptBody(text, imgs) {
-    if (!imgs.length) return JSON.stringify({ text: text });
-    return JSON.stringify({
-      text: text,
-      images: imgs.map(function(p) { return { mediaType: p.mediaType, data: p.data }; }),
-    });
-  }
-  function echoOpts(imgs) {
-    if (!imgs.length) return {};
-    return { images: imgs.map(function(p) { return { src: p.dataUrl }; }) };
-  }
-  function clearPendingImages() { pendingImages = []; renderImagePreview(); }
-
   async function interruptSend() {
     var text = input.value.trim();
-    if (!text && pendingImages.length) text = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.image.defaultPrompt"))};
     if (!text) { input.focus(); return; }
-    var imgs = pendingImages.slice();
-    if (interruptBtn) interruptBtn.disabled = true;
-    sendBtn.disabled = true;
-    try {
-      var res = await fetch('/api/projects/' + projectId + '/claude/console/interrupt', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: {'Content-Type': 'application/json'},
-        body: promptBody(text, imgs),
-      });
-      if (!res.ok) {
-        var msg = await res.text();
-        append('err', 'send', res.status + ' ' + msg, 'error');
-      } else {
-        append('sys', 'interrupt', ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.interrupt.sent"))}, 'system');
-        append('user', 'user', text, 'assistant', echoOpts(imgs));
-        input.value = '';
-        clearPendingImages();
-        setInFlight(true);  // 새 turn 시작(서버 console_busy_state 와 수렴).
-        scrollToBottom();
-        try { window.parent.postMessage({ type: 'vibe:prompt-sent', text: text }, location.origin); } catch (e) {}
-      }
-    } catch (e) {
-      append('err', 'send', String(e), 'error');
-    } finally {
-      if (interruptBtn) interruptBtn.disabled = false;
-      sendBtn.disabled = false;
-      input.blur();
-    }
+    await interruptPromptTextToConsoleTui(text);
   }
   if (interruptBtn) interruptBtn.addEventListener('click', interruptSend);
 
   async function sendPrompt(text) {
-    var imgs = pendingImages.slice();
-    append('user', 'user', text, 'assistant', echoOpts(imgs));
-    scrollToBottom();
-    sendBtn.disabled = true;
-    setInFlight(true);
-    try {
-      var res = await fetch('/api/projects/' + projectId + '/claude/console/prompt', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: {'Content-Type': 'application/json'},
-        body: promptBody(text, imgs),
-      });
-      if (!res.ok) {
-        var msg = await res.text();
-        append('err', 'send', res.status + ' ' + msg, 'error');
-        setInFlight(false);
-      } else {
-        input.value = '';
-        clearPendingImages();
-        // v1.20.0 — prompt 전송 직후엔 토글 모드 무관 항상 최하단으로 jump.
-        // 사용자가 자기 prompt + 응답을 바로 봐야 함이 명확.
-        scrollToBottom();
-        // v1.59.2 — 부모 ProjectTabs 의 우측 오버뷰 프롬프트 히스토리에 즉시 반영
-        // (콘솔은 iframe — 부모가 서버 렌더 시점 snapshot 만 갖고 있어 reload 전엔 stale).
-        try { window.parent.postMessage({ type: 'vibe:prompt-sent', text: text }, location.origin); } catch (e) {}
-      }
-    } catch (e) {
-      append('err', 'send', String(e), 'error');
-      setInFlight(false);
-    } finally {
-      sendBtn.disabled = false;
-      // v1.7.11 — 전송 후 textarea blur. 이전엔 input.focus() 자동 호출 →
-      // 모바일 키보드 다시 올라오고 PC 에서 다음 자동 입력 의도 안 했는데 유지되던
-      // UX 문제. 사용자가 답변 본 후 명시적으로 클릭해서 다음 prompt 입력.
-      input.blur();
-    }
+    await sendPromptTextToConsoleTui(text);
   }
 
   form.addEventListener('submit', function(ev) {
     ev.preventDefault();
     var text = input.value.trim();
-    // v1.133.0 — 이미지만 첨부하고 텍스트가 비면 기본 문구로 전송.
-    if (!text && pendingImages.length) text = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.image.defaultPrompt"))};
     if (!text) return;
     // v1.113.0 — 응답 중에도 인위적 큐 없이 바로 전송(TUI 동형). 서버가 진행 중 turn 에
     // follow-up 으로 이어붙이고 CLI 내부 큐가 순차 처리한다(대기열 메시지/상태칩 제거).
     sendPrompt(text);
   });
 
-  // v1.58.0 — 입력창 상단 빠른 프롬프트 버블 버튼. 클릭 시 textarea 에 값을 채우고
-  // form.requestSubmit() 으로 위 submit 핸들러를 그대로 거친다 → busy 면 큐로,
-  // 아니면 즉시 sendPrompt. 전송 후 input 비우기/blur 도 기존 경로가 처리.
+  // v1.164.0 — TUI-only quick prompt. Legacy textarea/form shim 을 거치지 않고
+  // TUI prompt endpoint 로 직접 보낸다. 버튼 위치가 터미널 외부로 이동해도 동일 경로.
   var quickBar = document.getElementById('quick-prompts');
   if (quickBar) {
+    quickBar.addEventListener('pointerdown', function(ev) {
+      var btn = ev.target.closest ? ev.target.closest('.qp-btn') : null;
+      if (btn && !btn.disabled) ev.preventDefault();
+    });
     quickBar.addEventListener('click', function(ev) {
       var btn = ev.target.closest ? ev.target.closest('.qp-btn') : null;
-      if (!btn || btn.disabled || input.disabled) return;
-      input.value = btn.getAttribute('data-prompt') || '';
-      if (typeof form.requestSubmit === 'function') form.requestSubmit();
-      else form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+      if (!btn || btn.disabled) return;
+      ev.preventDefault();
+      var text = String(btn.getAttribute('data-prompt') || '').trim();
+      if (!text) return;
+      sendPromptTextToConsoleTui(text, { focusTerminal: false });
     });
   }
 
@@ -3747,6 +4720,7 @@ ${renderBuildHistoryChart(builds, artifactsByBuild, lang)}
         playFlashOk: String? = null,
         playFlashErr: String? = null,
         testFlightPrecheck: com.siamakerlab.vibecoder.server.publish.TestFlightPublishService.Precheck? = null,
+        testFlightUploads: List<com.siamakerlab.vibecoder.shared.dto.TestFlightUploadJobDto> = emptyList(),
         tfFlashOk: String? = null,
         tfFlashErr: String? = null,
         signerInspection: com.siamakerlab.vibecoder.server.artifacts.ApkSignerInspector.Inspection? = null,
@@ -3774,7 +4748,19 @@ ${renderBuildHistoryChart(builds, artifactsByBuild, lang)}
             """<p class="dim">${esc(t("build.detail.apkPending"))}</p>"""
         }
         val errorHtml = if (b.errorMessage != null) {
-            """<div class="error">${esc(b.errorMessage)}</div>"""
+            val kind = b.failureKind?.takeIf { it.isNotBlank() }?.let {
+                """<div class="dim" style="font-size:12px;margin-bottom:4px">failureKind: <code>${esc(it)}</code></div>"""
+            } ?: ""
+            """<div class="error">$kind${esc(b.errorMessage)}</div>"""
+        } else ""
+        val iosFailurePromptHtml = if (b.status.name == "FAILED" && b.variant.startsWith("ios-") && b.errorMessage != null) {
+            """
+            <form method="post" action="/projects/${esc(p.id)}/builds/${esc(b.id)}/ios-fix-prompt" style="margin-top:10px">
+              ${CsrfTokens.hiddenInput(csrf)}
+              <button type="submit" class="chip">${esc(t("build.detail.iosFixPrompt"))}</button>
+              <span class="dim" style="font-size:13px;margin-left:8px">${esc(t("build.detail.iosFixPromptHint"))}</span>
+            </form>
+            """.trimIndent()
         } else ""
 
         val isTerminal = b.status.name in setOf("SUCCESS", "FAILED", "CANCELED", "TIMEOUT")
@@ -3824,7 +4810,8 @@ ${renderBuildHistoryChart(builds, artifactsByBuild, lang)}
     ${b.gitBranch?.let { """<dt class="dim">${esc(t("build.detail.gitBranch"))}</dt><dd><code>${esc(it)}</code></dd>""" } ?: ""}
     ${b.gitSha?.let { """<dt class="dim">${esc(t("build.detail.gitSha"))}</dt><dd><code title="${esc(it)}">${esc(it.take(12))}</code></dd>""" } ?: ""}
   </dl>
-  $errorHtml
+      $errorHtml
+      $iosFailurePromptHtml
 </div>
 
 <div class="card" style="margin-bottom:16px">
@@ -3836,10 +4823,8 @@ ${renderBuildHistoryChart(builds, artifactsByBuild, lang)}
 ${renderBuildComparison(comparison, lang, p.id, b.id)}
 
 ${renderPlayUploadCard(p, b, playPrecheck, playFlashOk, playFlashErr, csrf, lang)}
-<!-- v1.7.21 — TestFlight 카드 렌더 제거. vibe-coder-server 는 Android 전용 도구
-     (CLAUDE.md §1) — iOS 빌드 미지원이라 사용자에 노이즈. POST 라우트는 그대로
-     남겨 둠 (API 호환). 다시 켜려면 아래 라인 복원:
-     ${'$'}{renderTestFlightUploadCard(p, b, testFlightPrecheck, tfFlashOk, tfFlashErr, csrf, lang)} -->
+${renderTestFlightUploadCard(p, b, testFlightPrecheck, tfFlashOk, tfFlashErr, csrf, lang)}
+${renderTestFlightUploadHistory(testFlightUploads, lang)}
 
 
 <div class="card">
@@ -4411,6 +5396,7 @@ $toolbar
 <script src="/static/vendor/codemirror/mode/css.js"></script>
 <script src="/static/vendor/codemirror/mode/htmlmixed.js"></script>
 <script src="/static/vendor/codemirror/mode/dockerfile.js"></script>
+<script src="/static/vendor/codemirror/mode/swift.js"></script>
 <script>
 (function() {
   var ta = document.getElementById('file-content');
@@ -4518,6 +5504,19 @@ $bodyHtml
     private fun parentOf(relPath: String): String =
         relPath.substringBeforeLast('/', missingDelimiterValue = "")
 
+    private fun fallbackUiCapabilities(projectType: String): PlatformUiCapabilities = when (projectType) {
+        "flutter" -> PlatformUiCapabilities(projectType, "Flutter", "#02569B", showPlayStoreLink = true)
+        "iphone" -> PlatformUiCapabilities(
+            projectType = projectType,
+            displayName = "iPhone",
+            badgeColor = "#111827",
+            showIosBuildSettings = true,
+            showIosSimulator = true,
+            showIPhoneQuickPrompts = true,
+        )
+        else -> PlatformUiCapabilities(projectType, "Kotlin", "#7F52FF", showPlayStoreLink = true)
+    }
+
     private fun String.encodeUrl(): String =
         java.net.URLEncoder.encode(this, Charsets.UTF_8).replace("+", "%20")
 
@@ -4551,6 +5550,7 @@ $bodyHtml
         return when {
             mime == "text/x-kotlin" || ext == "kt" || ext == "kts" -> "text/x-kotlin"
             mime == "text/x-gradle" || ext == "gradle" -> "text/x-kotlin"
+            mime == "text/x-swift" || ext == "swift" -> "text/x-swift"
             mime == "text/x-java" || ext == "java" -> "text/x-java"
             ext == "c" || ext == "cpp" || ext == "h" || ext == "hpp" -> "text/x-c++src"
             ext == "cs" -> "text/x-csharp"

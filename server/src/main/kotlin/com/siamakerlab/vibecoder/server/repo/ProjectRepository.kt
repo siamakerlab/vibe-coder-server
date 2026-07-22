@@ -148,6 +148,7 @@ class ProjectRepository(private val clock: Clock) {
         com.siamakerlab.vibecoder.server.db.BuildSchedules.update({ com.siamakerlab.vibecoder.server.db.BuildSchedules.projectId eq oldId }) { it[com.siamakerlab.vibecoder.server.db.BuildSchedules.projectId] = newId }
         com.siamakerlab.vibecoder.server.db.BuildWebhookSecrets.update({ com.siamakerlab.vibecoder.server.db.BuildWebhookSecrets.projectId eq oldId }) { it[com.siamakerlab.vibecoder.server.db.BuildWebhookSecrets.projectId] = newId }
         com.siamakerlab.vibecoder.server.db.PromptAutomationRuns.update({ com.siamakerlab.vibecoder.server.db.PromptAutomationRuns.projectId eq oldId }) { it[com.siamakerlab.vibecoder.server.db.PromptAutomationRuns.projectId] = newId }
+        com.siamakerlab.vibecoder.server.db.TestFlightUploadJobs.update({ com.siamakerlab.vibecoder.server.db.TestFlightUploadJobs.projectId eq oldId }) { it[com.siamakerlab.vibecoder.server.db.TestFlightUploadJobs.projectId] = newId }
         com.siamakerlab.vibecoder.server.db.NotificationEvents.update({ com.siamakerlab.vibecoder.server.db.NotificationEvents.projectId eq oldId }) { it[com.siamakerlab.vibecoder.server.db.NotificationEvents.projectId] = newId }
         // v1.71.0 (정밀점검 C1) — project_acls 는 RESTRICT FK. 미repoint 시 아래 옛 PK DELETE 가
         // FK 위반으로 throw → 트랜잭션 abort. (멀티유저 제거로 보통 0행이나 업그레이드 DB 대비.)

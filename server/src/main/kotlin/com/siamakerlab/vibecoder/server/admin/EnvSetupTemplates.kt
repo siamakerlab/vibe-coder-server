@@ -153,15 +153,16 @@ docker compose up -d --force-recreate</pre>
      * (doctorCmd == null) 은 partition 으로 별도 섹션 처리되므로 여기선 9 로 후순위.
      */
     private fun priorityRank(c: SetupComponent): Int = when (c) {
-        SetupComponent.CLAUDE_AUTH -> 0      // 인증 — 이게 없으면 아무것도 안 됨
-        SetupComponent.ANDROID_SDK -> 1
-        SetupComponent.GRADLE -> 2
-        SetupComponent.FLUTTER -> 3          // v1.124.0 — Flutter (Android 전용); SDK/Gradle 위에서 동작
-        SetupComponent.PLATFORM_TOOLS -> 4
-        SetupComponent.ANDROID_EMULATOR -> 5
-        SetupComponent.MCP_DEFAULTS -> 6
-        SetupComponent.CODEX -> 7            // v1.145.0 — Codex CLI (옵션 도구)
-        SetupComponent.SSH_SERVER -> 8        // 원격 접속은 선택 기능 — 명시 설치만
+        SetupComponent.CLAUDE_AUTH -> 0      // Provider auth: Claude
+        SetupComponent.CODEX -> 1            // Provider auth: Codex
+        SetupComponent.OPENCODE -> 2         // Provider auth: OpenCode
+        SetupComponent.ANDROID_SDK -> 3
+        SetupComponent.GRADLE -> 4
+        SetupComponent.FLUTTER -> 5          // v1.124.0 — Flutter (Android 전용); SDK/Gradle 위에서 동작
+        SetupComponent.PLATFORM_TOOLS -> 6
+        SetupComponent.ANDROID_EMULATOR -> 7
+        SetupComponent.MCP_DEFAULTS -> 8
+        SetupComponent.SSH_SERVER -> 9        // 원격 접속은 선택 기능 — 명시 설치만
         else -> 9                            // built-in (JDK/Git/Node/Claude CLI)
     }
 
@@ -322,13 +323,8 @@ git config --global user.email "&lt;email&gt;"
                 if (status == ComponentStatus.INSTALLED) ""
                 else """<p class="hint" style="margin-top:8px">${esc(t("env.action.builtinFail"))}</p>"""
 
-            // Claude 로그인 — 세 가지 경로 제공.
-            //  1) 터미널에서 직접 `claude login` (가장 표준).
-            //  2) 다른 머신에서 받은 .credentials.json 업로드 (web-only 환경 대응).
-            //  3) ANTHROPIC_API_KEY 등록 (OAuth 미사용 / API 키 사용자).
-            // v0.7.0 — terminal 접근 불가능한 운영 환경 (외부 호스팅 / 모바일) 에서도
-            // 100% 웹으로 인증 완료 가능. raw-shell UI 미사용 (CLAUDE.md §3 정책 준수).
-            SetupComponent.CLAUDE_AUTH -> renderClaudeAuthActions(status, csrf, lang)
+            // Claude 로그인 — 빌드환경에서는 웹 OAuth 한 경로만 노출.
+            SetupComponent.CLAUDE_AUTH -> renderClaudeAuthActions(status, lang)
 
             // Android SDK — 원클릭 설치 + 진행 페이지.
             SetupComponent.ANDROID_SDK -> {
@@ -419,10 +415,7 @@ git config --global user.email "&lt;email&gt;"
                 </form>
                 ${renderCodexLoginAction(status, csrf, lang)}
                 <p class="hint" style="margin-top:8px;font-size:12px">${esc(t("env.action.codexNote"))}</p>
-                <details style="margin-top:8px"><summary class="dim" style="cursor:pointer;font-size:12px">${esc(t("env.action.cliHint"))}</summary>
-                  <pre class="diff-block" style="margin-top:6px">docker exec -it vibe-coder-server vibe-doctor codex
-docker exec -it vibe-coder-server codex login --device-auth</pre>
-                </details>"""
+                """
             }
 
             // v1.156.0 — opencode CLI (z.ai coding plan). 설치 버튼 + API key 입력(auth.json).
@@ -438,10 +431,7 @@ docker exec -it vibe-coder-server codex login --device-auth</pre>
                   <button type="submit" class="primary" style="width:auto;padding:8px 16px">${esc(label)}</button>
                 </form>
                 ${renderOpenCodeLoginAction(status, csrf, lang)}
-                <details style="margin-top:8px"><summary class="dim" style="cursor:pointer;font-size:12px">${esc(t("env.action.cliHint"))}</summary>
-                  <pre class="diff-block" style="margin-top:6px">docker exec -it vibe-coder-server vibe-doctor opencode
-docker exec -it --user vibe vibe-coder-server opencode providers login</pre>
-                </details>"""
+                <p class="hint" style="margin-top:8px;font-size:12px">${esc(t("env.action.opencodeNote"))}</p>"""
             }
 
             SetupComponent.SSH_SERVER -> renderSshServerAction(status, csrf, lang, sshPort, sshCard)
@@ -568,37 +558,13 @@ ssh -p $port vibe@${host}</pre>
         val t = { key: String -> Messages.t(lang, key) }
         return if (status == ComponentStatus.INSTALLED) {
             """
-            <form method="post" action="/env-setup/codex-login/start" style="margin-top:8px"
+            <form method="post" action="/env-setup/codex-login/start"
+                    style="margin-top:10px;padding:10px;border:1px solid var(--border);border-radius:6px;background:rgba(94,158,255,0.06)"
                     onsubmit="return confirm(${jsLit(t("env.action.codexLoginConfirm"))})">
               ${CsrfTokens.hiddenInput(csrf)}
-              <button type="submit" class="chip chip-action" style="padding:8px 16px">${esc(t("env.action.codexLogin"))}</button>
+              <div style="font-size:13px;font-weight:600;margin-bottom:6px">${esc(t("env.action.codexLogin"))}</div>
+              <button type="submit" class="primary" style="width:auto;padding:8px 16px">${esc(t("env.action.codexLogin"))}</button>
             </form>
-            <details style="margin-top:8px">
-              <summary class="dim" style="cursor:pointer;font-size:12px">${esc(t("env.action.codexAccessTokenTitle"))}</summary>
-              <p class="hint" style="margin:6px 0 8px">${esc(t("env.action.codexAccessTokenDesc"))}</p>
-              <form method="post" action="/env-setup/codex-auth/access-token"
-                    style="display:flex;flex-direction:column;gap:8px"
-                    onsubmit="return confirm(${jsLit(t("env.action.codexAccessTokenConfirm"))})">
-                ${CsrfTokens.hiddenInput(csrf)}
-                <input type="password" name="accessToken" placeholder="codex access token" required
-                       autocomplete="off" spellcheck="false"
-                       style="font-size:13px;padding:6px 8px">
-                <button type="submit" class="primary" style="width:auto;padding:8px 16px;align-self:flex-start">${esc(t("env.action.codexAccessTokenBtn"))}</button>
-              </form>
-            </details>
-            <details style="margin-top:8px">
-              <summary class="dim" style="cursor:pointer;font-size:12px">${esc(t("env.action.codexApiKeyTitle"))}</summary>
-              <p class="hint" style="margin:6px 0 8px">${esc(t("env.action.codexApiKeyDesc"))}</p>
-              <form method="post" action="/env-setup/codex-auth/api-key"
-                    style="display:flex;flex-direction:column;gap:8px"
-                    onsubmit="return confirm(${jsLit(t("env.action.codexApiKeyConfirm"))})">
-                ${CsrfTokens.hiddenInput(csrf)}
-                <input type="password" name="apiKey" placeholder="sk-..." required minlength="20"
-                       autocomplete="off" spellcheck="false"
-                       style="font-size:13px;padding:6px 8px">
-                <button type="submit" class="primary" style="width:auto;padding:8px 16px;align-self:flex-start">${esc(t("env.action.codexApiKeyBtn"))}</button>
-              </form>
-            </details>
             """
         } else {
             """<p class="hint" style="margin-top:8px;font-size:12px">${esc(t("env.action.codexLoginInstallFirst"))}</p>"""
@@ -615,8 +581,8 @@ ssh -p $port vibe@${host}</pre>
         val t = { key: String -> Messages.t(lang, key) }
         return if (status == ComponentStatus.INSTALLED) {
             """
-            <details style="margin-top:8px" open>
-              <summary class="dim" style="cursor:pointer;font-size:12px">${esc(t("env.action.opencodeApiKeyTitle"))}</summary>
+            <div style="margin-top:10px;padding:10px;border:1px solid var(--border);border-radius:6px;background:rgba(94,158,255,0.06)">
+              <div style="font-size:13px;font-weight:600;margin-bottom:6px">${esc(t("env.action.opencodeApiKeyTitle"))}</div>
               <p class="hint" style="margin:6px 0 8px">${esc(t("env.action.opencodeApiKeyDesc"))}</p>
               <form method="post" action="/env-setup/opencode-auth/api-key"
                     style="display:flex;flex-direction:column;gap:8px"
@@ -627,7 +593,7 @@ ssh -p $port vibe@${host}</pre>
                        style="font-size:13px;padding:6px 8px">
                 <button type="submit" class="primary" style="width:auto;padding:8px 16px;align-self:flex-start">${esc(t("env.action.opencodeApiKeyBtn"))}</button>
               </form>
-            </details>
+            </div>
             """
         } else {
             """<p class="hint" style="margin-top:8px;font-size:12px">${esc(t("env.action.opencodeLoginInstallFirst"))}</p>"""
@@ -635,7 +601,7 @@ ssh -p $port vibe@${host}</pre>
     }
 
     // ────────────────────────────────────────────────────────────────────
-    // v0.7.0 — Claude 로그인 카드 (3-옵션 + flash blurb)
+    // v0.7.0 — Claude 로그인 카드 (TUI-only 운영에서는 웹 OAuth 한 경로만 노출)
     // ────────────────────────────────────────────────────────────────────
 
     /** /env-setup?claude=<...> redirect 후 표시되는 한 줄 알림. */
@@ -653,7 +619,7 @@ ssh -p $port vibe@${host}</pre>
         """<div class="card" style="margin-bottom:12px;background:rgba(105,219,124,0.08);border-color:var(--$cls)">
         <p style="margin:0;color:var(--$cls)">${esc(text)}</p></div>"""
 
-    private fun renderClaudeAuthActions(status: ComponentStatus, csrf: String?, lang: String): String {
+    private fun renderClaudeAuthActions(status: ComponentStatus, lang: String): String {
         val t = { key: String -> Messages.t(lang, key) }
         val statusHint = when (status) {
             ComponentStatus.INSTALLED -> """<p class="hint" style="margin-top:8px">${esc(t("env.auth.installed.hint"))}</p>"""
@@ -662,50 +628,11 @@ ssh -p $port vibe@${host}</pre>
         return """
 $statusHint
 
-<div style="margin-top:10px;padding:10px;border:1px solid var(--ok);border-radius:6px;background:rgba(105,219,124,0.06)">
-  <strong style="color:var(--ok)">${esc(t("env.auth.opt0.title"))}</strong>
+<div style="margin-top:10px;padding:10px;border:1px solid var(--border);border-radius:6px;background:rgba(94,158,255,0.06)">
+  <strong>${esc(t("env.auth.opt0.title"))}</strong>
   <p class="hint" style="margin:6px 0 8px">${esc(t("env.auth.opt0.desc"))}</p>
   <a href="/env-setup/claude-login" class="primary chip" style="padding:8px 16px;display:inline-block">${esc(t("env.auth.opt0.btn"))}</a>
 </div>
-
-<details style="margin-top:10px"><summary class="dim" style="cursor:pointer;font-size:13px">${esc(t("env.auth.opt1.title"))}</summary>
-  <pre class="diff-block" style="margin-top:6px">docker exec -it --user vibe vibe-coder-server claude login</pre>
-  <p class="hint">${esc(t("env.auth.opt1.hint"))}</p>
-</details>
-
-<details style="margin-top:10px" ${if (status != ComponentStatus.INSTALLED) "open" else ""}>
-  <summary class="dim" style="cursor:pointer;font-size:13px">${t("env.auth.opt2.title")}</summary>
-  <p class="hint" style="margin-top:6px">${t("env.auth.opt2.desc")}</p>
-  <!-- multipart 라 _csrf 를 query string 으로 전달 -->
-  <form method="post" action="/env-setup/claude-auth/upload?_csrf=${esc(csrf)}" enctype="multipart/form-data"
-        style="margin-top:8px;display:flex;flex-direction:column;gap:8px"
-        onsubmit="return confirm(${jsLit(t("env.auth.opt2.confirm"))})">
-    <input type="file" name="credentials" accept=".json,application/json" required
-           style="font-size:13px">
-    <button type="submit" class="primary" style="width:auto;padding:8px 16px;align-self:flex-start">${esc(t("env.auth.opt2.btn"))}</button>
-  </form>
-  <p class="hint" style="font-size:11px;margin-top:6px">${esc(t("env.auth.opt2.warn"))}</p>
-</details>
-
-<details style="margin-top:10px">
-  <summary class="dim" style="cursor:pointer;font-size:13px">${t("env.auth.opt3.title")}</summary>
-  <p class="hint" style="margin-top:6px">${t("env.auth.opt3.desc")}</p>
-  <form method="post" action="/env-setup/claude-auth/api-key"
-        style="margin-top:8px;display:flex;flex-direction:column;gap:8px"
-        onsubmit="return confirm(${jsLit(t("env.auth.opt3.confirm"))})">
-    ${CsrfTokens.hiddenInput(csrf)}
-    <input type="password" name="apiKey" placeholder="sk-ant-..." required minlength="20" autocomplete="off"
-           style="font-size:13px;padding:6px 8px">
-    <button type="submit" class="primary" style="width:auto;padding:8px 16px;align-self:flex-start">${esc(t("env.auth.opt3.btn"))}</button>
-  </form>
-  <form method="post" action="/env-setup/claude-auth/api-key/delete"
-        style="margin-top:6px"
-        onsubmit="return confirm(${jsLit(t("env.auth.opt3.deleteConfirm"))})">
-    ${CsrfTokens.hiddenInput(csrf)}
-    <button type="submit" style="width:auto;padding:6px 12px;font-size:12px">${esc(t("env.auth.opt3.deleteBtn"))}</button>
-  </form>
-  <p class="hint" style="font-size:11px;margin-top:6px">${esc(t("env.auth.opt3.warn"))}</p>
-</details>
 """
     }
 

@@ -25,6 +25,8 @@ data class ConsoleSettingsDto(
     val autoCompact: Boolean,
     /** MCP 최소화(전역 MCP 무시 → 캐시 프리픽스 축소). */
     val mcpStrict: Boolean,
+    /** TUI-only console marker. v1.162.5+ server always returns true. */
+    val tuiMode: Boolean = true,
     /** 선택 가능한 모델 목록(첫 항목은 보통 CLI 기본). */
     val availableModels: List<ConsoleModelOptionDto>,
 )

@@ -82,7 +82,7 @@ fun Routing.symbolRoutes(
 
         val rows = if (q.isEmpty()) {
             """<tr><td colspan="3" class="dim" style="padding:14px;text-align:center">
-              검색어를 입력하세요. 예: <code>onCreate</code>, <code>MainActivity</code>, <code>userPrompt</code>
+              검색어를 입력하세요. 예: <code>onCreate</code>, <code>MainActivity</code>, <code>ContentView</code>
             </td></tr>"""
         } else if (hits.isEmpty()) {
             """<tr><td colspan="3" class="dim" style="padding:14px;text-align:center">
@@ -107,9 +107,11 @@ fun Routing.symbolRoutes(
 
 <div class="card" style="margin-bottom:14px">
   <p style="margin:0 0 6px"><strong>Best-effort regex 기반 정의 검색.</strong>
-    Kotlin / Java 의 <code>fun</code> / <code>class</code> / <code>object</code> /
-    <code>interface</code> / <code>val</code> / <code>var</code> / <code>typealias</code>
-    선언을 잡습니다. 90% 케이스 충분 — false positive 가능 (nested 동명 등).</p>
+    Kotlin / Java / Swift 의 <code>fun</code> / <code>func</code> / <code>class</code> /
+    <code>struct</code> / <code>protocol</code> / <code>enum</code> / <code>object</code> /
+    <code>interface</code> / <code>val</code> / <code>var</code> / <code>typealias</code> /
+    SwiftUI <code>View</code> 선언을 잡습니다. 90% 케이스 충분 — false positive 가능
+    (nested 동명 등).</p>
   <p class="dim" style="margin:0;font-size:12px">
     LSP 통합은 cold start / 메모리 부담이 큰 단독 작업으로 별도 phase 보류. 일반
     워크플로엔 이 방식이 빠르고 충분.
@@ -118,7 +120,7 @@ fun Routing.symbolRoutes(
 
 <form method="get" action="/projects/${esc(p.id)}/symbols" class="card" style="margin-bottom:14px;display:flex;gap:8px;align-items:end">
   <label style="flex:1;margin:0">심볼 이름
-    <input type="text" name="q" value="${esc(q)}" placeholder="onCreate, MainActivity, userPrompt"
+    <input type="text" name="q" value="${esc(q)}" placeholder="onCreate, MainActivity, ContentView"
            autofocus required pattern="[A-Za-z_][A-Za-z0-9_]*" maxlength="80"
            style="width:100%;font-family:ui-monospace,Menlo,monospace">
   </label>

@@ -25,6 +25,10 @@ class GradleToolchain(private val builder: GradleBuilder) : BuildToolchain {
             BuildVariant.DEBUG -> debugTask
             BuildVariant.RELEASE -> releaseTaskFor(debugTask)
             BuildVariant.BUNDLE -> "bundleRelease"
+            BuildVariant.IOS_BUILD_DEBUG,
+            BuildVariant.IOS_TEST,
+            BuildVariant.IOS_ARCHIVE,
+            BuildVariant.IOS_EXPORT_IPA -> throw IllegalArgumentException("iOS variant ${variant.wire} cannot run on GradleToolchain")
         }
         return builder.runAssembleDebug(
             source = source,
@@ -41,6 +45,10 @@ class GradleToolchain(private val builder: GradleBuilder) : BuildToolchain {
             BuildVariant.DEBUG -> ApkFinder.findLatestDebug(source, moduleName)
             BuildVariant.RELEASE -> ApkFinder.findLatestReleaseApk(source, moduleName)
             BuildVariant.BUNDLE -> ApkFinder.findLatestReleaseBundle(source, moduleName)
+            BuildVariant.IOS_BUILD_DEBUG,
+            BuildVariant.IOS_TEST,
+            BuildVariant.IOS_ARCHIVE,
+            BuildVariant.IOS_EXPORT_IPA -> null
         }
 
     /** debugTask 로부터 release assemble task 추정 (assembleDebug → assembleRelease).

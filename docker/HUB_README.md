@@ -36,8 +36,8 @@ have stale bugs — please open a GitHub issue and they'll be fixed quickly.
 - **Wiki (Android client guide, REST API, MCP catalog)**:
   <https://github.com/siamakerlab/vibe-coder-server/wiki>
 - **Issues**: <https://github.com/siamakerlab/vibe-coder-server/issues>
-- **Architectures**: `linux/amd64` (multi-arch builds reserved for milestones).
-- **Latest tags**: `1.160.1`, `latest`
+- **Architectures**: `linux/amd64`, `linux/arm64` (Apple Silicon/M-series Mac supported).
+- **Latest tags**: `1.162.5`, `latest`
 - **Base OS**: Ubuntu 26.04 LTS (Resolute Raccoon) since v0.38.0
 - **Image size**: ~750 MB (Android SDK / Gradle / MCP packages live in
   bind-mounted volumes — see below). v0.14.0+ runs alongside a small
@@ -70,7 +70,7 @@ docker compose up -d            # boots postgres + vibe-coder-server
 > [CHANGELOG.md](https://github.com/siamakerlab/vibe-coder-server/blob/main/CHANGELOG.md)
 > for the exact steps.
 
-## What's in the box (v1.160.1)
+## What's in the box (v1.162.5)
 
 **Claude orchestration**
 - One persistent Claude Code child per project — stream-json IO, live console
@@ -83,9 +83,8 @@ docker compose up -d            # boots postgres + vibe-coder-server
   multi-agent **sub-agent pool** with per-agent consoles.
 - **Prompt automation** (repeat / sequence autopilot) + **one-shot scheduled
   prompts** (fire at a set time or when the Claude quota resets).
-- **Concurrency & memory guards** — concurrent-turn cap (default 3) and
-  resident-session cap (default 3, LRU pause + resume); queued prompts don't
-  spawn Claude processes while waiting.
+- **Resource guard** — cgroup-aware memory policy blocks new AI/build work
+  under pressure and closes disconnected idle TUI sessions before OOM.
 - **Multi-provider console** — per-project provider selection across Claude,
   Codex, and OpenCode/GLM, with isolated model settings and sidebar quota
   pills for Claude, Codex, OpenCode, and direct z.ai coding-plan usage.
@@ -162,7 +161,7 @@ docker compose up -d            # boots postgres + vibe-coder-server
 
 | Variable | Default | Description |
 |---|---|---|
-| `VIBECODER_IMAGE` | `siamakerlab/vibe-coder-server:latest` | Image tag to pull (pin to a specific version such as `1.160.1` for reproducibility) |
+| `VIBECODER_IMAGE` | `siamakerlab/vibe-coder-server:latest` | Image tag to pull (pin to a specific version such as `1.162.5` for reproducibility). Version tags and `latest` are amd64+arm64 multi-arch |
 | `VIBECODER_POSTGRES_IMAGE` | `postgres:17-alpine` | PG sidecar image (v0.14.0+) |
 | **`VIBECODER_DB_PASSWORD`** | (required) | **Must be set.** compose refuses to start with empty value |
 | `VIBECODER_DB_HOST` | `postgres` | DB host. Use `host:port` for an external PG |
@@ -176,8 +175,17 @@ docker compose up -d            # boots postgres + vibe-coder-server
 | `VIBECODER_ADMIN_USERNAME` | (unset) | Auto-create admin on first boot |
 | `VIBECODER_ADMIN_PASSWORD` | (unset) | Pair with above. Change via `/password` immediately |
 | `JAVA_OPTS` | `-Xmx2g …` | JVM heap — tune to host RAM |
+| `VIBECODER_SERVER_MEMORY_LIMIT` | `8g` | Server container cgroup hard memory limit; prevents AI/build child processes from exhausting the host |
+| `VIBECODER_POSTGRES_MEMORY_LIMIT` | `1g` | PostgreSQL container cgroup hard memory limit |
+| `VIBECODER_RESOURCE_MEMORY_SOFT_PERCENT` / `_HARD_PERCENT` | `88` / `96` | In-app resource guard thresholds: soft reaps idle TUI sessions, hard blocks new AI/build work |
+| `VIBECODER_CONSOLE_TUI_IDLE_TIMEOUT_MINUTES` | `120` | Grace period before disconnected project console TUI sessions are reaped. `0` = unlimited |
+| `VIBECODER_IOS_AGENT_ENABLED` | `false` | Enable iPhone/Xcode macOS agent support |
+| `VIBECODER_IOS_AGENT_MODE` | `local` | `local` = MacBook local install, `ssh` = remote macOS agent |
+| `VIBECODER_IOS_AGENT_HOST` / `_PORT` / `_USER` | empty / `22` / empty | SSH macOS agent connection settings |
+| `VIBECODER_IOS_AGENT_WORKSPACE_ROOT` | empty | Workspace root on the remote macOS agent |
+| `VIBECODER_IOS_AGENT_XCODE_PATH` | `auto` | Xcode developer path override. Default uses `xcode-select` |
 
-### AI providers (v1.160.1)
+### AI providers (v1.162.5)
 
 The server ships three first-class agent providers, selectable per-project from the console:
 
@@ -268,7 +276,7 @@ container (UID 70 in alpine images). On the host you may need `sudo` to read
 files directly. Either use `tar` with sudo, or do logical `pg_dump` against
 the running container.
 
-## Web UI routes (v1.160.1)
+## Web UI routes (v1.162.5)
 
 All routes sit at the root (no `/admin/*` prefix). Bearer token or session
 cookie required except `/setup`, `/login`, `/health`.
@@ -291,7 +299,7 @@ cookie required except `/setup`, `/login`, `/health`.
 Full route table: [GitHub README](https://github.com/siamakerlab/vibe-coder-server#web-routes).
 
 
-## JSON API (v1.160.1 — for clients)
+## JSON API (v1.162.5 — for clients)
 
 Full reference + curl examples in the
 [REST API Reference](https://github.com/siamakerlab/vibe-coder-server/wiki/REST-API-Reference)
@@ -381,16 +389,16 @@ Full model: <https://github.com/siamakerlab/vibe-coder-server/wiki/Security-Mode
 ## Build instructions (maintainer)
 
 ```bash
-# Regular development push — slim (amd64-only, fast 2-3 min)
-docker buildx build --platform linux/amd64 \
+# Regular development push — slim multi-arch (amd64 + arm64)
+docker buildx build --platform linux/amd64,linux/arm64 \
     -f docker/Dockerfile \
     -t siamakerlab/vibe-coder-server:<ver> \
     -t siamakerlab/vibe-coder-server:latest \
     --push .
 
-
-# Milestone multi-arch slim (slow 10-15 min via arm64 emulation)
-docker buildx build --platform linux/amd64,linux/arm64 ...
+# One-time setup on x86_64 builders if linux/arm64 is missing
+docker run --privileged --rm tonistiigi/binfmt --install arm64
+docker buildx inspect --bootstrap
 ```
 
 Full guide: <https://github.com/siamakerlab/vibe-coder-server/blob/main/docker/README.md>

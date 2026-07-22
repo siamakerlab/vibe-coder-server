@@ -8,8 +8,8 @@ import com.siamakerlab.vibecoder.server.admin.requireSessionOrRedirect
 import com.siamakerlab.vibecoder.server.admin.requireWriteAccessOrRedirect
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens.requireCsrf
-import com.siamakerlab.vibecoder.server.agent.AgentRouter
 import com.siamakerlab.vibecoder.server.projects.ProjectService
+import com.siamakerlab.vibecoder.server.terminal.ConsolePromptSender
 import io.ktor.http.ContentType
 import io.ktor.server.application.call
 import io.ktor.server.response.respondRedirect
@@ -38,7 +38,7 @@ fun Routing.qualityRoutes(
     projects: ProjectService,
     svc: LintQualityService,
     itestSvc: InstrumentedTestService,
-    agentRouter: AgentRouter,
+    promptSender: ConsolePromptSender,
 ) {
     get("/projects/{id}/quality") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
@@ -100,7 +100,7 @@ fun Routing.qualityRoutes(
         val moduleName = safeModule(form["module"], "app")
         val prep = runCatching { itestSvc.inspectPrep(id, moduleName) }.getOrNull()
         val prompt = buildPrepPrompt(moduleName, prep)
-        val ok = runCatching { agentRouter.sendPrompt(id, prompt) }.isSuccess
+        val ok = runCatching { promptSender.send(id, prompt, source = "quality_prepare", ownerUserId = sess.userId) }.isSuccess
         if (!ok) {
             call.respondRedirect("/projects/$id/quality?module=$moduleName&itest=1&err=${enc("콘솔 전송에 실패했습니다.")}")
             return@post
@@ -125,7 +125,7 @@ fun Routing.qualityRoutes(
         }
         val prompt = if (kind == "test") buildTestFixPrompt(moduleName, selected)
                      else buildLintFixPrompt(moduleName, selected)
-        val ok = runCatching { agentRouter.sendPrompt(id, prompt) }.isSuccess
+        val ok = runCatching { promptSender.send(id, prompt, source = "quality_fix", ownerUserId = sess.userId) }.isSuccess
         if (!ok) {
             call.respondRedirect("/projects/$id/quality?module=$moduleName&$backFlag&err=${enc("콘솔 전송에 실패했습니다.")}")
             return@post

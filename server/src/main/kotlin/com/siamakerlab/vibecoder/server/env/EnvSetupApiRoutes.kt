@@ -7,8 +7,6 @@ import com.siamakerlab.vibecoder.server.error.ApiException
 import com.siamakerlab.vibecoder.server.git.GitCloneService
 import com.siamakerlab.vibecoder.server.git.GitCredentialStore
 import com.siamakerlab.vibecoder.shared.ApiPath
-import com.siamakerlab.vibecoder.shared.dto.ClaudeApiKeyRequestDto
-import com.siamakerlab.vibecoder.shared.dto.ClaudeCredentialsUploadResponseDto
 import com.siamakerlab.vibecoder.shared.dto.ClaudeLoginStateDto
 import com.siamakerlab.vibecoder.shared.dto.ClaudeLoginSubmitRequestDto
 import com.siamakerlab.vibecoder.shared.dto.ComponentStateDto
@@ -33,7 +31,6 @@ import io.ktor.server.request.receive
 import io.ktor.server.request.receiveMultipart
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Routing
-import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.utils.io.jvm.javaio.toInputStream
@@ -43,7 +40,7 @@ private val log = KotlinLogging.logger {}
 /**
  * v0.10.0 — Admin SSR 전용이던 모든 신규 기능을 JSON API 로도 이중 노출.
  *
- * 같은 service 인스턴스 (EnvSetupService / ClaudeAuthService / ClaudeLoginService /
+ * 같은 service 인스턴스 (EnvSetupService / ClaudeLoginService /
  * McpService / GitCredentialStore / GitCloneService) 를 SSR 라우트와 공유.
  * 모든 엔드포인트는 Bearer token 인증 (`installAuth` 의 [AUTH_BEARER]) 보호.
  *
@@ -52,7 +49,6 @@ private val log = KotlinLogging.logger {}
  */
 fun Routing.envSetupApiRoutes(
     envSetup: EnvSetupService,
-    claudeAuth: ClaudeAuthService,
     claudeLogin: ClaudeLoginService,
     mcp: McpService,
     credentials: GitCredentialStore,
@@ -82,66 +78,7 @@ fun Routing.envSetupApiRoutes(
             call.respond(EnvSetupTaskDto(taskId))
         }
 
-        // ── Claude 자격증명 (옵션 B, C) ─────────────────────────
-        post(ApiPath.CLAUDE_AUTH_UPLOAD) {
-            call.requireApiAdmin()
-            val multipart = call.receiveMultipart()
-            var bytes: ByteArray? = null
-            try {
-                while (true) {
-                    val part = multipart.readPart() ?: break
-                    try {
-                        if (part is PartData.FileItem && bytes == null) {
-                            bytes = part.provider().toInputStream().use { it.readBytes() }
-                        }
-                    } finally {
-                        part.dispose()
-                    }
-                }
-            } catch (e: Throwable) {
-                throw ApiException.localized(400, "multipart", messageKey = "api.envSetup.multipartParse", args = listOf(e.message ?: ""))
-            }
-            val data = bytes ?: throw ApiException.localized(400, "empty", messageKey = "api.envSetup.emptyFile")
-            val result = claudeAuth.uploadCredentials(data)
-            // v0.64.0 — Android v0.7.x 가 `path` / `expiresAtIso: String` 을 기대.
-            // 기존 SSR/외부 콜러가 사용하는 `targetPath` / `expiresAt:Long` 은 그대로 둔 채
-            // 추가 필드로 같은 값을 emit (dual emit).
-            // B6 (21차 점검) — result.expiresAt 은 epoch **밀리초** (ClaudeAuthService 가
-            // System.currentTimeMillis() 와 직접 비교). ofEpochSecond 로 변환하면 ~1000배
-            // 미래 시각이 돼 Android 클라이언트의 만료 표시/판정이 깨졌다. EnvDiagnostics /
-            // ClaudeTokenRefresher 의 formatInstant 와 동일하게 ofEpochMilli 사용.
-            val expiresAtIso = runCatching {
-                java.time.Instant.ofEpochMilli(result.expiresAt).toString()
-            }.getOrNull()
-            call.respond(ClaudeCredentialsUploadResponseDto(
-                targetPath = result.targetPath,
-                backup = result.backup,
-                expiresAt = result.expiresAt,
-                path = result.targetPath,
-                expiresAtIso = expiresAtIso,
-            ))
-        }
-
-        post(ApiPath.CLAUDE_AUTH_API_KEY) {
-            call.requireApiAdmin()
-            val req = call.receive<ClaudeApiKeyRequestDto>()
-            claudeAuth.registerApiKey(req.apiKey)
-            call.respond(HttpStatusCode.NoContent)
-        }
-
-        // DELETE 메서드 + POST 둘 다 허용 — 모바일 SDK 호환성.
-        delete(ApiPath.CLAUDE_AUTH_API_KEY_DELETE) {
-            call.requireApiAdmin()
-            claudeAuth.deleteApiKey()
-            call.respond(HttpStatusCode.NoContent)
-        }
-        post(ApiPath.CLAUDE_AUTH_API_KEY_DELETE) {
-            call.requireApiAdmin()
-            claudeAuth.deleteApiKey()
-            call.respond(HttpStatusCode.NoContent)
-        }
-
-        // ── Claude 반자동 OAuth (옵션 A) ────────────────────────
+        // ── Claude 웹 OAuth ────────────────────────────────────
         post(ApiPath.CLAUDE_LOGIN_START) {
             call.requireApiAdmin()
             val s = claudeLogin.start()

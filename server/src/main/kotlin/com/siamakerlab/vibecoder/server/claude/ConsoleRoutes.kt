@@ -12,12 +12,15 @@ import com.siamakerlab.vibecoder.server.env.EnvDiagnostics
 import com.siamakerlab.vibecoder.server.error.ApiException
 import com.siamakerlab.vibecoder.server.core.WorkspacePath
 import com.siamakerlab.vibecoder.server.projects.ProjectService
+import com.siamakerlab.vibecoder.server.terminal.ConsoleTuiPreferenceStore
+import com.siamakerlab.vibecoder.server.terminal.ConsolePromptDispatcher
+import com.siamakerlab.vibecoder.server.terminal.ConsoleTuiSessionManager
+import com.siamakerlab.vibecoder.server.terminal.validatedConsoleTuiPromptText
 import com.siamakerlab.vibecoder.server.ws.LogHub
 import com.siamakerlab.vibecoder.shared.ApiPath
 import com.siamakerlab.vibecoder.shared.dto.BroadcastRejectDto
 import com.siamakerlab.vibecoder.shared.dto.BroadcastSendRequestDto
 import com.siamakerlab.vibecoder.shared.dto.BroadcastSendResponseDto
-import com.siamakerlab.vibecoder.shared.dto.CheckStatus
 import com.siamakerlab.vibecoder.shared.dto.PromptAcceptedDto
 import com.siamakerlab.vibecoder.shared.dto.PromptRequestDto
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -59,6 +62,9 @@ fun Routing.consoleRoutes(
     promptSuggestionService: PromptSuggestionService,
     agentRouter: AgentRouter? = null,
     modelCatalog: ModelCatalogService? = null,
+    consoleTuiManager: ConsoleTuiSessionManager? = null,
+    consolePromptDispatcher: ConsolePromptDispatcher? = null,
+    consoleTuiPrefs: ConsoleTuiPreferenceStore? = null,
 ) {
     authenticate(AUTH_BEARER) {
         post("/api/projects/{projectId}/claude/console/prompt") {
@@ -69,26 +75,27 @@ fun Routing.consoleRoutes(
             // ensure project is registered (404 path matches the rest of the codebase)
             projects.rowOrThrow(projectId)
 
-            // 인증 안 된 상태에서 자식 프로세스를 띄우면 사용자는 의미 없는 stderr 만 보게 된다.
-            // 미리 차단하고 명확한 가이드를 응답으로 돌려준다.
-            ensureAgentReady(projectId, agentRouter, envDiagnostics)
-
             val body = call.receive<PromptRequestDto>()
-            val text = body.text.trim()
-            if (text.isEmpty()) throw ApiException.localized(400, "bad_request", messageKey = "api.console.textRequired")
-            // UTF-8 byte 기준으로 통일 (sendPrompt 내부 검증과 일치). char count 검증은
-            // 한국어 등에서 한 글자가 3 byte 가 되어 의도가 어긋났다.
-            val byteSize = text.toByteArray(Charsets.UTF_8).size
-            if (byteSize > ClaudeSessionManager.MAX_PROMPT_BYTES) {
-                throw ApiException.localized(400, "prompt_too_large",
-                    messageKey = "api.console.promptTooLarge",
-                    args = listOf(ClaudeSessionManager.MAX_PROMPT_BYTES, byteSize))
-            }
-            val images = validatedImages(body)
+            val text = validatedConsoleTuiPromptText(body)
 
+            val dispatcher = consolePromptDispatcher
+                ?: throw ApiException.localized(
+                    503,
+                    "console_tui_unavailable",
+                    messageKey = "api.console.sendFailed",
+                    args = listOf("console TUI dispatcher unavailable"),
+                )
+            val device = call.requireDevice().device
             try {
-                if (agentRouter != null) agentRouter.sendPrompt(projectId, text, images = images)
-                else sessionManager.sendPrompt(projectId, text, images = images)
+                dispatcher.send(
+                    ownerUserId = device.userId,
+                    projectId = projectId,
+                    text = text,
+                    requestedProvider = call.request.queryParameters["provider"],
+                    source = "compat_console_prompt",
+                )
+            } catch (e: ApiException) {
+                throw e
             } catch (e: Exception) {
                 log.warn(e) { "[$projectId] prompt failed" }
                 throw ApiException.localized(500, "claude_send_failed",
@@ -100,16 +107,10 @@ fun Routing.consoleRoutes(
         }
 
         // v1.136.0 — 프롬프트 일괄 전송: 선택한 여러 프로젝트의 메인 콘솔에 같은 프롬프트.
-        // 즉시 202 (accepted/rejected) — 실제 전송은 비동기, 동시 turn 게이트가 순차 처리(큐).
+        // 즉시 202 (accepted/rejected) — 실제 전송은 비동기 TUI 디스패처가 처리한다.
         post(ApiPath.CLAUDE_BROADCAST) {
             call.requireApiWrite()
-            val env = envDiagnostics.run()
-            if (env.claude.status != CheckStatus.OK) {
-                throw ApiException.localized(503, "claude_cli_missing", messageKey = "api.console.claudeCliMissing")
-            }
-            if (env.claudeAuth?.status == CheckStatus.ERROR) {
-                throw ApiException.localized(503, "claude_auth_required", messageKey = "api.console.claudeAuthRequired")
-            }
+            val device = call.requireDevice().device
             val body = call.receive<BroadcastSendRequestDto>()
             val text = body.prompt.trim()
             if (text.isEmpty()) throw ApiException.localized(400, "bad_request", messageKey = "api.console.textRequired")
@@ -127,11 +128,32 @@ fun Routing.consoleRoutes(
             val rejected = mutableListOf<BroadcastRejectDto>()
             for (id in ids) {
                 val exists = !WorkspacePath.isGhostId(id) && runCatching { projects.rowOrThrow(id) }.isSuccess
-                if (exists) {
-                    accepted += id
-                    sessionManager.sendPromptAsync(id, text)
-                } else {
+                if (!exists) {
                     rejected += BroadcastRejectDto(id, "not_found")
+                    continue
+                }
+                val userId = device.userId
+                if (userId != null && !projects.canUserAccess(userId, isAdmin = true, projectId = id)) {
+                    rejected += BroadcastRejectDto(id, "project_forbidden")
+                    continue
+                }
+                if (consolePromptDispatcher != null) {
+                    runCatching {
+                        consolePromptDispatcher.send(
+                            ownerUserId = userId,
+                            projectId = id,
+                            text = text,
+                            requestedProvider = null,
+                            source = "console_tui_broadcast",
+                        )
+                    }.onSuccess {
+                        accepted += id
+                    }.onFailure { e ->
+                        log.warn(e) { "[$id] TUI broadcast prompt failed" }
+                        rejected += BroadcastRejectDto(id, e.message ?: "send_failed")
+                    }
+                } else {
+                    rejected += BroadcastRejectDto(id, "console_tui_unavailable")
                 }
             }
             log.info { "broadcast prompt → ${accepted.size} project(s) (rejected=${rejected.size}, bytes=$byteSize)" }
@@ -145,6 +167,8 @@ fun Routing.consoleRoutes(
             call.requireProjectAcl(projects, projectId)
             projects.rowOrThrow(projectId)
             if (agentRouter != null) agentRouter.startNew(projectId) else sessionManager.startNew(projectId)
+            val device = call.requireDevice().device
+            consoleTuiManager?.startNewProject(device.userId, projectId)
             call.respond(HttpStatusCode.Accepted)
         }
 
@@ -156,8 +180,15 @@ fun Routing.consoleRoutes(
                 ?: throw ApiException.localized(400, "bad_request", messageKey = "api.console.projectIdRequired")
             call.requireProjectAcl(projects, projectId)
             projects.rowOrThrow(projectId)
-            if (agentRouter != null) agentRouter.cancelTurn(projectId) else sessionManager.cancelTurn(projectId)
             val device = call.requireDevice().device
+            val tuiCancelled = consolePromptDispatcher?.cancel(
+                ownerUserId = device.userId,
+                projectId = projectId,
+                requestedProvider = call.request.queryParameters["provider"],
+            ) == true
+            if (!tuiCancelled) {
+                if (agentRouter != null) agentRouter.cancelTurn(projectId) else sessionManager.cancelTurn(projectId)
+            }
             audit.consoleCancel(device.userId, projectId, call.request.origin.remoteHost)
             call.respond(HttpStatusCode.Accepted)
         }
@@ -171,29 +202,33 @@ fun Routing.consoleRoutes(
             call.requireProjectAcl(projects, projectId)
             projects.rowOrThrow(projectId)
 
-            ensureAgentReady(projectId, agentRouter, envDiagnostics)
-
             val body = call.receive<PromptRequestDto>()
-            val text = body.text.trim()
-            if (text.isEmpty()) throw ApiException.localized(400, "bad_request", messageKey = "api.console.textRequired")
-            val byteSize = text.toByteArray(Charsets.UTF_8).size
-            if (byteSize > ClaudeSessionManager.MAX_PROMPT_BYTES) {
-                throw ApiException.localized(400, "prompt_too_large",
-                    messageKey = "api.console.promptTooLarge",
-                    args = listOf(ClaudeSessionManager.MAX_PROMPT_BYTES, byteSize))
-            }
-            val images = validatedImages(body)
+            val text = validatedConsoleTuiPromptText(body)
 
+            val dispatcher = consolePromptDispatcher
+                ?: throw ApiException.localized(
+                    503,
+                    "console_tui_unavailable",
+                    messageKey = "api.console.sendFailed",
+                    args = listOf("console TUI dispatcher unavailable"),
+                )
+            val device = call.requireDevice().device
             try {
-                if (agentRouter != null) agentRouter.interruptAndSend(projectId, text, images = images)
-                else sessionManager.interruptAndSend(projectId, text, images = images)
+                dispatcher.send(
+                    ownerUserId = device.userId,
+                    projectId = projectId,
+                    text = text,
+                    requestedProvider = call.request.queryParameters["provider"],
+                    source = "compat_console_interrupt",
+                    interruptFirst = true,
+                )
+            } catch (e: ApiException) {
+                throw e
             } catch (e: Exception) {
                 log.warn(e) { "[$projectId] interrupt-send failed" }
                 throw ApiException.localized(500, "claude_send_failed",
                     messageKey = "api.console.sendFailed", args = listOf(e.message ?: "unknown error"))
             }
-
-            val device = call.requireDevice().device
             audit.consoleCancel(device.userId, projectId, call.request.origin.remoteHost)
             val seq = hub.consoleCurrentSeq(LogHub.consoleTopic(projectId, selectedProvider(projectId, agentRouter).id))
             call.respond(HttpStatusCode.Accepted, PromptAcceptedDto(seq = seq))
@@ -226,7 +261,7 @@ fun Routing.consoleRoutes(
                 ?: throw ApiException.localized(400, "bad_request", messageKey = "api.console.projectIdRequired")
             call.requireProjectAcl(projects, projectId)
             projects.rowOrThrow(projectId)
-            call.respond(buildConsoleSettings(sessionManager, projectId, agentRouter, modelCatalog))
+            call.respond(buildConsoleSettings(sessionManager, projectId, agentRouter, modelCatalog, consoleTuiPrefs))
         }
         get(ApiPath.projectAgentProvider("{projectId}")) {
             val projectId = call.parameters["projectId"]
@@ -253,6 +288,7 @@ fun Routing.consoleRoutes(
             val provider = AgentProvider.parse(body["provider"])
                 ?: throw ApiException.localized(400, "bad_request", messageKey = "api.agentProvider.invalid")
             router.setProvider(projectId, provider)
+            consoleTuiManager?.closeProject(null, projectId)
             call.respond(mapOf("provider" to provider.id))
         }
         post("/api/projects/{projectId}/claude/console/model") {
@@ -265,7 +301,8 @@ fun Routing.consoleRoutes(
                 ?.trim()?.ifBlank { null }
             if (agentRouter != null) agentRouter.setProjectModelAndRestart(projectId, model)
             else sessionManager.setProjectModelAndRestart(projectId, model)
-            call.respond(buildConsoleSettings(sessionManager, projectId, agentRouter, modelCatalog))
+            consoleTuiManager?.closeProject(null, projectId)
+            call.respond(buildConsoleSettings(sessionManager, projectId, agentRouter, modelCatalog, consoleTuiPrefs))
         }
         post("/api/projects/{projectId}/claude/console/mcp-strict") {
             call.requireApiWrite()
@@ -275,7 +312,7 @@ fun Routing.consoleRoutes(
             projects.rowOrThrow(projectId)
             val enabled = call.receive<com.siamakerlab.vibecoder.shared.dto.ConsoleToggleRequestDto>().enabled
             sessionManager.setMcpStrictAndRestart(projectId, enabled)
-            call.respond(buildConsoleSettings(sessionManager, projectId, agentRouter, modelCatalog))
+            call.respond(buildConsoleSettings(sessionManager, projectId, agentRouter, modelCatalog, consoleTuiPrefs))
         }
         post("/api/projects/{projectId}/claude/console/auto-compact") {
             call.requireApiWrite()
@@ -285,39 +322,19 @@ fun Routing.consoleRoutes(
             projects.rowOrThrow(projectId)
             val enabled = call.receive<com.siamakerlab.vibecoder.shared.dto.ConsoleToggleRequestDto>().enabled
             sessionManager.setAutoCompact(projectId, enabled)
-            call.respond(buildConsoleSettings(sessionManager, projectId, agentRouter, modelCatalog))
+            call.respond(buildConsoleSettings(sessionManager, projectId, agentRouter, modelCatalog, consoleTuiPrefs))
         }
-    }
-}
-
-private fun ensureAgentReady(projectId: String, router: AgentRouter?, envDiagnostics: EnvDiagnostics) {
-    val provider = selectedProvider(projectId, router)
-    when (provider) {
-        AgentProvider.CLAUDE -> {
-            val env = envDiagnostics.run()
-            if (env.claude.status != CheckStatus.OK) {
-                throw ApiException.localized(503, "claude_cli_missing", messageKey = "api.console.claudeCliMissing")
-            }
-            if (env.claudeAuth?.status == CheckStatus.ERROR) {
-                throw ApiException.localized(503, "claude_auth_required", messageKey = "api.console.claudeAuthRequired")
-            }
-        }
-        AgentProvider.CODEX -> {
-            val ok = runCatching {
-                val cmd = System.getenv("CODEX_CMD")?.takeIf { it.isNotBlank() } ?: "codex"
-                val p = ProcessBuilder(cmd, "--version").redirectErrorStream(true).start()
-                p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS) && p.exitValue() == 0
-            }.getOrDefault(false)
-            if (!ok) throw ApiException.localized(503, "codex_cli_missing", messageKey = "api.console.sendFailed", args = listOf("codex CLI not available"))
-        }
-        AgentProvider.OPENCODE -> {
-            // v1.150.0 — Phase 2 OpenCode provider 활성화. opencode CLI 존재만 검증 (auth 는 M2.2).
-            val ok = runCatching {
-                val cmd = System.getenv("OPENCODE_CMD")?.takeIf { it.isNotBlank() } ?: "opencode"
-                val p = ProcessBuilder(cmd, "--version").redirectErrorStream(true).start()
-                p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS) && p.exitValue() == 0
-            }.getOrDefault(false)
-            if (!ok) throw ApiException.localized(503, "opencode_cli_missing", messageKey = "api.console.sendFailed", args = listOf("opencode CLI not available"))
+        post(ApiPath.consoleTuiMode("{projectId}")) {
+            call.requireApiWrite()
+            val projectId = call.parameters["projectId"]
+                ?: throw ApiException.localized(400, "bad_request", messageKey = "api.console.projectIdRequired")
+            call.requireProjectAcl(projects, projectId)
+            projects.rowOrThrow(projectId)
+            // TUI-only compatibility endpoint. Older clients may still POST enabled=false;
+            // the server keeps TUI mode enabled and returns the current settings snapshot.
+            runCatching { call.receive<com.siamakerlab.vibecoder.shared.dto.ConsoleToggleRequestDto>() }
+            consoleTuiPrefs?.setTuiMode(projectId, true)
+            call.respond(buildConsoleSettings(sessionManager, projectId, agentRouter, modelCatalog, consoleTuiPrefs))
         }
     }
 }
@@ -325,26 +342,13 @@ private fun ensureAgentReady(projectId: String, router: AgentRouter?, envDiagnos
 private fun selectedProvider(projectId: String, router: AgentRouter?): AgentProvider =
     router?.providerFor(projectId) ?: AgentProvider.CLAUDE
 
-/**
- * v1.133.0 — 프롬프트 첨부 이미지 검증. 형식/한도 위반은 400 (image_invalid) 으로 변환.
- */
-private fun validatedImages(body: PromptRequestDto): List<com.siamakerlab.vibecoder.shared.dto.PromptImageDto> {
-    val images = body.images.orEmpty()
-    try {
-        ClaudeSessionManager.validateImages(images)
-    } catch (e: IllegalArgumentException) {
-        throw ApiException.localized(400, "image_invalid",
-            messageKey = "api.console.imageInvalid", args = listOf(e.message ?: "invalid image"))
-    }
-    return images
-}
-
 /** v1.120.0 — 콘솔 설정 현재 상태 → DTO. v1.157.0 — provider별 동적 모델 catalog 반영. */
 private fun buildConsoleSettings(
     sessionManager: ClaudeSessionManager,
     projectId: String,
     agentRouter: AgentRouter?,
     modelCatalog: ModelCatalogService?,
+    consoleTuiPrefs: ConsoleTuiPreferenceStore?,
 ): com.siamakerlab.vibecoder.shared.dto.ConsoleSettingsDto =
     run {
         val provider = agentRouter?.providerFor(projectId) ?: AgentProvider.CLAUDE
@@ -357,6 +361,7 @@ private fun buildConsoleSettings(
             effectiveModel = effectiveModel,
             autoCompact = sessionManager.isAutoCompact(projectId),
             mcpStrict = sessionManager.isMcpStrict(projectId),
+            tuiMode = consoleTuiPrefs?.isTuiMode(projectId) ?: true,
             availableModels =
                 listOf(com.siamakerlab.vibecoder.shared.dto.ConsoleModelOptionDto("", "CLI default")) +
                     modelOptions.map { com.siamakerlab.vibecoder.shared.dto.ConsoleModelOptionDto(it.value, it.label) },

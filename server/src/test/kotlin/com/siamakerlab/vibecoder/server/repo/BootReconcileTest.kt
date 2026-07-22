@@ -80,6 +80,7 @@ class BootReconcileTest {
         val running = repo.get("b-running")!!
         running.status shouldBe TaskStatus.FAILED
         running.errorMessage shouldBe "orphaned_by_restart"
+        running.failureKind shouldBe "orphaned_by_restart"
         running.finishedAt shouldBe "2026-06-07T00:00:00"
 
         repo.get("b-pending")!!.status shouldBe TaskStatus.FAILED

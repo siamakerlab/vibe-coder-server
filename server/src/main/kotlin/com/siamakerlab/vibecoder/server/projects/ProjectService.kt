@@ -3,11 +3,15 @@ package com.siamakerlab.vibecoder.server.projects
 import com.siamakerlab.vibecoder.server.core.WorkspacePath
 import com.siamakerlab.vibecoder.server.error.ApiException
 import com.siamakerlab.vibecoder.server.git.GitCloneService
+import com.siamakerlab.vibecoder.server.platform.PlatformEngineRegistry
+import com.siamakerlab.vibecoder.server.platform.ProjectToolingSeeder
+import com.siamakerlab.vibecoder.server.platform.PlatformUiCapabilities
 import com.siamakerlab.vibecoder.server.repo.ArtifactRepository
 import com.siamakerlab.vibecoder.server.repo.BuildRepository
 import com.siamakerlab.vibecoder.server.repo.ProjectRepository
 import com.siamakerlab.vibecoder.server.repo.ProjectRow
 import com.siamakerlab.vibecoder.server.repo.UploadedFileRepository
+import com.siamakerlab.vibecoder.shared.dto.PlatformToolingProfileDto
 import com.siamakerlab.vibecoder.shared.dto.ProjectDto
 import com.siamakerlab.vibecoder.shared.dto.ProjectTypes
 import com.siamakerlab.vibecoder.shared.dto.RegisterProjectRequestDto
@@ -56,8 +60,11 @@ class ProjectService(
     private val promptAutomationRunRepo: com.siamakerlab.vibecoder.server.repo.PromptAutomationRunRepository? = null,
     /** v1.130.0 — 프롬프트 예약(one-shot) (Projects.id FK). delete cascade 정리용. */
     private val scheduledPromptRepo: com.siamakerlab.vibecoder.server.repo.ScheduledPromptRepository? = null,
+    /** TestFlight upload job history (Projects.id FK). */
+    private val testFlightUploadJobRepo: com.siamakerlab.vibecoder.server.repo.TestFlightUploadJobRepository? = null,
     /** v1.91.0 — 독립 메모 (Projects.id nullable FK). delete cascade 시 프로젝트 전용 메모 정리(전역 보존). */
     private val memoRepo: com.siamakerlab.vibecoder.server.repo.MemoRepository? = null,
+    private val platformEngines: PlatformEngineRegistry = PlatformEngineRegistry.default,
     /**
      * v1.1.0 — `ClaudeSessionManager.isBusy(projectId)` 콜백. ProjectDto.busy 필드 채움.
      * Construction-order 문제 회피 위해 lambda. null 이면 항상 false (테스트 / dev 환경).
@@ -158,11 +165,10 @@ class ProjectService(
                     log.debug { "[clone:${body.projectId}] $line" }
                 }
             }
-            // v1.7.0 — clone 완료 후 build.gradle.kts / AndroidManifest.xml 에서
-            // 진짜 packageName 추출 시도. 성공 시 placeholder (com.example.<projectId>)
-            // 를 덮어씀. 실패 시 placeholder 그대로 (사용자가 후속 콘솔에서 수정 가능).
+            // clone 완료 후 선택된 platform engine 이 packageName/bundleId 추출을 담당한다.
+            // 성공 시 placeholder (com.example.<projectId>) 를 덮어쓰고, 실패 시 사용자가 후속 콘솔에서 수정한다.
             if (body.packageName.startsWith("com.example.")) {
-                PackageNameDetector.detectApplicationId(srcRoot)?.let { detected ->
+                platformEngines.forType(body.projectType).detectPackageName(srcRoot)?.let { detected ->
                     log.info { "[clone:${body.projectId}] auto-detected packageName: $detected" }
                     body = body.copy(packageName = detected)
                 }
@@ -171,22 +177,23 @@ class ProjectService(
             srcRoot.createDirectories()
             log.info { "created empty project folder $srcRoot" }
         }
-        // v1.7.22 — moduleName auto-detect (clone / empty 모두). 기본값 "app" 가
-        // multi-module 프로젝트에서 빌드 실패하던 회귀 해소. clone 한 경우 settings
-        // 파싱 + com.android.application plugin 모듈 찾기. empty 신규 프로젝트는
-        // 디폴트 "app" 그대로.
-        val detectedModule = if (isClone) {
-            runCatching { PackageNameDetector.detectAppModule(srcRoot) }.getOrNull()
-        } else null
+        val projectType = ProjectTypes.normalize(body.projectType)
+        val engine = platformEngines.forType(projectType)
+        if (!isClone) {
+            val count = engine.scaffoldStarter(srcRoot, body.appName, body.packageName)
+            if (count > 0) log.info { "[${body.projectId}] ${engine.displayName} starter scaffold createdFiles=$count" }
+        }
+        // moduleName auto-detect 는 선택된 platform engine 이 담당한다. empty 신규 프로젝트는 기본값 유지.
+        val detectedModule = if (isClone) runCatching { engine.detectModuleName(srcRoot) }.getOrNull() else null
         val moduleNameFinal = detectedModule ?: DEFAULT_MODULE
         if (detectedModule != null && detectedModule != DEFAULT_MODULE) {
             log.info { "[clone:${body.projectId}] auto-detected app moduleName: $detectedModule" }
         }
-        // v1.128.0 — clone 한 repo 의 실제 타입(pubspec.yaml/gradle)과 사용자 선택이 불일치하면
-        // 확인 요구(ack 전까지 중단). clone 폴더는 보존 — ack 재제출 시 위 reuseCloned 로 재사용.
+        // clone 한 repo 의 실제 타입을 engine registry 로 감지해 사용자 선택과 불일치하면 확인 요구.
+        // clone 폴더는 보존 — ack 재제출 시 위 reuseCloned 로 재사용.
         if (isClone && !body.projectTypeAck) {
-            val detectedType = PackageNameDetector.detectProjectType(srcRoot)
-            val selected = ProjectTypes.normalize(body.projectType)
+            val detectedType = platformEngines.detectProjectType(srcRoot)
+            val selected = projectType
             if (detectedType != null && detectedType != selected) {
                 log.info { "[clone:${body.projectId}] project-type mismatch: selected=$selected detected=$detectedType" }
                 throw ApiException.localized(409, "project_type_mismatch",
@@ -208,9 +215,10 @@ class ProjectService(
                 sourceType = body.sourceType,
                 cloneUrl = body.cloneUrl,
                 cloneBranch = body.cloneBranch,
-                projectType = ProjectTypes.normalize(body.projectType),
+                projectType = projectType,
             )
-            Files.writeString(claudeMd, ClaudeMdTemplate.render(info))
+            val memory = engine.renderProjectMemory(info)
+            Files.writeString(claudeMd, memory.content)
         }
         ProjectScaffolder.ensureAgentsLink(srcRoot)
 
@@ -222,11 +230,12 @@ class ProjectService(
         if (settingsJson.notExists()) {
             Files.writeString(settingsJson, ClaudeSettingsTemplate.CONTENT)
         }
+        ProjectToolingSeeder.seedProjectDefaults(srcRoot, engine.toolingProfile())
 
         val vibeDir = workspace.vibecoderDir(body.projectId)
         val projectYml = vibeDir.resolve("project.yml")
         if (projectYml.notExists()) {
-            projectYml.writeText(buildProjectYml(body, srcRoot, keystoreSummary))
+            projectYml.writeText(buildProjectYml(body, srcRoot, moduleNameFinal, projectType, keystoreSummary))
         }
 
         val row = repo.insert(
@@ -237,7 +246,7 @@ class ProjectService(
             moduleName = moduleNameFinal,
             debugTask = DEFAULT_DEBUG_TASK,
             // v1.125.0 — 사용자 선택 타입 영속(SSOT). 알 수 없는 값은 kotlin 으로 흡수.
-            projectType = ProjectTypes.normalize(body.projectType),
+            projectType = projectType,
         )
 
         // v0.18.0 — 템플릿 starter prompt 기록. 같은 turn 에서 사용자가 콘솔로 가면
@@ -472,6 +481,30 @@ class ProjectService(
         return row.toDto(false, last?.status?.name, isBusyOf?.invoke(id) ?: false)
     }
 
+    fun toolingProfile(id: String): PlatformToolingProfileDto {
+        val row = rowOrThrow(id)
+        val profile = platformEngines.forType(row.projectType).toolingProfile()
+        return PlatformToolingProfileDto(
+            projectType = profile.projectType,
+            defaultMcp = profile.defaultMcp,
+            conditionalMcp = profile.conditionalMcp,
+            optInMcp = profile.optInMcp,
+            defaultSkills = profile.defaultSkills,
+            conditionalSkills = profile.conditionalSkills,
+            optInSkills = profile.optInSkills,
+            defaultAgents = profile.defaultAgents,
+            conditionalAgents = profile.conditionalAgents,
+            optInAgents = profile.optInAgents,
+            forbiddenTools = profile.forbiddenTools,
+        )
+    }
+
+    fun uiCapabilities(projectType: String): PlatformUiCapabilities =
+        platformEngines.forType(projectType).uiCapabilities()
+
+    fun uiCapabilitiesForProject(id: String): PlatformUiCapabilities =
+        platformEngines.forType(rowOrThrow(id).projectType).uiCapabilities()
+
     fun sourcePathOrThrow(id: String): Path {
         val row = repo.findById(id) ?: throw ApiException.localized(404, "project_not_found", messageKey = "api.project.notFound", args = listOf(id))
         return Path.of(row.sourcePath)
@@ -504,6 +537,7 @@ class ProjectService(
             buildWebhookSecretRepo?.deleteForProject(id)
             promptAutomationRunRepo?.deleteForProject(id)
             scheduledPromptRepo?.deleteForProject(id)
+            testFlightUploadJobRepo?.deleteForProject(id)
             // v1.91.0 — 프로젝트 전용 메모만 정리. 전역 메모(projectId NULL)는 보존.
             memoRepo?.deleteForProject(id)
             projectAclRepo?.deleteAllForProject(id)
@@ -618,6 +652,8 @@ class ProjectService(
     private fun buildProjectYml(
         req: RegisterProjectRequestDto,
         absSource: Path,
+        moduleName: String,
+        projectType: String,
         keystoreSummary: String?,
     ): String = """
         |# Vibe Coder project metadata
@@ -625,8 +661,9 @@ class ProjectService(
         |appName: ${req.appName}
         |packageName: ${req.packageName}
         |sourcePath: $absSource
-        |moduleName: $DEFAULT_MODULE
+        |moduleName: $moduleName
         |debugTask: $DEFAULT_DEBUG_TASK
+        |projectType: $projectType
         |keystore: ${keystoreSummary ?: "none"}
     """.trimMargin()
 
@@ -690,96 +727,28 @@ class ProjectService(
         return sanitized
     }
 
-    // v1.128.0 — clone 패키지명(applicationId) / app 모듈 감지는 [PackageNameDetector] 로 이관.
-    // 멀티모듈에서 라이브러리 서브모듈 namespace 를 applicationId 로 오인하던 버그 회수
-    // (siashell: com.siashell.app 인데 com.siashell.service 채택 / Calculator). 규칙·테스트는
-    // PackageNameDetector.kt 참조.
+    // clone 패키지명(applicationId/bundleId), app 모듈, projectType 감지는 platform engine 경유.
 
     /**
-     * v1.64.0 — 모듈 build.gradle(.kts) 의 versionName. 없으면 null (목록 행 "v1.2.3" 표시용).
-     * 파일 IO 실패는 graceful null. "동적" — 매 호출 시 현재 gradle 을 읽음.
+     * 프로젝트 engine 이 제공하는 version name. 없으면 null (목록 행 "v1.2.3" 표시용).
+     * 파일 IO 실패는 graceful null. "동적" — 매 호출 시 현재 소스를 읽음.
      */
     fun appVersionName(projectId: String, moduleName: String): String? {
         if (isGhost(projectId)) return null
         val projectRoot = runCatching { workspace.projectRoot(projectId) }.getOrNull() ?: return null
-        // Kotlin: <module>/build.gradle(.kts). v1.128.7 — 리터럴뿐 아니라 변수 참조 / 문자열 보간 /
-        // version.properties 참조까지 정적 해석([VersionNameResolver]).
-        val moduleDir = projectRoot.resolve(moduleName.replace(':', '/'))
-        val props = loadVersionProps(projectRoot)
-        for (g in listOf("build.gradle.kts", "build.gradle")) {
-            val gf = moduleDir.resolve(g)
-            if (!Files.isRegularFile(gf)) continue
-            val text = runCatching { Files.readString(gf) }.getOrNull() ?: continue
-            VersionNameResolver.resolve(text, props)?.let { return it }
-        }
-        // v1.128.6 — Flutter: pubspec.yaml 의 `version: 1.2.3+4` → 1.2.3 (+ 뒤 build number 제외).
-        // Flutter 의 android/app/build.gradle 은 versionName 이 변수(flutterVersionName)라 위
-        // 정규식에 안 잡혀 자연히 여기로 폴백한다.
-        val pubspec = projectRoot.resolve("pubspec.yaml")
-        if (Files.isRegularFile(pubspec)) {
-            runCatching { Files.readString(pubspec) }.getOrNull()?.let { text ->
-                Regex("""(?m)^version:\s*([^\s#]+)""").find(text)?.let {
-                    return it.groupValues[1].substringBefore('+').take(32)
-                }
-            }
-        }
-        return null
-    }
-
-    /** v1.128.7 — version.properties(rootProject) 의 KEY=VALUE 파싱. versionName 의
-     *  `versionProps["KEY"]` 보간 해석에 사용. 파일 없거나 실패 시 빈 맵. */
-    private fun loadVersionProps(root: java.nio.file.Path): Map<String, String> {
-        val f = root.resolve("version.properties")
-        if (!Files.isRegularFile(f)) return emptyMap()
-        return runCatching {
-            Files.readAllLines(f).mapNotNull { line ->
-                val t = line.trim()
-                if (t.isEmpty() || t.startsWith("#")) return@mapNotNull null
-                val i = t.indexOf('=')
-                if (i < 0) null else t.substring(0, i).trim() to t.substring(i + 1).trim()
-            }.toMap()
-        }.getOrDefault(emptyMap())
+        val row = runCatching { repo.findById(projectId) }.getOrNull() ?: return null
+        return platformEngines.forType(row.projectType).resolveVersionName(projectRoot, moduleName)
     }
 
     /**
-     * v1.64.0 — 런처 아이콘 raster(png/webp) 파일. adaptive-icon(xml)만 있으면 null →
-     * 목록은 placeholder(vibe-coder 아이콘) 사용. 큰 density 우선. 반환 경로는
-     * workspace 내부 보장(symlink escape 방어).
+     * 프로젝트 engine 이 제공하는 런처 아이콘 raster(png/webp) 파일. 반환 경로는 workspace 내부 보장.
      */
     fun resolveAppIcon(projectId: String, moduleName: String): Path? {
         if (isGhost(projectId)) return null
         val projectRoot = runCatching { workspace.projectRoot(projectId) }.getOrNull() ?: return null
-        // v1.128.5 — Kotlin(app/src/main/res) + Flutter(android/app/src/main/res) 양쪽 탐색.
-        // Flutter 는 ic_launcher 가 android/app 하위에 있어 기존 moduleName 경로로는 미인식이었다.
-        val resCandidates = listOf(
-            moduleName.replace(':', '/'),               // Kotlin: app (또는 nested gradle 모듈)
-            "android/app",                              // Flutter 표준
-            "android/" + moduleName.replace(':', '/'),  // Flutter nested 모듈 대비
-        ).distinct()
-        val densities = listOf("xxxhdpi", "xxhdpi", "xhdpi", "hdpi", "mdpi", "")
-        val bases = listOf("mipmap", "drawable")
-        val names = listOf("ic_launcher", "ic_launcher_round", "ic_launcher_foreground")
-        for (modPath in resCandidates) {
-            val resRoot = projectRoot.resolve(modPath).resolve("src/main/res")
-            if (!Files.isDirectory(resRoot)) continue
-            for (d in densities) for (b in bases) {
-                val dir = resRoot.resolve(if (d.isEmpty()) b else "$b-$d")
-                if (!Files.isDirectory(dir)) continue
-                for (n in names) for (ext in listOf("png", "webp")) {
-                    val f = dir.resolve("$n.$ext")
-                    if (Files.isRegularFile(f)) {
-                        return runCatching { workspace.ensureUnderWorkspace(f.toRealPath()) }.getOrNull()
-                    }
-                }
-            }
-        }
-        // v1.65.0 — res 에 raster 가 없으면 업로드된 프로젝트 루트 icon.png fallback
-        // (App Icon 탭 업로드 직후, Claude 가 res 에 적용하기 전에도 미리보기/목록 반영).
-        val rootIcon = projectRoot.resolve("icon.png")
-        if (Files.isRegularFile(rootIcon)) {
-            return runCatching { workspace.ensureUnderWorkspace(rootIcon.toRealPath()) }.getOrNull()
-        }
-        return null
+        val row = runCatching { repo.findById(projectId) }.getOrNull() ?: return null
+        val icon = platformEngines.forType(row.projectType).resolveAppIcon(projectRoot, moduleName) ?: return null
+        return runCatching { workspace.ensureUnderWorkspace(icon.toRealPath()) }.getOrNull()
     }
 
     companion object {

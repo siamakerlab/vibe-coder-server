@@ -58,8 +58,8 @@ data class AdminRoutesDeps(
     /** v1.42.0 — 언어 변경 시 전역 CLAUDE.md 를 해당 언어 시드로 적용(미편집 시에만). */
     val globalClaudeMd: com.siamakerlab.vibecoder.server.env.GlobalClaudeMdService,
     /**
-     * v1.90.0 — `/settings` 저장 직후 호출되는 런타임 반영 콜백. ServerMain 이 ConfigHolder
-     * 갱신 + 즉시 반영 가능한 값(동시성 한도 등) 적용을 수행한다. null 이면 no-op(테스트).
+     * v1.90.0 — `/settings` 저장 직후 호출되는 런타임 설정 SSOT 갱신 콜백.
+     * null 이면 no-op(테스트).
      */
     val onConfigSaved: ((ServerConfig) -> Unit)? = null,
 )
@@ -291,10 +291,6 @@ fun Routing.adminRoutes(deps: AdminRoutesDeps) {
             claudeEnabled = cfg.claude.enabled,
             claudePath = cfg.claude.path,
             claudeTimeoutMin = cfg.claude.timeoutMinutes,
-            claudeMaxConcurrent = cfg.claude.maxConcurrentTurns,
-            claudeMaxResident = cfg.claude.maxResidentSessions,
-            codexMaxResident = cfg.codex.maxResidentSessions,
-            opencodeMaxResident = cfg.opencode.maxResidentSessions,
             buildTimeoutMin = cfg.build.timeoutMinutes,
             defaultDebugTask = cfg.build.defaultDebugTask,
         )
@@ -368,22 +364,6 @@ fun Routing.adminRoutes(deps: AdminRoutesDeps) {
                     timeoutMinutes = params["claude.timeoutMinutes"]?.toIntOrNull()?.also {
                         require(it in 1..600) { "claude.timeoutMinutes must be in 1..600 (got $it)" }
                     } ?: cur.claude.timeoutMinutes,
-                    maxConcurrentTurns = params["claude.maxConcurrentTurns"]?.toIntOrNull()?.also {
-                        require(it in 0..20) { "claude.maxConcurrentTurns must be in 0..20 (got $it)" }
-                    } ?: cur.claude.maxConcurrentTurns,
-                    maxResidentSessions = params["claude.maxResidentSessions"]?.toIntOrNull()?.also {
-                        require(it in 0..64) { "claude.maxResidentSessions must be in 0..64 (got $it)" }
-                    } ?: cur.claude.maxResidentSessions,
-                ),
-                codex = cur.codex.copy(
-                    maxResidentSessions = params["codex.maxResidentSessions"]?.toIntOrNull()?.also {
-                        require(it in 0..64) { "codex.maxResidentSessions must be in 0..64 (got $it)" }
-                    } ?: cur.codex.maxResidentSessions,
-                ),
-                opencode = cur.opencode.copy(
-                    maxResidentSessions = params["opencode.maxResidentSessions"]?.toIntOrNull()?.also {
-                        require(it in 0..64) { "opencode.maxResidentSessions must be in 0..64 (got $it)" }
-                    } ?: cur.opencode.maxResidentSessions,
                 ),
                 build = cur.build.copy(
                     timeoutMinutes = params["build.timeoutMinutes"]?.toIntOrNull()?.also {
@@ -405,7 +385,7 @@ fun Routing.adminRoutes(deps: AdminRoutesDeps) {
             call.respondRedirect("/settings?err=${java.net.URLEncoder.encode(Messages.t(sess.language, "flash.settings.saveFailed", e.message ?: ""), "UTF-8")}")
             return@post
         }
-        // v1.90.0 — 저장 성공 → 런타임 반영(ConfigHolder 갱신 + 동시성 한도 등 즉시 적용).
+        // v1.90.0 — 저장 성공 → 런타임 설정 SSOT 갱신.
         runCatching { deps.onConfigSaved?.invoke(newConfig) }
             .onFailure { log.warn(it) { "onConfigSaved 콜백 실패(파일 저장은 완료됨)" } }
         log.info { "settings persisted by ${sess.username} → ${result.targetPath} (backup=${result.backupPath})" }

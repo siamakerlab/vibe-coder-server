@@ -23,3 +23,44 @@ data class PlayUploadRequestDto(
 data class StoreUploadResponseDto(
     val ok: Boolean,
 )
+
+@Serializable
+data class TestFlightUploadRequestDto(
+    val ipaPath: String = "out/app-release.ipa",
+    val distributionGroups: String? = null,
+    val releaseNotes: String? = null,
+)
+
+@Serializable
+data class TestFlightUploadJobDto(
+    val id: String,
+    val projectId: String,
+    val buildId: String? = null,
+    val artifactId: String? = null,
+    val ipaPath: String,
+    val bundleId: String? = null,
+    val appId: String? = null,
+    val appName: String? = null,
+    val buildNumber: String? = null,
+    val status: String,
+    val distributionGroups: String? = null,
+    val releaseNotes: String? = null,
+    val message: String? = null,
+    val errorCode: String? = null,
+    val createdAt: String,
+    val updatedAt: String,
+    val finishedAt: String? = null,
+)
+
+@Serializable
+data class TestFlightUploadResponseDto(
+    val ok: Boolean,
+    val job: TestFlightUploadJobDto,
+)
+
+@Serializable
+data class TestFlightUploadStatusUpdateRequestDto(
+    val status: String,
+    val message: String? = null,
+    val errorCode: String? = null,
+)

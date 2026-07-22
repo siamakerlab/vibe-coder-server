@@ -356,6 +356,7 @@ class ProjectFileBrowser(
     private fun guessMime(path: String): String = when {
         path.endsWith(".kt", true) -> "text/x-kotlin"
         path.endsWith(".kts", true) -> "text/x-kotlin"
+        path.endsWith(".swift", true) -> "text/x-swift"
         path.endsWith(".java", true) -> "text/x-java"
         path.endsWith(".xml", true) -> "text/xml"
         path.endsWith(".json", true) -> "application/json"

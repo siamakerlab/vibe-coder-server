@@ -4,6 +4,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.io.path.isDirectory
 import kotlin.io.path.isRegularFile
 import kotlin.io.path.notExists
@@ -24,6 +25,8 @@ private val log = KotlinLogging.logger {}
 class SkillRegistry(
     private val rootProvider: () -> Path,
 ) {
+    private val previewCache = ConcurrentHashMap<Path, CachedSkillPreview>()
+
     data class Skill(
         val name: String,
         val sizeBytes: Long,
@@ -43,11 +46,8 @@ class SkillRegistry(
                     val md = d.resolve("SKILL.md")
                     val has = md.isRegularFile()
                     val size = if (has) runCatching { Files.size(md) }.getOrDefault(0L) else 0L
-                    val preview = if (has) runCatching {
-                        val raw = Files.readString(md)
-                        if (raw.length > 600) raw.take(600) + " …(+${raw.length - 600})" else raw
-                    }.getOrDefault("(read failed)") else "(SKILL.md 없음)"
                     val mtime = if (has) runCatching { Files.getLastModifiedTime(md).toMillis() }.getOrDefault(0L) else 0L
+                    val preview = if (has) cachedPreview(md, size, mtime) else "(SKILL.md 없음)"
                     Skill(name, size, preview, mtime, has)
                 }
                 .toList()
@@ -74,6 +74,7 @@ class SkillRegistry(
         val tmp = skillDir.resolve("SKILL.md.tmp")
         Files.writeString(tmp, body)
         Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+        previewCache.remove(target.toAbsolutePath().normalize())
         log.info { "skill saved: $safe (${body.length}B)" }
     }
 
@@ -88,6 +89,8 @@ class SkillRegistry(
             Files.walk(skillDir).use { s ->
                 s.sorted(Comparator.reverseOrder()).forEach { Files.deleteIfExists(it) }
             }
+            val normalizedSkillDir = skillDir.toAbsolutePath().normalize()
+            previewCache.keys.removeIf { it.startsWith(normalizedSkillDir) }
             true
         }.getOrElse { e -> log.warn(e) { "skill delete failed: $safe" }; false }
             .also { log.info { "skill delete: $safe ok=$it" } }
@@ -101,6 +104,25 @@ class SkillRegistry(
         return trimmed
     }
 
+    private fun cachedPreview(md: Path, size: Long, mtime: Long): String {
+        val key = md.toAbsolutePath().normalize()
+        previewCache[key]?.takeIf { it.sizeBytes == size && it.updatedAtMs == mtime }?.let {
+            return it.preview
+        }
+        val preview = runCatching {
+            val raw = Files.readString(md)
+            if (raw.length > 600) raw.take(600) + " …(+${raw.length - 600})" else raw
+        }.getOrDefault("(read failed)")
+        previewCache[key] = CachedSkillPreview(size, mtime, preview)
+        return preview
+    }
+
+    private data class CachedSkillPreview(
+        val sizeBytes: Long,
+        val updatedAtMs: Long,
+        val preview: String,
+    )
+
     companion object {
         private const val MAX_BODY_BYTES = 64 * 1024
 
@@ -108,6 +130,28 @@ class SkillRegistry(
             val claudeConfig = System.getenv("CLAUDE_CONFIG_DIR")?.ifBlank { null }
                 ?: (System.getProperty("user.home") + "/.claude")
             return Path.of(claudeConfig, "skills")
+        }
+
+        fun codexGlobalRoot(): Path {
+            return resolveCodexGlobalRoot(
+                configuredHome = System.getenv("CODEX_HOME")?.ifBlank { null },
+                userHome = System.getProperty("user.home"),
+            )
+        }
+
+        internal fun resolveCodexGlobalRoot(configuredHome: String?, userHome: String): Path {
+            val configured = configuredHome?.let { Path.of(it).toAbsolutePath().normalize() }
+            if (configured != null && canPrepareUnder(configured)) {
+                return configured.resolve("skills")
+            }
+            return Path.of(userHome, ".codex", "skills").toAbsolutePath().normalize()
+        }
+
+        private fun canPrepareUnder(path: Path): Boolean {
+            val existing = generateSequence(path.toAbsolutePath().normalize()) { it.parent }
+                .firstOrNull { Files.exists(it) }
+                ?: return false
+            return Files.isDirectory(existing) && Files.isWritable(existing)
         }
     }
 }

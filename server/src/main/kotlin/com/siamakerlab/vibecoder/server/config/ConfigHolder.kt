@@ -11,10 +11,8 @@ import java.util.concurrent.atomic.AtomicReference
  * 갱신된다:
  *   - `/settings` GET 폼은 [current] 를 그려 저장값을 즉시 보여준다.
  *   - 매 호출마다 `current` 를 읽는 컴포넌트(provider lambda 방식)는 즉시 새 값을 쓴다.
- *   - 그렇지 않은(startup 에 값을 박은) 컴포넌트는 여전히 재시작이 필요하므로, 그런 값은
- *     UI 에서 "재시작 후 적용" 으로 안내한다. 동시성 한도처럼 즉시 반영이 중요한 값은
- *     별도 setter(예: ClaudeConcurrencyGate.setLimit)를 [com.siamakerlab.vibecoder.server.ServerMain]
- *     의 저장 콜백에서 함께 호출한다.
+     *   - 그렇지 않은(startup 에 값을 박은) 컴포넌트는 여전히 재시작이 필요하므로, 그런 값은
+     *     UI 에서 "재시작 후 적용" 으로 안내한다.
  */
 object ConfigHolder {
     private val ref = AtomicReference<ServerConfig>()

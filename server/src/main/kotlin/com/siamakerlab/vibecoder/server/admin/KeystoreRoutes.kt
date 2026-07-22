@@ -1,10 +1,10 @@
 package com.siamakerlab.vibecoder.server.admin
 
-import com.siamakerlab.vibecoder.server.agent.AgentRouter
 import com.siamakerlab.vibecoder.server.config.KeystoreDefaults
 import com.siamakerlab.vibecoder.server.i18n.Messages
 import com.siamakerlab.vibecoder.server.repo.ProjectRepository
 import com.siamakerlab.vibecoder.server.repo.ProjectRow
+import com.siamakerlab.vibecoder.server.terminal.ConsolePromptSender
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentType
 import io.ktor.server.application.call
@@ -35,7 +35,7 @@ fun Routing.keystoreRoutes(
     authDeps: AdminRoutesDeps,
     service: KeystoreService,
     projectRepo: ProjectRepository,
-    agentRouter: AgentRouter,
+    promptSender: ConsolePromptSender,
 ) {
     get("/settings/keystores") {
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
@@ -190,7 +190,7 @@ fun Routing.keystoreRoutes(
 
         val prompt = buildApplySigningPrompt(project.id, project.moduleName, service, entry)
         val sent = runCatching {
-            agentRouter.sendPrompt(projectId, prompt)
+            promptSender.send(projectId, prompt, source = "settings_keystore_apply_signing", ownerUserId = sess.userId)
         }.onFailure { log.warn(it) { "apply-signing prompt failed for $projectId / $pkg" } }
             .isSuccess
 

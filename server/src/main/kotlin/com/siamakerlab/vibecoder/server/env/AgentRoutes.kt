@@ -20,6 +20,7 @@ import io.ktor.server.response.respondText
 import io.ktor.server.routing.Routing
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
+import kotlinx.serialization.Serializable
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
@@ -91,16 +92,32 @@ fun Routing.agentRoutes(authDeps: AdminRoutesDeps, registry: AgentRegistry) {
     authenticate(AUTH_BEARER) {
         get("/api/agents") {
             val list = runCatching { registry.list() }.getOrElse { emptyList() }
-            call.respond(mapOf("agents" to list.map {
-                mapOf(
-                    "name" to it.name,
-                    "sizeBytes" to it.sizeBytes,
-                    "preview" to it.preview.take(200),
-                )
-            }))
+            call.respond(
+                AgentListResponse(
+                    agents = list.map {
+                        AgentSummaryResponse(
+                            name = it.name,
+                            sizeBytes = it.sizeBytes,
+                            preview = it.preview.take(200),
+                        )
+                    },
+                ),
+            )
         }
     }
 }
+
+@Serializable
+private data class AgentListResponse(
+    val agents: List<AgentSummaryResponse>,
+)
+
+@Serializable
+private data class AgentSummaryResponse(
+    val name: String,
+    val sizeBytes: Long,
+    val preview: String,
+)
 
 private fun enc(s: String) = URLEncoder.encode(s, StandardCharsets.UTF_8)
 

@@ -77,9 +77,10 @@ commit message 한 줄로 넘기지 말 것. 알림에 포함:
 - Docker 이미지 태그는 `server.version`과 같은 값을 사용. `docker/Dockerfile`,
   `docker/compose.yml`, `docker/.env.example`, `docker/README.md`,
   `docker/HUB_README.md`의 `siamakerlab/vibe-coder-server:<version>`을 동기.
-- **Docker buildx 정책 (v0.6.0+)** — 일반 commit push는 amd64-only(2~3분). multi-arch
-  (amd64 + arm64) 빌드는 마일스톤 릴리즈 시점에만. arm64 cross-compile은 emulation으로
-  3~5배 느림.
+- **Docker buildx 정책 (v1.162.5+)** — 기본 slim 이미지는 일반 push도
+  `linux/amd64,linux/arm64` 멀티아키로 게시한다. Apple Silicon(M1/M2/M3/M4) Mac에서
+  native arm64로 설치할 수 있어야 한다. 긴급 hotfix 등으로 amd64-only를 게시하면
+  CHANGELOG에 명시한다.
 - `:server:installDist` "통과" 메시지가 Gradle daemon 캐시 효과로 위장될 수 있으므로,
   baseline 결함 확인은 반드시 clean 빌드로 한다.
 
@@ -169,17 +170,21 @@ Wiki, `docker/HUB_README.md`)는 영어.
 
 ## 운영 환경 참고
 
-- 운영 compose 폴더: `/home/wody/docker/vibe-coder-server/`
-  - 본 리포의 `docker/compose.yml` 변경사항은 운영 폴더로 수동 sync.
-  - 데이터 디렉토리: `${VIBE_DATA_ROOT:-./vibe-coder-data}/`.
-- 외부 도메인: <https://vibe.wody.work>
-  - openresty/외부 리버스 프록시가 `vibe.wody.work` → `localhost:17880`으로 forward.
-  - `https://vibe.wody.work/health`, `/api/server/quota`로 외부 동작 검증 가능.
-  - 안드 클라이언트 로그인 host로도 사용.
+- 주 운영 서버: `codr-kr`
+  - SSH/LAN: `wody@192.168.0.68 -p 32324`
+  - 외부 URL: <https://vibe.codr.kr>
+  - compose 폴더: `/home/wody/docker/vibe-codr-kr/`
+- 추가 운영 접속 대상: `aigoo.kr:32323`
+  - SSH/WAN: `wody@aigoo.kr -p 32323`
+  - 주 운영 서버와 동일 운영 계정/인증 정책을 사용하되, 비밀번호·토큰·키 값은 리포에 기록하지 않는다.
+- 본 리포의 `docker/compose.yml` 변경사항은 운영 폴더로 수동 sync.
+- 데이터 디렉토리: `${VIBE_DATA_ROOT:-./vibe-coder-data}/`.
+- legacy: `vibe.wody.work` 와 예전 `/home/wody/docker/vibe-coder-server/` 운영 구성은 더 이상
+  현재 운영 기준이 아니다.
 - 운영 갱신 기본 절차:
 
 ```bash
-cd /home/wody/docker/vibe-coder-server
+cd /home/wody/docker/vibe-codr-kr
 docker compose pull
 docker compose up -d --force-recreate
 ```

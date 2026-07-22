@@ -24,8 +24,11 @@ fun Routing.systemStatsRoutes(stats: SystemStatsService) {
             call.requireDevice() // 인증만 강제(단일 admin)
             val s = withContext(Dispatchers.IO) { stats.snapshot() }
             call.respondText(
-            """{"cpuPercent":${s.cpuPercent},"processCpuPercent":${s.processCpuPercent},""" +
-                """"ramUsedMb":${s.ramUsedMb},"ramTotalMb":${s.ramTotalMb},"ramPercent":${s.ramPercent},""" +
+            """{"cpuPercent":${s.cpuPercent},"processCpuPercent":${s.processCpuPercent},"vibeCpuPercent":${s.vibeCpuPercent},""" +
+                """"cpuScope":"${s.cpuScope}","vibeCpuScope":"${s.vibeCpuScope}",""" +
+                """"ramUsedMb":${s.ramUsedMb},"ramTotalMb":${s.ramTotalMb},"ramPercent":${s.ramPercent},"ramScope":"${s.ramScope}",""" +
+                """"vibeRamUsedMb":${s.vibeRamUsedMb},"vibeRamLimitMb":${s.vibeRamLimitMb},"vibeRamPercent":${s.vibeRamPercent},""" +
+                """"vibeRamSharePercent":${s.vibeRamSharePercent},"vibeRamScope":"${s.vibeRamScope}",""" +
                 """"processRssMb":${s.processRssMb},"heapUsedMb":${s.heapUsedMb},"heapMaxMb":${s.heapMaxMb},""" +
                 """"loadAvg":${s.loadAvg},"cores":${s.cores},"uptimeSec":${s.uptimeSec}}""",
                 ContentType.Application.Json,

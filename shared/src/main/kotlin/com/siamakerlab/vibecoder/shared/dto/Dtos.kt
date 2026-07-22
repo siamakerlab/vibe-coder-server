@@ -129,17 +129,22 @@ data class SshKeyDto(
 )
 
 /**
- * v1.125.0 — 프로젝트 빌드 타입 상수 (SSOT). 둘 다 **Android 빌드 타깃** — 프레임워크 구분만.
+ * v1.125.0 — 프로젝트 타입 상수 (SSOT).
  * 서버/안드 공용. wire 는 String 으로 흐르고 unknown/null 값은 [normalize] 가 KOTLIN 으로 흡수
  * (추후 오류 방지 안전망). enum 이 아니라 const String — 구버전 클라이언트가 새 값을 만나도 안전.
  */
 object ProjectTypes {
     const val KOTLIN = "kotlin"
     const val FLUTTER = "flutter"
-    val ALL = setOf(KOTLIN, FLUTTER)
+    const val IPHONE = "iphone"
+    val ALL = setOf(KOTLIN, FLUTTER, IPHONE)
     // v1.127.2 — trim + lowercase 로 `"Flutter"` / ` flutter ` 등 비정규 입력도 흡수
     // (JSON API 직접 호출 robustness). 알 수 없는 값/null → KOTLIN.
-    fun normalize(value: String?): String = if (value?.trim()?.lowercase() == FLUTTER) FLUTTER else KOTLIN
+    fun normalize(value: String?): String = when (value?.trim()?.lowercase()) {
+        FLUTTER -> FLUTTER
+        IPHONE -> IPHONE
+        else -> KOTLIN
+    }
 }
 
 @Serializable
@@ -160,10 +165,25 @@ data class ProjectDto(
      */
     val busy: Boolean = false,
     /**
-     * v1.125.0 — 프로젝트 빌드 타입. `kotlin`(Android-Kotlin) | `flutter`(Android-Flutter).
-     * 둘 다 Android 빌드 타깃. additive default → 구버전 클라이언트 wire 호환. [ProjectTypes].
+     * v1.125.0 — 프로젝트 타입. `kotlin` | `flutter` | `iphone`.
+     * additive default → 구버전 클라이언트 wire 호환. [ProjectTypes].
      */
     val projectType: String = ProjectTypes.KOTLIN,
+)
+
+@Serializable
+data class PlatformToolingProfileDto(
+    val projectType: String,
+    val defaultMcp: List<String> = emptyList(),
+    val conditionalMcp: List<String> = emptyList(),
+    val optInMcp: List<String> = emptyList(),
+    val defaultSkills: List<String> = emptyList(),
+    val conditionalSkills: List<String> = emptyList(),
+    val optInSkills: List<String> = emptyList(),
+    val defaultAgents: List<String> = emptyList(),
+    val conditionalAgents: List<String> = emptyList(),
+    val optInAgents: List<String> = emptyList(),
+    val forbiddenTools: List<String> = emptyList(),
 )
 
 /**
@@ -226,7 +246,7 @@ data class RegisterProjectRequestDto(
      */
     val overwrite: Boolean = false,
     /**
-     * v1.125.0 — 프로젝트 타입. `kotlin`(기본) | `flutter`. clone 시에도 사용자 선택 우선
+     * v1.125.0 — 프로젝트 타입. `kotlin`(기본) | `flutter` | `iphone`. clone 시에도 사용자 선택 우선
      * (기본 kotlin — pubspec.yaml 자동감지는 힌트만, P4). 서버가 [ProjectTypes.normalize] 로
      * 검증(알 수 없으면 kotlin).
      *
@@ -280,6 +300,7 @@ data class BuildDto(
     val finishedAt: String? = null,
     val artifactId: String? = null,
     val errorMessage: String? = null,
+    val failureKind: String? = null,
     /** v0.71.0 — Phase 51 #9: git branch / sha (PR 단위 비교용). null = 미수집. */
     val gitBranch: String? = null,
     val gitSha: String? = null,
@@ -367,31 +388,7 @@ data class EnvSetupTaskDto(val taskId: String)
 
 // endregion
 
-// region v0.10.0 — Claude 자격증명 / 로그인
-
-@Serializable
-data class ClaudeApiKeyRequestDto(val apiKey: String)
-
-/**
- * `POST /api/env-setup/claude-auth/upload` 응답.
- *
- * v0.64.0 — vibe-coder-android v0.7.x 호환을 위해 dual emit:
- * - `targetPath` / `expiresAt: Long` : 기존 (v0.5.4+) SSR/외부 client 가 사용.
- * - `path`       / `expiresAtIso: String?` : Android v0.7.x 가 사용 (필드명/타입 정렬).
- *
- * 다음 wire change 사이클에서 `targetPath` / `expiresAt` 을 deprecate 하고
- * `path` / `expiresAtIso` 로 단일화 예정.
- */
-@Serializable
-data class ClaudeCredentialsUploadResponseDto(
-    val targetPath: String,
-    val backup: String?,
-    val expiresAt: Long,
-    /** v0.64.0 — Android v0.7.x alias (= [targetPath]). */
-    val path: String = targetPath,
-    /** v0.64.0 — [expiresAt] 의 ISO-8601 String 표현 (Android v0.7.x 가 String 기대). */
-    val expiresAtIso: String? = null,
-)
+// region v0.10.0 — Claude 로그인
 
 @Serializable
 data class ClaudeLoginStateDto(

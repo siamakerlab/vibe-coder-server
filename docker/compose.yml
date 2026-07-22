@@ -34,6 +34,9 @@ services:
       TZ: ${TZ:-Asia/Seoul}
     volumes:
       - ${VIBE_DATA_ROOT:-./vibe-coder-data}/postgres:/var/lib/postgresql/data
+    mem_limit: ${VIBECODER_POSTGRES_MEMORY_LIMIT:-1g}
+    memswap_limit: ${VIBECODER_POSTGRES_MEMORY_SWAP_LIMIT:-1g}
+    pids_limit: ${VIBECODER_POSTGRES_PIDS_LIMIT:-256}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${VIBECODER_DB_USER:-vibecoder} -d ${VIBECODER_DB_NAME:-vibecoder}"]
       interval: 10s
@@ -114,6 +117,16 @@ services:
       # 파일보다 우선한다(컨테이너 포트도 바꾸는 고급 설정).
       VIBECODER_SSH_PORT: ${VIBECODER_SSH_PORT:-}
 
+      # v1.163.0 — resource guard. Docker cgroup memory limit is the hard stop;
+      # the app guard cleans up idle TUI sessions at soft pressure and blocks
+      # new AI/build work only at hard pressure or below the free-memory floor.
+      VIBECODER_RESOURCE_GUARD_ENABLED: ${VIBECODER_RESOURCE_GUARD_ENABLED:-true}
+      VIBECODER_RESOURCE_MEMORY_SOFT_PERCENT: ${VIBECODER_RESOURCE_MEMORY_SOFT_PERCENT:-88}
+      VIBECODER_RESOURCE_MEMORY_HARD_PERCENT: ${VIBECODER_RESOURCE_MEMORY_HARD_PERCENT:-96}
+      VIBECODER_RESOURCE_MIN_FREE_MEMORY_MB: ${VIBECODER_RESOURCE_MIN_FREE_MEMORY_MB:-768}
+      VIBECODER_RESOURCE_KILL_IDLE_TUI_ON_PRESSURE: ${VIBECODER_RESOURCE_KILL_IDLE_TUI_ON_PRESSURE:-true}
+      VIBECODER_CONSOLE_TUI_IDLE_TIMEOUT_MINUTES: ${VIBECODER_CONSOLE_TUI_IDLE_TIMEOUT_MINUTES:-120}
+
     # LAN 페어링 / admin 웹 / API 모두 같은 포트
     # v1.40.0 — 무선 ADB(/adb) 자동 탐지(mDNS)가 필요하면 compose.host.yml 오버레이로
     #   HOST 네트워크 사용: docker compose -f compose.yml -f compose.host.yml up -d
@@ -179,6 +192,10 @@ services:
       #   VIBE_CLAUDE_DIR=~/.claude
       # 으로 override.
       - ${VIBE_CLAUDE_DIR:-./vibe-coder-data/claude}:/home/vibe/.claude
+
+    mem_limit: ${VIBECODER_SERVER_MEMORY_LIMIT:-8g}
+    memswap_limit: ${VIBECODER_SERVER_MEMORY_SWAP_LIMIT:-8g}
+    pids_limit: ${VIBECODER_SERVER_PIDS_LIMIT:-8192}
 
     # 헬스체크: /health 엔드포인트
     healthcheck:

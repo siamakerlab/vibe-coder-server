@@ -31,11 +31,11 @@ object ConfigLoader {
                 .bufferedReader().use { it.readText() }
         }
 
-        val cfg = yaml.decodeFromString(ServerConfig.serializer(), text)
+        val cfg = yaml.decodeFromString(ServerConfig.serializer(), stripRemovedLegacyConfigKeys(text))
         // v1.70.7 — `server.version` 은 코드(번들 리소스)에서만 결정한다. 외부 config
         // (사용자가 /settings 에서 저장한 설정본)가 version 까지 박제해, 이미지 업그레이드
-        // 후에도 대시보드/health 가 옛 버전을 표시하던 문제 회수. 사용자 설정(port/timeout/
-        // maxConcurrentTurns 등)은 외부 config 가 그대로 유지하고, version 만 번들로 덮어쓴다.
+        // 후에도 대시보드/health 가 옛 버전을 표시하던 문제 회수. 사용자 설정(port/timeout 등)은
+        // 외부 config 가 그대로 유지하고, version 만 번들로 덮어쓴다.
         val withVersion = if (external != null) {
             val bundled = readBundledVersion()
             if (bundled != null && bundled != cfg.server.version)
@@ -49,8 +49,27 @@ object ConfigLoader {
         ConfigLoader::class.java.classLoader
             .getResourceAsStream("config/server.yml")
             ?.bufferedReader()?.use { it.readText() }
-            ?.let { yaml.decodeFromString(ServerConfig.serializer(), it).server.version }
+            ?.let { yaml.decodeFromString(ServerConfig.serializer(), stripRemovedLegacyConfigKeys(it)).server.version }
     }.getOrNull()
+
+    /**
+     * v1.161.x — provider별 turn/session cap 은 ResourceGuard 중심 관리로 제거됐다. 오래된
+     * 외부 server.yml 에 키가 남아 있어도 부팅은 계속되도록 디코드 전에 해당 scalar line 만 버린다.
+     */
+    private fun stripRemovedLegacyConfigKeys(text: String): String {
+        val removed = setOf(
+            "maxConcurrentTurns",
+            "maxResidentSessions",
+            "sessionResetTokens",
+            "sessionTurnCap",
+        )
+        return text.lineSequence()
+            .filterNot { line ->
+                val trimmed = line.trimStart()
+                removed.any { key -> trimmed.startsWith("$key:") }
+            }
+            .joinToString("\n")
+    }
 
     private fun applyEnvironmentOverrides(cfg: ServerConfig): ServerConfig {
         var current = cfg
@@ -77,6 +96,9 @@ object ConfigLoader {
         // v0.17.0 — Email/SMTP env override
         current = current.copy(email = applyEmailEnvOverrides(current.email))
 
+        current = current.copy(resources = applyResourceGuardEnvOverrides(current.resources))
+        current = current.copy(ios = applyIosEnvOverrides(current.ios))
+
         // v0.77.0 — Phase 64 i18n. VIBECODER_DEFAULT_LANGUAGE env override.
         //   허용 값: "en", "ko". 그 외 값은 무시 (server.yml 값 유지).
         System.getenv("VIBECODER_DEFAULT_LANGUAGE")?.trim()?.lowercase()
@@ -95,6 +117,14 @@ object ConfigLoader {
             ?.toIntOrNull()?.let {
                 current = current.copy(security = current.security.copy(sessionIdleTimeoutMinutes = it.coerceAtLeast(0)))
             }
+        System.getenv("VIBECODER_TERMINAL_IDLE_TIMEOUT_MINUTES")?.takeIf { it.isNotBlank() }
+            ?.toIntOrNull()?.let {
+                current = current.copy(security = current.security.copy(terminalIdleTimeoutMinutes = it.coerceAtLeast(0)))
+            }
+        System.getenv("VIBECODER_CONSOLE_TUI_IDLE_TIMEOUT_MINUTES")?.takeIf { it.isNotBlank() }
+            ?.toIntOrNull()?.let {
+                current = current.copy(security = current.security.copy(consoleTuiIdleTimeoutMinutes = it.coerceAtLeast(0)))
+            }
 
         // v1.106.0 — Claude 기본 모델 env override. 토큰 사용량 최대 레버(Opus→Sonnet).
         // server.yml 수정 없이 compose env 로 조정. "sonnet"/"opus"/"fable"/"haiku"/모델ID/"default".
@@ -109,27 +139,14 @@ object ConfigLoader {
             ?.toIntOrNull()?.let {
                 current = current.copy(claude = current.claude.copy(autoCompactTokens = it.coerceAtLeast(0)))
             }
-        // v1.123.0 — 2단계 경고 + 세션 길이 캡.
+        // v1.123.0 — 2단계 경고.
         System.getenv("VIBECODER_CLAUDE_CONTEXT_CRITICAL_TOKENS")?.takeIf { it.isNotBlank() }
             ?.toIntOrNull()?.let {
                 current = current.copy(claude = current.claude.copy(contextCriticalTokens = it.coerceAtLeast(0)))
             }
-        System.getenv("VIBECODER_CLAUDE_SESSION_RESET_TOKENS")?.takeIf { it.isNotBlank() }
-            ?.toIntOrNull()?.let {
-                current = current.copy(claude = current.claude.copy(sessionResetTokens = it.coerceAtLeast(0)))
-            }
-        System.getenv("VIBECODER_CLAUDE_SESSION_TURN_CAP")?.takeIf { it.isNotBlank() }
-            ?.toIntOrNull()?.let {
-                current = current.copy(claude = current.claude.copy(sessionTurnCap = it.coerceAtLeast(0)))
-            }
-
         System.getenv("VIBECODER_CODEX_MODEL")?.trim()?.takeIf { it.isNotBlank() }?.let {
             current = current.copy(codex = current.codex.copy(model = it))
         }
-        System.getenv("VIBECODER_CODEX_MAX_RESIDENT_SESSIONS")?.takeIf { it.isNotBlank() }
-            ?.toIntOrNull()?.let {
-                current = current.copy(codex = current.codex.copy(maxResidentSessions = it.coerceAtLeast(0)))
-            }
         // v1.147.0 — Codex usage 모니터링 env override (Claude usage 와 대칭).
         System.getenv("VIBECODER_CODEX_USAGE_ENABLED")?.takeIf { it.isNotBlank() }?.let {
             current = current.copy(codex = current.codex.copy(usage = current.codex.usage.copy(enabled = it.equals("true", true))))
@@ -150,10 +167,6 @@ object ConfigLoader {
         System.getenv("VIBECODER_OPENCODE_CONFIG_HOME")?.trim()?.takeIf { it.isNotBlank() }?.let {
             current = current.copy(opencode = current.opencode.copy(configHome = it))
         }
-        System.getenv("VIBECODER_OPENCODE_MAX_RESIDENT_SESSIONS")?.takeIf { it.isNotBlank() }
-            ?.toIntOrNull()?.let {
-                current = current.copy(opencode = current.opencode.copy(maxResidentSessions = it.coerceAtLeast(0)))
-            }
         System.getenv("VIBECODER_OPENCODE_CMD")?.trim()?.takeIf { it.isNotBlank() }?.let {
             current = current.copy(opencode = current.opencode.copy(cmd = it))
         }
@@ -163,6 +176,61 @@ object ConfigLoader {
 
         return current
     }
+
+    private fun applyResourceGuardEnvOverrides(r: ResourceGuardSection): ResourceGuardSection {
+        var v = r
+        System.getenv("VIBECODER_RESOURCE_GUARD_ENABLED")?.takeIf { it.isNotBlank() }?.let {
+            v = v.copy(enabled = it.equals("true", true))
+        }
+        System.getenv("VIBECODER_RESOURCE_MEMORY_SOFT_PERCENT")?.takeIf { it.isNotBlank() }
+            ?.toIntOrNull()?.let {
+                v = v.copy(memorySoftLimitPercent = it.coerceIn(1, 100))
+            }
+        System.getenv("VIBECODER_RESOURCE_MEMORY_HARD_PERCENT")?.takeIf { it.isNotBlank() }
+            ?.toIntOrNull()?.let {
+                v = v.copy(memoryHardLimitPercent = it.coerceIn(1, 100))
+            }
+        System.getenv("VIBECODER_RESOURCE_MIN_FREE_MEMORY_MB")?.takeIf { it.isNotBlank() }
+            ?.toLongOrNull()?.let {
+                v = v.copy(minFreeMemoryMb = it.coerceAtLeast(0))
+            }
+        System.getenv("VIBECODER_RESOURCE_KILL_IDLE_TUI_ON_PRESSURE")?.takeIf { it.isNotBlank() }?.let {
+            v = v.copy(killIdleTuiSessionsOnPressure = it.equals("true", true))
+        }
+        return v
+    }
+
+    private fun applyIosEnvOverrides(ios: IosSection): IosSection {
+        var agent = ios.agent
+        System.getenv("VIBECODER_IOS_AGENT_ENABLED")?.takeIf { it.isNotBlank() }?.let {
+            agent = agent.copy(enabled = it.equals("true", true))
+        }
+        System.getenv("VIBECODER_IOS_AGENT_MODE")?.trim()?.takeIf { it.isNotBlank() }?.let {
+            agent = agent.copy(mode = normalizeIosAgentMode(it))
+        }
+        System.getenv("VIBECODER_IOS_AGENT_HOST")?.trim()?.takeIf { it.isNotBlank() }?.let {
+            agent = agent.copy(host = it)
+        }
+        System.getenv("VIBECODER_IOS_AGENT_PORT")?.takeIf { it.isNotBlank() }?.toIntOrNull()?.let {
+            agent = agent.copy(port = it.coerceIn(1, 65535))
+        }
+        System.getenv("VIBECODER_IOS_AGENT_USER")?.trim()?.takeIf { it.isNotBlank() }?.let {
+            agent = agent.copy(user = it)
+        }
+        System.getenv("VIBECODER_IOS_AGENT_WORKSPACE_ROOT")?.trim()?.takeIf { it.isNotBlank() }?.let {
+            agent = agent.copy(workspaceRoot = it)
+        }
+        System.getenv("VIBECODER_IOS_AGENT_XCODE_PATH")?.trim()?.takeIf { it.isNotBlank() }?.let {
+            agent = agent.copy(xcodePath = it)
+        }
+        return ios.copy(agent = agent)
+    }
+
+    private fun normalizeIosAgentMode(value: String): String =
+        when (value.trim().lowercase()) {
+            "ssh", "remote" -> "ssh"
+            else -> "local"
+        }
 
     private fun applyEmailEnvOverrides(e: EmailSection): EmailSection {
         var v = e

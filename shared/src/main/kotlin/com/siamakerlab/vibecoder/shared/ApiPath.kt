@@ -20,6 +20,8 @@ object ApiPath {
 
     // Public health probe (no auth — Docker HEALTHCHECK / 모니터링용)
     const val HEALTH = "/health"
+    // Server-local provider event ingress. Loopback only; used by provider CLI hooks, not Android.
+    const val INTERNAL_CLAUDE_AGENT_EVENTS = "/internal/agent-events/claude"
 
     // Server
     const val SERVER_STATUS = "/api/server/status"
@@ -44,6 +46,42 @@ object ApiPath {
     // v1.74.0 — 홈 대시보드 "서버 상태" 카드(CPU/RAM/프로세스 점유). admin 페이지 폴링,
     // server-internal (Android client 미사용). 저민감(리소스 사용률) → quota 와 동일 무인증.
     const val SERVER_STATS = "/api/server/stats"
+
+    /**
+     * vNext — iPhone/Xcode/macOS agent local preflight.
+     * 응답: IosPreflightDto.
+     */
+    const val IOS_PREFLIGHT = "/api/ios/preflight"
+    const val IOS_SIMULATORS = "/api/ios/simulators"
+    const val IOS_SIMULATOR_BOOT_ROUTE = "/api/ios/simulators/{udid}/boot"
+    const val IOS_SIMULATOR_SHUTDOWN_ROUTE = "/api/ios/simulators/{udid}/shutdown"
+    const val IOS_PROJECT_SIMULATOR_RUN_ROUTE = "/api/projects/{projectId}/ios/simulators/{udid}/run"
+    const val IOS_PROJECT_SIMULATOR_LOGS_ROUTE = "/api/projects/{projectId}/ios/simulators/{udid}/logs"
+    const val IOS_PROJECT_SIGNING_STATUS_ROUTE = "/api/projects/{projectId}/ios/signing-status"
+    fun iosSimulatorBoot(udid: String) = "/api/ios/simulators/${pathSeg(udid)}/boot"
+    fun iosSimulatorShutdown(udid: String) = "/api/ios/simulators/${pathSeg(udid)}/shutdown"
+    fun iosSimulatorRun(projectId: String, udid: String) =
+        "/api/projects/${pathSeg(projectId)}/ios/simulators/${pathSeg(udid)}/run"
+    fun iosSimulatorLogs(projectId: String, udid: String) =
+        "/api/projects/${pathSeg(projectId)}/ios/simulators/${pathSeg(udid)}/logs"
+    fun wsIosSimulatorLogs(projectId: String, udid: String) =
+        "/ws/projects/${pathSeg(projectId)}/ios/simulators/${pathSeg(udid)}/logs"
+    fun iosSigningStatus(projectId: String) =
+        "/api/projects/${pathSeg(projectId)}/ios/signing-status"
+
+    /**
+     * vNext — iPhone/macOS agent connection settings.
+     * GET/POST 응답: IosAgentConfigDto.
+     */
+    const val IOS_AGENT_CONFIG = "/api/ios/agent-config"
+    /** iPhone/TestFlight App Store Connect API key metadata + private key registration. */
+    const val IOS_APP_STORE_CONNECT_KEY = "/api/ios/app-store-connect-key"
+    /** Read-only App Store Connect authentication/apps lookup diagnostics. */
+    const val IOS_APP_STORE_CONNECT_DIAGNOSTICS = "/api/ios/app-store-connect/diagnostics"
+    /** Admin-only macOS keychain certificate import for iPhone signing. */
+    const val IOS_KEYCHAIN_IMPORT = "/api/ios/keychain/import"
+    /** Admin-only optional SwiftLint/SwiftFormat installation on the macOS agent. */
+    const val IOS_SWIFT_TOOLS_INSTALL = "/api/ios/swift-tools/install"
 
     // v1.6.0 — Workspace terminal (PTY bash). security.allowTerminal=true 필요.
     const val TERMINAL_SESSIONS = "/api/terminal/sessions"
@@ -106,8 +144,28 @@ object ApiPath {
     /** v1.120.0 — 자동 /compact 토글(body ConsoleToggleRequestDto). */
     fun consoleAutoCompact(projectId: String) =
         "/api/projects/$projectId/claude/console/auto-compact"
+    /** TUI-only compatibility endpoint(body ignored; server keeps TUI mode enabled). */
+    fun consoleTuiMode(projectId: String) =
+        "/api/projects/${pathSeg(projectId)}/console/tui/mode"
     fun claudeStatus(projectId: String) =
         "/api/projects/$projectId/claude/status"
+
+    // Project AI console TUI (PTY-backed provider CLI). TUI is the single console runtime.
+    fun consoleTuiSession(projectId: String) =
+        "/api/projects/${pathSeg(projectId)}/console/tui/session"
+    fun consoleTuiSessionClose(projectId: String, sessionId: String) =
+        "/api/projects/${pathSeg(projectId)}/console/tui/session/${pathSeg(sessionId)}"
+    fun consoleTuiPrompt(projectId: String) =
+        "/api/projects/${pathSeg(projectId)}/console/tui/prompt"
+    fun consoleTuiInterrupt(projectId: String) =
+        "/api/projects/${pathSeg(projectId)}/console/tui/interrupt"
+    fun consoleTuiCompact(projectId: String) =
+        "/api/projects/${pathSeg(projectId)}/console/tui/compact"
+    const val PROJECT_CONSOLE_CONTEXT_PATTERN = "/api/projects/{id}/console/context"
+    fun consoleContext(projectId: String) =
+        "/api/projects/${pathSeg(projectId)}/console/context"
+    fun wsConsoleTui(projectId: String, sessionId: String) =
+        "/ws/projects/${pathSeg(projectId)}/console/tui/${pathSeg(sessionId)}"
 
     /**
      * v1.146.0 — 프로젝트 AI provider 조회(GET)/변경(POST). SSOT 회수 — 이전에는
@@ -145,8 +203,7 @@ object ApiPath {
         "/api/projects/${pathSeg(projectId)}/claude/console/image"
 
     // v1.136.0 — 프롬프트 일괄 전송. 선택한 여러 프로젝트에 같은 프롬프트를 한 번에
-    // 전송(202 + accepted/rejected). 동시 turn 게이트가 순차 처리(큐)하므로 한도 초과분은
-    // 대기 — v1.135.0 게이트 선확보로 대기 중 프로세스/메모리 점유 없음.
+    // 전송(202 + accepted/rejected). 실제 전송은 서버의 비동기 콘솔 디스패처가 처리한다.
     const val CLAUDE_BROADCAST = "/api/claude/broadcast"
 
     // Project actions (chip system)
@@ -166,11 +223,21 @@ object ApiPath {
      * body 없음, 응답 BuildDto(202). 키스토어 미존재 시 409 keystore_required.
      */
     fun buildBundle(projectId: String) = "/api/projects/$projectId/build/bundle"
+    fun iosBuildDebug(projectId: String) = "/api/projects/$projectId/ios/build/debug"
+    fun iosBuildTest(projectId: String) = "/api/projects/$projectId/ios/build/test"
+    fun iosBuildArchive(projectId: String) = "/api/projects/$projectId/ios/build/archive"
+    fun iosBuildExportIpa(projectId: String) = "/api/projects/$projectId/ios/build/export-ipa"
     /**
      * v1.121.0 — Google Play 업로드 트리거(body PlayUploadRequestDto). Claude 콘솔에
      * "이 .aab 를 Play <track> 에 업로드" 프롬프트 전송. 응답 StoreUploadResponseDto(202).
      */
     fun playUpload(projectId: String) = "/api/projects/$projectId/play-upload"
+    fun testFlightUpload(projectId: String, buildId: String) =
+        "/api/projects/${pathSeg(projectId)}/builds/${pathSeg(buildId)}/testflight-upload"
+    fun testFlightUploads(projectId: String) =
+        "/api/projects/${pathSeg(projectId)}/testflight/uploads"
+    fun testFlightUploadStatus(projectId: String, jobId: String) =
+        "/api/projects/${pathSeg(projectId)}/testflight/uploads/${pathSeg(jobId)}/status"
     fun builds(projectId: String) = "/api/projects/$projectId/builds"
     fun build(projectId: String, buildId: String) =
         "/api/projects/$projectId/builds/$buildId"
@@ -224,6 +291,8 @@ object ApiPath {
         "/ws/projects/$projectId/console/logs"
     // v1.31.1 — cross-project busy state push (대시보드 / workspaces 실시간 동기).
     const val WS_PROJECTS_STATE = "/ws/projects"
+    fun wsProjects(since: Long? = null) =
+        if (since != null) "$WS_PROJECTS_STATE?since=$since" else WS_PROJECTS_STATE
 
     // v0.10.0 — Env setup (빌드환경 컴포넌트 진단/설치)
     const val ENV_SETUP_COMPONENTS = "/api/env-setup/components"
@@ -231,12 +300,7 @@ object ApiPath {
     fun envSetupInstall(componentId: String) = "/api/env-setup/$componentId/install"
     fun wsEnvSetupLogs(taskId: String) = "/ws/env-setup/$taskId/logs"
 
-    // v0.10.0 — Claude 자격증명 관리 (옵션 B, C)
-    const val CLAUDE_AUTH_UPLOAD = "/api/env-setup/claude-auth/upload"
-    const val CLAUDE_AUTH_API_KEY = "/api/env-setup/claude-auth/api-key"
-    const val CLAUDE_AUTH_API_KEY_DELETE = "/api/env-setup/claude-auth/api-key/delete"
-
-    // v0.10.0 — Claude 반자동 웹 OAuth (옵션 A)
+    // v0.10.0 — Claude 웹 OAuth
     const val CLAUDE_LOGIN_START = "/api/env-setup/claude-login/start"
     const val CLAUDE_LOGIN_SUBMIT = "/api/env-setup/claude-login/submit"
     const val CLAUDE_LOGIN_STATUS = "/api/env-setup/claude-login/status"
@@ -471,6 +535,13 @@ object ApiPath {
      */
     fun projectSymbols(projectId: String) =
         "/api/projects/${pathSeg(projectId)}/symbols"
+
+    /**
+     * vNext — projectType 별 MCP/Skill/Agent tooling profile.
+     * 응답: PlatformToolingProfileDto.
+     */
+    fun projectToolingProfile(projectId: String) =
+        "/api/projects/${pathSeg(projectId)}/tooling-profile"
 
     /**
      * v0.44+ — sub-agent console log WebSocket.

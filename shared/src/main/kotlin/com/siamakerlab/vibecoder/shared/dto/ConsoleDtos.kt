@@ -4,13 +4,11 @@ import kotlinx.serialization.Serializable
 
 /**
  * Request body for POST /api/projects/{projectId}/claude/console/prompt
- * — `text` is the raw user prompt (≤ 32 KB enforced server-side).
+ * — `text` is the raw user prompt.
  *
- * v1.133.0 — `images`: 프롬프트와 함께 보내는 이미지 첨부 (vision). 각 항목은
- * base64 인코딩된 이미지 1장. 서버가 stream-json user message 의 image content
- * block 으로 변환해 텍스트보다 앞에 배치한다. 한도: 최대 4장, 장당 base64
- * 7,000,000 chars (≈5MB 원본). null/빈 리스트 = 기존과 동일(텍스트만) —
- * backward compatible.
+ * v1.162.5 — project console prompt injection is TUI-only. `images` remains nullable in
+ * the DTO so older clients deserialize/serialize cleanly, but server-side TUI injection
+ * rejects non-empty images with `images_unsupported`.
  */
 @Serializable
 data class PromptRequestDto(
@@ -19,9 +17,8 @@ data class PromptRequestDto(
 )
 
 /**
- * v1.133.0 — 프롬프트 첨부 이미지 1장.
- * `mediaType` 은 image/png · image/jpeg · image/gif · image/webp 만 허용.
- * `data` 는 표준 base64 (data: URL prefix 없이 payload 만).
+ * Legacy prompt image payload. Retained for source/wire compatibility with older clients
+ * and historical conversation rendering; new TUI-only prompt sends reject non-empty images.
  */
 @Serializable
 data class PromptImageDto(
@@ -35,6 +32,35 @@ data class PromptImageDto(
  */
 @Serializable
 data class PromptAcceptedDto(val seq: Long)
+
+@Serializable
+data class ConsoleTuiPromptAcceptedDto(
+    val sessionId: String,
+    val provider: String,
+    val turnId: String,
+    val turnIdx: Int,
+)
+
+@Serializable
+data class ConsoleTuiSessionDto(
+    val sessionId: String? = null,
+    val projectId: String,
+    val provider: String,
+    val workdir: String? = null,
+    val command: String? = null,
+    val alive: Boolean = false,
+    val createdAt: String? = null,
+    val turnState: String = "idle",
+    val lastPromptTurnId: String? = null,
+    val lastPromptAt: String? = null,
+)
+
+@Serializable
+data class ConsoleTuiSessionRequestDto(
+    val provider: String? = null,
+    val cols: Int = 100,
+    val rows: Int = 30,
+)
 
 /**
  * Snapshot of the Claude session attached to a project.

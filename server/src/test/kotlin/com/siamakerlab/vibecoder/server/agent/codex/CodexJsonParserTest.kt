@@ -64,7 +64,7 @@ class CodexJsonParserTest {
         parser.parseLine("""{"type":"turn.completed"}""") shouldBe CodexEvent.TurnCompleted()
     }
 
-    @Test fun `builds Codex exec args with global approval option before exec`() {
+    @Test fun `builds Codex exec args with yolo option before exec`() {
         buildCodexExecArgs(
             cmd = "codex",
             text = "hello",
@@ -72,10 +72,9 @@ class CodexJsonParserTest {
             model = null,
         ) shouldBe listOf(
             "codex",
-            "--ask-for-approval", "never",
+            "--dangerously-bypass-approvals-and-sandbox",
             "exec",
             "--json",
-            "--sandbox", "danger-full-access",
             "--skip-git-repo-check",
             "--",
             "hello",
@@ -99,10 +98,9 @@ class CodexJsonParserTest {
             model = "gpt-5.5",
         ) shouldBe listOf(
             "codex",
-            "--ask-for-approval", "never",
+            "--dangerously-bypass-approvals-and-sandbox",
             "exec",
             "--json",
-            "--sandbox", "danger-full-access",
             "--skip-git-repo-check",
             "--model", "gpt-5.5",
             "resume", "019f0b7e-3a17-7520-8447-dbd7e1cc958d",

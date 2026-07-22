@@ -21,6 +21,7 @@ import com.siamakerlab.vibecoder.server.auth.CsrfTokens.requireCsrf
 import com.siamakerlab.vibecoder.server.automation.PromptAutomationManager
 import com.siamakerlab.vibecoder.server.i18n.Messages
 import com.siamakerlab.vibecoder.server.repo.BuildRepository
+import com.siamakerlab.vibecoder.server.terminal.ConsolePromptSender
 import com.siamakerlab.vibecoder.shared.dto.ProjectDto
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentType
@@ -68,6 +69,7 @@ fun Routing.projectKeystoreRoutes(
     agentRouter: AgentRouter,
     buildRepo: BuildRepository,
     promptAutomationManager: PromptAutomationManager,
+    promptSender: ConsolePromptSender,
 ) {
     // v1.101.0 — 콘솔이 유휴(응답중/빌드중/자동화중 모두 아님)인지. 업로드는 직후 콘솔
     // 프롬프트를 쏘므로 유휴일 때만 허용한다(파괴적/이동 라우트 idle 가드와 동일 체계).
@@ -201,7 +203,7 @@ fun Routing.projectKeystoreRoutes(
         val admobPropsPath = keystore.keystoreDirPath().resolve("${p.packageName}-admob.properties")
         val prompt = buildApplyAdmobPrompt(p.id, p.moduleName, p.packageName, admobPropsPath, ids)
         val providerName = selectedProviderName(id)
-        val sent = runCatching { agentRouter.sendPrompt(id, prompt) }
+        val sent = runCatching { promptSender.send(id, prompt, source = "project_keystore_apply_admob", ownerUserId = sess.userId) }
             .onFailure { log.warn(it) { "apply-admob prompt failed for $id / ${p.packageName}" } }
             .isSuccess
         if (sent) {
@@ -239,7 +241,7 @@ fun Routing.projectKeystoreRoutes(
         val admobPropsPath = keystore.keystoreDirPath().resolve("${p.packageName}-admob.properties")
         val prompt = buildApplyAdmobPrompt(p.id, p.moduleName, p.packageName, admobPropsPath, ids)
         val providerName = selectedProviderName(id)
-        val sent = runCatching { agentRouter.sendPrompt(id, prompt) }
+        val sent = runCatching { promptSender.send(id, prompt, source = "project_keystore_apply_admob_manual", ownerUserId = sess.userId) }
             .onFailure { log.warn(it) { "apply-admob (manual) prompt failed for $id / ${p.packageName}" } }
             .isSuccess
         if (sent) {
@@ -277,7 +279,7 @@ fun Routing.projectKeystoreRoutes(
         }
         val prompt = buildApplySigningPrompt(p.id, p.moduleName, keystore, entry)
         val providerName = selectedProviderName(id)
-        val sent = runCatching { agentRouter.sendPrompt(id, prompt) }
+        val sent = runCatching { promptSender.send(id, prompt, source = "project_keystore_apply_signing", ownerUserId = sess.userId) }
             .onFailure { log.warn(it) { "apply-signing prompt failed for $id / ${p.packageName}" } }
             .isSuccess
         if (sent) {
@@ -348,7 +350,7 @@ fun Routing.projectKeystoreRoutes(
         // 콘솔에 이동배치(staging → keystores, 기존 백업) + build.gradle.kts 서명 적용 프롬프트 발사(한 turn).
         val prompt = buildKeystorePlacementPrompt(p.id, p.moduleName, p.packageName, keystore, stage)
         val providerName = selectedProviderName(id)
-        val promptSent = runCatching { agentRouter.sendPrompt(id, prompt) }
+        val promptSent = runCatching { promptSender.send(id, prompt, source = "project_keystore_upload_placement", ownerUserId = sess.userId) }
             .onFailure { log.warn(it) { "post-upload placement prompt failed: $id" } }
             .isSuccess
         val staged = buildList {

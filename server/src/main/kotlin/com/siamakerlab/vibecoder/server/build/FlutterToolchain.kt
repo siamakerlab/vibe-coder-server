@@ -1,12 +1,21 @@
 package com.siamakerlab.vibecoder.server.build
 
 import com.siamakerlab.vibecoder.server.admin.SigningCredentials
+import com.siamakerlab.vibecoder.server.config.IosAgentSection
 import com.siamakerlab.vibecoder.server.config.ServerConfig
 import com.siamakerlab.vibecoder.server.core.ProcessRunner
+import com.siamakerlab.vibecoder.server.ios.CommandRunner
+import com.siamakerlab.vibecoder.server.ios.IosAgentCommandRunner
+import com.siamakerlab.vibecoder.server.ios.IosWorkspaceSyncService
+import com.siamakerlab.vibecoder.server.ios.ProcessCommandRunner
+import com.siamakerlab.vibecoder.server.ios.shellSingleQuoted
 import com.siamakerlab.vibecoder.server.tasks.TaskLogger
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.withContext
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Duration
 import kotlin.time.Duration.Companion.minutes
 
 /**
@@ -20,7 +29,11 @@ import kotlin.time.Duration.Companion.minutes
  * 못한다. 따라서 [signing] 후보가 있어도 release/bundle 에서 안내 로그만 남기고, 실제
  * 서명은 프로젝트의 key.properties 가 담당한다(Claude 콘솔 scaffold — P4/P5).
  */
-class FlutterToolchain(private val config: ServerConfig) : BuildToolchain {
+class FlutterToolchain(
+    private val config: ServerConfig,
+    private val iosAgentConfigProvider: () -> IosAgentSection = { config.ios.agent },
+    private val commandRunner: CommandRunner = ProcessCommandRunner,
+) : BuildToolchain {
 
     override suspend fun runBuild(
         source: Path,
@@ -31,6 +44,10 @@ class FlutterToolchain(private val config: ServerConfig) : BuildToolchain {
         cancellation: Flow<Unit>,
         signing: SigningCredentials?,
     ): Int {
+        if (variant.isIos) {
+            return runIosBuild(source, variant, logger, cancellation, signing)
+        }
+
         // v1.127.2 (정밀리뷰 #1) — flutter 미설치 시 ProcessRunner.run 의 pb.start() 가 IOException
         // 을 던져(try/catch 밖) onFailure 로 raw 예외만 노출됐다. GradleBuilder 가 gradlew 를
         // 선체크하듯, flutter 가용성을 먼저 확인해 친절 안내 + 127 반환.
@@ -42,11 +59,15 @@ class FlutterToolchain(private val config: ServerConfig) : BuildToolchain {
             )
             return 127
         }
-        // Android 앱 빌드 전용 — apk(debug/release) / appbundle(release).
+        // Android 앱 빌드 — apk(debug/release) / appbundle(release).
         val sub = when (variant) {
             BuildVariant.DEBUG -> listOf("build", "apk", "--debug")
             BuildVariant.RELEASE -> listOf("build", "apk", "--release")
             BuildVariant.BUNDLE -> listOf("build", "appbundle", "--release")
+            BuildVariant.IOS_BUILD_DEBUG,
+            BuildVariant.IOS_TEST,
+            BuildVariant.IOS_ARCHIVE,
+            BuildVariant.IOS_EXPORT_IPA -> throw IllegalArgumentException("iOS variant ${variant.wire} cannot run on FlutterToolchain")
         }
         val cleanCommand = listOf(flutterBin(), "clean")
         logger.info("Flutter clean command: ${cleanCommand.joinToString(" ")}")
@@ -100,6 +121,12 @@ class FlutterToolchain(private val config: ServerConfig) : BuildToolchain {
             BuildVariant.DEBUG -> "build/app/outputs/flutter-apk/app-debug.apk"
             BuildVariant.RELEASE -> "build/app/outputs/flutter-apk/app-release.apk"
             BuildVariant.BUNDLE -> "build/app/outputs/bundle/release/app-release.aab"
+            BuildVariant.IOS_EXPORT_IPA -> return newestRegularFile(source.resolve("build/ios/ipa")) {
+                it.fileName.toString().endsWith(".ipa")
+            }
+            BuildVariant.IOS_BUILD_DEBUG,
+            BuildVariant.IOS_TEST,
+            BuildVariant.IOS_ARCHIVE -> return null
         }
         val p = source.resolve(rel)
         return p.takeIf { Files.exists(it) }
@@ -111,4 +138,95 @@ class FlutterToolchain(private val config: ServerConfig) : BuildToolchain {
      */
     private fun flutterBin(): String =
         System.getenv("FLUTTER_CMD")?.ifBlank { null } ?: "flutter"
+
+    private suspend fun runIosBuild(
+        source: Path,
+        variant: BuildVariant,
+        logger: TaskLogger,
+        cancellation: Flow<Unit>,
+        signing: SigningCredentials?,
+    ): Int {
+        val agent = iosAgentConfigProvider()
+        val mode = agent.mode.trim().lowercase()
+        val useSshAgent = mode in setOf("ssh", "remote")
+        val workRoot = if (useSshAgent) {
+            val projectId = source.fileName?.toString()?.ifBlank { null } ?: "flutter-project"
+            val plan = IosWorkspaceSyncService(agent).plan(projectId, source.normalize(), dryRun = false)
+            logger.info("Flutter iOS workspace sync: ${plan.command.joinToString(" ")}")
+            val sync = withContext(Dispatchers.IO) { commandRunner.run(plan.command, IOS_SYNC_TIMEOUT) }
+            sync.stdout.lineSequence().filter { it.isNotBlank() }.forEach { logger.info(it) }
+            sync.stderr.lineSequence().filter { it.isNotBlank() }.forEach { logger.warn(it) }
+            if (!sync.ok) return sync.exitCode
+            Path.of(plan.remoteProjectRoot)
+        } else {
+            source.normalize()
+        }
+        if (signing != null && variant == BuildVariant.IOS_EXPORT_IPA) {
+            logger.info("Flutter iOS signing uses the Flutter/Xcode ios/Runner signing settings on the Mac agent.")
+        }
+        val build = when (variant) {
+            BuildVariant.IOS_BUILD_DEBUG -> listOf(flutterBin(), "build", "ios", "--debug", "--simulator", "--no-codesign")
+            BuildVariant.IOS_EXPORT_IPA -> listOf(flutterBin(), "build", "ipa", "--release")
+            else -> throw IllegalArgumentException("Flutter iOS variant ${variant.wire} is not supported")
+        }
+        val createIos = listOf(flutterBin(), "create", "--platforms=ios", ".")
+        val command = listOf("bash", "-lc", "test -d ios || ${createIos.shellJoin()}; ${build.shellJoin()}")
+        logger.info("Flutter iOS build command: ${command.joinToString(" ")}")
+        val executable = if (useSshAgent) {
+            IosAgentCommandRunner(agent).buildCommand(listOf("bash", "-lc", "cd ${workRoot.toString().shellSingleQuoted()} && ${command.last()}"))
+        } else {
+            listOf("bash", "-lc", "cd ${workRoot.toString().shellSingleQuoted()} && ${command.last()}")
+        }
+        val result = ProcessRunner(workdir = Path.of("/")).run(
+            command = executable,
+            timeout = config.build.timeoutMinutes.minutes,
+            cancellation = cancellation,
+        ) { level, line -> logger.line(level, line) }
+        if (useSshAgent) {
+            pullFlutterIosArtifacts(agent, workRoot, source.normalize(), logger)
+        }
+        return result.exitCode
+    }
+
+    private suspend fun pullFlutterIosArtifacts(
+        agent: IosAgentSection,
+        remoteRoot: Path,
+        localRoot: Path,
+        logger: TaskLogger,
+    ) {
+        val host = agent.host.trim()
+        val user = agent.user.trim()
+        val port = agent.port
+        if (host.isBlank() || user.isBlank() || port !in 1..65535) return
+        val localBuild = localRoot.resolve("build/ios")
+        Files.createDirectories(localBuild)
+        val command = listOf(
+            "rsync",
+            "-az",
+            "-e",
+            "ssh -p $port -o BatchMode=yes -o StrictHostKeyChecking=accept-new",
+            "$user@$host:${remoteRoot.resolve("build/ios").toString().shellSingleQuoted()}/",
+            localBuild.toString().trimEnd('/') + "/",
+        )
+        logger.info("Flutter iOS artifact sync: ${command.joinToString(" ")}")
+        val result = withContext(Dispatchers.IO) { commandRunner.run(command, IOS_SYNC_TIMEOUT) }
+        result.stdout.lineSequence().filter { it.isNotBlank() }.forEach { logger.info(it) }
+        result.stderr.lineSequence().filter { it.isNotBlank() }.forEach { logger.warn(it) }
+    }
+
+    private fun newestRegularFile(root: Path, predicate: (Path) -> Boolean): Path? {
+        if (!Files.exists(root)) return null
+        return Files.walk(root).use { stream ->
+            stream
+                .filter { Files.isRegularFile(it) && predicate(it) }
+                .max(Comparator.comparingLong { Files.getLastModifiedTime(it).toMillis() })
+                .orElse(null)
+        }
+    }
+
+    private fun List<String>.shellJoin(): String = joinToString(" ") { it.shellSingleQuoted() }
+
+    private companion object {
+        val IOS_SYNC_TIMEOUT: Duration = Duration.ofMinutes(10)
+    }
 }

@@ -1,6 +1,7 @@
 package com.siamakerlab.vibecoder.server.core
 
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.coroutineScope
@@ -17,6 +18,7 @@ import java.io.BufferedReader
 import java.io.InputStream
 import java.io.InputStreamReader
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -61,9 +63,11 @@ class ProcessRunner(
         val stderrJob = launch(Dispatchers.IO) { streamLines(process.errorStream, "STDERR", onLine) }
 
         // External cancellation watcher.
+        val cancellationSignaled = AtomicBoolean(false)
         val cancelJob = launch {
             val signaled = cancellation.firstOrNull()
             if (signaled != null && process.isAlive) {
+                cancellationSignaled.set(true)
                 process.destroyForcibly()
             }
         }
@@ -76,6 +80,9 @@ class ProcessRunner(
         } catch (e: TimeoutCancellationException) {
             if (process.isAlive) process.destroyForcibly().waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
             Triple(-1, true, false)
+        } catch (e: CancellationException) {
+            if (process.isAlive) process.destroyForcibly().waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
+            throw e
         } finally {
             // v1.31.1 (B-Q3) — reader join 에 timeout. 정상(EOF)/timeout(파이프 close)
             // 경로는 즉시 unblock 되지만, 외부 cancellation 으로 process 가 아직
@@ -95,7 +102,7 @@ class ProcessRunner(
         ProcessResult(
             exitCode = exit,
             durationMs = System.currentTimeMillis() - started,
-            cancelled = cancelled || effectiveCancelled,
+            cancelled = cancelled || cancellationSignaled.get() || effectiveCancelled,
             timedOut = timedOut,
         )
     }

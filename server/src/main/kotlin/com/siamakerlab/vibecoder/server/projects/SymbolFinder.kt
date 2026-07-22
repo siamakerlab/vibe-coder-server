@@ -19,12 +19,15 @@ private val log = KotlinLogging.logger {}
  * catches 90% of real "jump to definition" cases (top-level declarations) in milliseconds
  * with zero new dependencies.
  *
- * Patterns matched (Kotlin + Java):
+ * Patterns matched (Kotlin + Java + Swift):
  *   - `fun <name>(`
  *   - `(class|object|interface|enum class|annotation class) <name>`
  *   - `val <name>` / `var <name>` (top-level + property)
  *   - Java `(public|protected|private|static)? ... (class|interface|enum) <name>`
  *   - Java method `... <name>(`
+ *   - Swift `(struct|class|protocol|enum|actor) <name>`
+ *   - Swift `func <name>(`
+ *   - SwiftUI `struct <name>: View`
  *
  * Heuristic — false positives possible (e.g. nested type with same name). The UI is meant
  * for jumping, not for refactoring; clicking still shows the file + line so the user
@@ -97,6 +100,16 @@ class SymbolFinder(private val workspace: WorkspacePath) {
         return listOf(
             // fun foo(...) — Kotlin
             Regex("""\bfun\s+(?:<[^>]+>\s+)?(?:\w+\.)?$s\s*[(<]""") to "fun",
+            // SwiftUI View declaration — keep before generic Swift struct.
+            Regex("""\b(?:public\s+|internal\s+|fileprivate\s+|private\s+|open\s+|final\s+)*struct\s+$s\b[^{}\n:]*:\s*(?:[\w.]+\s*,\s*)*View\b""") to "swiftui-view",
+            // Swift type declarations.
+            Regex("""\b(?:public\s+|internal\s+|fileprivate\s+|private\s+|open\s+|final\s+|indirect\s+)*struct\s+$s\b""") to "struct",
+            Regex("""\b(?:public\s+|internal\s+|fileprivate\s+|private\s+|open\s+|final\s+)*class\s+$s\b""") to "class",
+            Regex("""\b(?:public\s+|internal\s+|fileprivate\s+|private\s+|open\s+)*protocol\s+$s\b""") to "protocol",
+            Regex("""\b(?:public\s+|internal\s+|fileprivate\s+|private\s+|indirect\s+|frozen\s+)*enum\s+$s\b""") to "enum",
+            Regex("""\b(?:public\s+|internal\s+|fileprivate\s+|private\s+|open\s+|final\s+)*actor\s+$s\b""") to "actor",
+            Regex("""\b(?:public\s+|internal\s+|fileprivate\s+|private\s+|static\s+|class\s+|mutating\s+|nonmutating\s+|override\s+)*func\s+$s\s*(?:<[^>]+>)?\(""") to "func",
+            Regex("""\b(?:public\s+|internal\s+|fileprivate\s+|private\s+|static\s+)*(?:let|var)\s+$s\s*[:=]""") to "val",
             // class / object / interface / enum class / annotation class / data class
             Regex("""\b(?:open\s+|abstract\s+|sealed\s+|final\s+|inner\s+|data\s+|enum\s+|annotation\s+|value\s+)*(?:class|interface|object)\s+$s\b""") to "class",
             // val / var (top-level + property)
@@ -139,8 +152,8 @@ class SymbolFinder(private val workspace: WorkspacePath) {
         private val EXCLUDED_TOP_DIRS = setOf(".git", "build", ".gradle", "node_modules", ".idea")
         /**
          * Symbol lookup 은 declaration 만 찾으므로 코드 파일에 집중. `.kt`, `.java`,
-         * 그리고 Gradle DSL (`.gradle.kts`, `.kts`) 정도. XML 은 별도 grep 으로.
+         * `.swift`, 그리고 Gradle DSL (`.gradle.kts`, `.kts`) 정도. XML 은 별도 grep 으로.
          */
-        private val TEXT_EXTENSIONS = setOf("kt", "kts", "java", "groovy")
+        private val TEXT_EXTENSIONS = setOf("kt", "kts", "java", "groovy", "swift")
     }
 }

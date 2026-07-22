@@ -95,17 +95,52 @@ internal object PackageNameDetector {
 
     /**
      * v1.128.0 — clone 된 repo 의 프로젝트 타입 추정. `pubspec.yaml`(루트) → flutter,
-     * gradle settings/build(.kts) → kotlin, 둘 다 또는 어느 것도 없으면 null(불명확 →
-     * 경고 안 함). clone 시 사용자 선택과 비교해 mismatch 경고에 사용.
+     * Xcode/iOS marker → iphone, gradle settings/build(.kts) → kotlin, 둘 다 또는 어느 것도
+     * 없으면 null(불명확 → 경고 안 함). clone 시 사용자 선택과 비교해 mismatch 경고에 사용.
      *
      * Flutter 도 android/ 하위에 build.gradle 이 있으므로 **루트 pubspec.yaml** 이 판별 핵심.
      */
     fun detectProjectType(root: Path): String? {
         if (!Files.isDirectory(root)) return null
         if (Files.isRegularFile(root.resolve("pubspec.yaml"))) return ProjectTypes.FLUTTER
+        if (hasIPhoneProjectMarker(root)) return ProjectTypes.IPHONE
         val hasGradle = (GRADLE_FILES + listOf("settings.gradle.kts", "settings.gradle"))
             .any { Files.isRegularFile(root.resolve(it)) }
         return if (hasGradle) ProjectTypes.KOTLIN else null
+    }
+
+    private fun hasIPhoneProjectMarker(root: Path): Boolean =
+        runCatching {
+            Files.walk(root, 5).use { stream ->
+                for (path in stream) {
+                    val name = path.fileName?.toString() ?: continue
+                    if (Files.isDirectory(path) && (name.endsWith(".xcodeproj") || name.endsWith(".xcworkspace"))) {
+                        return@use true
+                    }
+                    if (Files.isRegularFile(path) && name == "project.pbxproj") {
+                        return@use true
+                    }
+                    if (Files.isRegularFile(path) && name == "Package.swift" && isIPhoneSwiftPackage(path)) {
+                        return@use true
+                    }
+                    if (Files.isRegularFile(path) && name == "Info.plist" && isIPhoneInfoPlist(path)) {
+                        return@use true
+                    }
+                }
+                false
+            }
+        }.getOrDefault(false)
+
+    private fun isIPhoneSwiftPackage(path: Path): Boolean {
+        val text = runCatching { Files.readString(path) }.getOrNull() ?: return false
+        val lower = text.lowercase()
+        return ".ios(" in lower || "platforms:" in lower && "ios" in lower || "swiftui" in lower
+    }
+
+    private fun isIPhoneInfoPlist(path: Path): Boolean {
+        val text = runCatching { Files.readString(path) }.getOrNull() ?: return false
+        return "CFBundleIdentifier" in text &&
+            ("UIApplicationSceneManifest" in text || "UILaunchScreen" in text || "UIDeviceFamily" in text)
     }
 
     private fun readIncludes(root: Path): List<String> {

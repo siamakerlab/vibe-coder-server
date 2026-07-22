@@ -5,11 +5,12 @@ import kotlinx.serialization.Serializable
 /**
  * v0.54.0+ — Symbol definition lookup hit.
  *
- * 서버 스캐너는 정규식 기반 (Kotlin/Java/Groovy) 으로 다음 종류만 인식:
+ * 서버 스캐너는 정규식 기반 (Kotlin/Java/Groovy/Swift) 으로 다음 종류를 인식:
  *  - `fun` — top-level/member function
  *  - `class` — class / interface / object
  *  - `val` — val / var
  *  - `typealias`
+ *  - `struct` / `protocol` / `enum` / `actor` / `func` / `swiftui-view` — Swift
  *
  * `line` 은 매치된 한 줄의 raw 텍스트 (trim 없음). UI 에서는 monospace + 좌우
  * truncation 권장. `relPath` 는 프로젝트 workspace root 기준 경로 (`/` separator).

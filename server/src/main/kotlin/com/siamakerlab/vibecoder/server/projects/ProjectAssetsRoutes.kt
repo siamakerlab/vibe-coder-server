@@ -9,6 +9,7 @@ import com.siamakerlab.vibecoder.server.auth.CsrfTokens
 import com.siamakerlab.vibecoder.server.auth.CsrfTokens.requireCsrf
 import com.siamakerlab.vibecoder.server.agent.AgentRouter
 import com.siamakerlab.vibecoder.server.core.WorkspacePath
+import com.siamakerlab.vibecoder.server.terminal.ConsolePromptSender
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
@@ -60,6 +61,7 @@ fun Routing.projectAssetsRoutes(
     projects: ProjectService,
     workspace: WorkspacePath,
     agentRouter: AgentRouter,
+    promptSender: ConsolePromptSender,
     /** v1.66.0 — Play Console 업로드(MCP google-play-publisher 위임). */
     playPublishService: com.siamakerlab.vibecoder.server.publish.PlayPublishService,
 ) {
@@ -157,7 +159,7 @@ fun Routing.projectAssetsRoutes(
         if (parsed.apply) {
             val p = projects.get(id)
             val prompt = buildApplyIconPrompt(id, p.moduleName, root.resolve("icon.png"))
-            val sent = runCatching { agentRouter.sendPrompt(id, prompt) }
+            val sent = runCatching { promptSender.send(id, prompt, source = "project_assets_apply_icon", ownerUserId = sess.userId) }
                 .onFailure { e -> log.warn(e) { "apply-icon prompt failed: $id" } }.isSuccess
             call.respondRedirect("/projects/$id/assets?flash=${if (sent) "applied" else "err:agent"}")
         } else {

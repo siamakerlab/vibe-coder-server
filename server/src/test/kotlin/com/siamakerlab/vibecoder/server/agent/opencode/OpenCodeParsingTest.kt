@@ -162,6 +162,20 @@ class OpenCodeParsingTest {
         isZaiCodingPlanModel("") shouldBe false
     }
 
+    @Test
+    fun `zai enforced config keeps global skills and default mcp`() {
+        val cfg = buildZaiEnforcedOpenCodeConfig("zai-coding-plan/glm-5.2")
+
+        cfg.contains("\"provider\": {}") shouldBe true
+        cfg.contains("\"paths\": [\"/home/vibe/.claude/skills\"]") shouldBe true
+        cfg.contains("\"memory\"") shouldBe true
+        cfg.contains("\"sequentialthinking\"") shouldBe true
+        cfg.contains("\"context7\"") shouldBe true
+        cfg.contains("\"playwright\"") shouldBe true
+        cfg.contains("\"mobile-mcp\"") shouldBe true
+        cfg.contains("\"android-docs\"") shouldBe true
+    }
+
     // ── rate-limit 분류 (v1.154.0) ─────────────────────────────────────────────
 
     @Test

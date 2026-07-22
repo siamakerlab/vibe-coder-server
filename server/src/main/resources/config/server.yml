@@ -2,7 +2,7 @@ server:
   name: Vibe Coder Server
   host: 0.0.0.0
   port: 17880
-  version: 1.162.1
+  version: 1.163.0
 
 workspace:
   # Each project lives at <root>/<projectId>/.
@@ -44,6 +44,10 @@ security:
   # 사라져 "완전 새 터미널"로 초기화됐다. 기본 1440(24h). LAN 단일 사용자라 PTY 1개
   # (≈수 MB)를 길게 살려도 부담 작다. 완전 무제한은 0.
   terminalIdleTimeoutMinutes: 1440
+  # Project console provider TUI sessions keep provider-native CLI processes alive. They are
+  # heavier than the generic bash terminal, so disconnected idle sessions are reaped sooner by
+  # default. Active browser connections are never reaped. 0 = unlimited.
+  consoleTuiIdleTimeoutMinutes: 120
   # v1.28.0 — 신뢰 리버스 프록시 뒤 배포 시 X-Forwarded-For 로 실제 클라이언트 IP
   # 식별. true 면 XForwardedHeaders 설치 → IP 차단/rate-limit 이 프록시 IP 가 아닌
   # 실제 클라 IP 기준으로 동작. 운영(openresty→localhost:17880)에서는 true 권장.
@@ -57,19 +61,6 @@ claude:
   path: auto
   timeoutMinutes: 60
   autoBuildAfterTask: false
-  # v1.69.0 — 동시 진행 turn 상한. 여러 프로젝트/sub-agent 콘솔에서 동시에 prompt 를
-  # 던질 때 같은 계정+IP burst 로 인한 서버측 throttle(429 "Server is temporarily
-  # limiting requests") 을 막는다. 상한 도달 시 새 turn 은 거부가 아니라 대기(queue).
-  # 0 이하 = 무제한(기존 동작). 기본 3 (1M 컨텍스트 + throttle 회피 보수값). 재시작 후 적용.
-  maxConcurrentTurns: 3
-  # v1.135.0 — 메인 콘솔 상주 세션 수 상한(LRU 조기 회수). 세션 1개 = claude + MCP 사이드카
-  # 트리(~900MB) 상주. 상한 초과 시 가장 오래 유휴인 세션부터 정리(session-id 보존 →
-  # 다음 프롬프트에서 --resume 으로 이어짐). 진행 중(busy) 세션은 절대 회수하지 않음.
-  # 0 이하 = 비활성(기존 30분 idle reaper 만). /settings 저장 시 즉시 반영.
-  # v1.144.4 — 기본을 maxConcurrentTurns 와 동일(3)로 정렬. 비인터랙티브 환경이라 turn 이
-  # 끝난 세션을 warm 으로 길게 살릴 실익이 적고(--resume 으로 동일 재개), 상주=응답중 으로
-  # 수렴시켜 "응답중 수 이상 활성화 없음" + 메모리 상한을 함께 보장(일괄 전송 OOM 사건 후속).
-  maxResidentSessions: 3
   # v1.106.0 / v1.107.2 — 프로젝트별 모델 미설정 시의 전역 기본. claude --model <model> 전달.
   # "default" = --model 미전달 → CLI 가 자체 설정/계정 기본으로 모델을 직접 선택(기본값).
   # "sonnet"(Opus 대비 약 1/5 사용량) / "opus" / "fable"(Claude Fable 5 — 최상위, Opus 2배 비용,
@@ -89,13 +80,6 @@ claude:
   # v1.123.0 — 2단계 경고의 CRITICAL(2차) 임계. contextWarnTokens(1차)보다 강한 문구 +
   # 즉시 '새 세션' 권장. 0 이하 = 비활성. env VIBECODER_CLAUDE_CONTEXT_CRITICAL_TOKENS.
   contextCriticalTokens: 600000
-  # v1.123.0 — 세션 길이 캡(컨텍스트). turn 종료 후 직전 cache_read 가 이 값을 넘으면 자동으로
-  # 새 세션 시작(savedId 폐기 → 다음 prompt fresh). /compact 로도 못 막는 누적 폭주를 끊는다.
-  # **맥락 손실이 크므로 기본 0(비활성)** — 켜려면 권장 900000. env VIBECODER_CLAUDE_SESSION_RESET_TOKENS.
-  sessionResetTokens: 0
-  # v1.123.0 — 세션 길이 캡(turn 수). 정상 완료 turn 수가 이 값에 도달하면 자동 새 세션(컨텍스트 캡과 OR).
-  # 0 = 비활성. env VIBECODER_CLAUDE_SESSION_TURN_CAP.
-  sessionTurnCap: 0
   # v0.21.0 — 사용량 모니터링 + 임계치 이메일 알림.
   # enabled=false 면 폴링/알림 둘 다 끔. pollIntervalMinutes 너무 짧으면
   # claude /status 호출 비용↑. warnThresholdPercent 도달 시 1회 + critical 도달 시
@@ -111,9 +95,6 @@ codex:
   # 프로젝트별 모델 미설정 시 Codex CLI 기본 모델 사용. "default" = --model 미전달.
   # 프로젝트별 선택값은 .vibecoder/codex-model 에 저장된다.
   model: default
-  # Codex provider 전용 상주 세션 상한. Claude 상한과 독립적으로 /settings 에서 조정.
-  # Codex exec 는 turn 단위 프로세스라 보통 turn 종료 후 비워진다. 0 이하 = 비활성.
-  maxResidentSessions: 3
   # v1.147.0 — 사용량 모니터링 + 임계치 알림 (claude.usage 와 대칭).
   # Codex usage 는 session(5h)/weekly(7d) 두 게이지로 오며, 임계치 판정은 둘 중 큰 값 기준.
   # warnThresholdPercent 도달 시 1회 + critical 도달 시 1회 transition 기반 발송 (10분 cooldown).
@@ -138,10 +119,6 @@ opencode:
   # OPENCODE_CONFIG_HOME override. "default" = ~/.config/opencode.
   # env VIBECODER_OPENCODE_CONFIG_HOME.
   configHome: default
-  # OpenCode(GLM) provider 전용 상주 세션 상한. Claude/Codex 와 독립적으로 /settings 에서 조정.
-  # opencode run 은 turn 단위 프로세스라 보통 turn 종료 후 비워진다. 0 이하 = 비활성.
-  # env VIBECODER_OPENCODE_MAX_RESIDENT_SESSIONS.
-  maxResidentSessions: 3
   # opencode 실행 경로. "auto" 면 OPENCODE_CMD env → opencode.
   # env VIBECODER_OPENCODE_CMD.
   cmd: auto
@@ -201,6 +178,28 @@ webhook:
   discordUrl: ""
   telegramBotToken: ""
   telegramChatId: ""
+
+resources:
+  # Memory-heavy child processes (Claude/Codex/OpenCode/Gradle/Flutter) are blocked before
+  # the container reaches OOM. Soft pressure only triggers idle cleanup; blocking is reserved
+  # for hard pressure or the free-memory floor. Docker compose should still set a hard cgroup
+  # memory limit.
+  enabled: true
+  memorySoftLimitPercent: 88
+  memoryHardLimitPercent: 96
+  minFreeMemoryMb: 768
+  killIdleTuiSessionsOnPressure: true
+
+ios:
+  agent:
+    enabled: false
+    # local = MacBook local install, ssh = remote macOS agent.
+    mode: local
+    host: ""
+    port: 22
+    user: ""
+    workspaceRoot: ""
+    xcodePath: auto
 
 # v0.77.0 — Phase 64 i18n. SSR 다국어 fallback.
 # 사용자 별 언어 설정 (Settings → General → Language) 이 없을 때 적용.

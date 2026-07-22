@@ -218,6 +218,29 @@ sealed class WsFrame {
         val state: String? = null,
     ) : WsFrame()
 
+    /**
+     * Normalized provider/session status. This is separate from terminal output and richer than
+     * ProjectBusyChanged so every project/provider tab can render consistent state without parsing
+     * ANSI/TUI text. Additive frame; older clients ignore it.
+     */
+    @Serializable
+    @SerialName("agent_status_changed")
+    data class AgentStatusChanged(
+        val projectId: String,
+        val provider: String,
+        val sessionId: String? = null,
+        val state: String,
+        val activity: String? = null,
+        val currentTool: String? = null,
+        val message: String? = null,
+        val error: String? = null,
+        val pid: Long? = null,
+        val lastEventAt: Long,
+        val lastOutputAt: Long,
+        val turnStartedAt: Long? = null,
+        val seq: Long,
+    ) : WsFrame()
+
     /** Sent right before replay frames so the client can show a "loading history" affordance. */
     @Serializable
     @SerialName("console_replay_begin")
@@ -247,7 +270,15 @@ sealed class WsFrame {
     /** v1.6.0 — Client → server: 사용자 키 입력 (raw bytes 그대로 PTY stdin). */
     @Serializable
     @SerialName("terminal_input")
-    data class TerminalInput(val data: String) : WsFrame()
+    data class TerminalInput(
+        val data: String,
+        /**
+         * Optional user-visible prompt text to persist in console history. Raw terminal bytes are
+         * not a reliable prompt source because they also contain mouse, scroll, focus, paste, and
+         * terminal-control escape sequences.
+         */
+        val recordPrompt: String? = null,
+    ) : WsFrame()
 
     /** v1.6.0 — Client → server: terminal resize (rows × cols). xterm.js 의 resize event. */
     @Serializable

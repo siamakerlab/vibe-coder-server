@@ -92,6 +92,7 @@ object Builds : Table("builds") {
     val logPath = text("log_path").nullable()
     val artifactId = varchar("artifact_id", 64).nullable()
     val errorMessage = text("error_message").nullable()
+    val failureKind = varchar("failure_kind", 64).nullable()
     val startedAt = varchar("started_at", 64).nullable()
     val finishedAt = varchar("finished_at", 64).nullable()
     val createdAt = varchar("created_at", 64)
@@ -145,6 +146,33 @@ object Artifacts : Table("artifacts") {
     init {
         // v1.34.1 (19차 Q1) — prune(listForProjectAll) / 목록이 project_id 필터.
         index(isUnique = false, columns = arrayOf(projectId, createdAt))
+    }
+}
+
+object TestFlightUploadJobs : Table("testflight_upload_jobs") {
+    val id = varchar("id", 64)
+    val projectId = varchar("project_id", 64).references(Projects.id)
+    val buildId = varchar("build_id", 64).nullable()
+    val artifactId = varchar("artifact_id", 64).nullable()
+    val ipaPath = text("ipa_path")
+    val bundleId = varchar("bundle_id", 256).nullable()
+    val appId = varchar("app_id", 64).nullable()
+    val appName = varchar("app_name", 256).nullable()
+    val buildNumber = varchar("build_number", 64).nullable()
+    val status = varchar("status", 32)
+    val distributionGroups = text("distribution_groups").nullable()
+    val releaseNotes = text("release_notes").nullable()
+    val message = text("message").nullable()
+    val errorCode = varchar("error_code", 64).nullable()
+    val createdAt = varchar("created_at", 64)
+    val updatedAt = varchar("updated_at", 64)
+    val finishedAt = varchar("finished_at", 64).nullable()
+    override val primaryKey = PrimaryKey(id)
+
+    init {
+        index(isUnique = false, columns = arrayOf(projectId, createdAt))
+        index(isUnique = false, columns = arrayOf(buildId))
+        index(isUnique = false, columns = arrayOf(status))
     }
 }
 
@@ -495,4 +523,5 @@ val AllTables = arrayOf(
     AdminUsers, Devices, Projects, Builds, Artifacts, UploadedFiles, AuditLog, ConversationTurns,
     BuildSchedules, BuildWebhookSecrets, PushSubscriptions, WebauthnCredentials, ProjectAcls,
     NotificationEvents, PromptAutomationRuns, Memos, ArchivedProjects, ScheduledPrompts,
+    TestFlightUploadJobs,
 )

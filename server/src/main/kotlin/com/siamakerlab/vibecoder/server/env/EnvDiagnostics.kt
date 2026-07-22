@@ -86,10 +86,19 @@ class EnvDiagnostics(private val config: ServerConfig) {
             return CheckItemDto(CheckStatus.WARNING, "Claude Code", t(lang, "diag.claudeCli.disabled"))
         val cmd = resolveClaudeCmd()
         val v = runtimeCommand(listOf(cmd, "--version"))
-        return if (v.exitCode == 0)
-            CheckItemDto(CheckStatus.OK, "Claude Code", v.combined.trim().ifBlank { t(lang, "diag.claudeCli.ok") }, detail = "cmd=$cmd")
-        else
-            CheckItemDto(CheckStatus.ERROR, "Claude Code", t(lang, "diag.claudeCli.notFound"), detail = t(lang, "diag.claudeCli.tried", cmd))
+        return when {
+            v.exitCode == 0 ->
+                CheckItemDto(CheckStatus.OK, "Claude Code", v.combined.trim().ifBlank { t(lang, "diag.claudeCli.ok") }, detail = "cmd=$cmd")
+            v.looksLikeMissingExecutable() ->
+                CheckItemDto(CheckStatus.ERROR, "Claude Code", t(lang, "diag.claudeCli.notFound"), detail = t(lang, "diag.claudeCli.tried", cmd))
+            else ->
+                CheckItemDto(
+                    CheckStatus.WARNING,
+                    "Claude Code",
+                    t(lang, "diag.claudeCli.versionCheckFailed"),
+                    detail = "cmd=$cmd --version, exit=${v.exitCode}, output=${v.combined.take(200)}",
+                )
+        }
     }
 
     /**
@@ -113,7 +122,7 @@ class EnvDiagnostics(private val config: ServerConfig) {
         if (!config.claude.enabled) {
             return CheckItemDto(CheckStatus.WARNING, "Claude Auth", t(lang, "diag.claudeAuth.disabled"))
         }
-        if (cli.status != CheckStatus.OK) {
+        if (cli.status == CheckStatus.ERROR) {
             return CheckItemDto(
                 CheckStatus.ERROR, "Claude Auth",
                 t(lang, "diag.claudeAuth.cliMissing"),
@@ -269,6 +278,11 @@ class EnvDiagnostics(private val config: ServerConfig) {
     }
 
     private data class Captured(val exitCode: Int, val combined: String)
+
+    private fun Captured.looksLikeMissingExecutable(): Boolean =
+        exitCode == -1 && combined.contains(
+            Regex("Cannot run program|No such file|error=2|CreateProcess error=2", RegexOption.IGNORE_CASE)
+        )
 
     private fun runtimeCommand(cmd: List<String>): Captured =
         try {

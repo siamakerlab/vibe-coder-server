@@ -19,10 +19,44 @@ data class ServerConfig(
     val webhook: WebhookSection = WebhookSection(),
     val webauthn: WebauthnSection = WebauthnSection(),
     val backup: BackupSection = BackupSection(),
+    /** Host/container overload protection for memory-heavy AI/build child processes. */
+    val resources: ResourceGuardSection = ResourceGuardSection(),
+    /** iPhone/Xcode/macOS agent settings. */
+    val ios: IosSection = IosSection(),
     /** v0.77.0 — Phase 64 i18n. SSR 기본 언어 (사용자 별 설정이 없을 때 fallback). */
     val i18n: I18nSection = I18nSection(),
     /** v1.5.0 — Android 키스토어 관리. defaults 가 UI form prefill 값. */
     val keystore: KeystoreSection = KeystoreSection(),
+)
+
+@Serializable
+data class IosSection(
+    val agent: IosAgentSection = IosAgentSection(),
+)
+
+@Serializable
+data class IosAgentSection(
+    val enabled: Boolean = false,
+    /** `local` for MacBook local install, `ssh` for remote macOS agent. */
+    val mode: String = "local",
+    val host: String = "",
+    val port: Int = 22,
+    val user: String = "",
+    val workspaceRoot: String = "",
+    val xcodePath: String = "auto",
+)
+
+@Serializable
+data class ResourceGuardSection(
+    val enabled: Boolean = true,
+    /** Start best-effort cleanup at/above this memory percentage; does not block by itself. */
+    val memorySoftLimitPercent: Int = 88,
+    /** Block new heavy work at/above this memory percentage. */
+    val memoryHardLimitPercent: Int = 96,
+    /** Also block when free memory inside the container/cgroup is below this value. */
+    val minFreeMemoryMb: Long = 768,
+    /** Kill disconnected idle TUI sessions when soft pressure is reached. */
+    val killIdleTuiSessionsOnPressure: Boolean = true,
 )
 
 /**
@@ -157,6 +191,14 @@ data class SecuritySection(
      * 도구라 PTY 1개(≈수 MB)를 길게 살려도 메모리 부담이 작다. 완전 무제한은 0.
      */
     val terminalIdleTimeoutMinutes: Int = 1440,
+    /**
+     * Project console provider TUI session idle timeout (minutes). 0 disables idle reaping.
+     *
+     * Provider CLIs can keep large process trees and transcript buffers alive, so the project
+     * console uses a shorter default than the generic workspace terminal. Active WebSocket
+     * connections are never reaped; only disconnected sessions past this grace are closed.
+     */
+    val consoleTuiIdleTimeoutMinutes: Int = 120,
     /** v0.56.0 — Phase 35 per-IP rate limit. */
     val rateLimit: RateLimitSection = RateLimitSection(),
     /**
@@ -201,29 +243,6 @@ data class ClaudeSection(
     val timeoutMinutes: Int = 60,
     val autoBuildAfterTask: Boolean = false,
     /**
-     * v1.69.0 — 동시에 진행 가능한 Claude turn 수 상한. 여러 프로젝트/sub-agent 콘솔에서
-     * 동시에 prompt 를 던질 때 같은 계정+IP burst 로 인한 서버측 throttle(429) 을 막는다.
-     * 상한 도달 시 새 turn 은 대기(queue). **0 이하면 무제한(기존 동작)**. 기본 3 (1M
-     * 컨텍스트 + throttle 회피를 위한 보수적 기본값). 변경은 서버 재시작 후 적용.
-     */
-    val maxConcurrentTurns: Int = 3,
-    /**
-     * v1.135.0 — 메인 콘솔의 **상주 세션 수 상한** (LRU 조기 회수). 세션 1개는 claude CLI
-     * 프로세스 + MCP 사이드카 트리(~900MB)를 통째로 점유하므로, idle timeout(30분)만으로는
-     * 다수 프로젝트를 오가며 작업할 때 메모리가 누적된다. 상한 초과 시 **가장 오래 유휴**
-     * (busy 아님 + spawn 직후 grace 지난) 세션부터 SIGTERM — session-id 는 보존되어 다음
-     * 프롬프트에서 `--resume` 으로 이어진다. **0 이하면 비활성(기존 idle reaper 만)**.
-     * `/settings` 저장 시 즉시 반영.
-     *
-     * v1.144.4 — 기본값을 6 → **[maxConcurrentTurns] 와 동일(3)** 로 정렬. vibe-coder 는
-     * 비인터랙티브(프롬프트 송신 → 비동기 응답)라, turn 이 끝난 세션을 warm 으로 길게
-     * 살려둘 실익이 적다(다음 프롬프트는 `--resume` 으로 동일 재개). 상주 = 응답중 으로
-     * 수렴시켜 "응답중 수 이상으로 프로젝트가 활성화되지 않는다"는 직관과 메모리 상한을
-     * 함께 보장한다(운영자 결정 2026-06-18 — 일괄 전송 OOM 사건 후속). 인터랙티브 연속
-     * 작업의 cold start 가 잦으면 `/settings` 에서 키우면 된다.
-     */
-    val maxResidentSessions: Int = 3,
-    /**
      * v1.106.0 / v1.107.2 — 프로젝트별 모델 미설정 시의 전역 기본. `claude --model <model>` 전달.
      * "default"(=CLI 기본, --model 미전달) / "sonnet" / "opus" / "fable" / "haiku" / 전체 모델 ID.
      * v1.107.2 — 운영 기본을 **"default"(CLI 기본)** 로. 모델은 프로젝트별로 콘솔 콤보박스에서
@@ -253,21 +272,6 @@ data class ClaudeSection(
      * env VIBECODER_CLAUDE_CONTEXT_CRITICAL_TOKENS 로 override.
      */
     val contextCriticalTokens: Int = 600_000,
-    /**
-     * v1.123.0 — 세션 길이 캡(컨텍스트). turn 정상 종료 후 직전 cache_read 가 이 값을 넘으면
-     * 자동으로 새 세션을 시작(savedId 폐기 → 다음 prompt 는 fresh)한다. 누적 세션이
-     * 길어질수록 매 step cache_read 가 비례 증가하는 폭주를 끊는 근본 차단막. /compact 와
-     * 달리 컨텍스트를 완전 리셋한다(작업 파일·CLAUDE.md 는 유지). **맥락 손실이 크므로
-     * 기본 0(비활성) — 운영자가 의도적으로 켠다.** 권장 900000(1M 윈도우에서 compact 700K
-     * 로도 안 줄 때의 안전판). env VIBECODER_CLAUDE_SESSION_RESET_TOKENS.
-     */
-    val sessionResetTokens: Int = 0,
-    /**
-     * v1.123.0 — 세션 길이 캡(turn 수). 한 세션의 정상 완료 turn 수가 이 값에 도달하면
-     * 자동으로 새 세션을 시작한다(컨텍스트 캡과 OR). 토큰과 무관하게 "오래된 세션 끊기".
-     * 기본 0(비활성). env VIBECODER_CLAUDE_SESSION_TURN_CAP.
-     */
-    val sessionTurnCap: Int = 0,
     /** v0.21.0 — usage 모니터링 정책. */
     val usage: ClaudeUsageSection = ClaudeUsageSection(),
 )
@@ -277,14 +281,8 @@ data class CodexSection(
     /**
      * 프로젝트별 모델 미설정 시의 전역 기본. "default" 면 Codex CLI 기본 모델을 사용해
      * `--model` 을 전달하지 않는다. 프로젝트별 선택값은 `.vibecoder/codex-model` 에 저장된다.
-     */
+    */
     val model: String = "default",
-    /**
-     * Codex provider 전용 상주 세션 상한. Codex exec 는 turn 단위 프로세스라 보통 turn 종료와
-     * 함께 비워지지만, provider별 설정을 분리해 Claude 상한과 독립적으로 조정할 수 있게 둔다.
-     * 0 이하면 비활성. `/settings` 저장 시 즉시 반영.
-     */
-    val maxResidentSessions: Int = 3,
     /** v1.147.0 — Codex 사용량 모니터링 + 임계치 알림 (ClaudeUsageSection 대칭). */
     val usage: CodexUsageSection = CodexUsageSection(),
 )
@@ -319,8 +317,6 @@ data class CodexUsageSection(
  *                          (예: `zai-coding-plan/glm-5.2`).
  * - [configHome]         : `OPENCODE_CONFIG_HOME` override. "default" 면 홈 디렉토리 기본값
  *                          (`~/.config/opencode`) 사용.
- * - [maxResidentSessions]: OpenCode 전용 상주 세션 상한. turn 단위 프로세스라 보통 turn 종료
- *                          후 비워진다. 0 이하 = 비활성.
  * - [cmd]                : opencode 실행 경로. "auto" 면 `OPENCODE_CMD` env → `opencode`.
  * - [zai]                : z.ai coding plan 강제 정책 (Phase 3.1 운용).
  */
@@ -328,7 +324,6 @@ data class CodexUsageSection(
 data class OpenCodeSection(
     val model: String = "default",
     val configHome: String = "default",
-    val maxResidentSessions: Int = 3,
     val cmd: String = "auto",
     /**
      * v1.156.0 — opencode `--variant` (reasoning effort) 기본값. "high" / "max" / "minimal".

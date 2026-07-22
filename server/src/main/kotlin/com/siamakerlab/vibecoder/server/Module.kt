@@ -39,6 +39,13 @@ import com.siamakerlab.vibecoder.server.admin.keystoreRoutes
 import com.siamakerlab.vibecoder.server.admin.KeystoreService
 import com.siamakerlab.vibecoder.server.terminal.terminalRoutes
 import com.siamakerlab.vibecoder.server.terminal.TerminalSessionManager
+import com.siamakerlab.vibecoder.server.terminal.ConsoleTuiSessionManager
+import com.siamakerlab.vibecoder.server.terminal.ConsoleTuiHistoryIngestService
+import com.siamakerlab.vibecoder.server.terminal.ConsoleTuiPreferenceStore
+import com.siamakerlab.vibecoder.server.terminal.AgentStatusBroadcaster
+import com.siamakerlab.vibecoder.server.terminal.AgentStatusStore
+import com.siamakerlab.vibecoder.server.terminal.agentStatusHookRoutes
+import com.siamakerlab.vibecoder.server.terminal.consoleTuiRoutes
 import com.siamakerlab.vibecoder.server.admin.envSetupRoutes
 import com.siamakerlab.vibecoder.server.admin.gitIntegrationsRoutes
 import com.siamakerlab.vibecoder.server.admin.mcpRoutes
@@ -96,6 +103,7 @@ import com.siamakerlab.vibecoder.server.env.ClaudeLoginService
 import com.siamakerlab.vibecoder.server.env.EnvDiagnostics
 import com.siamakerlab.vibecoder.server.env.EnvSetupService
 import com.siamakerlab.vibecoder.server.env.McpService
+import com.siamakerlab.vibecoder.server.ios.iosRoutes
 import com.siamakerlab.vibecoder.server.env.StatusService
 import com.siamakerlab.vibecoder.server.env.envRoutes
 import com.siamakerlab.vibecoder.server.env.envSetupApiRoutes
@@ -140,7 +148,7 @@ import kotlinx.serialization.json.JsonPrimitive
 
 data class ServerContext(
     val config: ServerConfig,
-    /** v1.90.0 — `/settings` 저장 직후 런타임 반영 콜백(ConfigHolder.update + 동시성 한도 등). */
+    /** v1.90.0 — `/settings` 저장 직후 런타임 설정 SSOT 갱신 콜백(ConfigHolder.update). */
     val onConfigSaved: (ServerConfig) -> Unit,
     val workspace: WorkspacePath,
     val deviceRepo: DeviceRepository,
@@ -148,6 +156,7 @@ data class ServerContext(
     val projectRepo: ProjectRepository,
     val buildRepo: BuildRepository,
     val artifactRepo: ArtifactRepository,
+    val testFlightUploadJobRepo: com.siamakerlab.vibecoder.server.repo.TestFlightUploadJobRepository,
     val uploadedFileRepo: UploadedFileRepository,
     val clock: Clock,
     val tokens: TokenService,
@@ -198,6 +207,7 @@ data class ServerContext(
     val playPublishService: com.siamakerlab.vibecoder.server.publish.PlayPublishService,
     /** v0.23.0 — TestFlight 업로드 트리거 (MCP app-store-connect 위임). */
     val testFlightPublishService: com.siamakerlab.vibecoder.server.publish.TestFlightPublishService,
+    val appStoreConnectKeyStore: com.siamakerlab.vibecoder.server.ios.AppStoreConnectKeyStore,
     /** v0.28.0 — APK 서명 검사 (apksigner verify). */
     val apkSignerInspector: com.siamakerlab.vibecoder.server.artifacts.ApkSignerInspector,
     /** v0.28.0 — Gradle / Android / npm 캐시 측정 + 정리. */
@@ -282,6 +292,15 @@ data class ServerContext(
      * `ApplicationStopping` 후크로 graceful 종료.
      */
     val terminalManager: TerminalSessionManager,
+    /** Project-scoped AI console TUI sessions. Compatibility console endpoints route into TUI only. */
+    val consoleTuiManager: ConsoleTuiSessionManager,
+    val consoleTuiHistoryIngest: ConsoleTuiHistoryIngestService,
+    val consolePromptDispatcher: com.siamakerlab.vibecoder.server.terminal.ConsolePromptDispatcher,
+    val consolePromptSender: com.siamakerlab.vibecoder.server.terminal.ConsolePromptSender,
+    val consoleTuiPrefs: ConsoleTuiPreferenceStore,
+    val agentStatusStore: AgentStatusStore,
+    val agentStatusBroadcaster: AgentStatusBroadcaster,
+    val agentStatusHookToken: String,
     /** v1.40.0 — 무선 ADB 기기 logcat (admin). */
     val adb: com.siamakerlab.vibecoder.server.device.AdbService,
     /** v1.73.0 — 안드로이드 에뮬레이터(헤드리스, Claude 로그분석용) lifecycle (admin). */
@@ -296,7 +315,7 @@ data class ServerContext(
     val memoRepo: com.siamakerlab.vibecoder.server.repo.MemoRepository,
 )
 
-fun Application.module(ctx: ServerContext) {
+fun Application.installVibeCoderServer(ctx: ServerContext) {
     val jsonCfg = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
@@ -440,12 +459,14 @@ fun Application.module(ctx: ServerContext) {
         systemStatsRoutes(com.siamakerlab.vibecoder.server.metrics.SystemStatsService())
         // v1.5.0 — Android 키스토어 관리 (설정 → Keystores).
         // v1.8.0 — 같은 service 인스턴스를 BuildService 도 공유 (Gradle signing inject).
-        keystoreRoutes(adminDeps, ctx.keystoreService, ctx.projectRepo, ctx.agentRouter)
+        keystoreRoutes(adminDeps, ctx.keystoreService, ctx.projectRepo, ctx.consolePromptSender)
         // v1.6.0 — Workspace terminal (security.allowTerminal=true 일 때만 등록).
         // v1.27.0 — 글로벌 사이드바 메뉴 (/terminal) 로 이전. manager 는 ServerMain
         // 에서 hoist + ApplicationStopping 후크로 graceful 종료. admin role 가드 +
         // owner-only ACL + idle reaper + per-user 한도 (자세히 TerminalSessionManager).
         terminalRoutes(adminDeps, ctx.terminalManager, ctx.deviceRepo, ctx.tokens, ctx.adminUserRepo)
+        consoleTuiRoutes(ctx.projects, ctx.agentRouter, ctx.consoleTuiManager, ctx.consolePromptDispatcher, ctx.deviceRepo, ctx.tokens)
+        agentStatusHookRoutes(ctx.agentStatusBroadcaster, ctx.agentStatusHookToken)
         adbRoutes(adminDeps, ctx.adb, ctx.deviceRepo, ctx.adminUserRepo)
         // v1.73.0 — 안드로이드 에뮬레이터(헤드리스) 상태/제어. lifecycle 은 ServerMain hoist.
         emulatorRoutes(adminDeps, ctx.emulator)
@@ -454,7 +475,7 @@ fun Application.module(ctx: ServerContext) {
         run {
             val archivedRepo = com.siamakerlab.vibecoder.server.repo.ArchivedProjectRepository()
             val archiveService = com.siamakerlab.vibecoder.server.projects.ProjectArchiveService(
-                ctx.workspace, ctx.keystoreService, ctx.projectRepo, archivedRepo,
+                ctx.workspace, ctx.keystoreService, ctx.projectRepo, archivedRepo, ctx.conversationRepo,
             ) { ctx.projects.delete(it) }
             archiveRoutes(adminDeps, archiveService, ctx.projects, ctx.sessionManager, ctx.buildRepo, ctx.promptAutomationManager)
             jsonArchiveRoutes(archiveService, ctx.sessionManager, ctx.buildRepo, ctx.promptAutomationManager)
@@ -464,7 +485,6 @@ fun Application.module(ctx: ServerContext) {
         // v0.10.0 — admin SSR 라우트들의 JSON API 이중 노출 (vibe-coder-android wire)
         envSetupApiRoutes(
             envSetup = ctx.envSetup,
-            claudeAuth = ctx.claudeAuth,
             claudeLogin = ctx.claudeLogin,
             mcp = ctx.mcp,
             credentials = ctx.gitCredentials,
@@ -485,6 +505,7 @@ fun Application.module(ctx: ServerContext) {
             fileBrowser = ctx.fileBrowser,
             playPublishService = ctx.playPublishService,
             testFlightPublishService = ctx.testFlightPublishService,
+            testFlightUploadJobRepo = ctx.testFlightUploadJobRepo,
             apkSignerInspector = ctx.apkSignerInspector,
             projectArchiver = ctx.projectArchiver,
             conversationRepo = ctx.conversationRepo,
@@ -493,14 +514,30 @@ fun Application.module(ctx: ServerContext) {
             promptAutomationManager = ctx.promptAutomationManager,
             agentRouter = ctx.agentRouter,
             modelCatalog = ctx.modelCatalog,
+            consoleTuiManager = ctx.consoleTuiManager,
+            consolePromptDispatcher = ctx.consolePromptDispatcher,
+            consoleTuiPrefs = ctx.consoleTuiPrefs,
+            agentStatusStore = ctx.agentStatusStore,
         )
         // v0.28.0 — /settings/cache 라우트.
         buildCacheRoutes(adminDeps, ctx.buildCacheService)
         envRoutes(ctx.status, ctx.env)
+        iosRoutes(
+            projects = ctx.projects,
+            appStoreConnectKeys = ctx.appStoreConnectKeyStore,
+            onConfigSaved = ctx.onConfigSaved,
+        )
         projectRoutes(ctx.projects)
-        consoleRoutes(ctx.projects, ctx.sessionManager, ctx.hub, ctx.claudeStatusService, ctx.env, ctx.auditLogger, ctx.promptSuggestionService, ctx.agentRouter, ctx.modelCatalog)
+        consoleRoutes(ctx.projects, ctx.sessionManager, ctx.hub, ctx.claudeStatusService, ctx.env, ctx.auditLogger, ctx.promptSuggestionService, ctx.agentRouter, ctx.modelCatalog, ctx.consoleTuiManager, ctx.consolePromptDispatcher, ctx.consoleTuiPrefs)
         projectActionRoutes(ctx.projects, ctx.actionRegistry, ctx.actionHandler, ctx.capabilityService)
-        buildRoutes(ctx.build, ctx.hub, ctx.projects, ctx.playPublishService)
+        buildRoutes(
+            ctx.build,
+            ctx.hub,
+            ctx.projects,
+            ctx.playPublishService,
+            testFlightPublishService = ctx.testFlightPublishService,
+            testFlightUploadJobRepo = ctx.testFlightUploadJobRepo,
+        )
         artifactRoutes(ctx.artifactRepo, ctx.workspace, ctx.artifacts, ctx.apkVerifier, ctx.projects)
         gitRoutes(ctx.projects, ctx.git, ctx.gitWriter, ctx.auditLogger)
         fileRoutes(ctx.uploads, ctx.projects)
@@ -528,19 +565,19 @@ fun Application.module(ctx: ServerContext) {
         // KeystoreService 인스턴스 공유 — 빌드 서명 inject 와 SSOT.
         projectKeystoreRoutes(
             adminDeps, ctx.projects, ctx.keystoreService, ctx.agentRouter,
-            ctx.buildRepo, ctx.promptAutomationManager,
+            ctx.buildRepo, ctx.promptAutomationManager, ctx.consolePromptSender,
         )
         // v1.65.0 — 스토어 자산(앱 아이콘/그래픽/스크린샷) 탭.
-        projectAssetsRoutes(adminDeps, ctx.projects, ctx.workspace, ctx.agentRouter, ctx.playPublishService)
+        projectAssetsRoutes(adminDeps, ctx.projects, ctx.workspace, ctx.agentRouter, ctx.consolePromptSender, ctx.playPublishService)
         projectAgentRoutes(adminDeps, ctx.projects, ctx.workspace, ctx.agentRegistry)
         projectMcpRoutes(adminDeps, ctx.projects, ctx.workspace, ctx.mcp)
         projectSkillRoutes(adminDeps, ctx.projects, ctx.workspace, globalSkillRegistry)
         projectPluginRoutes(adminDeps, ctx.projects, ctx.workspace, ctx.plugins)
         dependencyAuditRoutes(adminDeps, ctx.projects, ctx.dependencyAudit)
         // v1.116.0 — 품질/접근성 검사 (Android Lint) + 인스트루먼트 테스트(에뮬레이터) + 콘솔 전송.
-        qualityRoutes(adminDeps, ctx.projects, ctx.lintQuality, ctx.instrumentedTest, ctx.agentRouter)
+        qualityRoutes(adminDeps, ctx.projects, ctx.lintQuality, ctx.instrumentedTest, ctx.consolePromptSender)
         // v1.119.0 — 품질(Lint) JSON API (Bearer, android `/quality`). 인스트루먼트 테스트(에뮬레이터) 제외.
-        jsonQualityRoutes(ctx.projects, ctx.lintQuality, ctx.agentRouter)
+        jsonQualityRoutes(ctx.projects, ctx.lintQuality, ctx.consolePromptSender)
         logSearchRoutes(adminDeps, ctx.logSearchService)
         // v0.33.0 — Cron 빌드 + webhook trigger.
         buildAutomationRoutes(
@@ -614,7 +651,8 @@ fun Application.module(ctx: ServerContext) {
         // v0.55.0 — Phase 34 Prometheus /metrics endpoint.
         metricsRoutes(adminDeps, ctx.metrics)
         wsRoutes(ctx.hub, ctx.deviceRepo, ctx.tokens, ctx.sessionManager,
-            ctx.actionRegistry, ctx.actionHandler, ctx.subAgentManager, ctx.adminUserRepo, ctx.projects, ctx.agentRouter)
+            ctx.actionRegistry, ctx.actionHandler, ctx.subAgentManager, ctx.adminUserRepo, ctx.projects,
+            ctx.agentRouter, ctx.consolePromptDispatcher, ctx.agentStatusStore)
     }
 }
 

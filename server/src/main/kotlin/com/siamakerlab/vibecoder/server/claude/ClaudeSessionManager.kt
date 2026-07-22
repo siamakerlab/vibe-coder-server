@@ -60,14 +60,6 @@ class ClaudeSessionManager(
     private val idleTimeout: Duration = Duration.ofMinutes(30),
     /** v0.16.0 — turn 영구 적재. null 이면 history persistence 비활성 (테스트). */
     private val history: ConversationHistoryService? = null,
-    /** v1.69.0 — 동시 in-flight turn 제한 게이트. 기본값 = 무제한(비활성). */
-    private val gate: ClaudeConcurrencyGate = ClaudeConcurrencyGate(0),
-    /**
-     * v1.135.0 — 상주 세션 수 상한 provider (0 이하 = 비활성). 매 집행 시점에 읽으므로
-     * `/settings` 저장(ConfigHolder.update) 즉시 반영된다. 상한 초과 시 가장 오래 유휴인
-     * 세션부터 LRU 회수 — [enforceResidentCap].
-     */
-    private val residentCapProvider: () -> Int = { 0 },
 ) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -149,12 +141,6 @@ class ClaudeSessionManager(
         text: String,
         isAutoResume: Boolean = false,
         images: List<com.siamakerlab.vibecoder.shared.dto.PromptImageDto> = emptyList(),
-        /**
-         * v1.139.0 — 동시 turn 게이트 무시(끼어들기 ⚡ 전용). 한도 만석이어도 대기 없이
-         * 즉시 spawn+전송. permit 을 잡지 않으므로 Done 의 release 는 idempotent no-op.
-         * 운영자 명시 액션에만 사용 — 남용 시 같은 계정 burst 로 429 위험은 사용자 책임.
-         */
-        bypassGate: Boolean = false,
     ) {
         require(text.isNotBlank()) { "prompt text is required" }
         // 실제 stdin 으로 흘러갈 UTF-8 byte size 기준으로 검증. v0.12.3 까지는
@@ -168,9 +154,9 @@ class ClaudeSessionManager(
 
         // v1.113.0 — turn 진행 중(busy)에 사용자가 추가로 보낸 prompt(follow-up). 클라이언트
         // 인위적 큐를 없애고 stream-json CLI 내부 큐에 맡기는 TUI 동형 동작. follow-up 은
-        // 새 permit/마크/bg-clear/busy-전이를 하지 않고 Done suspend 카운터만 올린다(아래).
+        // 새 마크/bg-clear/busy-전이를 하지 않고 Done suspend 카운터만 올린다(아래).
         // 자동 재개(isAutoResume)는 follow-up 이 아니라 같은 turn 의 연속이므로 제외.
-        // v1.135.0 — busy map 기반이라 세션 spawn 전에 판정 가능(아래 gate-선확보 재배치의 전제).
+        // v1.135.0 — busy map 기반이라 세션 spawn 전에 판정 가능.
         val isFollowUp = !isAutoResume && isBusy(projectId)
         // v1.80.0 — 사용자 prompt 면 진행 중인 rate-limit 자동 재개를 취소하고 카운터 리셋.
         // follow-up 은 진행 중 turn 의 재개 흐름을 끊으면 안 되므로 retry 상태를 건드리지 않는다.
@@ -186,8 +172,7 @@ class ClaudeSessionManager(
         // follow-up 은 진행 중 turn 의 표식을 건드리지 않는다.
         if (!isFollowUp) sessions[projectId]?.interruptPending = false
         // v0.16.0 — user prompt 영구 적재 (sendPrompt 시점의 sessionId 사용 — 세션이 아직
-        // 없으면 저장된 session-id 파일과 동일 값. spawn 전에 적재해야 게이트 대기 중에도
-        // 사용자 프롬프트가 이력/rail 에 즉시 보인다).
+        // 없으면 저장된 session-id 파일과 동일 값).
         // 자동 재개 프롬프트는 사용자 입력이 아니므로 history 미적재.
         // v1.133.0 — 이미지 첨부는 raw 컬럼에 JSON 으로 함께 보존(콘솔 이력 복원 시
         // /claude/console/image 엔드포인트가 이 row 에서 서빙).
@@ -219,31 +204,7 @@ class ClaudeSessionManager(
             })
         }.toString()
 
-        // v1.69.0 — 동시 in-flight 상한 도달 시 permit 이 빌 때까지 대기(queue). 무제한이면 즉시 통과.
-        // release 는 setBusy(true→false) 전이 단일 지점(아래 catch 의 write 실패 포함)에서 idempotent 하게.
-        // v1.90.0 — 상한 도달로 대기에 들어가면 콘솔에 안내(다른 프로젝트 turn 종료 시 자동 순차 진행).
-        // v1.113.0 — follow-up 은 진행 중 turn 이 이미 permit 을 보유 중이라 새로 확보하지 않는다
-        // (같은 세션은 CLI 가 순차 처리 → 실제 동시성 1). gate.acquire 는 같은 key 면 어차피
-        // no-op 이지만, 대기 안내(onWait)까지 띄우지 않도록 아예 건너뛴다.
-        if (!isFollowUp && !bypassGate) {
-            gate.acquire(projectId) {
-                emitSystem(
-                    projectId, "rate_limit_waiting",
-                    "동시 작업 한도(${gate.limit}개)에 도달해 대기 중입니다. 다른 작업이 끝나면 순서대로 자동 진행됩니다.",
-                )
-            }
-        }
-        // v1.135.0 — 세션 spawn 을 permit 확보 *후* 로 이동. 종전엔 spawn 후 게이트 대기라
-        // 대기 중인 프로젝트도 claude + MCP 사이드카 트리(~900MB)를 통째로 상주시켰고
-        // (여러 프로젝트 큐 적재 시 메모리 폭발), 대기 30분 초과 시 idle reaper 가 대기 중
-        // 프로세스를 SIGTERM → permit 확보 후 stdin write 실패로 프롬프트가 유실됐다.
-        // spawn 실패 시 확보한 permit 반환(누수 방지).
-        val session = try {
-            ensureSession(projectId)
-        } catch (t: Throwable) {
-            if (!isFollowUp) gate.release(projectId)
-            throw t
-        }
+        val session = ensureSession(projectId)
         session.stdinMutex.withLock {
             try {
                 withContext(Dispatchers.IO) {
@@ -253,7 +214,7 @@ class ClaudeSessionManager(
                 }
                 session.lastActivity = Instant.now()
                 // v1.113.1 — follow-up(응답 중 추가 전송)은 stdin write 외엔 아무것도 건드리지
-                //  않는다. 진행 중 turn 의 busy/미완 마크/gate permit/bg 추적을 그대로 두고, CLI
+                //  않는다. 진행 중 turn 의 busy/미완 마크/bg 추적을 그대로 두고, CLI
                 //  내부 큐가 turn 종료 후 새 turn 으로 처리한다. 각 turn 의 Done + 자발적 재개 경로
                 //  (활동 프레임 도착 시 setBusy(true))가 busy 를 관리하므로 별도 종료 카운팅이
                 //  불필요하다. (v1.113.0 의 카운터는 isFollowUp 판정~증가 사이 직전 turn Done 이
@@ -274,8 +235,6 @@ class ClaudeSessionManager(
                 }
             } catch (e: IOException) {
                 log.warn(e) { "[$projectId] stdin write failed; will respawn on next prompt" }
-                // busy 가 true 로 전이되기 전 실패 → setBusy(false) 전이가 안 일어나므로 여기서 명시 release.
-                if (!isFollowUp) gate.release(projectId)
                 emitSystem(projectId, "process_crashed", "Claude process is no longer accepting input (${e.message}). Retrying on next prompt.")
                 terminateSession(projectId)
                 fireInterrupt(projectId, "crashed")
@@ -285,9 +244,8 @@ class ClaudeSessionManager(
     }
 
     /**
-     * v1.136.0 — 일괄 전송용 비동기 전송. [sendPrompt] 는 동시 turn 게이트 대기로 오래
-     * suspend 될 수 있으므로, 일괄 전송 HTTP 핸들러가 N개 프로젝트를 기다리지 않도록
-     * 내부 scope 에서 실행하고 즉시 반환한다. 실패는 sendPrompt 내부의 콘솔 system
+     * v1.136.0 — 일괄 전송용 비동기 전송. 일괄 전송 HTTP 핸들러가 N개 프로젝트를 기다리지
+     * 않도록 내부 scope 에서 실행하고 즉시 반환한다. 실패는 sendPrompt 내부의 콘솔 system
      * 메시지(process_crashed 등)와 로그로만 보고.
      */
     fun sendPromptAsync(projectId: String, text: String) {
@@ -307,7 +265,7 @@ class ClaudeSessionManager(
         sessions[projectId]?.let {
             it.lastContextTokens = 0; it.lastInputTokens = 0; it.lastCacheCreationTokens = 0
             it.contextWarned = false; it.compacting = false
-            it.criticalWarned = false; it.turnCount = 0  // v1.123.0 — 2단계 경고/캡 카운터 리셋
+            it.criticalWarned = false  // v1.123.0 — 2단계 경고 리셋
         }
         hub.resetConsole(topic(projectId))
         emitSystem(projectId, "new_session_requested", "Session reset. The next prompt starts a fresh conversation.")
@@ -375,7 +333,7 @@ class ClaudeSessionManager(
      * v1.112.0 — SIGTERM(프로세스 kill) 대신 **control_request interrupt** 를 stdin 으로 보내
      * 같은 프로세스·같은 세션에서 turn 만 즉시 abort 한다(cold start 제거, --resume 불필요).
      * CLI 가 `result(error_during_execution)` 를 emit 하면 [handleStdoutLine] 의 interruptPending
-     * 분기가 정리(permit 반환 / 미완 마크 해제 / busy "stopped" / 자동화 통지)한다.
+     * 분기가 정리(미완 마크 해제 / busy "stopped" / 자동화 통지)한다.
      * interrupt 전송 실패 또는 watchdog([INTERRUPT_WATCHDOG_MS]) 내 미종료 시 기존 SIGTERM 으로 폴백.
      *
      * startNew 와 다른 점: startNew 는 session-id 삭제 → 완전 새 대화. cancel 은 그대로 이어감.
@@ -414,8 +372,6 @@ class ClaudeSessionManager(
      * v1.112.0 — 진행 중 turn 을 interrupt 로 중단하고 곧바로 [text] 를 새 prompt 로 보낸다.
      * (TUI 의 Esc → 새 입력과 동형 "끼어들기".) turn 이 중단되어 busy 가 풀릴 때까지 잠깐 기다린
      * 뒤([INTERRUPT_WATCHDOG_MS] 한도) sendPrompt 로 새 turn 을 시작한다. 진행 중이 아니면 곧장 전송.
-     * v1.139.0 — 전송은 **게이트 무시(bypassGate)**: 동시 한도가 만석이어도 대기 없이 강제
-     * 전송한다. ⚡ 의 의미가 "지금 당장" 으로 통일 — busy 면 중단 후 즉시, 만석이면 한도 무시 즉시.
      */
     suspend fun interruptAndSend(
         projectId: String,
@@ -434,7 +390,7 @@ class ClaudeSessionManager(
                 fireInterrupt(projectId, "interrupted")
             }
         }
-        sendPrompt(projectId, text, images = images, bypassGate = true)
+        sendPrompt(projectId, text, images = images)
     }
 
     /**
@@ -503,24 +459,24 @@ class ClaudeSessionManager(
      * ─── 상태머신 전이 표 (단일 권위 문서, v1.114.0) ──────────────────────────────────
      * 상태는 setBusy(projectId, ProjectState) 한 곳으로만 바뀐다. 아래가 전이의 전부다.
      *
-     *   트리거                                          → 상태        permit   turn-active
+     *   트리거                                          → 상태        turn-active
      *   ─────────────────────────────────────────────────────────────────────────────
-     *   sendPrompt(새 turn) / 활동 프레임 자발적 재개      RESPONDING   acquire  mark
-     *   Done, 백그라운드 작업(outstandingBgTasks) 남음     WAITING      유지      유지
-     *   Done, 정상 완료(bg 없음)                          READY        release  clear
-     *   ErrorEvent: interrupt(interruptPending)          STOPPED      release  clear
-     *   ErrorEvent: rate-limit                            (상태 유지)   유지★    유지   → retryJob 예약
-     *   ErrorEvent: usage_limit                           STOPPED      release  clear
-     *   ErrorEvent: 그 외 API 에러                         ERROR        release  clear
-     *   rate-limit 재시도 소진(MAX_RATE_LIMIT_RETRIES)     STOPPED      release  clear
-     *   onProcessExit: busy 중 종료(미완)                  STOPPED      release  -
-     *   onProcessExit: 유휴 중 clean exit                  READY        release  -
-     *   terminateSession(cancel/startNew/idle reap/shutdown) busy?STOPPED:READY release clear
-     *   부팅 reconcileInterruptedTurns                     RESPONDING   acquire  (retries++)
+     *   sendPrompt(새 turn) / 활동 프레임 자발적 재개      RESPONDING   mark
+     *   Done, 백그라운드 작업(outstandingBgTasks) 남음     WAITING      유지
+     *   Done, 정상 완료(bg 없음)                          READY        clear
+     *   ErrorEvent: interrupt(interruptPending)          STOPPED      clear
+     *   ErrorEvent: rate-limit                            (상태 유지)   유지   → retryJob 예약
+     *   ErrorEvent: usage_limit                           STOPPED      clear
+     *   ErrorEvent: 그 외 API 에러                         ERROR        clear
+     *   rate-limit 재시도 소진(MAX_RATE_LIMIT_RETRIES)     STOPPED      clear
+     *   onProcessExit: busy 중 종료(미완)                  STOPPED      -
+     *   onProcessExit: 유휴 중 clean exit                  READY        -
+     *   terminateSession(cancel/startNew/idle reap/shutdown) busy?STOPPED:READY clear
+     *   부팅 reconcileInterruptedTurns                     RESPONDING   (retries++)
      *
-     *   ★ rate-limit 은 turn "종료"가 아니라 "일시중단→재개 대기"라 permit 을 일부러 보유한 채
-     *     같은 슬롯으로 재개한다(동시 한도 무력화·자동화 폭주 방지, v1.99.0). 자세한 회귀 이력은
-     *     각 분기 주석 참고. busy boolean 은 ProjectState.busy 에서 파생되므로 별도 추적 안 함.
+     *   ★ rate-limit 은 turn "종료"가 아니라 "일시중단→재개 대기"라 busy/turn-active 상태를
+     *     유지한 채 같은 세션으로 재개한다. busy boolean 은 ProjectState.busy 에서 파생되므로
+     *     별도 추적 안 함.
      * ──────────────────────────────────────────────────────────────────────────────
      */
 
@@ -547,11 +503,6 @@ class ClaudeSessionManager(
         if (state != ProjectState.WAITING) {
             sessions[projectId]?.let { it.bgWatchdogJob?.cancel(); it.bgWatchdogJob = null }
         }
-        // v1.71.0 (정밀점검) — permit release 를 busy 전이에 묶지 않는다. busy=true 는
-        // sendPrompt 의 stdin write 직후에야 set 되는데, 그 전에 Done/exit 이 먼저
-        // 도달하면 false-전이가 안 일어나 permit 이 영구 leak (풀 wedge) 됐다. release 는
-        // 종료 sink(Done / onProcessExit / terminateSession / write 실패)에서 직접 호출
-        // (gate.release 는 heldKeys 기반 idempotent — SubAgentSessionManager 와 동일 방식).
         // v1.83.0 — 콘솔 페이지도 state 전달(이전엔 busy boolean 만 → "stopped/중단됨"
         // 구분 불가). rate-limit 재시도 소진 등 비정상 종료를 콘솔 뱃지에 정확 반영.
         val wire = state.wire
@@ -580,24 +531,22 @@ class ClaudeSessionManager(
 
     /**
      * v1.144.3 — watchdog 만료. 여전히 WAITING 이면(재개/종료로 빠져나가지 않았으면) turn 을
-     * 정상 완료로 마무리한다 — 보류했던 permit 반환, 미완 마크 해제, busy READY, 자동화 완료
-     * 통지(fireTurnDone). 정상 Done 의 종료 분기와 동형이며, 영구 "대기중" 고착을 끊는다.
+     * 정상 완료로 마무리한다 — 미완 마크 해제, busy READY, 자동화 완료 통지(fireTurnDone).
+     * 정상 Done 의 종료 분기와 동형이며, 영구 "대기중" 고착을 끊는다.
      */
     private suspend fun finalizeStalledBgTurn(projectId: String) {
         val s = sessions[projectId] ?: return
         if (busyState[projectId] != ProjectState.WAITING) return  // 이미 재개/종료됨
         s.bgWatchdogJob = null  // 자기 분리 (setBusy(READY) 의 cancel 과 무관하게)
         s.outstandingBgTasks.clear()  // 누락된 완료 통지로 남은 stale taskId 정리
-        gate.release(projectId)
         clearTurnActive(projectId)
-        if (!s.compacting) s.turnCount++
         emitSystem(
             projectId, "bg_task_watchdog",
             "백그라운드 작업의 완료 통지가 ${BG_SUSPEND_WATCHDOG_MS / 60_000}분간 확인되지 않아 turn 을 종료 처리했습니다.",
         )
         setBusy(projectId, ProjectState.READY)
         fireTurnDone(projectId, "bg_watchdog")
-        maybeSessionCapOrCompact(projectId)
+        maybeAutoCompact(projectId)
     }
 
     suspend fun shutdown() {
@@ -737,8 +686,6 @@ class ClaudeSessionManager(
                 log.debug(e) { "[$projectId] stderr reader ended" }
             }
         }
-        // v1.135.0 — 새 세션이 늘었으니 상주 상한 집행(방금 spawn 한 자신은 제외).
-        enforceResidentCap(excludeProjectId = projectId)
         return session
     }
 
@@ -858,13 +805,8 @@ class ClaudeSessionManager(
                 if (busy[projectId] != true) {
                     // v1.144.4 — host stdin 없이 claude 가 자발적으로 turn 을 재개한 경우
                     // (백그라운드 작업 완료 후 자동 속행 / bg 추적 실패·watchdog 종료 후 지연 재개).
-                    // sendPrompt 를 안 거쳤으므로 게이트 permit 이 없다 → 장부에 흡수 등록(adopt)해
-                    // inFlight 에 포함시킨다. 이 등록이 없으면 이 "유령 turn" 이 busy=true 로 남아
-                    // 게이트(turn 동시 한도)와 상주 캡(busy 세션 회수 제외)을 동시에 우회 → 응답중
-                    // 세션이 한도를 넘어 무한 누적, 각 ~900MB claude+MCP 트리가 쌓여 OOM → PC 셧다운.
-                    // adopt 는 heldKeys 기반이라 sendPrompt.acquire 와 race 해도 중복 등록 안 됨.
+                    // sendPrompt 를 안 거쳤으므로 여기서 미완 turn 상태만 복구한다.
                     markTurnActive(projectId)
-                    gate.adopt(projectId)
                 }
                 setBusy(projectId, ProjectState.RESPONDING)
             }
@@ -886,11 +828,9 @@ class ClaudeSessionManager(
                 //  claude 가 turn 을 끝낸(= 완료를 기다리려 turn 종료) 경우. 이건 "종료"가 아니라
                 //  "재개 대기"다 — 백그라운드 작업이 끝나면 claude 가 같은 turn 을 자동 재개
                 //  (across turns)한다. rate-limit(v1.99.0)과 동형으로 처리:
-                //   ① gate.release 안 함 → permit 유지. 안 그러면 재개 turn 이 sendPrompt 를
-                //      안 거쳐 permit 없이 진행돼 동시 한도가 무력화됐다(사용자 보고: 실행중 4개).
-                //   ② setBusy(false)/clearTurnActive 안 함 → "대기중" 으로 안 떨어지고 미완 마크
+                //   ① setBusy(false)/clearTurnActive 안 함 → "대기중" 으로 안 떨어지고 미완 마크
                 //      유지(busy 는 이미 true 라 그대로). 뱃지가 응답중을 유지.
-                //   ③ fireTurnDone 안 함 → 자동화가 미완 turn 을 완료로 오인해 다음 프롬프트를
+                //   ② fireTurnDone 안 함 → 자동화가 미완 turn 을 완료로 오인해 다음 프롬프트를
                 //      쏴 turn 이 중첩되던 근본 원인 차단.
                 //  재개 turn 이 진짜 Done(outstandingBgTasks 비어있음) 될 때 아래 else 로 정상 종료.
                 // v1.113.1 — follow-up(응답 중 추가 전송)에 대한 종료 카운팅(v1.113.0)을 제거했다.
@@ -912,16 +852,11 @@ class ClaudeSessionManager(
                         "백그라운드 작업이 진행 중이라 turn 을 유지합니다 — 완료되면 자동으로 이어집니다.",
                     )
                 } else {
-                    gate.release(projectId)  // v1.71.0 — turn 정상 완료 → permit 반환(idempotent).
                     clearTurnActive(projectId)  // v1.82.0 — 정상 완료 → 미완 마크 OFF.
                     setBusy(projectId, ProjectState.READY)
-                    // v1.123.0 — 정상 완료 turn 카운트(세션 길이 캡 판정용). 자동 /compact settle
-                    // turn(compacting=true)은 사용자 turn 이 아니므로 제외.
-                    sessions[projectId]?.let { if (!it.compacting) it.turnCount++ }
                     // v1.59.0 — 자동화 리스너에 turn 완료 통지 (fire-and-forget, stdout 파싱 비blocking).
                     fireTurnDone(projectId, event.reason)
-                    // v1.123.0 — 세션 길이 캡(컨텍스트/turn 수) 우선 → 초과면 자동 새 세션, 아니면 자동 /compact.
-                    maybeSessionCapOrCompact(projectId)
+                    maybeAutoCompact(projectId)
                 }
             } else if (event is ClaudeEvent.ErrorEvent) {
                 val interrupted = sessions[projectId]
@@ -932,35 +867,28 @@ class ClaudeSessionManager(
                     interrupted.interruptPending = false
                     interrupted.retryJob?.cancel(); interrupted.retryJob = null
                     interrupted.rateLimitRetry = 0
-                    gate.release(projectId)
                     clearTurnActive(projectId)
                     fireInterrupt(projectId, interrupted.interruptReason)
                     setBusy(projectId, ProjectState.STOPPED)
                 } else if (isRateLimitError(event)) {
                     // v1.99.0 — rate-limit 은 turn "종료"가 아니라 "일시중단 → 재개 대기"다.
-                    //  ① gate.release 를 **하지 않는다** — permit 을 유지해 그 슬롯이 rate-limit
-                    //     동안 다른 turn 에 넘어가지 않게 한다(동시 in-flight 가 실제로 줄어 burst 완화).
-                    //  ② fireTurnDone 도 **하지 않는다** — 자동화가 rate-limit 을 완료로 오인해
+                    //  ① fireTurnDone 을 하지 않는다 — 자동화가 rate-limit 을 완료로 오인해
                     //     백오프 0 으로 다음 프롬프트를 쏘고(+재개와 이중발사) 폭주하던 문제 차단.
-                    //  재개 turn 이 진짜 Done 될 때 정상 종료 경로(위 Done 분기)에서 release+통지된다.
-                    //  (이전 v1.80.0 은 여기서 release+fireTurnDone 을 호출 → permit 빠른 회전 +
-                    //   자동화 폭주 → "동시 한도 초과 + rate limit 악순환" 의 원인이었다.)
+                    //  재개 turn 이 진짜 Done 될 때 정상 종료 경로(위 Done 분기)에서 통지된다.
                     scheduleRateLimitRetry(projectId)
                 } else if (event.code == "usage_limit") {
                     // v1.108.2 — 사용량/요금 한도 종료(5시간 윈도우·월 한도 등). 일시 rate-limit 과
                     //  달리 재시도해도 소용없고, API/turn 크래시도 아니다 → "에러"(빨강) 대신
                     //  "중단됨"(stopped, 보라) 으로 표시. 자동화엔 완료(fireTurnDone)가 아닌
                     //  interrupt 로 통지해 다음 프롬프트 자동 발사를 막는다(한도 재충돌 방지).
-                    gate.release(projectId)
                     sessions[projectId]?.rateLimitRetry = 0
                     clearTurnActive(projectId)
                     fireInterrupt(projectId, "usage_limit")
                     setBusy(projectId, ProjectState.STOPPED)
                 } else {
-                    // 진짜 에러 turn 종료(rate-limit 아님) — permit 반환 + 자동화 통지 + busy 해제.
+                    // 진짜 에러 turn 종료(rate-limit 아님) — 자동화 통지 + busy 해제.
                     // v1.100.0 — 상태칩을 "에러"(error, 빨강) 로. cancel/crash/idle 의 "중단됨"
                     // (stopped, 보라) 과 구분 — API/turn 에러임을 색으로 즉시 식별.
-                    gate.release(projectId)
                     fireTurnDone(projectId, "error:${event.code}")
                     sessions[projectId]?.rateLimitRetry = 0
                     clearTurnActive(projectId)
@@ -987,8 +915,7 @@ class ClaudeSessionManager(
      */
     private suspend fun scheduleRateLimitRetry(projectId: String) {
         val session = sessions[projectId] ?: run {
-            // v1.99.0 — permit 반환 + 자동화 중단(다른 종료 경로와 짝 맞춤 — 좀비 방지).
-            gate.release(projectId); fireInterrupt(projectId, "rate_limit_session_gone")
+            fireInterrupt(projectId, "rate_limit_session_gone")
             setBusy(projectId, ProjectState.STOPPED); return
         }
         // v1.106.0 (P1-b) — 컨텍스트가 임계 초과면 rate-limit 자동 재개도 보류.
@@ -996,7 +923,6 @@ class ClaudeSessionManager(
         if (autoResumeBlockedByContext(projectId)) {
             session.rateLimitRetry = 0
             session.retryJob?.cancel(); session.retryJob = null
-            gate.release(projectId)
             clearTurnActive(projectId)
             setBusy(projectId, ProjectState.STOPPED)
             fireInterrupt(projectId, "rate_limit_skipped_large_context")
@@ -1009,8 +935,6 @@ class ClaudeSessionManager(
         if (attempt > MAX_RATE_LIMIT_RETRIES) {
             session.rateLimitRetry = 0
             session.retryJob?.cancel(); session.retryJob = null
-            // v1.99.0 — rate-limit error 에서 유지하던 permit 을 이제 반환 + 자동화 중단(좀비 방지).
-            gate.release(projectId)
             clearTurnActive(projectId)  // v1.82.0 — rate-limit 자동 재개 포기 → 미완 마크 OFF.
             setBusy(projectId, ProjectState.STOPPED)
             fireInterrupt(projectId, "rate_limit_giveup")
@@ -1031,16 +955,14 @@ class ClaudeSessionManager(
             delay(delayMs)  // 취소(사용자 prompt / cancel / 종료) 시 CancellationException 으로 정상 종료
             val cur = sessions[projectId]
             if (cur !== session || cur.process.isAlive != true) {
-                // v1.99.0 — 재개 전 세션 교체/종료 → 유지하던 permit 반환 + 자동화 중단.
-                gate.release(projectId)
+                // v1.99.0 — 재개 전 세션 교체/종료 → 자동화 중단.
                 fireInterrupt(projectId, "rate_limit_session_gone")
                 setBusy(projectId, ProjectState.STOPPED); return@launch
             }
             runCatching { sendPrompt(projectId, RATE_LIMIT_RESUME_PROMPT, isAutoResume = true) }
                 .onFailure {
-                    // v1.99.0 — 재개 프롬프트 전송 실패 → permit 반환 + 자동화 중단.
+                    // v1.99.0 — 재개 프롬프트 전송 실패 → 자동화 중단.
                     log.warn(it) { "[$projectId] rate-limit 자동 재개 실패" }
-                    gate.release(projectId)
                     fireInterrupt(projectId, "rate_limit_resume_failed")
                     setBusy(projectId, ProjectState.STOPPED)
                 }
@@ -1086,8 +1008,6 @@ class ClaudeSessionManager(
     private fun onProcessExit(projectId: String, proc: Process, session: ProjectSession) {
         val exit = runCatching { proc.exitValue() }.getOrNull()
         val crashed = exit != null && exit != 0
-        // v1.71.0 — 프로세스 종료(crash/clean/intentional) 시 permit 반환(idempotent).
-        gate.release(projectId)
         // v0.98.0 — process exit 시 항상 busy 해제. setBusy 가 suspend 라
         // launch 안에서 호출 (onProcessExit 자체는 비-suspend).
         // v1.60.0 — busy 중 프로세스 종료 = 미완 turn 중단 → "stopped". 정상 완료 후 종료는 유휴.
@@ -1142,8 +1062,6 @@ class ClaudeSessionManager(
         // v1.144.3 — bg suspended watchdog 도 취소(sessions.remove 후 setBusy 가 못 찾으므로 명시).
         session.bgWatchdogJob?.cancel()
         session.bgWatchdogJob = null
-        // v1.71.0 — cancel / startNew / idle reap / shutdown / crash 종료 시 permit 반환(idempotent).
-        gate.release(projectId)
         // B1 (21차 점검) — SIGTERM 전에 의도된 종료임을 표식. onProcessExit(readerJob
         // finally) 이 이 session 참조를 그대로 보므로 resume-failure 오판을 차단.
         session.intentionalKill = true
@@ -1177,44 +1095,6 @@ class ClaudeSessionManager(
                 emitSystem(s.projectId, "idle_terminated", "Session went idle and was paused. Send a prompt to resume.")
                 terminateSession(s.projectId)
             }
-        }
-        // v1.135.0 — 주기 sweep 에서도 상주 상한 집행: /settings 에서 상한을 줄였거나, spawn
-        // 시점엔 전부 진행 중이라 회수를 보류했던 초과분을 여기서 회수한다.
-        enforceResidentCap()
-    }
-
-    /**
-     * v1.135.0 — 상주 세션 수 상한(LRU) 집행. 세션 1개는 claude CLI + MCP 사이드카 트리
-     * (운영 실측 ~850-900MB)를 통째로 상주시키므로, 30분 idle reaper 만으로는 다수 프로젝트를
-     * 오가며 작업할 때 메모리가 누적된다. 상한([residentCapProvider], 0 이하 = 비활성) 초과 시
-     * **가장 오래 유휴인** 세션부터 SIGTERM 한다.
-     *
-     * - busy(turn 진행 중) / gate permit 보유·대기 중 세션은 절대 회수하지 않는다 — 전부
-     *   진행 중이면 상한 일시 초과를 허용(진행 중 작업 보호가 우선).
-     * - session-id 파일은 보존되므로 다음 프롬프트에서 `--resume` 으로 같은 대화가 이어진다.
-     * - [excludeProjectId]: 방금 spawn 한 세션은 lastActivity 가 최신이라 LRU 에서 자연히
-     *   밀리지만, 회수 대상에서 명시 제외해 자기 자신을 죽이는 일이 없게 한다.
-     */
-    private suspend fun enforceResidentCap(excludeProjectId: String? = null) {
-        val cap = residentCapProvider()
-        if (cap <= 0) return
-        while (true) {
-            val alive = sessions.values.filter { it.process.isAlive }
-            if (alive.size <= cap) return
-            val victim = alive.asSequence()
-                .filter { it.projectId != excludeProjectId }
-                .filter { !isBusy(it.projectId) && !gate.holds(it.projectId) }
-                // spawn 직후 ~ 첫 stdin write(busy 전이) 사이의 짧은 창. 게이트 비활성(무제한)
-                // 구성에선 gate.holds 가 비어 이 창의 세션이 회수될 수 있다 → grace 로 보호.
-                .filter { Duration.between(it.startedAt, Instant.now()).seconds >= RESIDENT_CAP_SPAWN_GRACE_SECONDS }
-                .minByOrNull { it.lastActivity }
-                ?: return
-            log.info { "[${victim.projectId}] resident session cap ($cap) exceeded (${alive.size} alive); reaping LRU idle session" }
-            emitSystem(
-                victim.projectId, "resident_cap_paused",
-                "상주 세션 상한(${cap}개) 초과로 가장 오래 유휴인 이 세션을 일시 중지했습니다. 다음 프롬프트에서 같은 대화로 이어집니다.",
-            )
-            terminateSession(victim.projectId)
         }
     }
 
@@ -1384,40 +1264,6 @@ class ClaudeSessionManager(
     }
 
     /**
-     * v1.123.0 — turn 정상 완료 직후 호출. **세션 길이 캡**(컨텍스트/turn 수)을 먼저 검사해
-     * 초과면 자동으로 새 세션을 시작(컨텍스트 완전 리셋)하고, 아니면 기존 자동 /compact 로직에
-     * 위임한다. 캡은 /compact 로도 못 막는 누적 폭주(긴 세션 → 매 step cache_read 비례 증가)를
-     * 끊는 근본 차단막이다.
-     *
-     * 루프/오발동 방지:
-     *  - 자동 /compact settle turn(compacting=true)은 캡 판정에서 제외하고 compact 쪽에 위임
-     *    (settle 처리 일원화 + compact 직후 줄어든 컨텍스트로 즉시 리셋되는 일 방지).
-     *  - ghost(chat)는 제외.
-     */
-    private fun maybeSessionCapOrCompact(projectId: String) {
-        val s = sessions[projectId]
-        if (s == null || s.compacting || WorkspacePath.isGhostId(projectId)) {
-            maybeAutoCompact(projectId); return
-        }
-        val resetTokens = config.claude.sessionResetTokens
-        val turnCap = config.claude.sessionTurnCap
-        val ctxOver = resetTokens > 0 && s.lastContextTokens >= resetTokens
-        val turnOver = turnCap > 0 && s.turnCount >= turnCap
-        if (!ctxOver && !turnOver) { maybeAutoCompact(projectId); return }
-        val why = if (ctxOver) "컨텍스트 ${s.lastContextTokens / 1000}K" else "turn ${s.turnCount}회"
-        scope.launch {
-            runCatching {
-                emitSystem(
-                    projectId, "session_auto_reset",
-                    "⟳ 세션 길이 캡 도달($why) — 컨텍스트 누적 비용을 끊기 위해 새 세션을 시작합니다. " +
-                        "다음 메시지부터 맥락이 리셋됩니다(작업 파일·CLAUDE.md 는 유지).",
-                )
-                startNew(projectId)  // savedId 폐기 + 컨텍스트/경고/turnCount 리셋
-            }.onFailure { log.warn(it) { "[$projectId] 세션 길이 캡 자동 리셋 실패" } }
-        }
-    }
-
-    /**
      * v1.108.0 — turn 정상 완료 직후 호출. 자동 /compact 조건이면 `/compact` 를 자동 발사한다
      * (사용자 클릭과 동일 경로). 루프 방지: 직전 turn 이 /compact 였으면(compacting=true) 1회 skip.
      */
@@ -1547,7 +1393,7 @@ class ClaudeSessionManager(
          * `task_started` 시 추가, 완료/실패 통지(terminal status / notification) 시 제거.
          * 비어있지 않은 동안 들어온 `result`(Done)은 "turn 종료"가 아니라 "재개 대기"로
          * 처리한다 — 백그라운드 작업 완료 시 claude 가 같은 turn 을 재개(across turns)하므로
-         * permit/자동화/busy 를 보류해야 동시 한도 무력화 + 자동화 프롬프트 중첩을 막는다.
+         * 자동화/busy 를 보류해야 자동화 프롬프트 중첩을 막는다.
          * 단일 reader 코루틴이 갱신하지만 sendPrompt clear 와 교차하므로 thread-safe set.
          */
         val outstandingBgTasks: MutableSet<String> =
@@ -1558,8 +1404,6 @@ class ClaudeSessionManager(
         @Volatile var contextWarned: Boolean = false,
         /** v1.123.0 — CRITICAL(2차) 경고를 이 세션에서 이미 1회 emit 했는지. */
         @Volatile var criticalWarned: Boolean = false,
-        /** v1.123.0 — 이 세션의 정상 완료 turn 수(세션 길이 캡 판정용). startNew 시 0 리셋. */
-        @Volatile var turnCount: Int = 0,
         /** v1.106.1 — 컨텍스트 미터용 토큰 분해(직전 turn). */
         @Volatile var lastInputTokens: Long = 0,
         @Volatile var lastCacheCreationTokens: Long = 0,
@@ -1606,9 +1450,6 @@ class ClaudeSessionManager(
          * turn 을 정상 종료한다. bg 진행 이벤트가 오면 리셋되어 진짜 진행 중 작업은 보호된다.
          */
         const val BG_SUSPEND_WATCHDOG_MS = 180_000L
-
-        /** v1.135.0 — 상주 캡 LRU 회수에서 spawn 직후 세션을 보호하는 grace (초). */
-        const val RESIDENT_CAP_SPAWN_GRACE_SECONDS = 60L
 
         /** v1.133.0 — 프롬프트 첨부 이미지 한도: 장수 / 장당 base64 길이(≈5MB 원본). */
         const val MAX_PROMPT_IMAGES = 4
