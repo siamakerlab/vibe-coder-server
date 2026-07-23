@@ -39,7 +39,7 @@ object IPhonePlatformEngine : ProjectPlatformEngine {
         defaultMcp = listOf("context7", "memory", "sequentialthinking", "time", "playwright"),
         conditionalMcp = listOf("mobile-mcp"),
         optInMcp = listOf("app-store-connect", "fastlane", "app-publish"),
-        defaultSkills = listOf("swiftui-iphone-expert", "xcode-build-debugger"),
+        defaultSkills = listOf("swiftui-iphone-expert", "xcode-build-debugger", "vibe-ios-build-flow"),
         conditionalSkills = listOf("ios-simulator-qa"),
         optInSkills = listOf("apple-signing-release", "app-store-connect-release"),
         defaultAgents = listOf("iphone-architect", "swiftui-implementer", "xcode-build-fixer"),

@@ -930,6 +930,8 @@ internal object MessagesKo {
         "env.ios.section.hint" to "Mac(로컬 설치 또는 원격 Mac agent)에서만 동작합니다.",
         "env.ios.connect.title" to "맥 SSH 연결 (빌드 대행)",
         "env.ios.connect.hint" to "빌드를 대신할 맥의 접속 정보를 입력하고 연결하세요. 로컬 맥이면 host 를 host.docker.internal 로, 원격 맥이면 IP/호스트로. 맥에서 '시스템 설정 → 일반 → 공유 → 원격 로그인(Remote Login)' 을 먼저 켜세요. 비밀번호는 최초 연결(키 설치)에만 쓰이고 저장되지 않습니다.",
+        "env.ios.connect.dockerDetected" to "로컬 Docker 호스트(host.docker.internal) 감지됨 — 같은 기기의 맥이면 host 를 그대로 두고 연결하세요.",
+        "env.ios.connect.remoteHint" to "이 호스트에서 host.docker.internal 이 감지되지 않았습니다 — 원격 맥이라면 그 맥의 IP/호스트명을 입력하세요.",
         "env.ios.connect.host" to "호스트 / IP",
         "env.ios.connect.port" to "포트",
         "env.ios.connect.user" to "맥 사용자명",

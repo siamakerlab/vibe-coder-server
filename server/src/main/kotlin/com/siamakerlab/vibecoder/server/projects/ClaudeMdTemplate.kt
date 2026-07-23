@@ -247,6 +247,24 @@ CANNOT answer TUI prompts, menus, or stdin. Every turn is one-shot.
 - App Store Connect, fastlane, signing certificates, provisioning profiles, and `.p8` keys are release-only.
   Use them only when the user explicitly asks for release/TestFlight work.
 
+## Vibe Coder iOS build pipeline — structure & procedure (learn this)
+The server runs in a Linux container and orchestrates builds on a **Mac over SSH** (local host or a
+remote Mac). You do NOT run `xcodebuild` yourself here — the server does. Fit your work to this flow:
+- **Connection**: set up once in 빌드환경 (`/env-setup`) → iPhone → "연결하기" (Mac host/user/password →
+  key installed → key-based SSH after). If preflight shows Xcode/Simulator missing, tell the user to
+  install them on the Mac (`xcode-select --install`, `xcodebuild -downloadPlatform iOS`).
+- **Source sync**: each build rsyncs this project's working tree (minus `.git`/`build`/`DerivedData`) to the
+  Mac at `~/.vibe-coder-ios/<serverId>/<projectId>/`. `DerivedData` is NOT synced → the Mac keeps its Xcode
+  build cache, so builds stay incremental. Do not force a clean build unless truly needed.
+- **Build**: the web UI iPhone rail has Build / Test / Archive / Export IPA. Each runs `xcodebuild` on the
+  Mac; artifacts (`.app`/`.ipa`/`.xcresult`) rsync back to the container and appear on the build detail
+  page. Keep a shared scheme that builds from the repo; don't hardcode Mac paths or a local Xcode.
+- **Simulator**: the rail's "Build & Run" does build → boot → install → launch → screenshot in one action;
+  "Recapture" re-shoots the current screen. Screenshots return to the web UI (no live mirror).
+- **Debug as one loop**: read the build's xcresult failure summary + the simulator Logs/Stream (unified log)
+  + the screenshot, diagnose, edit Swift, rebuild. Treat build → run → inspect → fix as a single flow.
+- The `vibe-ios-build-flow` project skill (`.claude/skills/`) captures this loop — follow it.
+
 ## Secret Rules
 - Never print, commit, or log signing certificates, provisioning profiles, ASC private keys, issuer IDs,
   key IDs, passwords, or session tokens.

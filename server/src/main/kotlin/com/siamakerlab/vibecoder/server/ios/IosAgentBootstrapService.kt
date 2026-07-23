@@ -18,9 +18,9 @@ private val log = KotlinLogging.logger {}
  * 흐름(설정/빌드환경의 "연결하기"):
  *  1. `sshpass -e ssh`(비번은 env `SSHPASS` 로만 전달 — argv/ps 노출 없음)로 맥에 접속.
  *  2. 컨테이너 공개키(`~/.ssh/id_ed25519.pub`)를 맥 `~/.ssh/authorized_keys` 에 설치(중복 방지).
- *  3. `~/.vibe-coder-mac/{,signing}` 생성 + 맥 홈 조회 + rsync 존재 확인.
+ *  3. `~/.vibe-coder-ios/{,signing}` 생성 + 맥 홈 조회 + rsync 존재 확인.
  *  4. 키 인증 검증(`ssh -o BatchMode=yes`, 비번 없이) → 이후 build/simulator 의 키 기반 SSH 동작 확인.
- *  5. agent config 저장(enabled=true, mode=ssh, host/port/user, workspaceRoot=`<home>/.vibe-coder-mac`).
+ *  5. agent config 저장(enabled=true, mode=ssh, host/port/user, workspaceRoot=`<home>/.vibe-coder-ios`).
  *  6. preflight(Xcode/simctl/서명) 실행 후 결과 반환.
  *
  * 비밀번호는 부트스트랩 1회에만 쓰이고 **저장/로그되지 않는다** (이후 키 기반 SSH 로 동작).
@@ -69,9 +69,9 @@ class IosAgentBootstrapService(
 
         val homeDir = REPORT_HOME.find(boot.out)?.groupValues?.getOrNull(1)?.trim()?.ifBlank { null }
         val rsyncAvailable = boot.out.contains("VC_RSYNC=yes")
-        // 서버별 격리: <home>/.vibe-coder-mac/<serverId> 를 workspaceRoot 로 → 기존 sync/build/simulator
+        // 서버별 격리: <home>/.vibe-coder-ios/<serverId> 를 workspaceRoot 로 → 기존 sync/build/simulator
         // 코드(모두 workspaceRoot/<projectId>/ 사용)가 자동으로 서버 단위로 분리된다.
-        val workspaceRoot = (homeDir?.trimEnd('/') ?: "").let { if (it.isNotBlank()) "$it/.vibe-coder-mac/$serverId" else "" }
+        val workspaceRoot = (homeDir?.trimEnd('/') ?: "").let { if (it.isNotBlank()) "$it/.vibe-coder-ios/$serverId" else "" }
         if (workspaceRoot.isBlank() || !workspaceRoot.startsWith("/")) {
             return fail("bootstrap_failed", "맥 홈 디렉터리를 확인하지 못했습니다.")
         }
@@ -135,7 +135,7 @@ class IosAgentBootstrapService(
         append("PUB='").append(pub).append("'; ")
         append("if ! grep -qF \"\$PUB\" \"\$HOME/.ssh/authorized_keys\" 2>/dev/null; then printf '%s\\n' \"\$PUB\" >> \"\$HOME/.ssh/authorized_keys\"; fi; ")
         // 서버별 격리 작업공간 + 서명 자산 디렉터리.
-        append("mkdir -p \"\$HOME/.vibe-coder-mac/").append(serverId).append("/signing\"; ")
+        append("mkdir -p \"\$HOME/.vibe-coder-ios/").append(serverId).append("/signing\"; ")
         append("printf 'VC_HOME=%s\\n' \"\$HOME\"; ")
         append("if command -v rsync >/dev/null 2>&1; then printf 'VC_RSYNC=yes\\n'; else printf 'VC_RSYNC=no\\n'; fi; ")
         append("printf 'VC_OK=1\\n'")

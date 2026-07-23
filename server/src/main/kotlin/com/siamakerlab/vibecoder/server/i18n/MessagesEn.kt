@@ -952,6 +952,8 @@ internal object MessagesEn {
         "env.ios.section.hint" to "Runs only on a Mac (local install or remote Mac agent).",
         "env.ios.connect.title" to "Mac SSH connection (build agent)",
         "env.ios.connect.hint" to "Enter the SSH details of the Mac that will run builds, then connect. For a local Mac use host.docker.internal; for a remote Mac use its IP/host. First enable it on the Mac: System Settings -> General -> Sharing -> Remote Login. The password is used only for the first connection (key install) and is never stored.",
+        "env.ios.connect.dockerDetected" to "Local Docker host (host.docker.internal) detected - if the Mac is this same machine, leave host as-is and connect.",
+        "env.ios.connect.remoteHint" to "host.docker.internal was not detected here - for a remote Mac, enter that Mac's IP/hostname.",
         "env.ios.connect.host" to "Host / IP",
         "env.ios.connect.port" to "Port",
         "env.ios.connect.user" to "Mac username",

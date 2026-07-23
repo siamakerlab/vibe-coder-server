@@ -70,6 +70,7 @@ object ProjectToolingSeeder {
     }
 
     private fun skillBody(projectType: String, id: String): String {
+        if (id == "vibe-ios-build-flow") return VIBE_IOS_BUILD_FLOW_SKILL
         val purpose = skillPurpose(id)
         return """
             # $id
@@ -80,6 +81,48 @@ object ProjectToolingSeeder {
             build commands, or release assumptions from another platform engine.
         """.trimIndent() + "\n"
     }
+
+    /**
+     * v1.169.0 — iPhone 프로젝트 주입 스킬: 빌드·시뮬레이터·디버깅을 "한 몸처럼" 하나의 루프로
+     * 다루게 하는 vibe-coder Mac-over-SSH 워크플로 가이드.
+     */
+    private val VIBE_IOS_BUILD_FLOW_SKILL: String = """
+        ---
+        name: vibe-ios-build-flow
+        description: Use for iPhone projects when building, running on Simulator, or debugging. Drives the vibe-coder Mac-over-SSH build -> run -> inspect -> fix loop as one flow.
+        ---
+
+        # vibe-ios-build-flow
+
+        This iPhone project builds on a **Mac over SSH** (the server runs in a Linux container). Treat
+        build, Simulator run, and debugging as ONE loop — not separate steps. You do not invoke
+        `xcodebuild` yourself; the server orchestrates it on the Mac.
+
+        ## The loop
+        1. Edit Swift/SwiftUI here — the working tree you see is what gets synced.
+        2. **Build**: the server rsyncs the working tree to the Mac (`~/.vibe-coder-ios/<serverId>/<projectId>/`,
+           with `DerivedData` excluded so the Xcode cache survives) and runs `xcodebuild`. Trigger from the
+           web UI iPhone rail: Build / Test / Archive / Export IPA. Artifacts (.app/.ipa/.xcresult) rsync
+           back to the container and show on the build detail page.
+        3. **Run**: the rail's "Build & Run" does build -> boot Simulator -> install -> launch -> screenshot
+           in one action; "Recapture" re-shoots the current screen.
+        4. **Inspect**: read the build's xcresult failure summary + Simulator Logs/Stream (unified log) +
+           the screenshot together. Diagnose from all three.
+        5. **Fix and rebuild.** Keep iterating in this loop until the screenshot + logs confirm the change.
+
+        ## Rules
+        - Keep a shared scheme that builds straight from the repo. Never hardcode Mac paths or assume a
+          local Xcode in the container.
+        - Do not force clean builds — DerivedData is preserved on the Mac for fast incremental builds.
+        - Simulator is iPhone/iPad only. There is no live mirror; drive the UI via simctl-based actions and
+          verify by screenshot.
+        - If Mac preflight shows Xcode/Simulator missing, say so and ask the user to install them on the Mac
+          (System Settings -> Sharing -> Remote Login must be on; `xcode-select --install`,
+          `xcodebuild -downloadPlatform iOS`). Do not try to build inside the Linux container.
+        - Signing / provisioning / TestFlight are release-only — touch them only when explicitly asked, and
+          never print or commit secrets.
+        - Non-interactive: one-shot turns, no TUI prompts, bounded commands.
+    """.trimIndent() + "\n"
 
     private fun agentBody(projectType: String, id: String): String {
         val purpose = agentPurpose(id)

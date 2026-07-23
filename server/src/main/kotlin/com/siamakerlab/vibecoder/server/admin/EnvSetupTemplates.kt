@@ -226,9 +226,17 @@ docker compose up -d --force-recreate</pre>
         val agent = com.siamakerlab.vibecoder.server.config.ConfigHolder.current.ios.agent
         val host = agent.host.ifBlank { "host.docker.internal" }
         val port = if (agent.port in 1..65535) agent.port else 22
+        // v1.169.0 — Docker Desktop 호스트 자동 감지: host.docker.internal 이 해석되면 "로컬 맥(같은
+        // 기기의 Docker)" 일 가능성 → host 프리필 유지 + 안내. 미해석이면 원격 맥 IP 입력 안내.
+        val dockerHostDetected = runCatching { java.net.InetAddress.getByName("host.docker.internal"); true }.getOrDefault(false)
+        val detectHint = if (dockerHostDetected)
+            """<p class="dim" style="font-size:12px;margin:0 0 10px;color:var(--ok,#4ade80)">✓ ${esc(t("env.ios.connect.dockerDetected"))}</p>"""
+        else
+            """<p class="dim" style="font-size:12px;margin:0 0 10px">${esc(t("env.ios.connect.remoteHint"))}</p>"""
         return """<div class="card" id="ios-connect" style="background:var(--card-bg,#12151a);margin-top:12px">
   <p style="margin:0 0 6px"><strong>${esc(t("env.ios.connect.title"))}</strong></p>
-  <p class="dim" style="font-size:12px;margin:0 0 10px;line-height:1.6">${esc(t("env.ios.connect.hint"))}</p>
+  <p class="dim" style="font-size:12px;margin:0 0 6px;line-height:1.6">${esc(t("env.ios.connect.hint"))}</p>
+  $detectHint
   <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">
     <label style="font-size:12px;display:flex;flex-direction:column;gap:3px">${esc(t("env.ios.connect.host"))}
       <input id="ios-c-host" value="${esc(host)}" placeholder="host.docker.internal" autocomplete="off" spellcheck="false" style="padding:6px 8px"></label>
