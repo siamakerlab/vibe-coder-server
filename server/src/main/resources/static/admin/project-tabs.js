@@ -644,6 +644,8 @@
         var runBtn = document.getElementById('pt-ios-sim-run');
         var logsBtn = document.getElementById('pt-ios-sim-logs');
         var streamBtn = document.getElementById('pt-ios-sim-stream');
+        var buildRunBtn = document.getElementById('pt-ios-sim-buildrun');
+        var recaptureBtn = document.getElementById('pt-ios-sim-recapture');
         var shotEl = document.getElementById('pt-ios-sim-shot');
         var logEl = document.getElementById('pt-ios-sim-log');
         var logWs = null;
@@ -655,7 +657,7 @@
           return proto + '//' + location.host + url(template);
         }
         function setBusy(busy) {
-          [refreshBtn, bootBtn, shutdownBtn, runBtn, logsBtn, streamBtn].forEach(function (b) {
+          [refreshBtn, bootBtn, shutdownBtn, runBtn, buildRunBtn, recaptureBtn, logsBtn, streamBtn].forEach(function (b) {
             if (!b) return;
             b.disabled = busy || (!selectedUdid() && b !== refreshBtn);
             b.classList.toggle('busy', !!busy);
@@ -667,7 +669,7 @@
         }
         function setStatus(text) { if (statusEl) statusEl.textContent = text || ''; }
         function setOperationsVisible(visible) {
-          [bootBtn, shutdownBtn, runBtn, logsBtn, streamBtn].forEach(function (b) {
+          [bootBtn, shutdownBtn, runBtn, buildRunBtn, recaptureBtn, logsBtn, streamBtn].forEach(function (b) {
             if (b) b.hidden = !visible;
           });
         }
@@ -840,8 +842,106 @@
         });
         if (logsBtn) logsBtn.addEventListener('click', loadLogs);
         if (streamBtn) streamBtn.addEventListener('click', startStream);
+        // v1.168.0 — 원클릭 "Build & Run": iOS debug 빌드 → 완료 폴링 → (미부팅이면)부팅 → run.
+        function pollBuildThen(buildId, done) {
+          var apiBase = card.getAttribute('data-build-api-base') || '';
+          var tries = 0, MAX = 240;
+          (function loop() {
+            tries++;
+            api('GET', apiBase + encodeURIComponent(buildId)).then(function (d) {
+              var stt = String(d.status || '').toUpperCase();
+              if (stt === 'SUCCESS') { done(true); return; }
+              if (stt === 'FAILED' || stt === 'CANCELED' || stt === 'TIMEOUT') {
+                setStatus('build ' + stt.toLowerCase() + (d.errorMessage ? (' · ' + d.errorMessage) : '')); done(false); return;
+              }
+              if (tries >= MAX) { setStatus('build timeout'); done(false); return; }
+              setStatus(msg('building', 'Building') + ' · ' + (stt || '...'));
+              setTimeout(loop, 3000);
+            }).catch(function () {
+              if (tries >= MAX) { setStatus('build poll failed'); done(false); } else setTimeout(loop, 3000);
+            });
+          })();
+        }
+        function runAfterBuild() {
+          var opt = selectEl.options[selectEl.selectedIndex];
+          var state = opt ? (opt.dataset.state || '') : '';
+          function runNow() {
+            api('POST', url(card.getAttribute('data-run-template'))).then(function (d) {
+              setStatus(d.ok ? msg('run-ok', 'Run complete') : (msg('run-failed', 'Run failed') + (d.blockedReason ? (' · ' + d.blockedReason) : '')));
+              if (d.ok && shotEl) {
+                shotEl.hidden = false;
+                shotEl.src = (card.getAttribute('data-screenshot-url') || '') + '?t=' + Date.now();
+                loadLogs();
+              }
+              syncButtons();
+            }).catch(function (e) { setStatus(String(e)); syncButtons(); });
+          }
+          if (selectedUdid() !== 'booted' && state && state.toLowerCase().indexOf('booted') < 0) {
+            api('POST', url(card.getAttribute('data-boot-template'))).then(function () { setTimeout(runNow, 1800); }).catch(runNow);
+          } else { runNow(); }
+        }
+        function buildAndRun() {
+          if (!selectedUdid()) return;
+          var buildUrl = card.getAttribute('data-debug-build-url');
+          if (!buildUrl) return;
+          setBusy(true);
+          setStatus(msg('building', 'Building') + ' …');
+          api('POST', buildUrl).then(function (d) {
+            if (!(d.__ok && d.id)) { setStatus(d.message || d.blockedReason || ('HTTP ' + d.__status)); syncButtons(); return; }
+            pollBuildThen(d.id, function (ok) { if (ok) runAfterBuild(); else syncButtons(); });
+          }).catch(function (e) { setStatus(String(e)); syncButtons(); });
+        }
+        function recapture() {
+          if (!selectedUdid()) return;
+          setBusy(true);
+          api('POST', url(card.getAttribute('data-screenshot-template'))).then(function (d) {
+            if (d.ok && shotEl) {
+              shotEl.hidden = false;
+              shotEl.src = (card.getAttribute('data-screenshot-url') || '') + '?t=' + Date.now();
+              setStatus((d.mode || '') + ' · ok');
+            } else setStatus(d.blockedReason || d.message || ('HTTP ' + d.__status));
+            syncButtons();
+          }).catch(function (e) { setStatus(String(e)); syncButtons(); });
+        }
+        if (buildRunBtn) buildRunBtn.addEventListener('click', buildAndRun);
+        if (recaptureBtn) recaptureBtn.addEventListener('click', recapture);
         setOperationsVisible(false);
         loadDevices();
+      })();
+      // v1.168.0 — iOS 빌드 트리거(Build/Test/Archive/Export IPA). JSON build API → 빌드 상세로 링크.
+      (function initIosBuildRunCard() {
+        var box = document.querySelector('.pt-ios-build-run');
+        if (!box) return;
+        var statusEl = document.getElementById('pt-ios-build-run-status');
+        var base = box.getAttribute('data-build-base') || '';
+        var urls = {
+          debug: box.getAttribute('data-debug-url'),
+          test: box.getAttribute('data-test-url'),
+          archive: box.getAttribute('data-archive-url'),
+          ipa: box.getAttribute('data-ipa-url'),
+        };
+        function escHtml(s) { return String(s).replace(/[&<>"]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; }); }
+        function setAll(disabled) { box.querySelectorAll('button').forEach(function (b) { b.disabled = disabled; }); }
+        box.querySelectorAll('[data-ios-build]').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            var u = urls[btn.getAttribute('data-ios-build')];
+            if (!u) return;
+            setAll(true);
+            if (statusEl) statusEl.textContent = box.getAttribute('data-queued') || '...';
+            fetch(u, { method: 'POST', credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+              .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { d.__ok = r.ok; d.__status = r.status; return d; }); })
+              .then(function (d) {
+                setAll(false);
+                if (d.__ok && d.id) {
+                  var link = base + encodeURIComponent(d.id);
+                  if (statusEl) statusEl.innerHTML = '#' + escHtml(d.id) + ' → <a href="' + link + '">' + escHtml(box.getAttribute('data-queued') || 'build') + '</a>';
+                } else if (statusEl) {
+                  statusEl.textContent = (d.message || d.error || d.blockedReason || ('HTTP ' + d.__status));
+                }
+              })
+              .catch(function (e) { setAll(false); if (statusEl) statusEl.textContent = String(e); });
+          });
+        });
       })();
       // v1.110.0 — rail 카드 접기/펼치기(헤더 클릭). 카드별 상태 localStorage 영속.
       (function initRailCollapse() {

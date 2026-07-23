@@ -281,6 +281,22 @@ internal object ProjectTabsTemplate {
         <div class="pt-ios-build-meta">${esc(iosBuildSettings.containerName)} · ${esc(t("tabs.rail.iosBuild.inferred"))} ${esc(iosBuildSettings.inferredScheme)}</div>
         <button type="submit" class="pt-ios-sim-btn primary">${esc(t("tabs.rail.iosBuild.save"))}</button>
       </form>
+      <div class="pt-ios-build-run"
+           data-debug-url="${esc(com.siamakerlab.vibecoder.shared.ApiPath.iosBuildDebug(project.id))}"
+           data-test-url="${esc(com.siamakerlab.vibecoder.shared.ApiPath.iosBuildTest(project.id))}"
+           data-archive-url="${esc(com.siamakerlab.vibecoder.shared.ApiPath.iosBuildArchive(project.id))}"
+           data-ipa-url="${esc(com.siamakerlab.vibecoder.shared.ApiPath.iosBuildExportIpa(project.id))}"
+           data-build-base="/projects/${esc(project.id)}/builds/"
+           data-queued="${esc(t("tabs.rail.iosBuildRun.queued"))}">
+        <div class="pt-rail-h" style="margin-top:12px">${esc(t("tabs.rail.iosBuildRun"))}</div>
+        <div class="pt-ios-sim-actions">
+          <button type="button" class="pt-ios-sim-btn primary" data-ios-build="debug">${esc(t("tabs.rail.iosBuildRun.debug"))}</button>
+          <button type="button" class="pt-ios-sim-btn" data-ios-build="test">${esc(t("tabs.rail.iosBuildRun.test"))}</button>
+          <button type="button" class="pt-ios-sim-btn" data-ios-build="archive">${esc(t("tabs.rail.iosBuildRun.archive"))}</button>
+          <button type="button" class="pt-ios-sim-btn" data-ios-build="ipa">${esc(t("tabs.rail.iosBuildRun.ipa"))}</button>
+        </div>
+        <div class="pt-ios-build-run-status dim" id="pt-ios-build-run-status" style="font-size:12px;margin-top:6px;line-height:1.6"></div>
+      </div>
     </div>
             """.trimIndent()
         } else {
@@ -320,6 +336,12 @@ internal object ProjectTabsTemplate {
          data-logs-template="${esc(api.iosSimulatorLogs(project.id, "__UDID__"))}"
          data-log-stream-template="${esc(api.wsIosSimulatorLogs(project.id, "__UDID__"))}"
          data-screenshot-url="/projects/${esc(project.id)}/ios/simulator/screenshot"
+         data-screenshot-template="${esc(api.iosSimulatorScreenshot(project.id, "__UDID__"))}"
+         data-debug-build-url="${esc(api.iosBuildDebug(project.id))}"
+         data-build-api-base="${esc(api.builds(project.id))}/"
+         data-buildrun="${esc(t("tabs.rail.iosSim.buildRun"))}"
+         data-building="${esc(t("tabs.rail.iosSim.building"))}"
+         data-recapture="${esc(t("tabs.rail.iosSim.recapture"))}"
          data-loading="${esc(t("tabs.rail.iosSim.loading"))}"
          data-empty="${esc(t("tabs.rail.iosSim.empty"))}"
          data-mac-required="${esc(t("tabs.rail.iosSim.macRequired"))}"
@@ -336,7 +358,9 @@ internal object ProjectTabsTemplate {
         <button type="button" class="pt-ios-sim-btn" id="pt-ios-sim-refresh">${esc(t("tabs.rail.iosSim.refresh"))}</button>
         <button type="button" class="pt-ios-sim-btn" id="pt-ios-sim-boot" disabled>${esc(t("tabs.rail.iosSim.boot"))}</button>
         <button type="button" class="pt-ios-sim-btn" id="pt-ios-sim-shutdown" disabled>${esc(t("tabs.rail.iosSim.shutdown"))}</button>
-        <button type="button" class="pt-ios-sim-btn primary" id="pt-ios-sim-run" disabled>${esc(t("tabs.rail.iosSim.run"))}</button>
+        <button type="button" class="pt-ios-sim-btn primary" id="pt-ios-sim-buildrun" disabled>${esc(t("tabs.rail.iosSim.buildRun"))}</button>
+        <button type="button" class="pt-ios-sim-btn" id="pt-ios-sim-run" disabled>${esc(t("tabs.rail.iosSim.run"))}</button>
+        <button type="button" class="pt-ios-sim-btn" id="pt-ios-sim-recapture" disabled>${esc(t("tabs.rail.iosSim.recapture"))}</button>
         <button type="button" class="pt-ios-sim-btn" id="pt-ios-sim-logs" disabled>${esc(t("tabs.rail.iosSim.logs"))}</button>
         <button type="button" class="pt-ios-sim-btn" id="pt-ios-sim-stream" disabled>${esc(t("tabs.rail.iosSim.stream"))}</button>
       </div>
@@ -1362,7 +1386,7 @@ $railHtml
   </div>
 </div>
 
-<script src="/static/project-tabs.js?v=1.162.3" defer></script>
+<script src="/static/project-tabs.js?v=1.168.0" defer></script>
 <script src="/static/prompt-templates.js?v=1.161.0" defer></script>
 <!-- v1.56.0 — 콤보박스 상태칩 실시간 동기. 목록 페이지와 동일하게 `/ws/projects`
      (단방향) 의 ProjectBusyChanged 로 responding↔ready patch. -->
