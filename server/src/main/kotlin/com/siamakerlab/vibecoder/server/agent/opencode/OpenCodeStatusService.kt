@@ -59,10 +59,9 @@ class OpenCodeStatusService(
     }
 
     private suspend fun runStatsCapture(): String {
-        val pb = ProcessBuilder(authService.runProvidersList().let { _ ->
-            // 별도 cmd resolver 없이 authService 와 동일 경로 사용하지 않아 여기서 직접.
-            defaultOpenCodeCmdForStats()
-        }, "stats").redirectError(ProcessBuilder.Redirect.DISCARD)
+        val cmd = defaultOpenCodeCmdForStats()
+        if (!isOpenCodeCommandAvailable(cmd)) return ""
+        val pb = ProcessBuilder(cmd, "stats").redirectError(ProcessBuilder.Redirect.DISCARD)
         applyOpenCodeProcessEnv(pb)
         return runWithHardTimeout(pb, timeoutSeconds = 15)
     }

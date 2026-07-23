@@ -9,6 +9,10 @@
 set timeout 55
 set cwd [lindex $argv 0]
 if {$cwd eq ""} { set cwd "/workspace" }
+set codex_cmd "codex"
+if {[info exists env(CODEX_CMD)] && $env(CODEX_CMD) ne ""} {
+    set codex_cmd $env(CODEX_CMD)
+}
 
 log_user 1
 
@@ -17,7 +21,7 @@ if {[catch {cd $cwd} err]} {
     exit 1
 }
 
-spawn -noecho env COLUMNS=120 LINES=40 codex --no-alt-screen --sandbox danger-full-access --ask-for-approval never
+spawn -noecho env COLUMNS=120 LINES=40 $codex_cmd --no-alt-screen --sandbox danger-full-access --ask-for-approval never
 stty rows 40 columns 120 < $spawn_out(slave,name)
 sleep 22
 

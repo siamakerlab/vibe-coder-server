@@ -177,10 +177,14 @@ Wiki, `docker/HUB_README.md`)는 영어.
 - 추가 운영 접속 대상: `aigoo.kr:32323`
   - SSH/WAN: `wody@aigoo.kr -p 32323`
   - 주 운영 서버와 동일 운영 계정/인증 정책을 사용하되, 비밀번호·토큰·키 값은 리포에 기록하지 않는다.
+- 현재 PC 로컬 운영 대상: `vibe.wody.work`
+  - 본 dev 리포와 같은 머신의 로컬 운영 구성을 사용한다.
+  - 세부 compose 경로/프록시 포트는 실행 전 현재 PC 상태로 확인한다.
+- 현재 등록된 운영 서버는 총 3개다: `codr-kr`, `aigoo.kr:32323`, `vibe.wody.work`.
 - 본 리포의 `docker/compose.yml` 변경사항은 운영 폴더로 수동 sync.
 - 데이터 디렉토리: `${VIBE_DATA_ROOT:-./vibe-coder-data}/`.
-- legacy: `vibe.wody.work` 와 예전 `/home/wody/docker/vibe-coder-server/` 운영 구성은 더 이상
-  현재 운영 기준이 아니다.
+- legacy 여부는 대상별로 구분한다. `vibe.wody.work` 는 3개 운영 서버 중 현재 PC 로컬 운영 대상으로 사용 중이며,
+  예전 `/home/wody/docker/vibe-coder-server/` 경로는 실행 전 실제 존재/사용 여부를 확인한다.
 - 운영 갱신 기본 절차:
 
 ```bash

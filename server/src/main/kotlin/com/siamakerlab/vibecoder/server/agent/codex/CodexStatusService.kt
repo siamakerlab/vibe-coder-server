@@ -20,6 +20,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.Duration
 import java.time.Instant
+import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
@@ -81,6 +82,7 @@ class CodexStatusService(
     }
 
     private fun runTuiCapture(): String {
+        if (!isCommandAvailable(resolveCodexCmd())) return ""
         val scriptPath = System.getenv("CODEX_USAGE_CAPTURE_SCRIPT")?.ifBlank { null }
             ?: "/usr/local/bin/codex-usage-capture.exp"
         val script = java.nio.file.Path.of(scriptPath)
@@ -93,7 +95,9 @@ class CodexStatusService(
     }
 
     private fun runLoginStatusOrNull(): String? = runCatching {
-        val pb = ProcessBuilder(resolveCodexCmd(), "login", "status").redirectErrorStream(true)
+        val cmd = resolveCodexCmd()
+        if (!isCommandAvailable(cmd)) return@runCatching null
+        val pb = ProcessBuilder(cmd, "login", "status").redirectErrorStream(true)
         applyCodexProcessEnv(pb)
         runWithHardTimeout(pb, timeoutSeconds = 8)
             .lineSequence()
@@ -137,6 +141,29 @@ class CodexStatusService(
     private fun resolveCodexCmd(): String =
         System.getenv("CODEX_CMD")?.takeIf { it.isNotBlank() }
             ?: if (OsType.detect() == OsType.WINDOWS) "codex.cmd" else "codex"
+
+    private fun isCommandAvailable(cmd: String): Boolean {
+        if (cmd.isBlank()) return false
+        if (cmd.contains('/') || cmd.contains('\\')) {
+            return java.nio.file.Files.isExecutable(java.nio.file.Path.of(cmd))
+        }
+        val path = System.getenv("PATH").orEmpty()
+        if (path.isBlank()) return false
+        val extensions = if (OsType.detect() == OsType.WINDOWS) {
+            System.getenv("PATHEXT").orEmpty()
+                .split(';')
+                .filter { it.isNotBlank() }
+                .ifEmpty { listOf(".exe", ".cmd", ".bat") }
+        } else {
+            listOf("")
+        }
+        return path.split(File.pathSeparatorChar).any { dir ->
+            if (dir.isBlank()) return@any false
+            extensions.any { ext ->
+                java.nio.file.Files.isExecutable(java.nio.file.Path.of(dir, cmd + ext))
+            }
+        }
+    }
 
     private fun applyCodexProcessEnv(pb: ProcessBuilder) {
         // v1.156.1 — putIfAbsent → put 강제 설정 (컨테이너 HOME=/root 회피).
@@ -358,12 +385,13 @@ class CodexUsageMonitor(
     }
 
     private suspend fun tick() {
-        // 캡처는 항상 수행 (cached snapshot 갱신 + UI 표시용). 알림은 cfg.enabled 일 때만.
-        runCatching { statusService.snapshot() }
-            .onFailure { codexStatusLog.debug(it) { "Codex usage snapshot tick failed: ${it.message}" } }
-
         val cfg = configProvider()
         if (!cfg.enabled) return
+
+        // 캡처는 enabled 일 때만 수행한다. Codex TUI capture 는 PTY + expect 기반이라
+        // Apple Silicon Docker Desktop 같은 환경에서 체감 지연을 만들 수 있다.
+        runCatching { statusService.snapshot() }
+            .onFailure { codexStatusLog.debug(it) { "Codex usage snapshot tick failed: ${it.message}" } }
 
         val dto = statusService.cachedSnapshot()
         lastSnapshot = dto

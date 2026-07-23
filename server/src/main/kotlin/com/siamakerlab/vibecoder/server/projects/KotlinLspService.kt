@@ -20,9 +20,12 @@ import java.io.OutputStream
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Duration
+import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.thread
 import kotlin.concurrent.withLock
@@ -44,13 +47,31 @@ private val log = KotlinLogging.logger {}
  * Threading: 각 process 는 single-threaded — `ReentrantLock` 으로 request/response 순차 처리.
  * stderr 는 background thread 로 drain (block 방지).
  */
-class KotlinLspService(private val workspace: WorkspacePath) {
+class KotlinLspService(
+    private val workspace: WorkspacePath,
+    private val idleTimeout: Duration = Duration.ofMinutes(
+        System.getenv("KOTLIN_LSP_IDLE_MINUTES")?.toLongOrNull()?.coerceAtLeast(1L) ?: 30L,
+    ),
+    private val maxInstances: Int = System.getenv("KOTLIN_LSP_MAX_INSTANCES")?.toIntOrNull()?.coerceAtLeast(1) ?: 4,
+) {
 
     private val lspPath: String? = System.getenv("KOTLIN_LSP_PATH")?.ifBlank { null }
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = false }
 
     /** projectId → LSP process. 첫 호출 시 lazy spawn. */
     private val instances = ConcurrentHashMap<String, LspInstance>()
+    @Volatile private var closed = false
+
+    init {
+        thread(start = true, isDaemon = true, name = "kotlin-lsp-reaper") {
+            while (!closed) {
+                runCatching { Thread.sleep(LSP_REAP_INTERVAL_MS) }
+                if (closed) break
+                runCatching { reapIdleInstances() }
+                    .onFailure { log.warn(it) { "Kotlin LSP reaper failed: ${it.message}" } }
+            }
+        }
+    }
 
     val isAvailable: Boolean by lazy {
         val p = lspPath ?: return@lazy false
@@ -82,6 +103,8 @@ class KotlinLspService(private val workspace: WorkspacePath) {
         val instance = instances.computeIfAbsent(projectId) {
             LspInstance(lspPath!!, projectRoot).also { it.initialize() }
         }
+        instance.touch()
+        reapOverflowInstances()
         return runCatching { instance.workspaceSymbol(symbolName, projectRoot) }
             .onFailure { log.warn(it) { "LSP workspace/symbol failed for $projectId: ${it.message}" } }
             .getOrDefault(emptyList())
@@ -89,8 +112,36 @@ class KotlinLspService(private val workspace: WorkspacePath) {
 
     /** Shutdown 모든 LSP process (server stop 시). */
     fun shutdown() {
+        closed = true
         instances.values.forEach { runCatching { it.shutdown() } }
         instances.clear()
+    }
+
+    private fun reapIdleInstances() {
+        val now = Instant.now()
+        instances.entries.toList().forEach { (projectId, instance) ->
+            if (!instance.isAlive() || instance.isIdle(now, idleTimeout)) {
+                if (instances.remove(projectId, instance)) {
+                    log.info { "Kotlin LSP reaped for $projectId" }
+                    runCatching { instance.shutdown() }
+                }
+            }
+        }
+        reapOverflowInstances()
+    }
+
+    private fun reapOverflowInstances() {
+        val overflow = instances.size - maxInstances
+        if (overflow <= 0) return
+        instances.entries
+            .sortedBy { it.value.lastUsedAt }
+            .take(overflow)
+            .forEach { (projectId, instance) ->
+                if (instances.remove(projectId, instance)) {
+                    log.info { "Kotlin LSP evicted for $projectId (maxInstances=$maxInstances)" }
+                    runCatching { instance.shutdown() }
+                }
+            }
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -115,8 +166,20 @@ class KotlinLspService(private val workspace: WorkspacePath) {
         private val input: InputStream by lazy { process.inputStream }
         private val nextId = AtomicInteger(1)
         private val ioLock = ReentrantLock()
+        private val lastUsed = AtomicReference(Instant.now())
         @Volatile private var initialized = false
         @Volatile private var stderrDrainer: Thread? = null
+
+        val lastUsedAt: Instant get() = lastUsed.get()
+
+        fun touch() {
+            lastUsed.set(Instant.now())
+        }
+
+        fun isAlive(): Boolean = process.isAlive
+
+        fun isIdle(now: Instant, timeout: Duration): Boolean =
+            !timeout.isZero && !timeout.isNegative && Duration.between(lastUsedAt, now) > timeout
 
         fun initialize() {
             if (initialized) return
@@ -273,6 +336,8 @@ class KotlinLspService(private val workspace: WorkspacePath) {
     }
 
     companion object {
+        private const val LSP_REAP_INTERVAL_MS = 5 * 60 * 1000L
+
         /** LSP SymbolKind enum (rough mapping for display). */
         private val SYMBOL_KIND_NAMES = mapOf(
             5 to "class", 6 to "method", 11 to "interface", 12 to "function",

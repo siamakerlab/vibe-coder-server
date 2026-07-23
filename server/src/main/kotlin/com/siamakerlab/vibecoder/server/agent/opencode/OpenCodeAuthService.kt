@@ -5,6 +5,7 @@ import com.siamakerlab.vibecoder.shared.dto.OpenCodeUsageDto
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -40,7 +41,9 @@ class OpenCodeAuthService(
 
     /** `opencode providers list` 실행 (타임아웃 8s). */
     suspend fun runProvidersList(): String = withContext(Dispatchers.IO) {
-        val pb = ProcessBuilder(opencodeCmdProvider(), "providers", "list")
+        val cmd = opencodeCmdProvider()
+        if (!isOpenCodeCommandAvailable(cmd)) return@withContext ""
+        val pb = ProcessBuilder(cmd, "providers", "list")
             .redirectError(ProcessBuilder.Redirect.DISCARD)
         applyOpenCodeProcessEnv(pb)
         runWithHardTimeout(pb, timeoutSeconds = 8)
@@ -105,6 +108,29 @@ internal fun parseOpenCodeProvidersList(raw: String): List<OpenCodeAuthService.C
 
 internal fun stripOpenCodeAnsi(text: String): String =
     Regex("\\u001B\\[[0-?]*[ -/]*[@-~]|\\u001B\\][^\\u0007]*(?:\\u0007|\\u001B\\\\)").replace(text, "")
+
+internal fun isOpenCodeCommandAvailable(cmd: String): Boolean {
+    if (cmd.isBlank()) return false
+    if (cmd.contains('/') || cmd.contains('\\')) {
+        return java.nio.file.Files.isExecutable(java.nio.file.Path.of(cmd))
+    }
+    val path = System.getenv("PATH").orEmpty()
+    if (path.isBlank()) return false
+    val extensions = if (OsType.detect() == OsType.WINDOWS) {
+        System.getenv("PATHEXT").orEmpty()
+            .split(';')
+            .filter { it.isNotBlank() }
+            .ifEmpty { listOf(".exe", ".cmd", ".bat") }
+    } else {
+        listOf("")
+    }
+    return path.split(File.pathSeparatorChar).any { dir ->
+        if (dir.isBlank()) return@any false
+        extensions.any { ext ->
+            java.nio.file.Files.isExecutable(java.nio.file.Path.of(dir, cmd + ext))
+        }
+    }
+}
 
 /** v1.151.0 — env 주입 공통 (OpenCodeAuthService / OpenCodeStatusService 공유).
  * v1.156.1 — putIfAbsent → put 강제 설정 (컨테이너 HOME=/root 회피). */

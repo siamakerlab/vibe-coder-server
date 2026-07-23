@@ -193,7 +193,7 @@ fun Routing.webProjectRoutes(
         val sess = requireSessionOrRedirect(authDeps) ?: return@get
         val full = projects.listForUser(sess.userId, sess.isAdmin)
         val err = call.request.queryParameters["err"]
-        val ok = call.request.queryParameters["ok"]?.let { Messages.t(sess.language, "flash.project.created") }
+        val ok = call.request.queryParameters["ok"]?.let { projectListOkFlash(sess.language, it) }
         // v1.60.0 — 페이지네이션: size 화이트리스트(20/50/100, 기본 20), page 1-base.
         val total = full.size
         val size = call.request.queryParameters["size"]?.toIntOrNull()?.takeIf { it in setOf(20, 50, 100) } ?: 20
@@ -2012,6 +2012,12 @@ fun Routing.webProjectRoutes(
         }
         call.respondRedirect(target)
     }
+}
+
+private fun projectListOkFlash(lang: String, ok: String): String = when (ok) {
+    "created" -> Messages.t(lang, "flash.project.created")
+    "deleted" -> Messages.t(lang, "flash.project.deleted")
+    else -> ok
 }
 
 /**

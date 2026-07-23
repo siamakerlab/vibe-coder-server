@@ -108,7 +108,7 @@ fun Routing.archiveRoutes(
         }
         val r = runCatching { archive.archive(id) }
         if (r.isSuccess) {
-            call.respondRedirect("/projects?ok=${enc("아카이브됨: $id")}")
+            call.respondRedirect("/projects?ok=${enc(Messages.t(sess.language, "flash.project.archived", id))}")
         } else {
             log.warn(r.exceptionOrNull()) { "archive failed: $id" }
             call.respondRedirect("/projects?err=${enc("아카이브 실패: ${r.exceptionOrNull()?.message ?: "error"}")}")
