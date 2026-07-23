@@ -135,7 +135,7 @@ class IosSimulatorLogStreamServiceTest {
             "-o",
             "StrictHostKeyChecking=accept-new",
             "builder@mac-mini.local",
-            remoteArgv.joinToString(" ") { it.shellSingleQuoted() },
+            "export PATH=\"/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:\$PATH\"; " + remoteArgv.joinToString(" ") { it.shellSingleQuoted() },
         )
     }
 }

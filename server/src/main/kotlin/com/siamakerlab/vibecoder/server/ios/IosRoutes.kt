@@ -31,6 +31,7 @@ fun Routing.iosRoutes(
     signingStatus: IosSigningStatusService = IosSigningStatusService(),
     keychainImport: IosKeychainImportService = IosKeychainImportService(),
     swiftToolsInstall: IosSwiftToolsInstallService = IosSwiftToolsInstallService(),
+    homebrewInstall: IosHomebrewInstallService = IosHomebrewInstallService(),
     appStoreConnectKeys: AppStoreConnectKeyStore? = null,
     appStoreConnectDiagnostics: AppStoreConnectDiagnosticService? =
         appStoreConnectKeys?.let { AppStoreConnectDiagnosticService(it) },
@@ -172,6 +173,12 @@ fun Routing.iosRoutes(
             call.requireApiAdmin()
             val req = call.receive<IosSwiftToolsInstallRequestDto>()
             call.respond(swiftToolsInstall.install(req))
+        }
+
+        // v1.171.0 — Homebrew 원탭 설치(맥 에이전트). homebrew_missing 해소.
+        post(ApiPath.IOS_HOMEBREW_INSTALL) {
+            call.requireApiAdmin()
+            call.respond(homebrewInstall.install())
         }
     }
 }

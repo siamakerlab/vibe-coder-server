@@ -10,6 +10,8 @@ data class IosPreflightDto(
     val xcodeAvailable: Boolean,
     val simctlAvailable: Boolean,
     val simulatorUiEnabled: Boolean,
+    /** v1.171.0 — Homebrew(brew) 설치 여부. SwiftLint/SwiftFormat/CocoaPods 설치에 필요. */
+    val homebrewAvailable: Boolean = false,
     val xcodeSelectPath: String? = null,
     val xcodebuildPath: String? = null,
     val xcodeVersion: String? = null,
@@ -61,6 +63,22 @@ data class IosAgentConnectResultDto(
     val failureReason: String? = null,
     val message: String? = null,
     val preflight: IosPreflightDto? = null,
+)
+
+/**
+ * v1.171.0 — 맥 에이전트에 Homebrew 원탭 설치 결과. ok=false 면 blockedReason
+ * (agent_disabled | agent_unreachable | clt_required | brew_install_failed) 로 원인 구분.
+ */
+@Serializable
+data class IosHomebrewInstallResultDto(
+    val checkedAt: String,
+    val mode: String,
+    val ok: Boolean,
+    val installed: Boolean = false,
+    val brewVersion: String? = null,
+    val blockedReason: String? = null,
+    val message: String? = null,
+    val warnings: List<String> = emptyList(),
 )
 
 @Serializable

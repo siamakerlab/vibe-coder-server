@@ -49,6 +49,7 @@ class IosPreflightService(
         val simSdk = agentRunner.run(IosAgentCommand.SIMULATOR_SDK_VERSION, DEFAULT_TIMEOUT)
         val deviceTypes = agentRunner.run(IosAgentCommand.SIMULATOR_DEVICE_TYPES, DEFAULT_TIMEOUT)
         val signingIdentities = agentRunner.run(IosAgentCommand.CODESIGNING_IDENTITIES, DEFAULT_TIMEOUT)
+        val brew = agentRunner.run(listOf("brew", "--version"), DEFAULT_TIMEOUT)  // v1.171.0 — PATH prefix 로 Homebrew 발견
 
         val agentUnreachable = useSshAgent && listOf(
             xcodeSelect,
@@ -85,6 +86,7 @@ class IosPreflightService(
             xcodeAvailable = xcodeAvailable,
             simctlAvailable = simctlAvailable,
             simulatorUiEnabled = xcodeAvailable && simctlAvailable,
+            homebrewAvailable = brew.ok,
             xcodeSelectPath = xcodeSelect.stdout.trim().ifBlank { null },
             xcodebuildPath = xcodebuildPath.stdout.trim().ifBlank { null },
             xcodeVersion = xcodeVersion.stdout.trim().lines().joinToString(" / ").ifBlank { null },

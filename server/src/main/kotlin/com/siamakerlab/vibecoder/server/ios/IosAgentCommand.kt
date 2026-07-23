@@ -40,12 +40,24 @@ class IosAgentCommandRunner(
     }
 
     fun buildCommand(argv: List<String>): List<String> {
+        val effective = withDeveloperDir(argv)
         val mode = config.mode.trim().lowercase()
         return when (mode) {
-            "local" -> argv
-            "ssh", "remote" -> buildSshCommand(argv)
+            "local" -> effective
+            "ssh", "remote" -> buildSshCommand(effective)
             else -> throw IllegalArgumentException("unsupported ios agent mode: ${config.mode}")
         }
+    }
+
+    /**
+     * v1.171.0 — `ios.agent.xcodePath` 가 지정되면(≠auto, 절대경로) 모든 명령 앞에
+     * `env DEVELOPER_DIR=<path>` 를 붙여 특정 Xcode 를 강제한다(여러 Xcode 설치 대응).
+     * auto 면 원격 `xcode-select` 기본값을 그대로 쓴다. local/ssh 양쪽 동일.
+     */
+    private fun withDeveloperDir(argv: List<String>): List<String> {
+        val xp = config.xcodePath.trim()
+        if (xp.isEmpty() || xp.equals("auto", ignoreCase = true) || !xp.startsWith("/")) return argv
+        return listOf("env", "DEVELOPER_DIR=$xp") + argv
     }
 
     private fun buildSshCommand(remoteArgv: List<String>): List<String> {
@@ -64,8 +76,19 @@ class IosAgentCommandRunner(
             "-o",
             "StrictHostKeyChecking=accept-new",
             "$user@$host",
-            remoteArgv.joinToString(" ") { it.shellSingleQuoted() },
+            REMOTE_ENV_PREFIX + remoteArgv.joinToString(" ") { it.shellSingleQuoted() },
         )
+    }
+
+    companion object {
+        /**
+         * v1.171.0 — `ssh host 'cmd'` 는 원격을 **non-login 셸**로 돌려 `.zprofile`/`.bash_profile`
+         * 의 Homebrew PATH 를 로드하지 않는다 → `brew`/`swiftlint`/`swiftformat`/`pod` 미발견
+         * (`homebrew_missing` 등). Apple Silicon(`/opt/homebrew`)·Intel(`/usr/local`) Homebrew 경로를
+         * 명시 prepend 해 원격 명령이 이들을 찾게 한다. `env DEVELOPER_DIR=…` prepend 도 이 PATH 를 상속.
+         */
+        private const val REMOTE_ENV_PREFIX =
+            "export PATH=\"/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:\$PATH\"; "
     }
 }
 

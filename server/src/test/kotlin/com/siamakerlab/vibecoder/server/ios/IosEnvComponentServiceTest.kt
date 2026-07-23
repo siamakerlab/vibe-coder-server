@@ -98,8 +98,8 @@ class IosEnvComponentServiceTest {
         snap.blockedReason shouldBe "agent_unreachable"
         snap.isMac.shouldBeTrue()
         snap.simulatorRuntimeAvailable.shouldBeFalse()
-        // preflight 7개만 spawn — runtimes/swiftlint/swiftformat/cocoapods 추가 probe 는 생략.
-        runner.commands.size shouldBe 7
+        // preflight 8개만 spawn(v1.171.0 brew 프로브 포함) — runtimes/swiftlint/swiftformat/cocoapods 추가 probe 는 생략.
+        runner.commands.size shouldBe 8
     }
 
     @Test
@@ -113,7 +113,7 @@ class IosEnvComponentServiceTest {
 
         // 두 번째 호출은 캐시라 추가 명령 spawn 이 없다.
         runner.commands.size shouldBe firstCount
-        firstCount shouldBe 11 // preflight 7 + runtimes/swiftlint/swiftformat/cocoapods 4
+        firstCount shouldBe 12 // preflight 8(incl brew) + runtimes/swiftlint/swiftformat/cocoapods 4
     }
 
     private fun macService(runner: RecordingRunner): IosEnvComponentService =

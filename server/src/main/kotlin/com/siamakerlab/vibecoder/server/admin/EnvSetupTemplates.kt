@@ -252,6 +252,13 @@ docker compose up -d --force-recreate</pre>
     <span id="ios-c-status" class="dim" style="font-size:12px"></span>
   </div>
   <div id="ios-c-result" style="margin-top:8px;font-size:12px;line-height:1.7"></div>
+  <div id="ios-brew-box" hidden style="margin-top:8px;font-size:12px">
+    <span style="color:var(--warn,#f59e0b)">${esc(t("env.ios.connect.brewMissing"))}</span>
+    <div style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <button type="button" id="ios-brew-btn" class="chip" style="padding:5px 12px">${esc(t("env.ios.connect.brewInstall"))}</button>
+      <span id="ios-brew-status" class="dim"></span>
+    </div>
+  </div>
 </div>
 <script>
 (function(){
@@ -280,8 +287,23 @@ docker compose up -d --force-recreate</pre>
         if(!p.xcodeAvailable||!p.simctlAvailable) out.push('<span style="color:var(--warn)">'+${jsLit(t("env.ios.connect.needXcode"))}+'</span>');
         if(!d.keyAuthVerified&&d.message) out.push('<span style="color:var(--warn)">'+esc(d.message)+'</span>');
         res.innerHTML=out.join('<br>');
+        var brewBox=document.getElementById('ios-brew-box');
+        if(brewBox) brewBox.hidden = !(p && p.homebrewAvailable===false);
       })
       .catch(function(e){ btn.disabled=false; st.textContent=''; res.innerHTML='<span style="color:var(--danger)">✗ '+esc(String(e))+'</span>'; });
+  });
+  var brewBtn=document.getElementById('ios-brew-btn');
+  if(brewBtn) brewBtn.addEventListener('click',function(){
+    var bs=document.getElementById('ios-brew-status');
+    brewBtn.disabled=true; if(bs) bs.textContent=${jsLit(t("env.ios.connect.brewInstalling"))};
+    fetch('/api/ios/homebrew/install',{method:'POST',credentials:'same-origin',headers:{'Accept':'application/json'}})
+      .then(function(r){return r.json().catch(function(){return {ok:false};});})
+      .then(function(d){
+        brewBtn.disabled=false;
+        if(d.ok){ if(bs) bs.innerHTML='<span style="color:var(--ok)">✓ '+${jsLit(t("env.ios.connect.brewOk"))}+(d.brewVersion?(' · '+esc(d.brewVersion)):'')+'</span>'; var bb=document.getElementById('ios-brew-box'); if(bb) bb.hidden=true; }
+        else { if(bs) bs.innerHTML='<span style="color:var(--danger)">✗ '+esc(d.message||d.blockedReason||'failed')+'</span>'; }
+      })
+      .catch(function(e){ brewBtn.disabled=false; if(bs) bs.innerHTML='<span style="color:var(--danger)">✗ '+esc(String(e))+'</span>'; });
   });
 })();
 </script>"""

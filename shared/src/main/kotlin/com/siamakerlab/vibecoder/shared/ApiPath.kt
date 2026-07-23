@@ -93,6 +93,8 @@ object ApiPath {
     const val IOS_KEYCHAIN_IMPORT = "/api/ios/keychain/import"
     /** Admin-only optional SwiftLint/SwiftFormat installation on the macOS agent. */
     const val IOS_SWIFT_TOOLS_INSTALL = "/api/ios/swift-tools/install"
+    /** v1.171.0 — Admin-only one-tap Homebrew install on the macOS agent (fixes homebrew_missing). */
+    const val IOS_HOMEBREW_INSTALL = "/api/ios/homebrew/install"
 
     // v1.6.0 — Workspace terminal (PTY bash). security.allowTerminal=true 필요.
     const val TERMINAL_SESSIONS = "/api/terminal/sessions"

@@ -144,7 +144,7 @@ class IosSimulatorLogServiceTest {
 
     companion object {
         private fun ssh(remoteArgv: List<String>): String =
-            "ssh -p 2222 -o BatchMode=yes -o StrictHostKeyChecking=accept-new builder@mac-mini.local " +
+            "ssh -p 2222 -o BatchMode=yes -o StrictHostKeyChecking=accept-new builder@mac-mini.local " + "export PATH=\"/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:\$PATH\"; " +
                 remoteArgv.joinToString(" ") { it.shellSingleQuoted() }
     }
 }

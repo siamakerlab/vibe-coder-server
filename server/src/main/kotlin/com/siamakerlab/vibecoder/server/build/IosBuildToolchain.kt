@@ -109,7 +109,7 @@ class IosBuildToolchain(
         val mode = config.mode.trim().lowercase()
         if (mode !in setOf("ssh", "remote")) return
 
-        val command = buildRemoteArtifactPrepareCommand(request)
+        val command = buildRemoteArtifactPrepareCommand(request, config.workspaceRoot)
         logger.info("iOS remote artifact prepare: ${command.joinToString(" ")}")
         val result = withContext(Dispatchers.IO) { runner.run(IosAgentCommandRunner(config).buildCommand(command), SYNC_TIMEOUT) }
         result.stdout.lineSequence().filter { it.isNotBlank() }.forEach { logger.info(it) }
@@ -117,12 +117,22 @@ class IosBuildToolchain(
         if (!result.ok) throw IllegalStateException("iOS remote artifact prepare failed: exit ${result.exitCode}")
     }
 
-    private fun buildRemoteArtifactPrepareCommand(request: XcodeBuildRequest): List<String> {
+    private fun buildRemoteArtifactPrepareCommand(request: XcodeBuildRequest, workspaceRoot: String): List<String> {
+        val needsSigningStage = request.variant == BuildVariant.IOS_ARCHIVE || request.variant == BuildVariant.IOS_EXPORT_IPA
         val shell = buildString {
             append("rm -rf ")
             append(request.artifactRoot.toString().shellSingleQuoted())
             append(" && mkdir -p ")
             append(request.artifactRoot.toString().shellSingleQuoted())
+            // v1.171.0 — 서명 빌드(archive/export)면 서버별 signing 폴더의 provisioning profile 을 Xcode
+            // 표준 위치(~/Library/MobileDevice/Provisioning Profiles)로 스테이징(있을 때만, best-effort).
+            // heredoc 보다 앞에 두어(export 는 heredoc 이 마지막) exit code 는 뒤 명령이 대표.
+            if (needsSigningStage && workspaceRoot.trim().startsWith("/")) {
+                val signDir = "${workspaceRoot.trim().trimEnd('/')}/signing"
+                append(" && { SIGNDIR=").append(signDir.shellSingleQuoted())
+                append("; DEST=\"\$HOME/Library/MobileDevice/Provisioning Profiles\"")
+                append("; if [ -d \"\$SIGNDIR\" ]; then mkdir -p \"\$DEST\"; for f in \"\$SIGNDIR\"/*.mobileprovision; do [ -f \"\$f\" ] && cp -f \"\$f\" \"\$DEST\"/; done; fi; true; }")
+            }
             if (request.variant == BuildVariant.IOS_EXPORT_IPA) {
                 append(" && cat > ")
                 append(request.exportOptionsPlist.toString().shellSingleQuoted())

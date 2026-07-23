@@ -38,7 +38,7 @@ class IosAgentCommandRunnerTest {
             "-o",
             "StrictHostKeyChecking=accept-new",
             "builder@mac-mini.local",
-            "'xcrun' 'simctl' 'list' 'devicetypes' '-j'",
+            "export PATH=\"/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:\$PATH\"; 'xcrun' 'simctl' 'list' 'devicetypes' '-j'",
         )
     }
 
