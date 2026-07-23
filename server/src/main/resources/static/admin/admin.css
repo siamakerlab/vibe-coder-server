@@ -1027,6 +1027,57 @@ body.console-page .console-log {
     min-height: 0;
     overflow: hidden;
 }
+/* v1.166.0 — Console TUI 모바일 텍스트 선택: 롱프레스 단어선택 + 앞/뒤 핸들 + 플로팅 복사 팝업.
+   터치(coarse pointer) 전용. 핸들/팝업은 position:relative 인 .console-tui-pane 기준 절대배치.
+   JS(setupConsoleTuiTouchScroll)가 좌표(left/top)와 visible 토글을 제어. */
+.console-tui-sel-handle {
+    position: absolute;
+    top: 0; left: 0;
+    width: 26px; height: 26px;
+    margin-left: -13px;
+    z-index: 42;
+    display: none;
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+}
+.console-tui-sel-handle.visible { display: block; }
+.console-tui-sel-handle::after {
+    content: '';
+    position: absolute;
+    left: 13px;
+    width: 15px; height: 15px;
+    margin-left: -7px;
+    border-radius: 50%;
+    background: var(--primary, #3b82f6);
+    border: 2px solid #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,.55);
+}
+.console-tui-sel-handle.start::after { bottom: 100%; margin-bottom: -3px; }
+.console-tui-sel-handle.end::after { top: 100%; margin-top: -3px; }
+.console-tui-copy-popup {
+    position: absolute;
+    top: 0; left: 0;
+    z-index: 44;
+    display: none;
+    padding: 8px 20px;
+    background: #232a36;
+    color: #eef2f7;
+    border: 1px solid #39424f;
+    border-radius: 9px;
+    font-size: 13px; font-weight: 600; line-height: 1;
+    white-space: nowrap;
+    box-shadow: 0 4px 12px rgba(0,0,0,.5);
+    transform: translate(-50%, -100%);
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+    cursor: pointer;
+}
+.console-tui-copy-popup.visible { display: block; }
+.console-tui-copy-popup:active { background: #2c3542; }
+/* 모바일(coarse)에선 기존 하단 textarea 선택 편집 패널 대신 플로팅 복사 팝업만 사용. */
+@media (pointer: coarse) {
+    .console-tui-selection-editor { display: none !important; }
+}
 .console-log::-webkit-scrollbar { width: 10px; }
 .console-log::-webkit-scrollbar-track { background: transparent; }
 .console-log::-webkit-scrollbar-thumb {

@@ -2067,11 +2067,24 @@ $quickBarHtml
     closing: false,
     forceBottomOnConnect: false,
     touchScroll: {
+      // v1.166.0 — 제스처 상태머신. mode: idle | scrolling | selecting | handle.
+      //   idle      : 대기(롱프레스 타이머 검). 스와이프하면 native pan-y 스크롤(scrolling).
+      //   scrolling : 손가락 스와이프로 native 세로 스크롤 진행 중.
+      //   selecting : 롱프레스로 선택 생성됨. 스크롤 잠금(touch-action none). 핸들 노출.
+      //   handle    : 핸들을 잡고 드래그해 선택 확장 중(+엣지 auto-scroll).
+      mode: 'idle',
       active: false,
       moved: false,
-      lastY: 0,
-      lastT: 0,
-      velocity: 0,
+      startX: 0,
+      startY: 0,
+      longPressTimer: null,
+      pendingClear: false,
+      anchor: null,      // 선택 고정단 {col,row} (절대 버퍼 좌표)
+      focus: null,       // 선택 이동단 {col,row} (핸들 드래그로 갱신)
+      dragHandle: null,  // 'start' | 'end'
+      edgeRaf: null,
+      edgeDir: 0,        // -1 위, +1 아래 (엣지 auto-scroll 방향)
+      edgeTick: 0,
       lastScrollLogT: 0,
       log: [],
       debug: false
@@ -2296,91 +2309,346 @@ $quickBarHtml
     if (tui.touchScroll.log.length > 400) tui.touchScroll.log.splice(0, tui.touchScroll.log.length - 400);
     if (tui.touchScroll.debug && window.console && console.debug) console.debug('[tui-touch]', entry);
   }
+  // ─── v1.166.0 — Console TUI 모바일 터치 제스처(coarse pointer 전용) ────────────────
+  //   스와이프 = native 세로 스크롤 전용 / 롱프레스 = 단어 선택 + 앞뒤 핸들 /
+  //   핸들 드래그 = 선택 확장(+상하단 밴드 auto-scroll) / 손 떼면 플로팅 복사 팝업 /
+  //   짧은 탭 = 키보드 포커스(입력). 마우스 휠은 데스크톱 xterm 기본(미개입).
+  var TUI_LONGPRESS_MS = 450;   // 롱프레스 판정 시간
+  var TUI_MOVE_THRESH = 10;     // px. 이 이상 이동하면 스크롤로 전환(롱프레스 취소)
+  var TUI_EDGE_BAND = 0.16;     // 화면 상/하 16% 밴드에서 auto-scroll
+  var TUI_EDGE_EVERY = 5;       // rAF N프레임마다 1줄(천천히)
+
+  function tuiCellDims() {
+    var term = tui.term;
+    try {
+      var c = term._core._renderService.dimensions.css.cell;
+      if (c && c.width > 0 && c.height > 0) return { width: c.width, height: c.height };
+    } catch (e) {}
+    try {
+      var rows = tuiHost.querySelector('.xterm-rows');
+      var screen = tuiHost.querySelector('.xterm-screen');
+      if (rows && rows.firstElementChild && screen && term.cols > 0) {
+        var h = rows.firstElementChild.getBoundingClientRect().height;
+        var w = screen.getBoundingClientRect().width / term.cols;
+        if (h > 0 && w > 0) return { width: w, height: h };
+      }
+    } catch (e) {}
+    return null;
+  }
+  function tuiViewportY() {
+    try { return tui.term.buffer.active.viewportY || 0; } catch (e) { return 0; }
+  }
+  function tuiScreenEl() { return tuiHost ? tuiHost.querySelector('.xterm-screen') : null; }
+  // 픽셀(clientX/Y) → 절대 버퍼 cell {col,row,localRow}. 내부 dimensions 의존(이 헬퍼로 격리).
+  function tuiCellFromPoint(clientX, clientY) {
+    var term = tui.term, dims = tuiCellDims(), screen = tuiScreenEl();
+    if (!term || !dims || !screen) return null;
+    var r = screen.getBoundingClientRect();
+    var col = Math.floor((clientX - r.left) / dims.width);
+    var localRow = Math.floor((clientY - r.top) / dims.height);
+    col = Math.max(0, Math.min((term.cols || 1) - 1, col));
+    localRow = Math.max(0, Math.min((term.rows || 1) - 1, localRow));
+    return { col: col, row: tuiViewportY() + localRow, localRow: localRow };
+  }
+  // 절대 cell(col,absRow) → .console-tui-pane 기준 픽셀 {x,y,cellW,cellH,localRow,visible}.
+  function tuiPointFromCell(col, absRow) {
+    var term = tui.term, dims = tuiCellDims(), screen = tuiScreenEl();
+    if (!term || !dims || !screen || !tuiPane) return null;
+    var localRow = absRow - tuiViewportY();
+    var sr = screen.getBoundingClientRect(), pr = tuiPane.getBoundingClientRect();
+    return {
+      x: (sr.left - pr.left) + col * dims.width,
+      y: (sr.top - pr.top) + localRow * dims.height,
+      cellW: dims.width, cellH: dims.height,
+      localRow: localRow,
+      visible: localRow >= 0 && localRow < (term.rows || 0)
+    };
+  }
+  function tuiWordRangeAt(col, absRow) {
+    try {
+      var line = tui.term.buffer.active.getLine(absRow);
+      if (!line) return { startCol: col, endCol: col };
+      var s = line.translateToString(false);
+      if (col >= s.length || !/\S/.test(s.charAt(col))) return { startCol: col, endCol: col };
+      var start = col, end = col;
+      while (start > 0 && /\S/.test(s.charAt(start - 1))) start--;
+      while (end < s.length - 1 && /\S/.test(s.charAt(end + 1))) end++;
+      return { startCol: start, endCol: end };
+    } catch (e) { return { startCol: col, endCol: col }; }
+  }
+  // 앵커~focus(절대 cell)를 정규화해 term.select(col,row,length) — length 는 cols 기준 다음 행 wrap.
+  function tuiApplySelection(a, f) {
+    var term = tui.term;
+    if (!term || !a || !f) return;
+    var cols = term.cols || 1;
+    var start, end;
+    if (f.row < a.row || (f.row === a.row && f.col < a.col)) { start = f; end = a; }
+    else { start = a; end = f; }
+    var length = (end.row - start.row) * cols + (end.col - start.col) + 1;
+    if (length < 1) length = 1;
+    try { term.select(start.col, start.row, length); } catch (e) {}
+  }
+  function tuiEnsureSelectionUi() {
+    if (tui._selHandleStart || !tuiPane) return;
+    var mk = function(cls) {
+      var h = document.createElement('div');
+      h.className = 'console-tui-sel-handle ' + cls;
+      tuiPane.appendChild(h);
+      tuiBindHandleDrag(h, cls);
+      return h;
+    };
+    tui._selHandleStart = mk('start');
+    tui._selHandleEnd = mk('end');
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'console-tui-copy-popup';
+    // 기존 선택 편집 패널의 '복사' 라벨을 재사용(i18n 일관, 새 키 불필요).
+    btn.textContent = (tuiSelectionCopy && tuiSelectionCopy.textContent.trim()) || '복사';
+    btn.addEventListener('pointerdown', function(ev) { ev.preventDefault(); });
+    btn.addEventListener('click', function(ev) {
+      ev.preventDefault();
+      copyConsoleTuiSelection().then(function() { tuiClearSelection(); });
+    });
+    tuiPane.appendChild(btn);
+    tui._selCopyBtn = btn;
+  }
+  function tuiPlaceHandle(handle, pt, isStart) {
+    if (!handle) return;
+    if (!pt || !pt.visible) { handle.classList.remove('visible'); return; }
+    handle.style.left = pt.x + 'px';
+    handle.style.top = (isStart ? pt.y : pt.y + pt.cellH) + 'px';
+    handle.classList.add('visible');
+  }
+  function tuiPlaceCopyPopup(sp, ep) {
+    var btn = tui._selCopyBtn;
+    if (!btn) return;
+    // 복사 팝업은 selecting 모드 + 손가락이 떨어졌을 때만(스펙: "손가락을 떼면"). 롱프레스 hold /
+    // 핸들 드래그(mode==='handle') 중엔 숨긴다.
+    if (tui.touchScroll.mode !== 'selecting' || tui.touchScroll.active) { btn.classList.remove('visible'); return; }
+    var anchor = (sp && sp.visible) ? sp : ((ep && ep.visible) ? ep : null);
+    if (!anchor) { btn.classList.remove('visible'); return; }
+    var paneH = tuiPane.getBoundingClientRect().height;
+    var top = anchor.y - 8;
+    if (top < 34 && ep) { top = ep.y + ep.cellH + 8; btn.style.transform = 'translate(-50%, 0)'; }
+    else { btn.style.transform = 'translate(-50%, -100%)'; }
+    var midX = (sp && ep) ? (sp.x + ep.x) / 2 : anchor.x;
+    btn.style.left = midX + 'px';
+    btn.style.top = Math.max(4, Math.min(paneH - 4, top)) + 'px';
+    btn.classList.add('visible');
+  }
+  function tuiUpdateSelectionUi() {
+    if (!tui.term || !tui._selHandleStart) return;
+    var pos = null;
+    try { if (tui.term.hasSelection()) pos = tui.term.getSelectionPosition(); } catch (e) {}
+    if (!pos) { tuiHideSelectionUi(); return; }
+    var sp = tuiPointFromCell(pos.start.x, pos.start.y);
+    var ep = tuiPointFromCell(pos.end.x, pos.end.y);  // end.x=exclusive → 마지막 셀 우측 경계
+    tuiPlaceHandle(tui._selHandleStart, sp, true);
+    tuiPlaceHandle(tui._selHandleEnd, ep, false);
+    tuiPlaceCopyPopup(sp, ep);
+  }
+  function tuiShowCopyPopup() { tuiUpdateSelectionUi(); }
+  function tuiHideCopyPopup() { if (tui._selCopyBtn) tui._selCopyBtn.classList.remove('visible'); }
+  function tuiHideSelectionUi() {
+    if (tui._selHandleStart) tui._selHandleStart.classList.remove('visible');
+    if (tui._selHandleEnd) tui._selHandleEnd.classList.remove('visible');
+    tuiHideCopyPopup();
+  }
+  function tuiSetScrollLock(lock) {
+    var v = tuiHost.querySelector('.xterm-viewport');
+    var ta = lock ? 'none' : 'pan-y';
+    tuiHost.style.touchAction = ta;
+    if (v) v.style.touchAction = ta;
+  }
+  function tuiBeginSelectionAt(clientX, clientY) {
+    var cell = tuiCellFromPoint(clientX, clientY);
+    if (!cell) return;
+    var w = tuiWordRangeAt(cell.col, cell.row);
+    var st = tui.touchScroll;
+    st.mode = 'selecting';
+    st.anchor = { col: w.startCol, row: cell.row };
+    st.focus = { col: w.endCol, row: cell.row };
+    tuiSetScrollLock(true);
+    blurConsoleTuiFocus();   // 키보드 내려 선택 화면 확보
+    tuiApplySelection(st.anchor, st.focus);
+    tuiUpdateSelectionUi();
+    logConsoleTuiTouch('select-word', { col: cell.col, row: cell.row });
+  }
+  function tuiClearSelection() {
+    var st = tui.touchScroll;
+    st.mode = 'idle';
+    st.anchor = null; st.focus = null; st.dragHandle = null; st.pendingClear = false;
+    tuiStopEdgeScroll();
+    tuiSetScrollLock(false);
+    tuiHideSelectionUi();
+    try { if (tui.term) tui.term.clearSelection(); } catch (e) {}
+  }
+  function tuiStopEdgeScroll() {
+    var st = tui.touchScroll;
+    st.edgeDir = 0;
+    if (st.edgeRaf) { cancelAnimationFrame(st.edgeRaf); st.edgeRaf = null; }
+  }
+  function tuiEdgeScrollTick() {
+    var st = tui.touchScroll;
+    if (!st.edgeDir || st.mode !== 'handle') { st.edgeRaf = null; return; }
+    st.edgeTick = (st.edgeTick + 1) % TUI_EDGE_EVERY;
+    if (st.edgeTick === 0) {
+      try { tui.term.scrollLines(st.edgeDir); } catch (e) {}
+      if (st.focus) {
+        var maxRow = 0;
+        try { maxRow = tui.term.buffer.active.baseY + tui.term.rows - 1; } catch (e) {}
+        st.focus.row = Math.max(0, Math.min(maxRow, st.focus.row + st.edgeDir));
+        tuiApplySelection(st.anchor, st.focus);
+      }
+      tuiUpdateSelectionUi();
+    }
+    st.edgeRaf = requestAnimationFrame(tuiEdgeScrollTick);
+  }
+  function tuiCheckEdge(clientY) {
+    var st = tui.touchScroll;
+    var screen = tuiScreenEl();
+    if (!screen) return;
+    var r = screen.getBoundingClientRect();
+    var band = r.height * TUI_EDGE_BAND;
+    var dir = 0;
+    if (clientY < r.top + band) dir = -1;
+    else if (clientY > r.bottom - band) dir = 1;
+    st.edgeDir = dir;
+    if (dir && !st.edgeRaf) { st.edgeTick = 0; st.edgeRaf = requestAnimationFrame(tuiEdgeScrollTick); }
+    else if (!dir) tuiStopEdgeScroll();
+  }
+  function tuiBindHandleDrag(handle, which) {
+    handle.addEventListener('touchstart', function(ev) {
+      if (!tui.term) return;
+      ev.preventDefault(); ev.stopPropagation();
+      var st = tui.touchScroll;
+      st.mode = 'handle';
+      st.dragHandle = which;
+      tuiHideCopyPopup();
+      var pos = null;
+      try { pos = tui.term.getSelectionPosition(); } catch (e) {}
+      if (pos) {
+        if (which === 'start') {   // 시작 핸들 이동 → 끝은 고정
+          st.anchor = { col: Math.max(0, pos.end.x - 1), row: pos.end.y };
+          st.focus = { col: pos.start.x, row: pos.start.y };
+        } else {                   // 끝 핸들 이동 → 시작은 고정
+          st.anchor = { col: pos.start.x, row: pos.start.y };
+          st.focus = { col: Math.max(0, pos.end.x - 1), row: pos.end.y };
+        }
+      }
+      logConsoleTuiTouch('handle-grab', { which: which });
+    }, { passive: false });
+    handle.addEventListener('touchmove', function(ev) {
+      var st = tui.touchScroll;
+      if (st.mode !== 'handle' || !ev.touches.length) return;
+      ev.preventDefault(); ev.stopPropagation();
+      var t = ev.touches[0];
+      var cell = tuiCellFromPoint(t.clientX, t.clientY);
+      if (cell) {
+        st.focus = { col: cell.col, row: cell.row };
+        tuiApplySelection(st.anchor, st.focus);
+        tuiUpdateSelectionUi();
+      }
+      tuiCheckEdge(t.clientY);
+    }, { passive: false });
+    var endHandler = function(ev) {
+      var st = tui.touchScroll;
+      if (st.mode !== 'handle') return;
+      ev.preventDefault(); ev.stopPropagation();
+      st.mode = 'selecting';
+      st.dragHandle = null;
+      tuiStopEdgeScroll();
+      tuiShowCopyPopup();
+      logConsoleTuiTouch('handle-release', { which: which });
+    };
+    handle.addEventListener('touchend', endHandler, { passive: false });
+    handle.addEventListener('touchcancel', endHandler, { passive: false });
+  }
+  function tuiCancelLongPress() {
+    var st = tui.touchScroll;
+    if (st.longPressTimer) { clearTimeout(st.longPressTimer); st.longPressTimer = null; }
+  }
   function setupConsoleTuiTouchScroll(viewport) {
     if (!viewport || !tuiHost || !isConsoleTuiCoarsePointer()) return;
     initConsoleTuiTouchLog();
-    tuiHost.style.touchAction = 'pan-y pinch-zoom';
-    viewport.style.touchAction = 'pan-y pinch-zoom';
+    tuiEnsureSelectionUi();
+    tuiHost.style.touchAction = 'pan-y';
+    viewport.style.touchAction = 'pan-y';
     viewport.style.webkitOverflowScrolling = 'touch';
     viewport.style.overscrollBehavior = 'contain';
     logConsoleTuiTouch('setup', {
-      hostTouchAction: tuiHost.style.touchAction,
       viewportTouchAction: viewport.style.touchAction,
-      webkitOverflowScrolling: viewport.style.webkitOverflowScrolling,
-      overscrollBehavior: viewport.style.overscrollBehavior,
       scrollTop: Math.round(viewport.scrollTop),
       scrollHeight: viewport.scrollHeight,
       clientHeight: viewport.clientHeight
     });
-    var state = tui.touchScroll;
-    function touchY(ev) {
-      return ev.touches && ev.touches.length === 1 ? ev.touches[0].clientY : null;
-    }
+    var st = tui.touchScroll;
+
     tuiHost.addEventListener('touchstart', function(ev) {
-      var y = touchY(ev);
-      if (y == null) return;
-      state.active = true;
-      state.moved = false;
-      state.lastY = y;
-      state.lastT = performance.now();
-      state.velocity = 0;
-      logConsoleTuiTouch('start', {
-        y: Math.round(y),
-        touches: ev.touches ? ev.touches.length : 0,
-        cancelable: !!ev.cancelable,
-        scrollTop: Math.round(viewport.scrollTop)
-      });
-    }, { passive: true });
-    tuiHost.addEventListener('touchmove', function(ev) {
-      if (!state.active) return;
-      var y = touchY(ev);
-      if (y == null) return;
-      var now = performance.now();
-      var dy = state.lastY - y;
-      var dt = Math.max(1, now - state.lastT);
-      var beforeTop = viewport.scrollTop;
-      if (Math.abs(dy) > 1) {
-        state.moved = true;
-        state.velocity = dy / dt;
+      if (!ev.touches || ev.touches.length !== 1) { tuiCancelLongPress(); return; }
+      var t = ev.touches[0];
+      st.active = true; st.moved = false;
+      st.startX = t.clientX; st.startY = t.clientY;
+      if (st.mode === 'selecting') {
+        // 선택 유지 중 (핸들이 아닌) 빈 곳 터치: 탭이면 해제, 이동이면 아래 touchmove 에서 해제.
+        st.pendingClear = true;
+        return;
       }
-      logConsoleTuiTouch('move', {
-        y: Math.round(y),
-        dy: Number(dy.toFixed(2)),
-        dt: Number(dt.toFixed(2)),
-        velocity: Number(state.velocity.toFixed(4)),
-        beforeTop: Math.round(beforeTop),
-        afterTop: Math.round(viewport.scrollTop),
-        maxTop: Math.max(0, viewport.scrollHeight - viewport.clientHeight),
-        prevented: false,
-        cancelable: !!ev.cancelable,
-        nativeScroll: true
-      });
-      state.lastY = y;
-      state.lastT = now;
+      st.mode = 'idle';
+      tuiCancelLongPress();
+      st.longPressTimer = setTimeout(function() {
+        st.longPressTimer = null;
+        if (st.moved || !st.active) return;
+        tuiBeginSelectionAt(t.clientX, t.clientY);
+      }, TUI_LONGPRESS_MS);
+      logConsoleTuiTouch('start', { y: Math.round(t.clientY) });
     }, { passive: true });
-    tuiHost.addEventListener('touchend', function() {
-      if (!state.active) return;
-      state.active = false;
-      logConsoleTuiTouch('end', {
-        moved: state.moved,
-        velocity: Number(state.velocity.toFixed(4)),
-        scrollTop: Math.round(viewport.scrollTop)
-      });
-    }, { passive: true });
+
+    tuiHost.addEventListener('touchmove', function(ev) {
+      if (!st.active || !ev.touches.length) return;
+      var t = ev.touches[0];
+      var moved = Math.abs(t.clientX - st.startX) > TUI_MOVE_THRESH ||
+                  Math.abs(t.clientY - st.startY) > TUI_MOVE_THRESH;
+      if (st.mode === 'selecting') {
+        if (st.pendingClear && moved) { tuiClearSelection(); return; }
+        if (ev.cancelable) ev.preventDefault();   // 선택 유지 중 스크롤 차단
+        return;
+      }
+      if (!st.moved && moved) {
+        st.moved = true;
+        tuiCancelLongPress();
+        st.mode = 'scrolling';   // native pan-y 가 세로 스크롤 담당(preventDefault 안 함)
+      }
+    }, { passive: false });
+
+    var hostEnd = function() {
+      tuiCancelLongPress();
+      var mode = st.mode;
+      st.active = false;
+      if (mode === 'selecting') {
+        if (st.pendingClear && !st.moved) { tuiClearSelection(); st.pendingClear = false; return; }
+        st.pendingClear = false;
+        tuiUpdateSelectionUi();   // 손 뗀 뒤 복사 팝업 표시
+        return;
+      }
+      if (mode === 'scrolling') { st.mode = 'idle'; return; }
+      if (!st.moved) { try { if (tui.term) tui.term.focus(); } catch (e) {} }  // 짧은 탭 → 키보드
+      st.mode = 'idle';
+    };
+    tuiHost.addEventListener('touchend', hostEnd, { passive: true });
     tuiHost.addEventListener('touchcancel', function() {
-      state.active = false;
-      logConsoleTuiTouch('cancel', { scrollTop: Math.round(viewport.scrollTop) });
+      tuiCancelLongPress();
+      st.active = false;
+      if (st.mode !== 'selecting' && st.mode !== 'handle') st.mode = 'idle';
     }, { passive: true });
+
     viewport.addEventListener('scroll', function() {
       updateConsoleTuiJumpButton();
+      if (st.mode === 'selecting' || st.mode === 'handle') tuiUpdateSelectionUi();
       var now = performance.now();
-      if (now - state.lastScrollLogT < 80) return;
-      state.lastScrollLogT = now;
-      logConsoleTuiTouch('scroll', {
-        scrollTop: Math.round(viewport.scrollTop),
-        maxTop: Math.max(0, viewport.scrollHeight - viewport.clientHeight),
-        active: !!state.active
-      });
+      if (now - st.lastScrollLogT < 120) return;
+      st.lastScrollLogT = now;
+      logConsoleTuiTouch('scroll', { scrollTop: Math.round(viewport.scrollTop), mode: st.mode });
     }, { passive: true });
   }
   function updateConsoleTuiCopyButton() {
@@ -2389,7 +2657,11 @@ $quickBarHtml
     try { hasSelection = !!tui.term.hasSelection(); } catch (e) {}
     tuiCopy.disabled = !hasSelection;
     tuiCopy.classList.toggle('active', hasSelection);
-    if (hasSelection && isConsoleTuiCoarsePointer()) openConsoleTuiSelectionEditor(false);
+    // v1.166.0 — 모바일(coarse)은 하단 textarea 편집 패널 대신 핸들+플로팅 복사 팝업 사용.
+    if (isConsoleTuiCoarsePointer()) {
+      if (hasSelection) tuiUpdateSelectionUi(); else tuiHideSelectionUi();
+      return;
+    }
     if (!hasSelection) closeConsoleTuiSelectionEditor(false);
   }
   function isConsoleTuiCoarsePointer() {
@@ -2918,10 +3190,8 @@ $quickBarHtml
       }
       if (tuiCopy) {
         tuiCopy.addEventListener('pointerdown', function(ev) { ev.preventDefault(); });
-        tuiCopy.addEventListener('click', function() {
-          if (isConsoleTuiCoarsePointer() && openConsoleTuiSelectionEditor(true)) return;
-          copyConsoleTuiSelection();
-        });
+        // v1.166.0 — 모바일도 하단 편집 패널을 열지 않고 바로 복사(선택 UI 는 핸들/팝업이 담당).
+        tuiCopy.addEventListener('click', function() { copyConsoleTuiSelection(); });
       }
       if (tuiCopyBuffer) {
         tuiCopyBuffer.addEventListener('pointerdown', function(ev) { ev.preventDefault(); });
