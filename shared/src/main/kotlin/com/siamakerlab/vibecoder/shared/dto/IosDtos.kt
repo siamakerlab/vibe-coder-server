@@ -33,6 +33,36 @@ data class IosAgentConfigDto(
     val xcodePath: String = "auto",
 )
 
+/**
+ * v1.167.0 — 맥 SSH 연결 비밀번호 원클릭 부트스트랩 요청. 비밀번호는 sshpass 부트스트랩에 1회만
+ * 사용되고 저장/로그되지 않는다(이후 키 기반 SSH 로 동작).
+ */
+@Serializable
+data class IosAgentConnectRequestDto(
+    val host: String,
+    val port: Int = 22,
+    val user: String,
+    val password: String,
+    val xcodePath: String = "auto",
+)
+
+/**
+ * v1.167.0 — 부트스트랩 결과. connected=false 면 failureReason 으로 원인 구분
+ * (wrong_password | unreachable | remote_login_off | no_container_key | sshpass_missing | bootstrap_failed).
+ */
+@Serializable
+data class IosAgentConnectResultDto(
+    val connected: Boolean,
+    val keyInstalled: Boolean = false,
+    val keyAuthVerified: Boolean = false,
+    val rsyncAvailable: Boolean = false,
+    val homeDir: String? = null,
+    val workspaceRoot: String = "",
+    val failureReason: String? = null,
+    val message: String? = null,
+    val preflight: IosPreflightDto? = null,
+)
+
 @Serializable
 data class IosAppStoreConnectKeyDto(
     val configured: Boolean = false,

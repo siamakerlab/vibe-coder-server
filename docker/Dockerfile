@@ -75,6 +75,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         jq \
         openssh-client \
         openssl \
+        rsync \
+        sshpass \
         sudo \
         tini \
         tzdata \

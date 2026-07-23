@@ -93,6 +93,67 @@ class IosSimulatorRunService(
         )
     }
 
+    /**
+     * v1.167.0 — 이미 부팅된 시뮬레이터의 현재 화면만 재캡처(install/launch 재실행 없이).
+     * run() 의 스크린샷 단계만 떼어낸 것 — 원격이면 rsync 로 회수.
+     */
+    fun capture(projectId: String, projectRoot: Path, udid: String): IosSimulatorRunDto {
+        val cleanUdid = udid.trim()
+        require(SAFE_UDID.matches(cleanUdid) || cleanUdid.equals("booted", ignoreCase = true)) {
+            "invalid simulator udid"
+        }
+        val agent = agentConfigProvider()
+        val useSshAgent = agent.enabled && agent.mode.trim().lowercase() in setOf("ssh", "remote")
+        val osName = osNameProvider().lowercase()
+        if (!useSshAgent && !osName.contains("mac")) return blocked(projectId, cleanUdid, "", "linux", "mac_required")
+
+        val sourceRoot = projectRoot.normalize()
+        val localScreenshot = screenshotPath(sourceRoot)
+        val remoteScreenshot = if (useSshAgent) remotePath(agent, projectId, sourceRoot, localScreenshot) else localScreenshot.toString()
+        Files.createDirectories(localScreenshot.parent)
+        val agentRunner = IosAgentCommandRunner(
+            config = if (useSshAgent) agent else IosAgentSection(mode = "local"),
+            processRunner = runner,
+        )
+        val shot = agentRunner.run(listOf("xcrun", "simctl", "io", cleanUdid, "screenshot", remoteScreenshot), COMMAND_TIMEOUT)
+        if (!shot.ok) {
+            return captureResult(projectId, cleanUdid, localScreenshot, useSshAgent, shot, "screenshot_failed")
+        }
+        if (useSshAgent) pullRemoteScreenshot(agent, remoteScreenshot, localScreenshot)?.let { failure ->
+            return captureResult(projectId, cleanUdid, localScreenshot, useSshAgent, failure, "screenshot_pull_failed")
+        }
+        return IosSimulatorRunDto(
+            checkedAt = clock().toString(),
+            mode = mode(useSshAgent),
+            projectId = projectId,
+            udid = cleanUdid,
+            bundleId = "",
+            screenshotPath = localScreenshot.toString(),
+            screenshotCaptured = true,
+            ok = true,
+        )
+    }
+
+    private fun captureResult(
+        projectId: String,
+        udid: String,
+        screenshot: Path,
+        useSshAgent: Boolean,
+        command: CommandResult,
+        reason: String,
+    ): IosSimulatorRunDto = IosSimulatorRunDto(
+        checkedAt = clock().toString(),
+        mode = mode(useSshAgent),
+        projectId = projectId,
+        udid = udid,
+        bundleId = "",
+        screenshotPath = screenshot.toString(),
+        screenshotCaptured = false,
+        ok = false,
+        blockedReason = reason,
+        message = (command.stderr.ifBlank { command.stdout }).trim().ifBlank { null },
+    )
+
     private fun blocked(projectId: String, udid: String, bundleId: String, mode: String, reason: String): IosSimulatorRunDto =
         IosSimulatorRunDto(
             checkedAt = clock().toString(),

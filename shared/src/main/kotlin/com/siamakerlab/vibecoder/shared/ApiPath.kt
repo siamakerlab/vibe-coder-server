@@ -57,6 +57,8 @@ object ApiPath {
     const val IOS_SIMULATOR_SHUTDOWN_ROUTE = "/api/ios/simulators/{udid}/shutdown"
     const val IOS_PROJECT_SIMULATOR_RUN_ROUTE = "/api/projects/{projectId}/ios/simulators/{udid}/run"
     const val IOS_PROJECT_SIMULATOR_LOGS_ROUTE = "/api/projects/{projectId}/ios/simulators/{udid}/logs"
+    // v1.167.0 — 이미 부팅된 시뮬레이터의 현재 화면만 재캡처(전체 install/launch 재실행 없이).
+    const val IOS_PROJECT_SIMULATOR_SCREENSHOT_ROUTE = "/api/projects/{projectId}/ios/simulators/{udid}/screenshot"
     const val IOS_PROJECT_SIGNING_STATUS_ROUTE = "/api/projects/{projectId}/ios/signing-status"
     fun iosSimulatorBoot(udid: String) = "/api/ios/simulators/${pathSeg(udid)}/boot"
     fun iosSimulatorShutdown(udid: String) = "/api/ios/simulators/${pathSeg(udid)}/shutdown"
@@ -68,12 +70,21 @@ object ApiPath {
         "/ws/projects/${pathSeg(projectId)}/ios/simulators/${pathSeg(udid)}/logs"
     fun iosSigningStatus(projectId: String) =
         "/api/projects/${pathSeg(projectId)}/ios/signing-status"
+    fun iosSimulatorScreenshot(projectId: String, udid: String) =
+        "/api/projects/${pathSeg(projectId)}/ios/simulators/${pathSeg(udid)}/screenshot"
 
     /**
      * vNext — iPhone/macOS agent connection settings.
      * GET/POST 응답: IosAgentConfigDto.
      */
     const val IOS_AGENT_CONFIG = "/api/ios/agent-config"
+    /**
+     * v1.167.0 — 비밀번호 원클릭 부트스트랩. 요청 IosAgentConnectRequestDto(host/port/user/password),
+     * sshpass 로 접속 → 컨테이너 공개키를 맥 authorized_keys 에 설치 → 키인증 검증 → workspaceRoot
+     * (~/.vibe-coder-mac) 준비 + agent config 저장 → preflight. 응답 IosAgentConnectResultDto.
+     * 비밀번호는 저장/로그 안 함.
+     */
+    const val IOS_AGENT_CONNECT = "/api/ios/agent-connect"
     /** iPhone/TestFlight App Store Connect API key metadata + private key registration. */
     const val IOS_APP_STORE_CONNECT_KEY = "/api/ios/app-store-connect-key"
     /** Read-only App Store Connect authentication/apps lookup diagnostics. */

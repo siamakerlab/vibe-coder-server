@@ -207,12 +207,76 @@ docker compose up -d --force-recreate</pre>
     </summary>
     <div style="margin-top:12px">
       $banner
+      ${renderIphoneConnectForm(lang)}
       <section class="grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr));margin-top:12px">
         $cards
       </section>
     </div>
   </details>
 </div>"""
+    }
+
+    /**
+     * v1.167.0 — 맥 SSH 연결 비밀번호 원클릭 부트스트랩 폼. host/port/user/비밀번호 입력 →
+     * "연결하기" → POST /api/ios/agent-connect (sshpass 로 접속·키설치·검증·config 저장·preflight).
+     * 로컬 맥(host.docker.internal)이든 원격 맥이든 동일 폼. 비밀번호는 전송 후 필드에서 즉시 비운다.
+     */
+    private fun renderIphoneConnectForm(lang: String): String {
+        val t = { key: String -> Messages.t(lang, key) }
+        val agent = com.siamakerlab.vibecoder.server.config.ConfigHolder.current.ios.agent
+        val host = agent.host.ifBlank { "host.docker.internal" }
+        val port = if (agent.port in 1..65535) agent.port else 22
+        return """<div class="card" id="ios-connect" style="background:var(--card-bg,#12151a);margin-top:12px">
+  <p style="margin:0 0 6px"><strong>${esc(t("env.ios.connect.title"))}</strong></p>
+  <p class="dim" style="font-size:12px;margin:0 0 10px;line-height:1.6">${esc(t("env.ios.connect.hint"))}</p>
+  <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">
+    <label style="font-size:12px;display:flex;flex-direction:column;gap:3px">${esc(t("env.ios.connect.host"))}
+      <input id="ios-c-host" value="${esc(host)}" placeholder="host.docker.internal" autocomplete="off" spellcheck="false" style="padding:6px 8px"></label>
+    <label style="font-size:12px;display:flex;flex-direction:column;gap:3px">${esc(t("env.ios.connect.port"))}
+      <input id="ios-c-port" type="number" min="1" max="65535" value="$port" style="padding:6px 8px"></label>
+    <label style="font-size:12px;display:flex;flex-direction:column;gap:3px">${esc(t("env.ios.connect.user"))}
+      <input id="ios-c-user" value="${esc(agent.user)}" placeholder="mac username" autocomplete="off" spellcheck="false" style="padding:6px 8px"></label>
+    <label style="font-size:12px;display:flex;flex-direction:column;gap:3px">${esc(t("env.ios.connect.password"))}
+      <input id="ios-c-pass" type="password" autocomplete="off" style="padding:6px 8px"></label>
+  </div>
+  <div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <button type="button" id="ios-c-btn" class="chip" style="padding:6px 14px">${esc(t("env.ios.connect.button"))}</button>
+    <span id="ios-c-status" class="dim" style="font-size:12px"></span>
+  </div>
+  <div id="ios-c-result" style="margin-top:8px;font-size:12px;line-height:1.7"></div>
+</div>
+<script>
+(function(){
+  var btn=document.getElementById('ios-c-btn'); if(!btn||btn.dataset.wired) return; btn.dataset.wired='1';
+  var st=document.getElementById('ios-c-status'), res=document.getElementById('ios-c-result');
+  function esc(s){return String(s).replace(/[&<>"]/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c];});}
+  btn.addEventListener('click',function(){
+    var host=(document.getElementById('ios-c-host').value||'').trim();
+    var port=parseInt(document.getElementById('ios-c-port').value,10)||22;
+    var user=(document.getElementById('ios-c-user').value||'').trim();
+    var pass=document.getElementById('ios-c-pass').value||'';
+    if(!host||!user||!pass){ res.innerHTML='<span style="color:var(--warn)">'+${jsLit(t("env.ios.connect.needAll"))}+'</span>'; return; }
+    btn.disabled=true; st.textContent=${jsLit(t("env.ios.connect.connecting"))}; res.innerHTML='';
+    fetch('/api/ios/agent-connect',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({host:host,port:port,user:user,password:pass})})
+      .then(function(r){return r.json().catch(function(){return {connected:false,message:'HTTP '+r.status};});})
+      .then(function(d){
+        btn.disabled=false; st.textContent=''; document.getElementById('ios-c-pass').value='';
+        if(!d.connected){ res.innerHTML='<span style="color:var(--danger)">✗ '+esc(d.message||d.failureReason||'failed')+'</span>'; return; }
+        var p=d.preflight||{};
+        var xcode=p.xcodeAvailable?('✓ '+esc(p.xcodeVersion||'Xcode')):'✗ Xcode';
+        var sim=p.simctlAvailable?'✓ Simulator':'✗ Simulator';
+        var out=['<span style="color:var(--ok)">✓ '+${jsLit(t("env.ios.connect.ok"))}+'</span> ('+esc(user+'@'+host)+')'];
+        out.push('workspace: '+esc(d.workspaceRoot||''));
+        out.push('Xcode: <span style="color:'+(p.xcodeAvailable?'var(--ok)':'var(--warn)')+'">'+xcode+'</span>');
+        out.push('Simulator: <span style="color:'+(p.simctlAvailable?'var(--ok)':'var(--warn)')+'">'+sim+'</span>');
+        if(!p.xcodeAvailable||!p.simctlAvailable) out.push('<span style="color:var(--warn)">'+${jsLit(t("env.ios.connect.needXcode"))}+'</span>');
+        if(!d.keyAuthVerified&&d.message) out.push('<span style="color:var(--warn)">'+esc(d.message)+'</span>');
+        res.innerHTML=out.join('<br>');
+      })
+      .catch(function(e){ btn.disabled=false; st.textContent=''; res.innerHTML='<span style="color:var(--danger)">✗ '+esc(String(e))+'</span>'; });
+  });
+})();
+</script>"""
     }
 
     /**

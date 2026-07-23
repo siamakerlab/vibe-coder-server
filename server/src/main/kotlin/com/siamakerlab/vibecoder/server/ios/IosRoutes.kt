@@ -9,6 +9,7 @@ import com.siamakerlab.vibecoder.server.error.ApiException
 import com.siamakerlab.vibecoder.server.projects.ProjectService
 import com.siamakerlab.vibecoder.shared.ApiPath
 import com.siamakerlab.vibecoder.shared.dto.IosAgentConfigDto
+import com.siamakerlab.vibecoder.shared.dto.IosAgentConnectRequestDto
 import com.siamakerlab.vibecoder.shared.dto.IosAppStoreConnectKeySaveRequestDto
 import com.siamakerlab.vibecoder.shared.dto.IosKeychainImportRequestDto
 import com.siamakerlab.vibecoder.shared.dto.IosSwiftToolsInstallRequestDto
@@ -35,6 +36,7 @@ fun Routing.iosRoutes(
         appStoreConnectKeys?.let { AppStoreConnectDiagnosticService(it) },
     projects: ProjectService? = null,
     onConfigSaved: ((ServerConfig) -> Unit)? = null,
+    bootstrap: IosAgentBootstrapService = IosAgentBootstrapService(onConfigSaved = onConfigSaved),
 ) {
     authenticate(AUTH_BEARER) {
         get(ApiPath.IOS_PREFLIGHT) {
@@ -64,6 +66,22 @@ fun Routing.iosRoutes(
                     projectId = row.id,
                     projectRoot = java.nio.file.Path.of(row.sourcePath),
                     bundleId = row.packageName,
+                    udid = call.parameters["udid"].orEmpty(),
+                )
+            )
+        }
+
+        // v1.167.0 — 부팅된 시뮬레이터 현재 화면만 재캡처.
+        post(ApiPath.IOS_PROJECT_SIMULATOR_SCREENSHOT_ROUTE) {
+            val projectService = projects ?: error("projects service unavailable")
+            val row = projectService.rowOrThrow(call.parameters["projectId"].orEmpty())
+            if (ProjectTypes.normalize(row.projectType) != ProjectTypes.IPHONE) {
+                throw ApiException.localized(409, "iphone_project_required", messageKey = "api.build.iphoneTargetRequired")
+            }
+            call.respond(
+                simulatorRun.capture(
+                    projectId = row.id,
+                    projectRoot = java.nio.file.Path.of(row.sourcePath),
                     udid = call.parameters["udid"].orEmpty(),
                 )
             )
@@ -117,6 +135,12 @@ fun Routing.iosRoutes(
                 }
             onConfigSaved?.invoke(newConfig) ?: ConfigHolder.update(newConfig)
             call.respond(req)
+        }
+
+        // v1.167.0 — 비밀번호 원클릭 부트스트랩(sshpass). 비번은 1회 사용 후 미저장.
+        post(ApiPath.IOS_AGENT_CONNECT) {
+            call.requireApiAdmin()
+            call.respond(bootstrap.connect(call.receive<IosAgentConnectRequestDto>()))
         }
 
         get(ApiPath.IOS_APP_STORE_CONNECT_KEY) {
