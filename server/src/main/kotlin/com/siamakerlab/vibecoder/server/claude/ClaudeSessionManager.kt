@@ -516,7 +516,7 @@ class ClaudeSessionManager(
 
     /**
      * v1.144.3 — 백그라운드 작업 suspended(WAITING) turn 의 watchdog 를 (재)무장한다.
-     * [BG_SUSPEND_WATCHDOG_MS] 후에도 여전히 WAITING 이면 [finalizeStalledBgTurn] 으로 정상
+     * [STALL_WATCHDOG_MS] 후에도 여전히 진행 중(busy)이면 [finalizeStalledTurn] 으로 정상
      * 종료한다. bg 진행 이벤트가 올 때마다 호출돼 타이머가 리셋(연장)되므로, 진짜 진행 중인
      * 작업은 죽이지 않고 "완료 통지 누락 후 무활동" 케이스만 회수한다.
      */
@@ -524,28 +524,41 @@ class ClaudeSessionManager(
         val s = sessions[projectId] ?: return
         s.bgWatchdogJob?.cancel()
         s.bgWatchdogJob = scope.launch {
-            delay(BG_SUSPEND_WATCHDOG_MS)
-            finalizeStalledBgTurn(projectId)
+            delay(STALL_WATCHDOG_MS)
+            finalizeStalledTurn(projectId, "bg_watchdog")
         }
     }
 
     /**
-     * v1.144.3 — watchdog 만료. 여전히 WAITING 이면(재개/종료로 빠져나가지 않았으면) turn 을
-     * 정상 완료로 마무리한다 — 미완 마크 해제, busy READY, 자동화 완료 통지(fireTurnDone).
-     * 정상 Done 의 종료 분기와 동형이며, 영구 "대기중" 고착을 끊는다.
+     * v1.144.3 / v1.165.0 — stall watchdog 만료. 여전히 진행 중(busy: RESPONDING·WAITING)이면
+     * (재개/종료로 빠져나가지 않았으면) turn 을 정상 완료로 마무리한다 — 미완 마크 해제, busy READY,
+     * 자동화 완료 통지(fireTurnDone). 정상 Done 의 종료 분기와 동형이며, 영구 "응답 중/대기 중" 고착을
+     * 끊는다. 프로세스는 죽이지 않으므로(SIGTERM 아님) 이후 출력이 재개되면 자발적 재개 경로가 다시
+     * RESPONDING 으로 복귀시키고, 다음 프롬프트는 같은 세션(--resume)으로 이어간다.
+     *
+     * [reason] — 자동화/알림 통지용 + 콘솔 안내 문구 분기:
+     *   "bg_watchdog"    = 백그라운드 작업 완료 통지 누락([armBgWatchdog] 발화)
+     *   "stall_watchdog" = 응답 중 무출력([reapIdleSessions] 백스톱 발화)
+     *
+     * 자기취소 주의: [armBgWatchdog] 코루틴이 자기 자신에서 이 함수를 호출하므로 여기서
+     * `bgWatchdogJob.cancel()` 을 부르면 나머지 로직이 취소된다 → 참조만 null 로 끊는다(기존 동작).
      */
-    private suspend fun finalizeStalledBgTurn(projectId: String) {
+    private suspend fun finalizeStalledTurn(projectId: String, reason: String) {
         val s = sessions[projectId] ?: return
-        if (busyState[projectId] != ProjectState.WAITING) return  // 이미 재개/종료됨
+        if (busyState[projectId]?.busy != true) return  // 이미 재개/종료됨(유휴)
         s.bgWatchdogJob = null  // 자기 분리 (setBusy(READY) 의 cancel 과 무관하게)
         s.outstandingBgTasks.clear()  // 누락된 완료 통지로 남은 stale taskId 정리
         clearTurnActive(projectId)
-        emitSystem(
-            projectId, "bg_task_watchdog",
-            "백그라운드 작업의 완료 통지가 ${BG_SUSPEND_WATCHDOG_MS / 60_000}분간 확인되지 않아 turn 을 종료 처리했습니다.",
-        )
+        val minutes = STALL_WATCHDOG_MS / 60_000
+        val (code, message) = when (reason) {
+            "bg_watchdog" -> "bg_task_watchdog" to
+                "백그라운드 작업의 완료 통지가 ${minutes}분간 확인되지 않아 turn 을 종료 처리했습니다."
+            else -> "turn_stall_finalized" to
+                "${minutes}분간 콘솔 출력이 없어 turn 을 종료 처리했습니다. 다음 프롬프트는 같은 세션(--resume)으로 이어집니다."
+        }
+        emitSystem(projectId, code, message)
         setBusy(projectId, ProjectState.READY)
-        fireTurnDone(projectId, "bg_watchdog")
+        fireTurnDone(projectId, reason)
         maybeAutoCompact(projectId)
     }
 
@@ -711,6 +724,12 @@ class ClaudeSessionManager(
     private suspend fun handleStdoutLine(projectId: String, line: String) {
         val events = parser.parseLine(line)
         if (events.isEmpty()) return
+        // v1.165.0 — 콘솔 출력 프레임이 도착했다 = "터미널 버퍼 갱신". 매 프레임마다 lastActivity 를
+        // 갱신해, 진행 중(busy) 세션이 출력을 쏟아내는 동안은 idle reaper / stall watchdog 의 무활동
+        // 타이머가 계속 리셋되도록 한다("버퍼 갱신 중엔 무조건 running"). 이전엔 sendPrompt 시점과
+        // BackgroundTask 이벤트에서만 갱신돼, bg 이벤트 없는 30분+ 긴 turn 이 진행 중임에도 idle reaper
+        // (30분)에 SIGTERM 으로 강제 종료되던 회귀가 있었다.
+        sessions[projectId]?.lastActivity = Instant.now()
         for (event in events) {
             // capture session-id from the system/init line
             if (event is ClaudeEvent.SessionStarted) {
@@ -731,8 +750,8 @@ class ClaudeSessionManager(
                     .onFailure { log.warn(it) { "[$projectId] failed to persist session-id" } }
             }
             // v1.99.2 — 백그라운드 작업 lifecycle 추적. task_started → 집합 추가,
-            // 완료/실패 통지 → 제거. 진행 중 프레임이 올 때 lastActivity 도 갱신해 idle reap
-            // (기본 30분) 이 백그라운드 대기 turn 을 죽이지 않게 한다. 이 집합이 비어있지
+            // 완료/실패 통지 → 제거. (lastActivity 갱신은 v1.165.0 부터 위에서 모든 프레임 공통으로
+            // 처리 — idle reap / stall watchdog 이 진행 중 turn 을 죽이지 않게 한다.) 이 집합이 비어있지
             // 않은 동안 들어온 Done 은 아래에서 "재개 대기" 로 처리된다.
             if (event is ClaudeEvent.BackgroundTask) {
                 sessions[projectId]?.let { s ->
@@ -740,7 +759,6 @@ class ClaudeSessionManager(
                         event.kind == "started" -> s.outstandingBgTasks.add(event.taskId)
                         isBackgroundTaskTerminal(event) -> s.outstandingBgTasks.remove(event.taskId)
                     }
-                    s.lastActivity = Instant.now()
                 }
                 // v1.144.3 — WAITING(턴 보류) 중 들어온 bg 진행 이벤트는 watchdog 를 리셋(연장)해
                 // 실제 진행 중인 작업이 watchdog 로 조기 종료되지 않게 한다. 진행 이벤트가 끊기면
@@ -1086,14 +1104,34 @@ class ClaudeSessionManager(
         setBusy(projectId, if (wasBusy) ProjectState.STOPPED else ProjectState.READY)
     }
 
+    /**
+     * v1.165.0 — 진행 중(busy) 세션과 유휴 세션을 다르게 회수한다.
+     *   - RESPONDING(응답 중)인데 마지막 콘솔 출력 이후 [STALL_WATCHDOG_MS](3분) 동안 아무 프레임도
+     *     안 온 경우: 완료 통지 누락 / CLI 무출력 stall 로 보고 turn 만 정상 종료(프로세스 유지).
+     *   - busy(RESPONDING·WAITING)이고 최근 출력이 있으면: idle reap 대상에서 제외 — "버퍼 갱신 중엔
+     *     무조건 running". (WAITING 의 stall 은 [armBgWatchdog] 코루틴이 정밀 처리.)
+     *   - 유휴(READY/STOPPED/ERROR/미추적)이고 [idleTimeout](30분) 무활동: 기존대로 프로세스 SIGTERM
+     *     (session-id 보존 → 다음 프롬프트에서 --resume warm 재개).
+     * 핵심: [handleStdoutLine] 이 매 출력 프레임마다 lastActivity 를 갱신하므로, 진행 중 세션은
+     * 출력이 흐르는 한 어느 분기에도 걸리지 않는다(30분 idle reap 이 긴 turn 을 죽이던 회귀 해소).
+     */
     private suspend fun reapIdleSessions() {
         val now = Instant.now()
-        val cutoff = now.minus(idleTimeout)
+        val idleCutoff = now.minus(idleTimeout)                // 유휴: 무활동 30분 → SIGTERM
+        val stallCutoff = now.minusMillis(STALL_WATCHDOG_MS)   // 진행 중: 무출력 3분 → turn 종료 처리
         sessions.values.toList().forEach { s ->
-            if (s.lastActivity.isBefore(cutoff)) {
-                log.info { "[${s.projectId}] idle for ${Duration.between(s.lastActivity, now).toMinutes()}m; SIGTERM" }
-                emitSystem(s.projectId, "idle_terminated", "Session went idle and was paused. Send a prompt to resume.")
-                terminateSession(s.projectId)
+            val state = busyState[s.projectId]
+            when {
+                state == ProjectState.RESPONDING && s.lastActivity.isBefore(stallCutoff) -> {
+                    log.info { "[${s.projectId}] responding but no output for ${Duration.between(s.lastActivity, now).toMinutes()}m; finalizing stalled turn" }
+                    finalizeStalledTurn(s.projectId, "stall_watchdog")
+                }
+                state != null && state.busy -> Unit  // 진행 중 + 최근 출력 → 보호(SIGTERM 안 함)
+                s.lastActivity.isBefore(idleCutoff) -> {
+                    log.info { "[${s.projectId}] idle for ${Duration.between(s.lastActivity, now).toMinutes()}m; SIGTERM" }
+                    emitSystem(s.projectId, "idle_terminated", "Session went idle and was paused. Send a prompt to resume.")
+                    terminateSession(s.projectId)
+                }
             }
         }
     }
@@ -1443,13 +1481,17 @@ class ClaudeSessionManager(
         const val IDLE_CHECK_INTERVAL_MS = 60_000L
 
         /**
-         * v1.144.3 — bg suspended(WAITING) turn 을 자동 종료하기까지의 무활동 유예(ms).
-         * stream-json 모드에선 background task 완료 후 CLI 자동 재개가 없고 완료 통지마저
-         * 누락될 수 있어, claude 가 정상 Done 을 보냈는데도 WAITING 에 고착됐다(idle reap
-         * 30분 전까지). 마지막 bg 진행 이벤트 이후 이 시간 동안 추가 진행/재개가 없으면
-         * turn 을 정상 종료한다. bg 진행 이벤트가 오면 리셋되어 진짜 진행 중 작업은 보호된다.
+         * v1.144.3 / v1.165.0 — 진행 중(busy: RESPONDING·WAITING) turn 을 자동 종료 처리하기까지의
+         * 무활동 유예(ms). 콘솔 출력 프레임(assistant/tool 등)이 올 때마다 [ProjectSession.lastActivity]
+         * 가 갱신되므로 "터미널 버퍼가 갱신되는 동안은 무조건 running" 이 보장되고, 마지막 출력 이후
+         * 이 시간 동안 추가 출력/재개가 전혀 없을 때만 turn 을 종료한다.
+         *   - WAITING(백그라운드 대기): [armBgWatchdog] 코루틴이 이 유예 후 정밀 발화.
+         *   - RESPONDING(응답 중 무출력 stall / 완료 통지 누락): [reapIdleSessions] 폴링이 백스톱.
+         * v1.144.3 배경: stream-json 모드에선 background task 완료 후 CLI 자동 재개가 없고 완료 통지마저
+         * 누락될 수 있어, claude 가 정상 Done 을 보냈는데도 WAITING/RESPONDING 에 고착돼 30분 idle reap
+         * 전까지 "응답 중" 으로 남았다(v1.165.0: 그 짝인 "진행 중 세션이 idle reap 으로 강제 종료" 도 회수).
          */
-        const val BG_SUSPEND_WATCHDOG_MS = 180_000L
+        const val STALL_WATCHDOG_MS = 180_000L
 
         /** v1.133.0 — 프롬프트 첨부 이미지 한도: 장수 / 장당 base64 길이(≈5MB 원본). */
         const val MAX_PROMPT_IMAGES = 4
