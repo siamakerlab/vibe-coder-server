@@ -231,6 +231,31 @@ CANNOT answer TUI prompts, menus, or stdin. Every turn is one-shot.
 - 한국어: 인터랙티브 입력 불가. 확인이 필요하면 응답 끝에 (A)(B)(C) + 권장안을 적고 멈추세요(다음 프롬프트에서 선택). 대기성 명령 금지, 한 턴은 자기완결.
 """
 
+    /**
+     * v1.172.0 — 기존(pre-v1.169.0) iPhone 프로젝트 CLAUDE.md 에 마커가 없으면 이 섹션을 append 하기 위해
+     * 별도 상수로 추출. 신규 생성용 [CONTENT_IPHONE] 도 이 상수를 인라인 인터폴레이션해 SSOT 유지.
+     * [IPHONE_PIPELINE_MARKER] 로 존재 여부를 판정한다.
+     */
+    const val IPHONE_PIPELINE_MARKER = "## Vibe Coder iOS build pipeline"
+
+    const val IPHONE_BUILD_PIPELINE_SECTION = """## Vibe Coder iOS build pipeline — structure & procedure (learn this)
+The server runs in a Linux container and orchestrates builds on a **Mac over SSH** (local host or a
+remote Mac). You do NOT run `xcodebuild` yourself here — the server does. Fit your work to this flow:
+- **Connection**: set up once in 빌드환경 (`/env-setup`) → iPhone → "연결하기" (Mac host/user/password →
+  key installed → key-based SSH after). If preflight shows Xcode/Simulator missing, tell the user to
+  install them on the Mac (`xcode-select --install`, `xcodebuild -downloadPlatform iOS`).
+- **Source sync**: each build rsyncs this project's working tree (minus `.git`/`build`/`DerivedData`) to the
+  Mac at `~/.vibe-coder-ios/<serverId>/<projectId>/`. `DerivedData` is NOT synced → the Mac keeps its Xcode
+  build cache, so builds stay incremental. Do not force a clean build unless truly needed.
+- **Build**: the web UI iPhone rail has Build / Test / Archive / Export IPA. Each runs `xcodebuild` on the
+  Mac; artifacts (`.app`/`.ipa`/`.xcresult`) rsync back to the container and appear on the build detail
+  page. Keep a shared scheme that builds from the repo; don't hardcode Mac paths or a local Xcode.
+- **Simulator**: the rail's "Build & Run" does build → boot → install → launch → screenshot in one action;
+  "Recapture" re-shoots the current screen. Screenshots return to the web UI (no live mirror).
+- **Debug as one loop**: read the build's xcresult failure summary + the simulator Logs/Stream (unified log)
+  + the screenshot, diagnose, edit Swift, rebuild. Treat build → run → inspect → fix as a single flow.
+- The `vibe-ios-build-flow` project skill (`.claude/skills/`) captures this loop — follow it."""
+
     const val CONTENT_IPHONE = """# CLAUDE.md — Vibe Coder iPhone Project Rules
 
 ## Project Rules
@@ -247,23 +272,7 @@ CANNOT answer TUI prompts, menus, or stdin. Every turn is one-shot.
 - App Store Connect, fastlane, signing certificates, provisioning profiles, and `.p8` keys are release-only.
   Use them only when the user explicitly asks for release/TestFlight work.
 
-## Vibe Coder iOS build pipeline — structure & procedure (learn this)
-The server runs in a Linux container and orchestrates builds on a **Mac over SSH** (local host or a
-remote Mac). You do NOT run `xcodebuild` yourself here — the server does. Fit your work to this flow:
-- **Connection**: set up once in 빌드환경 (`/env-setup`) → iPhone → "연결하기" (Mac host/user/password →
-  key installed → key-based SSH after). If preflight shows Xcode/Simulator missing, tell the user to
-  install them on the Mac (`xcode-select --install`, `xcodebuild -downloadPlatform iOS`).
-- **Source sync**: each build rsyncs this project's working tree (minus `.git`/`build`/`DerivedData`) to the
-  Mac at `~/.vibe-coder-ios/<serverId>/<projectId>/`. `DerivedData` is NOT synced → the Mac keeps its Xcode
-  build cache, so builds stay incremental. Do not force a clean build unless truly needed.
-- **Build**: the web UI iPhone rail has Build / Test / Archive / Export IPA. Each runs `xcodebuild` on the
-  Mac; artifacts (`.app`/`.ipa`/`.xcresult`) rsync back to the container and appear on the build detail
-  page. Keep a shared scheme that builds from the repo; don't hardcode Mac paths or a local Xcode.
-- **Simulator**: the rail's "Build & Run" does build → boot → install → launch → screenshot in one action;
-  "Recapture" re-shoots the current screen. Screenshots return to the web UI (no live mirror).
-- **Debug as one loop**: read the build's xcresult failure summary + the simulator Logs/Stream (unified log)
-  + the screenshot, diagnose, edit Swift, rebuild. Treat build → run → inspect → fix as a single flow.
-- The `vibe-ios-build-flow` project skill (`.claude/skills/`) captures this loop — follow it.
+${IPHONE_BUILD_PIPELINE_SECTION}
 
 ## Secret Rules
 - Never print, commit, or log signing certificates, provisioning profiles, ASC private keys, issuer IDs,

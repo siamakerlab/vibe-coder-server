@@ -449,6 +449,11 @@ fun Routing.webProjectRoutes(
         val admobReady = ksEntry?.admobExists == true
         val usage = runCatching { conversationRepo.usageSummary(id) }.getOrNull()
         val uiCapabilities = projects.uiCapabilities(p.projectType)
+        // v1.172.0 — 기존(pre-v1.169.0) iPhone 프로젝트에 iOS 빌드 지침(스킬 + CLAUDE.md 파이프라인
+        // 섹션)이 없으면 열람 시점에 idempotent 보강(프로세스당 1회). 페이지 렌더를 막지 않도록 격리.
+        if (uiCapabilities.showIosBuildSettings) {
+            runCatching { projects.ensureIphoneProjectGuidance(id, p.projectType, p.sourcePath) }
+        }
         val iosBuildSettings = if (uiCapabilities.showIosBuildSettings) {
             runCatching {
                 val source = Path.of(p.sourcePath)

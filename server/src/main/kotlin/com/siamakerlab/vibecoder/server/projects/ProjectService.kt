@@ -502,6 +502,31 @@ class ProjectService(
     fun uiCapabilities(projectType: String): PlatformUiCapabilities =
         platformEngines.forType(projectType).uiCapabilities()
 
+    /**
+     * v1.172.0 — 기존 iPhone 프로젝트에 누락된 빌드 지침(스킬 + CLAUDE.md 파이프라인 섹션)을
+     * 열람 시점에 idempotent 보강한다. iOS 빌드가 가능한(iPhone) 프로젝트에만 적용하고,
+     * 프로세스 수명 동안 프로젝트당 1회만 실제 파일 검사를 수행한다(가드 set).
+     */
+    private val iphoneGuidanceEnsured = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    fun ensureIphoneProjectGuidance(id: String, projectType: String, sourcePath: String) {
+        if (iphoneGuidanceEnsured.contains(id)) return
+        val engine = platformEngines.forType(projectType)
+        if (!engine.uiCapabilities().showIosBuildSettings) {
+            iphoneGuidanceEnsured.add(id) // iPhone 이 아니면 다시 검사하지 않는다.
+            return
+        }
+        runCatching {
+            ProjectToolingSeeder.ensureExistingProjectGuidance(
+                projectRoot = Path.of(sourcePath),
+                profile = engine.toolingProfile(),
+                sectionMarker = ClaudeMdTemplate.IPHONE_PIPELINE_MARKER,
+                sectionBody = ClaudeMdTemplate.IPHONE_BUILD_PIPELINE_SECTION,
+            )
+            iphoneGuidanceEnsured.add(id)
+        }.onFailure { log.warn(it) { "failed to ensure iPhone guidance for project $id" } }
+    }
+
     fun uiCapabilitiesForProject(id: String): PlatformUiCapabilities =
         platformEngines.forType(rowOrThrow(id).projectType).uiCapabilities()
 

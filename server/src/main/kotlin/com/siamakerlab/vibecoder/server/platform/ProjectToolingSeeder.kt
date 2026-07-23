@@ -45,6 +45,42 @@ object ProjectToolingSeeder {
         return Result(skillsCreated, agentsCreated)
     }
 
+    /**
+     * v1.172.0 — 기존 프로젝트 열람 시 누락된 플랫폼 지침을 idempotent 보강한다.
+     *
+     * 신규 생성 시점([seedProjectDefaults])에만 지침이 떨어지므로, pre-existing iPhone 프로젝트는
+     * `vibe-ios-build-flow` 스킬도 CLAUDE.md 빌드 파이프라인 섹션도 없어 AI 가 빌드 절차를 몰라 진행이
+     * 막힌다("ios 빌드 지침이 없어서 진행 불가"). 여기서:
+     *  1) 누락된 기본 스킬/에이전트를 [seedProjectDefaults] 로 보강(덧쓰기 없음).
+     *  2) 기존 CLAUDE.md 에 [sectionMarker] 가 없으면 [sectionBody] 를 문서 끝에 append(비파괴).
+     * CLAUDE.md 가 없으면(정상 생성 프로젝트엔 항상 존재) CLAUDE.md 보강은 건너뛴다.
+     */
+    fun ensureExistingProjectGuidance(
+        projectRoot: Path,
+        profile: PlatformToolingProfile,
+        sectionMarker: String,
+        sectionBody: String,
+    ): Result {
+        val seeded = seedProjectDefaults(projectRoot, profile)
+        runCatching {
+            val claudeMd = projectRoot.resolve("CLAUDE.md")
+            if (Files.exists(claudeMd)) {
+                val text = Files.readString(claudeMd)
+                if (!text.contains(sectionMarker)) {
+                    val prefix = if (text.endsWith("\n")) "\n" else "\n\n"
+                    Files.writeString(
+                        claudeMd,
+                        prefix + sectionBody.trim() + "\n",
+                        StandardOpenOption.WRITE,
+                        StandardOpenOption.APPEND,
+                    )
+                    toolingSeedLog.info { "appended platform build-pipeline section to existing CLAUDE.md: $claudeMd" }
+                }
+            }
+        }.onFailure { toolingSeedLog.warn(it) { "failed to append build-pipeline section to CLAUDE.md at $projectRoot" } }
+        return seeded
+    }
+
     private fun writeIfMissing(target: Path, body: String): Boolean {
         if (Files.exists(target)) return false
         target.parent?.createDirectories()
