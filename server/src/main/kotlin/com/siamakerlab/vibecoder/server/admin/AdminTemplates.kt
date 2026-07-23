@@ -1052,6 +1052,11 @@ object AdminTemplates {
         gitIdentityMissing: Boolean = false,
         /** v1.164.0 (Phase 9) — Mac 설치인데 Xcode 미준비 시 iPhone 빌드환경 힌트 배너. */
         iosBuildEnvHint: Boolean = false,
+        /** v1.170.0 — macOS 빌드 에이전트 연결상태 카드 (SSH agent 구성 시에만 표시). */
+        iosAgentEnabled: Boolean = false,
+        iosAgentMode: String = "",
+        iosAgentHost: String = "",
+        iosAgentUser: String = "",
         csrf: String? = null,
         lang: String,
     ): String {
@@ -1185,6 +1190,7 @@ $iosBuildEnvBanner
   ${renderCodexUsageCard(codexUsage, lang)}
   ${renderOpenCodeUsageCard(opencodeUsage, lang)}
   ${renderDiskUsageCard(diskSnapshot, lang)}
+  ${renderMacAgentCard(iosAgentEnabled, iosAgentMode, iosAgentHost, iosAgentUser, lang)}
 
   <!-- v1.63.0 — 무선 ADB 기기 상태 카드. /api/adb/status 폴링(클라이언트). -->
   <div class="card" id="adb-card"
@@ -1276,6 +1282,68 @@ $iosBuildEnvBanner
     /**
      * v0.29.0 — 대시보드 디스크 사용량 카드.
      */
+    /**
+     * v1.170.0 — macOS 빌드 에이전트 연결상태 모니터 카드. SSH agent 가 구성된 경우에만 렌더.
+     * `/api/ios/preflight` 를 JS 로 라이브 조회(대시보드 SSR 블로킹 방지) + 60초 폴링 + 수동 새로고침.
+     * 연결/Xcode/Simulator 를 색 뱃지로 표시. 라벨은 data-* 로 i18n 주입.
+     */
+    private fun renderMacAgentCard(enabled: Boolean, mode: String, host: String, user: String, lang: String): String {
+        if (!enabled || mode.trim().lowercase() !in setOf("ssh", "remote")) return ""
+        val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
+        val target = if (user.isNotBlank() && host.isNotBlank()) "$user@$host" else host.ifBlank { "-" }
+        return """
+  <div class="card" id="mac-agent-card" data-preflight-url="/api/ios/preflight"
+       data-connected="${esc(t("dashboard.mac.connected"))}"
+       data-unreachable="${esc(t("dashboard.mac.unreachable"))}"
+       data-notconnected="${esc(t("dashboard.mac.notConnected"))}"
+       data-installed="${esc(t("dashboard.mac.installed"))}"
+       data-none="${esc(t("dashboard.mac.none"))}"
+       data-available="${esc(t("dashboard.mac.available"))}">
+    <h2>${esc(t("dashboard.mac.title"))}</h2>
+    <dl>
+      <dt>${esc(t("dashboard.mac.target"))}</dt><dd>${esc(target)}</dd>
+      <dt>${esc(t("dashboard.mac.status"))}</dt><dd id="mac-status" class="dim">…</dd>
+      <dt>${esc(t("dashboard.mac.xcode"))}</dt><dd id="mac-xcode" class="dim">…</dd>
+      <dt>${esc(t("dashboard.mac.simulator"))}</dt><dd id="mac-sim" class="dim">…</dd>
+    </dl>
+    <div style="display:flex;gap:10px;align-items:center;margin-top:4px">
+      <button type="button" class="chip" id="mac-refresh">${esc(t("dashboard.mac.refresh"))}</button>
+      <a href="/env-setup#iphone" class="dim" style="font-size:12px">${esc(t("dashboard.mac.settings"))}</a>
+    </div>
+  </div>
+  <script>
+  (function(){
+    var card=document.getElementById('mac-agent-card'); if(!card||card.dataset.wired) return; card.dataset.wired='1';
+    var url=card.getAttribute('data-preflight-url');
+    var st=document.getElementById('mac-status'), xc=document.getElementById('mac-xcode'), sm=document.getElementById('mac-sim');
+    var btn=document.getElementById('mac-refresh');
+    function m(n){ return card.getAttribute('data-'+n)||''; }
+    function esc(s){ return String(s).replace(/[&<>]/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;'})[c];}); }
+    function badge(ok,txt){ return '<span class="'+(ok?'ok':'warn')+'">'+esc(txt)+'</span>'; }
+    function load(){
+      if(st) st.innerHTML='<span class="dim">…</span>';
+      if(xc) xc.innerHTML='<span class="dim">…</span>';
+      if(sm) sm.innerHTML='<span class="dim">…</span>';
+      fetch(url,{credentials:'same-origin',headers:{'Accept':'application/json'}})
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+          if(st){
+            if(d.mode==='linux') st.innerHTML=badge(false,m('notconnected'));
+            else if(d.blockedReason==='agent_unreachable') st.innerHTML=badge(false,m('unreachable'));
+            else st.innerHTML=badge(d.blockedReason==null, (d.blockedReason==null?m('connected'):d.blockedReason)+' · '+(d.mode||''));
+          }
+          if(xc) xc.innerHTML=badge(!!d.xcodeAvailable, d.xcodeAvailable?(d.xcodeVersion||m('installed')):m('none'));
+          if(sm) sm.innerHTML=badge(!!d.simctlAvailable, d.simctlAvailable?m('available'):m('none'));
+        })
+        .catch(function(e){ if(st) st.innerHTML=badge(false,String(e)); });
+    }
+    if(btn) btn.addEventListener('click', load);
+    load();
+    setInterval(load, 60000);
+  })();
+  </script>"""
+    }
+
     private fun renderDiskUsageCard(snap: com.siamakerlab.vibecoder.server.disk.DiskMonitor.Snapshot?, lang: String): String {
         val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
         if (snap == null) {

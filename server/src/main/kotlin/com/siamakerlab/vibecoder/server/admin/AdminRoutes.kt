@@ -107,6 +107,10 @@ fun Routing.adminRoutes(deps: AdminRoutesDeps) {
             val s = deps.envSetup.iosEnvSnapshot()
             s.mode == "mac_local" && !s.xcodeAvailable
         }.getOrDefault(false)
+        // v1.170.0 — macOS 빌드 에이전트 연결상태 카드용 config(즉시, SSH 프로브 없음). 실시간 상태는
+        // 카드 JS 가 /api/ios/preflight 로 라이브 조회하므로 여기선 대상 정보만 넘긴다.
+        val iosAgent = com.siamakerlab.vibecoder.server.config.ConfigHolder.current.ios.agent
+        val iosAgentEnabled = iosAgent.enabled && iosAgent.mode.trim().lowercase() in setOf("ssh", "remote")
         val html = AdminTemplates.dashboardPage(
             username = sess.username,
             status = status,
@@ -119,6 +123,10 @@ fun Routing.adminRoutes(deps: AdminRoutesDeps) {
             diskSnapshot = diskSnapshot,
             gitIdentityMissing = gitIdentityMissing,
             iosBuildEnvHint = iosBuildEnvHint,
+            iosAgentEnabled = iosAgentEnabled,
+            iosAgentMode = iosAgent.mode,
+            iosAgentHost = iosAgent.host,
+            iosAgentUser = iosAgent.user,
             csrf = sess.csrf,
             lang = sess.language,
         )
