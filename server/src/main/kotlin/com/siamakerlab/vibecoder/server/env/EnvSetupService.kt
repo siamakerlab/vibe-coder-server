@@ -711,6 +711,9 @@ class EnvSetupService(
                 }
             },
             onSuccess = {
+                // v1.174.0 — 설치 직후 iOS 스냅샷 캐시를 즉시 갱신 → 빌드환경 카드가 30초 TTL 지연
+                // 없이 바로 INSTALLED 를 반영한다("설치했는데 미설치로 뜬다" 잔여 회수).
+                runCatching { iosEnvComponentService.refreshNow() }
                 hub.publisher(taskId).emit(WsFrame.Log(taskId, "INFO", "✓ Swift 도구 설치 완료", clock.nowIso()))
                 hub.publisher(taskId).emit(WsFrame.Done(taskId, "SUCCESS"))
             },

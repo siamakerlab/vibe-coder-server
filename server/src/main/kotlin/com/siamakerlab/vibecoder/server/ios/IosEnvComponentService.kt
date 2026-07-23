@@ -53,6 +53,17 @@ class IosEnvComponentService(
         return fresh
     }
 
+    /**
+     * v1.174.0 — 설치/상태 변경 직후 캐시를 강제로 신선하게 다시 계산한다(동기 probe).
+     *
+     * SwiftLint/SwiftFormat/CocoaPods 등을 설치한 직후, 30초 TTL 캐시가 아직 유효해서 빌드환경
+     * 카드가 잠시 "미설치"로 남는 문제를 막는다. 설치 태스크의 onSuccess 에서 호출한다.
+     * 실패해도 무해 — 다음 [snapshot] 이 다시 갱신한다.
+     */
+    fun refreshNow() {
+        runCatching { snapshotBlocking() }
+    }
+
     private fun refreshAsync() {
         if (!refreshInFlight.compareAndSet(false, true)) return
         Thread {
