@@ -135,6 +135,13 @@ OpenSSH 서버를 설치하세요. 기본 compose 는 `VIBE_SSH_PORT=2222` 를
 | `VIBECODER_IOS_AGENT_WORKSPACE_ROOT` | empty | 원격 macOS agent 의 작업 루트 |
 | `VIBECODER_IOS_AGENT_XCODE_PATH` | `auto` | Xcode developer path override. 기본은 `xcode-select` |
 
+> **원클릭 연결 (위 env 수동설정보다 권장):** **/env-setup → iPhone → "Mac SSH connection"** 에서 맥의
+> host/user/비밀번호 입력 후 **연결하기**. 서버가 `sshpass` 로 키 기반 SSH 를 부트스트랩(이미지에 `sshpass`
+> + `rsync` 포함)해 컨테이너 공개키를 맥에 설치하고, agent 설정 저장 + 맥에 `~/.vibe-coder-ios/<serverId>/`
+> 작업공간을 준비한다. 비밀번호는 1회만 쓰이고 저장되지 않는다. 로컬 맥(`host.docker.internal`)이든 원격
+> 맥이든 동일. 맥에서 **원격 로그인**(시스템 설정 → 공유) 을 먼저 켤 것. 대시보드에 "macOS build agent"
+> 상태 카드가 표시된다.
+
 ### 볼륨 구조 (v0.7.0 통합)
 
 모든 영구 데이터는 **호스트 한 디렉토리** (`./vibe-coder-data`) 안에 모입니다.

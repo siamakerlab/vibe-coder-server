@@ -185,6 +185,13 @@ docker compose up -d            # boots postgres + vibe-coder-server
 | `VIBECODER_IOS_AGENT_WORKSPACE_ROOT` | empty | Workspace root on the remote macOS agent |
 | `VIBECODER_IOS_AGENT_XCODE_PATH` | `auto` | Xcode developer path override. Default uses `xcode-select` |
 
+> **One-click connect (recommended over the env vars above):** open **/env-setup → iPhone → "Mac SSH
+> connection"**, enter the Mac's host/user/password and click **Connect**. The server bootstraps key-based
+> SSH via `sshpass` (image bundles `sshpass` + `rsync`), installs its public key on the Mac, saves the agent
+> config, and prepares a per-server workspace at `~/.vibe-coder-ios/<serverId>/`. The password is used once
+> and never stored. Works the same for a local Mac (`host.docker.internal`) or a remote Mac. Enable **Remote
+> Login** on the Mac first (System Settings → Sharing). The dashboard shows a "macOS build agent" status card.
+
 ### AI providers (v1.162.5)
 
 The server ships three first-class agent providers, selectable per-project from the console:

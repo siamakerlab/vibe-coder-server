@@ -207,6 +207,21 @@ For per-release history, see [CHANGELOG.md](CHANGELOG.md).
   command); only SwiftLint/SwiftFormat install automatically via Homebrew. On a Linux-only
   server the section is collapsed and marked "Mac required" — project creation, AI console,
   and file editing still work, but builds and Simulator need a Mac. Excluded from "Install all".
+- **iPhone build over SSH (Docker → Mac), one-click connect** — because the server usually runs in a
+  Linux container (including Docker Desktop on a Mac, where the container is still Linux), iPhone builds and
+  the Simulator run on a **Mac reached over SSH** — the same machine's host via `host.docker.internal`, or a
+  remote Mac; both use the same setup. In `/env-setup` → iPhone, the **"Mac SSH connection"** form takes
+  host/port/user/password and **"Connect"**: the server uses `sshpass` for a one-time bootstrap that installs
+  the container's public key into the Mac's `~/.ssh/authorized_keys` (**the password is used once and never
+  stored**; SSH is key-based afterwards), verifies key auth, and prepares a **per-server** workspace at
+  `~/.vibe-coder-ios/<serverId>/` so several servers can share one Mac without conflicts. Preflight then
+  reports Xcode/Simulator status (with install guidance if missing). Once connected, the iPhone project rail
+  exposes **Build / Test / Archive / Export IPA** buttons and a Simulator **"Build & Run"** one-click
+  (build → boot → install → launch → screenshot) plus screenshot recapture; `xcodebuild`/`simctl` run on the
+  Mac and artifacts (`.app`/`.ipa`/`.xcresult`) and screenshots are rsynced back to the container. The
+  **dashboard shows a "macOS build agent" connection-status card**. New iPhone projects also get a local
+  `CLAUDE.md` build-pipeline section and a `vibe-ios-build-flow` skill capturing the build → run → inspect →
+  fix loop. (Running the server natively on macOS uses local Xcode directly with no SSH.)
 - **Pre-installed image tooling** — the runtime image ships ImageMagick,
   Pillow (`python3-pil` + NumPy), `rsvg-convert`, `cwebp`/`dwebp`,
   `poppler-utils`, Ghostscript, and `optipng`/`pngquant`/`jpegoptim` so Claude
@@ -645,6 +660,8 @@ Highlights:
 - `GET /api/ios/simulators` → iPhone/iPad Simulator inventory via local MacBook install or SSH macOS agent
 - `POST /api/ios/simulators/{udid}/boot`, `POST /api/ios/simulators/{udid}/shutdown` → boot or stop an iPhone/iPad Simulator on the Mac agent
 - `POST /api/projects/{id}/ios/simulators/{udid}/run` → install the latest iOS debug `.app`, launch it, and capture a screenshot
+- `POST /api/projects/{id}/ios/simulators/{udid}/screenshot` → recapture the booted Simulator's current screen (no re-install/launch)
+- `POST /api/projects/{id}/ios/build/{debug|test|archive|export-ipa}` → run `xcodebuild` on the macOS agent; artifacts (`.app`/`.ipa`/`.xcresult`) are rsynced back to the container
 - `GET /api/projects/{id}/ios/simulators/{udid}/logs` → fetch recent app logs from the iPhone/iPad Simulator with a bundle-id predicate
 - `GET /ws/projects/{id}/ios/simulators/{udid}/logs` → stream live Simulator app logs to the iPhone project rail
 - `GET /projects/{id}/ios/simulator/screenshot` → cookie-authenticated latest Simulator screenshot preview for the web project rail
@@ -654,6 +671,7 @@ Highlights:
   (`flutter create --platforms=ios .`, `flutter build ios --debug --simulator --no-codesign`,
   `flutter build ipa --release`).
 - `GET|POST /api/ios/agent-config` → iPhone local/SSH macOS agent settings
+- `POST /api/ios/agent-connect` → one-time password bootstrap: `sshpass` installs the container key on the Mac, verifies key auth, saves the SSH agent config, and returns a preflight snapshot; the password is used once and never stored/logged
 - `GET|POST /api/ios/app-store-connect-key` → App Store Connect key metadata and `.p8` private-key registration; responses never include private-key content
 - `GET /api/ios/app-store-connect/diagnostics?bundleId=<id>` → read-only App Store Connect JWT/authentication and app lookup diagnostics
 - `POST /api/ios/keychain/import` → admin-only macOS keychain `.p12` certificate import/unlock for iPhone signing; responses never include passwords
