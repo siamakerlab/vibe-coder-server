@@ -311,6 +311,7 @@ fun Routing.adminRoutes(deps: AdminRoutesDeps) {
             claudeTimeoutMin = cfg.claude.timeoutMinutes,
             buildTimeoutMin = cfg.build.timeoutMinutes,
             defaultDebugTask = cfg.build.defaultDebugTask,
+            autoManageSessions = cfg.security.autoManageSessions,
         )
         val ok = call.request.queryParameters["ok"]
         val err = call.request.queryParameters["err"]
@@ -389,6 +390,10 @@ fun Routing.adminRoutes(deps: AdminRoutesDeps) {
                     } ?: cur.build.timeoutMinutes,
                     defaultDebugTask = params["build.defaultDebugTask"]?.trim()?.ifBlank { null }
                         ?: cur.build.defaultDebugTask,
+                ),
+                // v1.175.0 — 세션 자동 관리 토글(checkbox: 존재 → true). 기본 false = 수동.
+                security = cur.security.copy(
+                    autoManageSessions = params["security.autoManageSessions"] != null,
                 ),
             )
         } catch (e: IllegalArgumentException) {

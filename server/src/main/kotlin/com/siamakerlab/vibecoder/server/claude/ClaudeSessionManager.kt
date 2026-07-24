@@ -273,6 +273,21 @@ class ClaudeSessionManager(
     }
 
     /**
+     * v1.175.0 — 수동 "세션 종료": 실행 중인 프로세스만 정리하고 **session-id 는 보존**한다.
+     * [startNew] 와 달리 session-id / turn-active / 컨텍스트 마크를 삭제하지 않으므로, 다음
+     * "세션 열기"(또는 프롬프트)에서 `--resume` 으로 같은 대화를 warm 재개할 수 있다. 진행 중이던
+     * 자동화가 있으면 interrupt 로 정리한다.
+     */
+    suspend fun closeSession(projectId: String) {
+        val wasAlive = sessions.containsKey(projectId)
+        terminateSession(projectId)
+        if (wasAlive) {
+            emitSystem(projectId, "session_closed", "Session closed. Open a session to resume.")
+            fireInterrupt(projectId, "closed")
+        }
+    }
+
+    /**
      * v1.82.0 — 서버 부팅 시 1회 호출(비동기). 재시작/크래시로 끊긴 미완 turn(turn-active 마크
      * 잔존) 프로젝트마다 "이어서 진행" 프롬프트를 자동 전송(--resume → 멈춘 곳부터). 무거운
      * claude spawn 이라 부팅을 블로킹하지 않도록 내부 scope 에서 순차 실행(2초 간격, 부하 분산).
@@ -1115,6 +1130,11 @@ class ClaudeSessionManager(
      * 핵심: [handleStdoutLine] 이 매 출력 프레임마다 lastActivity 를 갱신하므로, 진행 중 세션은
      * 출력이 흐르는 한 어느 분기에도 걸리지 않는다(30분 idle reap 이 긴 turn 을 죽이던 회귀 해소).
      */
+    // v1.175.0 — 수동 세션 관리(기본)에선 유휴 SIGTERM 회수를 하지 않는다. stall watchdog(turn 만
+    // 정리, 프로세스 유지)은 회수가 아니므로 항상 동작. autoManageSessions=true 일 때만 idle 회수.
+    private fun autoManageSessions() =
+        com.siamakerlab.vibecoder.server.config.ConfigHolder.current.security.autoManageSessions
+
     private suspend fun reapIdleSessions() {
         val now = Instant.now()
         val idleCutoff = now.minus(idleTimeout)                // 유휴: 무활동 30분 → SIGTERM
@@ -1127,7 +1147,7 @@ class ClaudeSessionManager(
                     finalizeStalledTurn(s.projectId, "stall_watchdog")
                 }
                 state != null && state.busy -> Unit  // 진행 중 + 최근 출력 → 보호(SIGTERM 안 함)
-                s.lastActivity.isBefore(idleCutoff) -> {
+                autoManageSessions() && s.lastActivity.isBefore(idleCutoff) -> {
                     log.info { "[${s.projectId}] idle for ${Duration.between(s.lastActivity, now).toMinutes()}m; SIGTERM" }
                     emitSystem(s.projectId, "idle_terminated", "Session went idle and was paused. Send a prompt to resume.")
                     terminateSession(s.projectId)

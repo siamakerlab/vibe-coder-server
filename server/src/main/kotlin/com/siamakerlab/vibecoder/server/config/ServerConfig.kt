@@ -199,6 +199,23 @@ data class SecuritySection(
      * connections are never reaped; only disconnected sessions past this grace are closed.
      */
     val consoleTuiIdleTimeoutMinutes: Int = 120,
+    /**
+     * v1.175.0 — 콘솔 세션 자동 관리 여부. **기본 false = 수동**.
+     *
+     * false(수동): 사용자가 직접 "세션 종료"를 누르기 전까지는 무슨 일이 있어도(유휴 타임아웃,
+     * 호스트 메모리 압박 포함) 콘솔 세션/터미널을 자동으로 닫지 않는다. 즉 다음 자동 회수 경로가
+     * 전부 no-op 이 된다:
+     *   - [ClaudeSessionManager] / [SubAgentSessionManager] 의 idle reaper (유휴 SIGTERM)
+     *   - [ConsoleTuiSessionManager] 의 idle reaper + 메모리 압박 회수
+     *   - provider 전환/모델 변경 시 다른 provider PTY 까지 일괄 종료
+     * "내가 모르는 동안 터미널이 종료되어 작업이 끊기는" 문제의 근본 해결.
+     *
+     * true(자동): v1.174.0 이하의 기존 동작 — 유휴/메모리 압박 시 세션을 자동 회수(세션-id 보존
+     * warm resume). 설정→일반의 "세션 자동 관리" 토글로 켠다.
+     *
+     * ⚠️ 완전 차단(false)은 대량 자동화 시 호스트 OOM 위험을 감수하는 선택이다(운영자 승인).
+     */
+    val autoManageSessions: Boolean = false,
     /** v0.56.0 — Phase 35 per-IP rate limit. */
     val rateLimit: RateLimitSection = RateLimitSection(),
     /**

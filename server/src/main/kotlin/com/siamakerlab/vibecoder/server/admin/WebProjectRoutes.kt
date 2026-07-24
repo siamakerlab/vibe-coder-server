@@ -789,6 +789,10 @@ fun Routing.webProjectRoutes(
                 uiCapabilities = projects.uiCapabilities(p.projectType),
                 lang = sess.language,
                 embed = call.isEmbeddedRequest(),
+                // v1.175.0 — 수동 모드에선 이미 살아있는 세션이 있을 때만 자동 attach. 없으면 "세션
+                // 열기" 버튼으로만 시작. 자동 모드면 기존대로 항상 자동 실행.
+                autoOpenConsole = com.siamakerlab.vibecoder.server.config.ConfigHolder.current.security.autoManageSessions ||
+                    tuiSessionId != null,
             ),
             ContentType.Text.Html,
         )
@@ -884,6 +888,40 @@ fun Routing.webProjectRoutes(
         call.respondRedirect(target)
     }
 
+    // v1.175.0 — 수동 "세션 종료". 현재 provider 의 콘솔 세션을 두 시스템(stream-json + PTY)에서
+    // 종료하되 **session-id 는 보존**(다음 "세션 열기"에서 resume). 종료 후 이동 타겟을 JSON 으로
+    // 돌려준다: 같은 프로젝트에 다른 provider 세션이 살아있으면 그 provider 콘솔, 없으면 프로젝트 목록.
+    // ("새 세션"과 달리 대화를 버리지 않는다.) SSR 전용(브라우저) — Android wire 영향 없음.
+    post("/projects/{id}/console/close") {
+        val sess = requireSessionOrRedirect(authDeps) ?: return@post
+        if (!requireWriteAccessOrRedirect(sess)) return@post
+        requireCsrf()
+        val id = call.parameters["id"]!!
+        requireProjectAccessOrThrow(sess, projects, id)
+        val current = agentRouter?.providerFor(id) ?: AgentProvider.CLAUDE
+        runCatching {
+            if (agentRouter != null) agentRouter.closeSession(id) else sessionManager.closeSession(id)
+            consoleTuiManager?.closeProvider(sess.userId, id, current)
+        }
+            .onFailure { log.warn(it) { "console close failed for $id" } }
+        log.info { "console close: $id/${current.id} by ${sess.username}" }
+        // 다른 provider 세션 생존 판정: PTY alive 또는 stream-json alive.
+        val ptyAlive = consoleTuiManager?.aliveProviders(id, sess.userId).orEmpty()
+        val nextProvider = (agentRouter?.availableProviders() ?: listOf(AgentProvider.CLAUDE))
+            .filter { it != current }
+            .firstOrNull { it in ptyAlive || agentRouter?.managerFor(it)?.isAlive(id) == true }
+        val navigate = when {
+            id == ProjectService.SCRATCH_ID -> "/chat"
+            ProjectService.isChatGhost(id) -> "/chat?c=${id.encodeUrl()}"
+            nextProvider != null -> {
+                agentRouter?.setProvider(id, nextProvider)
+                "/projects/$id#console"
+            }
+            else -> "/projects"
+        }
+        call.respondText("{\"navigate\":\"$navigate\"}", ContentType.Application.Json)
+    }
+
     // v1.106.0 — 프로젝트별 모델 설정(토큰 사용량 레버). 유휴면 즉시 재시작(세션 유지),
     // busy 면 다음 turn 부터 적용. v1.x — 선택된 provider(Claude/Codex)별 파일에 독립 저장.
     post("/projects/{id}/console/model") {
@@ -906,7 +944,13 @@ fun Routing.webProjectRoutes(
             } else {
                 sessionManager.setProjectModelAndRestart(id, model)
             }
-            consoleTuiManager?.closeProject(sess.userId, id)
+            // v1.175.0 — 수동 모드: 모델 적용 위해 현재 provider PTY 만 재시작(세션-id 보존).
+            // 자동 모드: 기존대로 프로젝트의 모든 provider PTY 일괄 종료.
+            if (com.siamakerlab.vibecoder.server.config.ConfigHolder.current.security.autoManageSessions) {
+                consoleTuiManager?.closeProject(sess.userId, id)
+            } else {
+                consoleTuiManager?.closeProvider(sess.userId, id, provider)
+            }
         }
             .onFailure { log.warn(it) { "set model failed for $id" } }
         log.info { "console model set: $id/${provider.id} -> '${model.ifBlank { "default" }}'${if (provider == AgentProvider.OPENCODE) " variant='${variant.ifBlank { "default" }}'" else ""} by ${sess.username}" }
@@ -986,7 +1030,11 @@ fun Routing.webProjectRoutes(
             return@post
         }
         router.setProvider(id, provider)
-        consoleTuiManager?.closeProject(sess.userId, id)
+        // v1.175.0 — 수동 모드: provider 전환 시 이전 provider 세션을 살려둔다(자동 종료 금지 →
+        // "세션 종료 시 다른 provider 로 이동" 성립). 자동 모드: 기존대로 일괄 종료.
+        if (com.siamakerlab.vibecoder.server.config.ConfigHolder.current.security.autoManageSessions) {
+            consoleTuiManager?.closeProject(sess.userId, id)
+        }
         log.info { "console provider set: $id -> ${provider.id} by ${sess.username}" }
         call.respondRedirect("/projects/$id#console")
     }

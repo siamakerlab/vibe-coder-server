@@ -349,6 +349,8 @@ class SubAgentSessionManager(
     }
 
     private suspend fun reapIdleSessions() {
+        // v1.175.0 — 수동 세션 관리(기본)에선 유휴 회수를 하지 않는다.
+        if (!com.siamakerlab.vibecoder.server.config.ConfigHolder.current.security.autoManageSessions) return
         val now = Instant.now()
         val cutoff = now.minus(idleTimeout)
         sessions.values.toList().forEach { s ->

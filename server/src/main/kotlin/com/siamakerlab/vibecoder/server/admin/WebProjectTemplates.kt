@@ -1347,6 +1347,13 @@ $errHtml
         uiCapabilities: PlatformUiCapabilities? = null,
         lang: String,
         embed: Boolean = false,
+        /**
+         * v1.175.0 — 진입 시 콘솔 세션을 자동으로 열지 여부. 수동 세션 관리(설정 autoManageSessions
+         * = false, 기본)에선 **이미 살아있는 세션이 있을 때만** true 로 넘어와 자동 attach 만 하고,
+         * 없으면 false — "세션 열기" 버튼(또는 프롬프트 전송)으로만 세션을 시작한다. 자동 모드/기타
+         * 호출자는 default true 로 기존 동작 유지.
+         */
+        autoOpenConsole: Boolean = true,
     ): String {
         val t = { key: String -> com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, key) }
         val caps = uiCapabilities ?: fallbackUiCapabilities(p.projectType)
@@ -1847,8 +1854,12 @@ $errHtml
     <small class="dim" style="font-size:14px;font-weight:400">${esc(p.name)}${if (isChat) "" else " (${esc(p.id)})"}</small>
   </h1>
   <div class="console-actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
-    <!-- v1.110.0 — 세션 표시 + 모델 셀렉터 + MCP 최소화 토글은 콘솔 하단 바(메시지 필터 좌측)로
-         이동했다(사용자 요청). 헤더 우측에는 외부 링크/중지/새 세션만 남긴다. -->
+    <!-- v1.110.0 / v1.175.0 — 헤더 우측 배치: [세션 열기](좌측) [상태칩] 외부링크 [중지] [새 세션]
+         [세션 종료]. 세션 열기/종료는 수동 세션 수명주기(설정 '세션 자동 관리' OFF 기본) 제어 —
+         사용자가 직접 종료하기 전까지 세션은 자동으로 닫히지 않는다. 상태칩은 세션없음/대기중/응답중. -->
+    <button type="button" id="open-session-btn" class="chip" style="height:30px;box-sizing:border-box;display:inline-flex;align-items:center"
+            title="${esc(t("console.openSession.title"))}">${esc(t("console.openSession"))}</button>
+    <span id="session-status" class="dim" data-state="none" style="font-size:12px;white-space:nowrap">${esc(t("console.session.none"))}</span>
     $sideLinks
     <button type="button" id="stop-btn" class="chip chip-danger" style="display:none;height:30px;box-sizing:border-box;align-items:center"
             title="${esc(t("console.stop.title"))}">${esc(t("console.stop"))}</button>
@@ -1857,6 +1868,8 @@ $errHtml
       ${CsrfTokens.hiddenInput(csrf)}
       <button type="submit" class="chip chip-danger" style="height:30px;box-sizing:border-box;display:inline-flex;align-items:center">${esc(t("console.newSession"))}</button>
     </form>
+    <button type="button" id="close-session-btn" class="chip chip-danger" style="height:30px;box-sizing:border-box;display:inline-flex;align-items:center" disabled
+            title="${esc(t("console.closeSession.title"))}">${esc(t("console.closeSession"))}</button>
   </div>
 </header>
 
@@ -3041,6 +3054,7 @@ $quickBarHtml
       fitConsoleTui();
       scheduleConsoleTuiBottom();
       window.setTimeout(function() { tui.forceBottomOnConnect = false; }, 1500);
+      refreshSessionUi();  // v1.175.0 — 세션 open → 버튼/상태칩 동기.
     };
     tui.ws.onmessage = function(ev) {
       try {
@@ -3065,6 +3079,8 @@ $quickBarHtml
             error: f.exitCode === 0 ? undefined : ('Process exited with code ' + f.exitCode)
           });
           updateConsoleTuiJumpButton();
+          tui.sessionId = null;       // v1.175.0 — 프로세스 종료 → 세션 없음.
+          refreshSessionUi();
         } else if (f.type === 'agent_status_changed') {
           updateProviderTabStatus(f);
         }
@@ -3075,6 +3091,7 @@ $quickBarHtml
         tui.sessionId = null;
         setTuiStatus('idle · ' + currentProvider);
         updateProviderTabStatus({ provider: currentProvider, state: 'idle' });
+        refreshSessionUi();  // v1.175.0 — 세션 종료 → 버튼/상태칩 동기.
         return;
       }
       if (!tui.closing && ev.code !== 1000) {
@@ -3260,6 +3277,55 @@ $quickBarHtml
     }
   }
 
+  // ── v1.175.0 수동 세션 수명주기: 세션 열기/종료 버튼 + 상태칩(세션없음/대기중/응답중) ──────────
+  var SESSION_NONE = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.session.none"))};
+  var SESSION_IDLE = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.session.idle"))};
+  var SESSION_BUSY = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.session.busy"))};
+  var SESSION_CLOSE_CONFIRM = ${jsLit(com.siamakerlab.vibecoder.server.i18n.Messages.t(lang, "console.closeSession.confirm"))};
+  function isSessionOpen() {
+    return !!(tui && tui.ws && tui.ws.readyState === 1 && tui.sessionId);
+  }
+  // 세션 open 여부 + inFlight 로 버튼 enable/disable + 상태칩 텍스트를 동기화.
+  function refreshSessionUi() {
+    var open = isSessionOpen();
+    var ob = document.getElementById('open-session-btn');
+    var cb = document.getElementById('close-session-btn');
+    var st = document.getElementById('session-status');
+    if (ob) ob.disabled = open;
+    if (cb) cb.disabled = !open;
+    if (st) {
+      if (!open) { st.dataset.state = 'none'; st.textContent = SESSION_NONE; }
+      else if (typeof inFlight !== 'undefined' && inFlight) { st.dataset.state = 'busy'; st.textContent = SESSION_BUSY; }
+      else { st.dataset.state = 'idle'; st.textContent = SESSION_IDLE; }
+    }
+  }
+  // "세션 종료": 로컬 WS/터미널을 먼저 정리(재연결 억제)한 뒤 서버 세션(stream-json + PTY)을
+  // session-id 보존 상태로 종료하고, 응답의 navigate 로 이동(다른 provider 세션 or 프로젝트 목록).
+  async function closeConsoleSession() {
+    if (!window.confirm(SESSION_CLOSE_CONFIRM)) return;
+    var cb = document.getElementById('close-session-btn');
+    if (cb) cb.disabled = true;
+    tui.closing = true;
+    if (tui.reconnectTimer) { window.clearTimeout(tui.reconnectTimer); tui.reconnectTimer = null; }
+    if (tui.ws) { try { tui.ws.close(1000, 'closing'); } catch (e) {} }
+    tui.sessionId = null;
+    try {
+      var tokenEl = document.querySelector('input[name=_csrf]');
+      var res = await fetch('/projects/' + projectId + '/console/close', {
+        method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body:'_csrf=' + encodeURIComponent(tokenEl ? tokenEl.value : '')
+      });
+      var target = '/projects';
+      try { var body = await res.json(); if (body && body.navigate) target = body.navigate; } catch (e) {}
+      (window.top || window).location.href = target;
+    } catch (e) {
+      if (cb) cb.disabled = false;
+      refreshSessionUi();
+      alert(String((e && e.message) || e));
+    }
+  }
+
   async function sendPromptToConsoleTui() {
     if (!input) return;
     var text = input.value.trim();
@@ -3388,7 +3454,14 @@ $quickBarHtml
       switchConsoleProvider(tab.getAttribute('data-provider'));
     });
   });
-  window.setTimeout(function() { openConsoleTui(); }, 0);
+  // v1.175.0 — 진입 시 자동 세션 실행은 autoOpenConsole 일 때만(자동 모드 또는 이미 살아있는 세션
+  // attach). 수동 모드 + 세션 없음이면 실행하지 않고 "세션 열기" 버튼/프롬프트 전송으로만 시작한다.
+  ${if (autoOpenConsole) "window.setTimeout(function() { openConsoleTui(); }, 0);" else "/* manual session lifecycle: no auto-open */"}
+  var __openSessBtn = document.getElementById('open-session-btn');
+  if (__openSessBtn) __openSessBtn.addEventListener('click', function() { openConsoleTui(); });
+  var __closeSessBtn = document.getElementById('close-session-btn');
+  if (__closeSessBtn) __closeSessBtn.addEventListener('click', closeConsoleSession);
+  refreshSessionUi();
 
   document.body.classList.add('console-page');
 
@@ -4452,6 +4525,7 @@ $quickBarHtml
     // v1.139.0 — 끼어들기 버튼 상시 노출 — display 토글 제거.
     if (spinnerEl) spinnerEl.hidden = !on;
     updateBusyBadge();
+    refreshSessionUi();  // v1.175.0 — 작업중/대기중 상태칩 동기.
   }
   async function cancelTurn() {
     if (!inFlight) return;

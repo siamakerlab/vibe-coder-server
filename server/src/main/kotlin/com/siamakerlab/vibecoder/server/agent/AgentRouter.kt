@@ -25,6 +25,9 @@ class AgentRouter(
 
     suspend fun startNew(projectId: String) = manager(projectId).startNew(projectId)
 
+    /** v1.175.0 — 수동 "세션 종료": 현재 provider 세션을 session-id 보존 상태로 종료. */
+    suspend fun closeSession(projectId: String) = manager(projectId).closeSession(projectId)
+
     suspend fun cancelTurn(projectId: String) = manager(projectId).cancelTurn(projectId)
 
     fun isAlive(projectId: String): Boolean = manager(projectId).isAlive(projectId)

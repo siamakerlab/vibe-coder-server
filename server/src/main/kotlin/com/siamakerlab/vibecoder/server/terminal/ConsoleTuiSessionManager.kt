@@ -813,6 +813,29 @@ class ConsoleTuiSessionManager(
         ids.forEach(::close)
     }
 
+    // v1.175.0 — 수동 세션 종료: 프로젝트의 특정 provider PTY 세션만 닫는다. close() 는 세션-id 를
+    // 삭제하지 않으므로(온디스크 CLI 상태 보존) 다음 "세션 열기"에서 resume 가능하다.
+    @Synchronized
+    fun closeProvider(ownerUserId: String?, projectId: String, provider: AgentProvider) {
+        val ids = byKey.entries
+            .filter { (key, _) ->
+                (ownerUserId == null || key.ownerUserId == ownerUserId) &&
+                    key.projectId == projectId && key.provider == provider
+            }
+            .map { it.value }
+            .toSet()
+        ids.forEach(::close)
+    }
+
+    // v1.175.0 — 프로젝트에 살아있는 PTY 세션을 가진 provider 목록. "세션 종료" 후 다른 provider 로
+    // 이동할지 판정하는 데 쓴다(closeProject 의 byKey 필터 패턴 재사용).
+    @Synchronized
+    fun aliveProviders(projectId: String, ownerUserId: String? = null): List<AgentProvider> =
+        byKey.entries
+            .filter { (key, _) -> (ownerUserId == null || key.ownerUserId == ownerUserId) && key.projectId == projectId }
+            .mapNotNull { (key, id) -> if (sessions[id]?.isAlive() == true) key.provider else null }
+            .distinct()
+
     @Synchronized
     fun startNew(ownerUserId: String?, projectId: String) {
         AgentProvider.entries.forEach { provider ->
@@ -846,7 +869,12 @@ class ConsoleTuiSessionManager(
         scope.cancel()
     }
 
+    // v1.175.0 — 수동 세션 관리(기본)에선 유휴/메모리 압박 회수를 하지 않는다.
+    private fun autoManageSessions() =
+        com.siamakerlab.vibecoder.server.config.ConfigHolder.current.security.autoManageSessions
+
     private fun reapIdle() {
+        if (!autoManageSessions()) return
         if (idleTimeout.isZero || idleTimeout.isNegative) return
         val now = Instant.now()
         sessions.values.forEach { session ->
@@ -867,6 +895,9 @@ class ConsoleTuiSessionManager(
 
     @Synchronized
     private fun closeIdleSessionsForResourcePressure(): Int {
+        // v1.175.0 — 수동 모드에선 메모리 압박에도 세션을 절대 자동 종료하지 않는다(운영자 승인,
+        // OOM 위험 감수). reaper 와 ensure() 의 resourceGuard 콜백 양쪽이 이 함수를 경유한다.
+        if (!autoManageSessions()) return 0
         val ids = sessions.values
             .filter { it.isReapableForResourcePressure() }
             .sortedBy { it.lastActivityAt }

@@ -38,6 +38,14 @@ interface AgentSessionManager {
 
     suspend fun startNew(projectId: String)
 
+    /**
+     * v1.175.0 — 수동 "세션 종료": 실행 중인 프로세스를 정리하되 session-id(대화 연속성)는 보존한다.
+     * [startNew] 와 달리 다음 "세션 열기"에서 resume 가능. 상주 프로세스가 없는 provider
+     * (Codex/OpenCode 의 per-turn exec)는 정리할 상주 상태가 없으므로 기본 no-op 이며, PTY 세션은
+     * 별도 [com.siamakerlab.vibecoder.server.terminal.ConsoleTuiSessionManager] 가 닫는다.
+     */
+    suspend fun closeSession(projectId: String) {}
+
     suspend fun cancelTurn(projectId: String)
 
     fun isAlive(projectId: String): Boolean

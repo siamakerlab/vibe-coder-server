@@ -1651,6 +1651,14 @@ $errHtml
     <label>${esc(t("settings.field.defaultDebugTask"))} <input name="build.defaultDebugTask" value="${esc(settings.defaultDebugTask)}"></label>
   </fieldset>
 
+  <fieldset>
+    <legend>${esc(t("settings.legend.session"))}</legend>
+    <label><input name="security.autoManageSessions" type="checkbox" ${if (settings.autoManageSessions) "checked" else ""}> ${esc(t("settings.field.autoManageSessions"))}</label>
+    <!-- hint 는 정적 i18n 리터럴(사용자 입력 없음)이며 <strong>/<code> 마크업 포함 → persist.hint 와
+         동일하게 raw 렌더(esc 금지). -->
+    <p class="hint">${t("settings.hint.autoManageSessions")}</p>
+  </fieldset>
+
   <button type="submit" class="primary">${esc(t("common.save"))}</button>
   <p class="hint">${t("settings.persist.hint")}</p>
 </form>
@@ -1792,5 +1800,6 @@ $okHtml
         val claudeTimeoutMin: Int,
         val buildTimeoutMin: Int,
         val defaultDebugTask: String,
+        val autoManageSessions: Boolean,
     )
 }

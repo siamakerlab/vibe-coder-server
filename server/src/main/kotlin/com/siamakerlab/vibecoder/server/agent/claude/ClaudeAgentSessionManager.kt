@@ -32,6 +32,8 @@ class ClaudeAgentSessionManager(
 
     override suspend fun startNew(projectId: String) = delegate.startNew(projectId)
 
+    override suspend fun closeSession(projectId: String) = delegate.closeSession(projectId)
+
     override suspend fun cancelTurn(projectId: String) = delegate.cancelTurn(projectId)
 
     override fun isAlive(projectId: String): Boolean = delegate.isAlive(projectId)
